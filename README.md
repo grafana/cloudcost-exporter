@@ -34,7 +34,7 @@ go run cmd/exporter/exporter.go -provider gcp -project-id=ops-tools-1203
 
 # GCP - prod - with custom bucket projects
 
-go run cmd/exporter/exporter.go -provider gcp -project-id=ops-tools-1203 -gcp.bucket-projects=grafanalabs-global,ops-tools-1203
+go run cmd/exporter/exporter.go -provider gcp -project-id=ops-tools-1203 -gcp.bucket-projects=grafanalabs-global -gcp.bucket-projects=ops-tools-1203
 
 # GCP - dev
 go run cmd/exporter/exporter.go -provider gcp -project-id=grafanalabs-dev
@@ -49,7 +49,7 @@ go run cmd/exporter/exporter.go -provider aws -aws.profile workloads-prod
 > [!Note]
 > GCP Only: you can specify the services to collect cost metrics on. 
 > `gcs` is collected by default.
-> To collect GKE, append any of the gcp commands with `-gcp.services=gke,gcs`
+> To collect GKE, append any of the gcp commands with `-gcp.services=gke -gcp.services=gcs`
 
 ## Architecture
 

@@ -16,22 +16,28 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 
+	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	"github.com/grafana/cloudcost-exporter/pkg/aws"
 	"github.com/grafana/cloudcost-exporter/pkg/collector"
 	"github.com/grafana/cloudcost-exporter/pkg/google"
 )
 
+func ProviderFlags(fs *flag.FlagSet, awsProfiles, gcpProjects, awsServices, gcpServices *config.StringSliceFlag) {
+	fs.Var(awsProfiles, "aws.profile", "AWS profile(s).")
+	// TODO: RENAME THIS TO JUST PROJECTS
+	fs.Var(gcpProjects, "gcp.bucket-projects", "GCP project(s).")
+	fs.Var(awsServices, "aws.services", "AWS service(s).")
+	fs.Var(gcpServices, "gcp.services", "GCP service(s).")
+}
+
 func main() {
+	var cfg config.Config
+	ProviderFlags(flag.CommandLine, &cfg.Providers.AWS.Profiles, &cfg.Providers.GCP.Projects, &cfg.Providers.AWS.Services, &cfg.Providers.GCP.Services)
 	provider := flag.String("provider", "aws", "AWS or GCP")
-	scrapeInterval := flag.Duration("scrape-interval", 1*time.Hour, "Scrape interval")
-	awsRegion := flag.String("aws.region", "", "AWS region")
-	awsProfile := flag.String("aws.profile", "", "AWS profile")
-	projectId := flag.String("project-id", "ops-tools-1203", "Project ID to target.")
-	gcpDefaultDiscount := flag.Int("gcp.default-discount", 19, "GCP default discount")
-	// TODO: Deprecate this flag in favor of `gcp.projects`
-	gcpProjects := flag.String("gcp.bucket-projects", "", "GCP projects to fetch resources from. Must be a list of comma-separated project IDs. If no value is passed it, defaults to the project ID passed via --project-id.")
-	gcpServices := flag.String("gcp.services", "GCS", "GCP services to scrape. Must be a list of comma-separated service names.")
-	awsServices := flag.String("aws.services", "S3", "AWS services to scrape. Must be a list of comma-separated service names.")
+	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
+	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
+	flag.StringVar(&cfg.ProjectID, "project-id", "ops-tools-1203", "Project ID to target.")
+	flag.IntVar(&cfg.Providers.GCP.DefaultDiscount, "gcp.default-discount", 19, "GCP default discount")
 	flag.Parse()
 
 	log.Print("Version ", version.Info())
@@ -43,20 +49,20 @@ func main() {
 	switch *provider {
 	case "aws":
 		csp, err = aws.NewAWS(&aws.Config{
-			Region:         *awsRegion,
-			Profile:        *awsProfile,
-			ScrapeInterval: *scrapeInterval,
-			Services:       strings.Split(*awsServices, ","),
+			Region:         cfg.Providers.AWS.Region,
+			Profile:        cfg.Providers.AWS.Profiles.String(),
+			ScrapeInterval: cfg.Collector.ScrapeInterval,
+			Services:       strings.Split(cfg.Providers.AWS.Services.String(), ","),
 		})
 
 	case "gcp":
 		csp, err = google.NewGCP(&google.Config{
-			ProjectId:       *projectId,
-			Region:          *awsRegion,
-			Projects:        *gcpProjects,
-			DefaultDiscount: *gcpDefaultDiscount,
-			ScrapeInterval:  *scrapeInterval,
-			Services:        strings.Split(*gcpServices, ","),
+			ProjectId:       cfg.ProjectID,
+			Region:          cfg.Providers.GCP.Region,
+			Projects:        cfg.Providers.GCP.Projects.String(),
+			DefaultDiscount: cfg.Providers.GCP.DefaultDiscount,
+			ScrapeInterval:  cfg.Collector.ScrapeInterval,
+			Services:        strings.Split(cfg.Providers.GCP.Services.String(), ","),
 		})
 	default:
 		err = fmt.Errorf("unknown provider")
