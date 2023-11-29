@@ -1,4 +1,4 @@
-module github.com/grafana/deployment_tools/docker/cloudcost-exporter
+module github.com/grafana/cloudcost-exporter
 
 go 1.20
 
