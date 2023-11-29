@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/iterator"
 
-	"github.com/grafana/deployment_tools/docker/cloudcost-exporter/pkg/google/gcs"
+	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
 )
 
 var commonLabels = []string{"location"}

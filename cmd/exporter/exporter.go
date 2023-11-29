@@ -16,9 +16,9 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/grafana/deployment_tools/docker/cloudcost-exporter/pkg/aws"
-	"github.com/grafana/deployment_tools/docker/cloudcost-exporter/pkg/collector"
-	"github.com/grafana/deployment_tools/docker/cloudcost-exporter/pkg/google"
+	"github.com/grafana/cloudcost-exporter/pkg/aws"
+	"github.com/grafana/cloudcost-exporter/pkg/collector"
+	"github.com/grafana/cloudcost-exporter/pkg/google"
 )
 
 func main() {

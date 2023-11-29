@@ -7,8 +7,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/grafana/deployment_tools/docker/cloudcost-exporter/pkg/aws/s3"
-	"github.com/grafana/deployment_tools/docker/cloudcost-exporter/pkg/collector"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
+	"github.com/grafana/cloudcost-exporter/pkg/collector"
 )
 
 type Config struct {

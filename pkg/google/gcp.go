@@ -14,9 +14,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	computev1 "google.golang.org/api/compute/v1"
 
-	"github.com/grafana/deployment_tools/docker/cloudcost-exporter/pkg/collector"
-	"github.com/grafana/deployment_tools/docker/cloudcost-exporter/pkg/google/compute"
-	"github.com/grafana/deployment_tools/docker/cloudcost-exporter/pkg/google/gcs"
+	"github.com/grafana/cloudcost-exporter/pkg/collector"
+	"github.com/grafana/cloudcost-exporter/pkg/google/compute"
+	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
 )
 
 type GCP struct {
