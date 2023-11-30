@@ -38,6 +38,7 @@ func main() {
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
 	flag.StringVar(&cfg.ProjectID, "project-id", "ops-tools-1203", "Project ID to target.")
 	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
+	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
 	flag.Parse()
 
@@ -81,11 +82,11 @@ func main() {
 	}
 
 	// Collect http server for prometheus
-	http.Handle("/metrics", promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{
+	http.Handle(cfg.Server.Path, promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	}))
 
-	log.Printf("Listening on %s", cfg.Server.Address)
+	log.Printf("Listening on %s:%s", cfg.Server.Address, cfg.Server.Path)
 	if err = http.ListenAndServe(cfg.Server.Address, nil); err != nil {
 		log.Printf("Error listening and serving: %s", err)
 		os.Exit(1)
