@@ -18,8 +18,8 @@ import (
 
 	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	"github.com/grafana/cloudcost-exporter/pkg/aws"
-	"github.com/grafana/cloudcost-exporter/pkg/collector"
 	"github.com/grafana/cloudcost-exporter/pkg/google"
+	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
 func ProviderFlags(fs *flag.FlagSet, awsProfiles, gcpProjects, awsServices, gcpServices *config.StringSliceFlag) {
@@ -33,7 +33,7 @@ func ProviderFlags(fs *flag.FlagSet, awsProfiles, gcpProjects, awsServices, gcpS
 func main() {
 	var cfg config.Config
 	ProviderFlags(flag.CommandLine, &cfg.Providers.AWS.Profiles, &cfg.Providers.GCP.Projects, &cfg.Providers.AWS.Services, &cfg.Providers.GCP.Services)
-	provider := flag.String("provider", "aws", "AWS or GCP")
+	targetProvider := flag.String("provider", "aws", "AWS or GCP")
 	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
 	flag.StringVar(&cfg.ProjectID, "project-id", "ops-tools-1203", "Project ID to target.")
@@ -46,11 +46,11 @@ func main() {
 	log.Print("Build Context ", version.BuildContext())
 	var gatherer prometheus.GathererFunc
 
-	var csp collector.CSP
+	var csp provider.Provider
 	var err error
-	switch *provider {
+	switch *targetProvider {
 	case "aws":
-		csp, err = aws.NewAWS(&aws.Config{
+		csp, err = aws.New(&aws.Config{
 			Region:         cfg.Providers.AWS.Region,
 			Profile:        cfg.Providers.AWS.Profiles.String(),
 			ScrapeInterval: cfg.Collector.ScrapeInterval,
@@ -58,7 +58,7 @@ func main() {
 		})
 
 	case "gcp":
-		csp, err = google.NewGCP(&google.Config{
+		csp, err = google.New(&google.Config{
 			ProjectId:       cfg.ProjectID,
 			Region:          cfg.Providers.GCP.Region,
 			Projects:        cfg.Providers.GCP.Projects.String(),
@@ -71,7 +71,7 @@ func main() {
 	}
 
 	if err != nil {
-		log.Printf("Error setting up provider %s: %s", *provider, err)
+		log.Printf("Error setting up provider %s: %s", *targetProvider, err)
 		os.Exit(1)
 	}
 
@@ -93,7 +93,7 @@ func main() {
 	}
 }
 
-func gathererFunc(csp collector.CSP) (prometheus.GathererFunc, error) {
+func gathererFunc(csp provider.Provider) (prometheus.GathererFunc, error) {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(
 		collectors.NewBuildInfoCollector(),

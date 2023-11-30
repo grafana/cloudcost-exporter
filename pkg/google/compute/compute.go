@@ -46,8 +46,8 @@ type Collector struct {
 	Projects       []string
 }
 
-// NewCollector is a helper method to properly setup a compute.Collector struct.
-func NewCollector(config *Config, computeService *compute.Service, billingService *billingv1.CloudCatalogClient) *Collector {
+// New is a helper method to properly setup a compute.Collector struct.
+func New(config *Config, computeService *compute.Service, billingService *billingv1.CloudCatalogClient) *Collector {
 	projects := strings.Split(config.Projects, ",")
 	return &Collector{
 		computeService: computeService,

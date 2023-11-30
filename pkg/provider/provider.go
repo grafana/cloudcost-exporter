@@ -1,4 +1,4 @@
-package collector
+package provider
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
@@ -9,7 +9,8 @@ type Collector interface {
 	Collect() error
 	Name() string
 }
-type CSP interface {
+
+type Provider interface {
 	RegisterCollectors(registry *prometheus.Registry) error
 	CollectMetrics() error
 }

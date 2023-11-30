@@ -180,7 +180,7 @@ type Config struct {
 	ScrapeInterval  time.Duration
 }
 
-func NewCollector(config *Config, billingClient *billingv1.CloudCatalogClient, regionsClient *compute.RegionsClient, storageClient StorageClientInterface) (*Collector, error) {
+func New(config *Config, billingClient *billingv1.CloudCatalogClient, regionsClient *compute.RegionsClient, storageClient StorageClientInterface) (*Collector, error) {
 	if config.ProjectId == "" {
 		return nil, fmt.Errorf("projectID cannot be empty")
 	}

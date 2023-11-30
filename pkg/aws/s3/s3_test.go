@@ -187,13 +187,13 @@ func TestNewCollector(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			got, err := NewCollector(tt.args.region, tt.args.profile, tt.args.interval)
+			got, err := New(tt.args.region, tt.args.profile, tt.args.interval)
 			if err != nil && !tt.error {
-				t.Errorf("NewCollector() error = %v", err)
+				t.Errorf("New() error = %v", err)
 				return
 			}
 			if got == nil {
-				t.Errorf("NewCollector() = %v, want %v", got, tt.want)
+				t.Errorf("New() = %v, want %v", got, tt.want)
 			}
 		})
 	}
