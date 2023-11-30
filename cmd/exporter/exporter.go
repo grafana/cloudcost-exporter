@@ -37,7 +37,8 @@ func main() {
 	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
 	flag.StringVar(&cfg.ProjectID, "project-id", "ops-tools-1203", "Project ID to target.")
-	flag.IntVar(&cfg.Providers.GCP.DefaultDiscount, "gcp.default-discount", 19, "GCP default discount")
+	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
+	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
 	flag.Parse()
 
 	log.Print("Version ", version.Info())
@@ -60,7 +61,7 @@ func main() {
 			ProjectId:       cfg.ProjectID,
 			Region:          cfg.Providers.GCP.Region,
 			Projects:        cfg.Providers.GCP.Projects.String(),
-			DefaultDiscount: cfg.Providers.GCP.DefaultDiscount,
+			DefaultDiscount: cfg.Providers.GCP.DefaultGCSDiscount,
 			ScrapeInterval:  cfg.Collector.ScrapeInterval,
 			Services:        strings.Split(cfg.Providers.GCP.Services.String(), ","),
 		})
@@ -84,8 +85,8 @@ func main() {
 		EnableOpenMetrics: true,
 	}))
 
-	// TODO: Add proper shutdown sequence here. IE, listen for sigint and sigterm and shutdown gracefully.
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	log.Printf("Listening on %s", cfg.Server.Address)
+	if err = http.ListenAndServe(cfg.Server.Address, nil); err != nil {
 		log.Printf("Error listening and serving: %s", err)
 		os.Exit(1)
 	}

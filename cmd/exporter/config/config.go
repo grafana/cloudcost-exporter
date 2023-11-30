@@ -5,7 +5,6 @@ import (
 )
 
 type Config struct {
-	// TODO: Refactor this to become provider-agnostic
 	Provider  string
 	ProjectID string
 	Providers struct {
@@ -15,13 +14,17 @@ type Config struct {
 			Services StringSliceFlag
 		}
 		GCP struct {
-			DefaultDiscount int
-			Projects        StringSliceFlag
-			Region          string
-			Services        StringSliceFlag
+			DefaultGCSDiscount int
+			Projects           StringSliceFlag
+			Region             string
+			Services           StringSliceFlag
 		}
 	}
 	Collector struct {
 		ScrapeInterval time.Duration
+	}
+
+	Server struct {
+		Address string
 	}
 }
