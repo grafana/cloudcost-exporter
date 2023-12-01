@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"cloud.google.com/go/storage"
+
+	"github.com/grafana/cloudcost-exporter/mocks/pkg/google/gcs"
 )
 
 func TestNewBucketClient(t *testing.T) {
@@ -12,7 +14,7 @@ func TestNewBucketClient(t *testing.T) {
 		client StorageClientInterface
 	}{
 		"Empty client": {
-			client: &MockStorageClient{},
+			client: gcs.NewStorageClientInterface(t),
 		},
 	}
 	for name, test := range tests {
@@ -25,27 +27,14 @@ func TestNewBucketClient(t *testing.T) {
 	}
 }
 
-type MockStorageClient struct {
-	BucketsFunc func(ctx context.Context, projectID string) *storage.BucketIterator
-}
-
-func (m *MockStorageClient) Buckets(ctx context.Context, projectID string) *storage.BucketIterator {
-	return m.BucketsFunc(ctx, projectID)
-}
-
 func TestBucketClient_List(t *testing.T) {
-	mockClient := &MockStorageClient{
-		BucketsFunc: func(ctx context.Context, projectID string) *storage.BucketIterator {
-			return &storage.BucketIterator{}
-		},
-	}
 	tests := map[string]struct {
 		client   *BucketClient
 		projects []string
 		want     []*storage.BucketAttrs
 	}{
 		"no projects should result in no results": {
-			client:   NewBucketClient(mockClient),
+			client:   NewBucketClient(gcs.NewStorageClientInterface(t)),
 			projects: []string{},
 		},
 	}
