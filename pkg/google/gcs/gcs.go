@@ -17,6 +17,8 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/iterator"
+
+	pricing "github.com/grafana/cloudcost-exporter/pkg/google/services"
 )
 
 var (
@@ -75,66 +77,6 @@ var (
 	baseRegions    = []string{"asia", "eu", "us", "asia1", "eur4", "nam4"}
 )
 
-// This data was pulled from https://console.cloud.google.com/billing/01330B-0FCEED-DEADF1/pricing?organizationId=803894190427&project=grafanalabs-global on 2023-07-28
-// @pokom purposefully left out three discounts that don't fit:
-// 1. Region Standard Tagging Class A Operations
-// 2. Region Standard Tagging Class B Operations
-// 3. Duplicated Regional Standard Class B Operations
-// Filter on `Service Description: storage` and `Sku Description: operations`
-// TODO: Pull this data directly from BigQuery
-var operationsDiscountMap = map[string]map[string]map[string]float64{
-	"region": {
-		"archive": {
-			"class-a": 0.190,
-			"class-b": 0.190,
-		},
-		"coldline": {
-			"class-a": 0.595,
-			"class-b": 0.190,
-		},
-		"nearline": {
-			"class-a": 0.190,
-			"class-b": 0.190,
-		},
-		"standard": {
-			"class-a": 0.190,
-			"class-b": 0.190,
-		},
-		"regional": {
-			"class-a": 0.190,
-			"class-b": 0.190,
-		},
-	},
-	"multi-region": {
-		"coldline": {
-			"class-a": 0.795,
-			"class-b": 0.190,
-		},
-		"nearline": {
-			"class-a": 0.595,
-			"class-b": 0.190,
-		},
-		"standard": {
-			"class-a": 0.595,
-			"class-b": 0.190,
-		},
-		"multi_regional": {
-			"class-a": 0.595,
-			"class-b": 0.190,
-		},
-	},
-	"dual-region": {
-		"standard": {
-			"class-a": 0.595,
-			"class-b": 0.190,
-		},
-		"multi_regional": {
-			"class-a": 0.595,
-			"class-b": 0.190,
-		},
-	},
-}
-
 type Collector struct {
 	ProjectID     string
 	Projects      []string
@@ -147,6 +89,7 @@ type Collector struct {
 	bucketClient  *BucketClient
 	discount      int
 	CachedBuckets *BucketCache
+	pricingClient *pricing.PService
 }
 
 type BucketCache struct {
@@ -203,6 +146,7 @@ func New(config *Config, billingClient *billingv1.CloudCatalogClient, regionsCli
 		client:        billingClient,
 		regionsClient: regionsClient,
 		bucketClient:  bucketClient,
+		pricingClient: &pricing.PService{},
 		discount:      config.DefaultDiscount,
 		ctx:           ctx,
 		serviceName:   serviceName,
@@ -260,7 +204,7 @@ func (c *Collector) Collect() error {
 	defer CloudCostExporterHistogram.WithLabelValues("gcp").Observe(time.Since(now).Seconds())
 	c.nextScrape = time.Now().Add(c.interval)
 	NextScrapeScrapeGuage.Set(float64(c.nextScrape.Unix()))
-	ExporterOperationsDiscounts()
+	ExporterOperationsDiscounts(c.pricingClient)
 	err := ExportRegionalDiscounts(c.ctx, c.regionsClient, c.ProjectID, c.discount)
 	if err != nil {
 		log.Printf("Error exporting regional discounts: %v", err)
@@ -340,8 +284,9 @@ func ExportRegionalDiscounts(ctx context.Context, client *compute.RegionsClient,
 	return nil
 }
 
-func ExporterOperationsDiscounts() {
-	for locationType, locationMap := range operationsDiscountMap {
+func ExporterOperationsDiscounts(pricingService *pricing.PService) {
+	discountMap := pricing.GetOperationsDiscounts(pricingService)
+	for locationType, locationMap := range discountMap {
 		for storageClass, storageClassmap := range locationMap {
 			for opsClass, discount := range storageClassmap {
 				OperationsDiscountGauge.WithLabelValues(locationType, strings.ToUpper(storageClass), opsClass).Set(discount)
@@ -453,7 +398,7 @@ func parseOpSku(sku *billingpb.Sku) {
 	OperationsGauge.WithLabelValues(region, storageclass, opclass).Set(price)
 }
 
-// Return StorageClass similiar to what StackDriver has
+// StorageClassFromSkuDescription attempts to normalize the sku description to a storage class against what we'd see from StackDriver Exporter.
 func StorageClassFromSkuDescription(s string, region string) string {
 	if strings.Contains(s, "Coldline") {
 		return "COLDLINE"
