@@ -14,14 +14,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	computev1 "google.golang.org/api/compute/v1"
 
-	"github.com/grafana/cloudcost-exporter/pkg/collector"
 	"github.com/grafana/cloudcost-exporter/pkg/google/compute"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
+	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
 type GCP struct {
 	config     *Config
-	collectors []collector.Collector
+	collectors []provider.Collector
 }
 
 type Config struct {
@@ -33,10 +33,10 @@ type Config struct {
 	DefaultDiscount int
 }
 
-// NewGCP is responsible for pasing out a configuration file and setting up the associated services that could be required.
+// New is responsible for parsing out a configuration file and setting up the associated services that could be required.
 // We instantiate services to avoid repeating common services that may be shared across many collectors. In the future we can push
 // collector specific services further down.
-func NewGCP(config *Config) (*GCP, error) {
+func New(config *Config) (*GCP, error) {
 	ctx := context.Background()
 
 	computeService, err := computev1.NewService(ctx)
@@ -59,13 +59,13 @@ func NewGCP(config *Config) (*GCP, error) {
 		return nil, fmt.Errorf("could not create bucket client: %v", err)
 	}
 
-	var collectors []collector.Collector
+	var collectors []provider.Collector
 	for _, service := range config.Services {
 		log.Printf("Creating collector for %s", service)
-		var collector collector.Collector
+		var collector provider.Collector
 		switch strings.ToUpper(service) {
 		case "GCS":
-			collector, err = gcs.NewCollector(&gcs.Config{
+			collector, err = gcs.New(&gcs.Config{
 				ProjectId:       config.ProjectId,
 				Projects:        config.Projects,
 				ScrapeInterval:  config.ScrapeInterval,
@@ -76,7 +76,7 @@ func NewGCP(config *Config) (*GCP, error) {
 				continue
 			}
 		case "GKE":
-			collector = compute.NewCollector(&compute.Config{
+			collector = compute.New(&compute.Config{
 				Projects: config.Projects,
 			}, computeService, billingService)
 		default:
@@ -92,7 +92,7 @@ func NewGCP(config *Config) (*GCP, error) {
 	}, nil
 }
 
-// RegisterCollectors will iterate over all of the collectors instantiated during NewGCP and register their metrics.
+// RegisterCollectors will iterate over all of the collectors instantiated during New and register their metrics.
 func (g *GCP) RegisterCollectors(registry *prometheus.Registry) error {
 	for _, c := range g.collectors {
 		if err := c.Register(registry); err != nil {
@@ -102,12 +102,12 @@ func (g *GCP) RegisterCollectors(registry *prometheus.Registry) error {
 	return nil
 }
 
-// CollectMetrics will collect metrics from all collectors available on the CSP
+// CollectMetrics will collect metrics from all collectors available on the Provider
 func (g *GCP) CollectMetrics() error {
 	wg := sync.WaitGroup{}
 	wg.Add(len(g.collectors))
 	for _, c := range g.collectors {
-		go func(c collector.Collector) {
+		go func(c provider.Collector) {
 			log.Printf("Collecting metrics from %s", c.Name())
 			defer wg.Done()
 			if err := c.Collect(); err != nil {

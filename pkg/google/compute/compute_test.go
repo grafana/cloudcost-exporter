@@ -31,7 +31,7 @@ func TestMain(m *testing.M) {
 		// TODO Configure tests so the container gets application credentials by default
 		log.Printf("Error creating billing billingService: %s", err)
 	}
-	collector = NewCollector(&Config{
+	collector = New(&Config{
 		Projects: "some_project",
 	}, computeService, billingService)
 	code := m.Run()

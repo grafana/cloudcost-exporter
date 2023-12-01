@@ -107,8 +107,8 @@ type Collector struct {
 	nextScrape time.Time
 }
 
-// NewCollector creates a new Collector with a client and scrape interval defined.
-func NewCollector(region string, profile string, scrapeInterval time.Duration) (*Collector, error) {
+// New creates a new Collector with a client and scrape interval defined.
+func New(region string, profile string, scrapeInterval time.Duration) (*Collector, error) {
 	// There are two scenarios:
 	// 1. Running locally, the user must pass in a region and profile to use
 	// 2. Running within an EC2 instance and the region and profile can be derived

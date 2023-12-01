@@ -8,7 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
-	"github.com/grafana/cloudcost-exporter/pkg/collector"
+	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
 type Config struct {
@@ -20,17 +20,17 @@ type Config struct {
 
 type AWS struct {
 	Config     *Config
-	collectors []collector.Collector
+	collectors []provider.Collector
 }
 
 var services = []string{"S3"}
 
-func NewAWS(config *Config) (*AWS, error) {
-	var collectors []collector.Collector
+func New(config *Config) (*AWS, error) {
+	var collectors []provider.Collector
 	for _, service := range services {
 		switch service {
 		case "S3":
-			collector, err := s3.NewCollector(config.Region, config.Profile, config.ScrapeInterval)
+			collector, err := s3.New(config.Region, config.Profile, config.ScrapeInterval)
 			if err != nil {
 				return nil, fmt.Errorf("error creating s3 collector: %w", err)
 			}
