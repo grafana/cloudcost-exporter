@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -108,27 +107,7 @@ type Collector struct {
 }
 
 // New creates a new Collector with a client and scrape interval defined.
-func New(region string, profile string, scrapeInterval time.Duration) (*Collector, error) {
-	// There are two scenarios:
-	// 1. Running locally, the user must pass in a region and profile to use
-	// 2. Running within an EC2 instance and the region and profile can be derived
-	// I'm going to use the AWS SDK to handle this for me. If the user has provided a region and profile, it will use that.
-	// If not, it will use the EC2 instance metadata service to determine the region and credentials.
-	// This is the same logic that the AWS CLI uses, so it should be fine.
-	options := []func(*config.LoadOptions) error{config.WithEC2IMDSRegion()}
-	if region != "" {
-		options = append(options, config.WithRegion(region))
-	}
-	if profile != "" {
-		options = append(options, config.WithSharedConfigProfile(profile))
-	}
-	cfg, err := config.LoadDefaultConfig(context.Background(), options...)
-	if err != nil {
-		return &Collector{}, err
-	}
-
-	client := costexplorer.NewFromConfig(cfg)
-
+func New(scrapeInterval time.Duration, client *costexplorer.Client) (*Collector, error) {
 	return &Collector{
 		client:   client,
 		interval: scrapeInterval,
