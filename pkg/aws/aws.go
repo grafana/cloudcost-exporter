@@ -8,7 +8,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
-	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
 type Config struct {
@@ -20,13 +19,13 @@ type Config struct {
 
 type AWS struct {
 	Config     *Config
-	collectors []provider.Collector
+	collectors []prometheus.Collector
 }
 
 var services = []string{"S3"}
 
 func New(config *Config) (*AWS, error) {
-	var collectors []provider.Collector
+	var collectors []prometheus.Collector
 	for _, service := range services {
 		switch service {
 		case "S3":
@@ -47,21 +46,14 @@ func New(config *Config) (*AWS, error) {
 }
 
 func (a *AWS) RegisterCollectors(registry *prometheus.Registry) error {
-	log.Printf("Registering %d collectors for AWS", len(a.collectors))
 	for _, c := range a.collectors {
-		if err := c.Register(registry); err != nil {
-			return err
+		if err := registry.Register(c); err != nil {
+			return fmt.Errorf("error registering collector: %w", err)
 		}
 	}
 	return nil
 }
 
 func (a *AWS) CollectMetrics() error {
-	log.Printf("Collecting metrics for %d collectors for AWS", len(a.collectors))
-	for _, c := range a.collectors {
-		if err := c.Collect(); err != nil {
-			return err
-		}
-	}
 	return nil
 }

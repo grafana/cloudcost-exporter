@@ -97,7 +97,12 @@ var (
 		Name: "aws_cost_exporter_next_scrape",
 		Help: "The next time the exporter will scrape AWS billing data. Can be used to trigger alerts if now - nextScrape > interval",
 	})
+
+	// Up is a gauge that tracks if the last scrape was successful
+	Up = prometheus.NewDesc(prometheus.BuildFQName("aws", subSystem, "up"), "Was the last scrape of the AWS S3 API successful.", nil, nil)
 )
+
+const subSystem = "s3"
 
 // Collector is the AWS implementation of the Collector interface
 // It is responsible for registering and collecting metrics
@@ -128,7 +133,6 @@ func New(region string, profile string, scrapeInterval time.Duration) (*Collecto
 	}
 
 	client := costexplorer.NewFromConfig(cfg)
-
 	return &Collector{
 		client:   client,
 		interval: scrapeInterval,
@@ -141,28 +145,28 @@ func (r *Collector) Name() string {
 	return "S3"
 }
 
-// Register is called prior to the first collection. It registers any custom metric that needs to be exported for AWS billing data
-func (r *Collector) Register(registry *prometheus.Registry) error {
-	registry.MustRegister(StorageGauge)
-	registry.MustRegister(OperationsGauge)
-	registry.MustRegister(RequestCount)
-	registry.MustRegister(NextScrapeGuage)
-	registry.MustRegister(RequestErrorsCount)
-
-	return nil
-}
-
 // Collect is the function that will be called by the Prometheus client anytime a scrape is performed.
-func (r *Collector) Collect() error {
+func (r *Collector) Collect(ch chan<- prometheus.Metric) {
 	now := time.Now()
 	// If the nextScrape time is in the future, return nil and do not scrape
 	// :fire: This is to _mitigate_ expensive API calls to the cost explorer API
 	if r.nextScrape.After(now) {
-		return nil
+		ch <- prometheus.MustNewConstMetric(Up, prometheus.GaugeValue, 1)
+		return
 	}
 	r.nextScrape = time.Now().Add(r.interval)
 	NextScrapeGuage.Set(float64(r.nextScrape.Unix()))
-	return ExportBillingData(r.client)
+	up := ExportBillingData(r.client, nil)
+	ch <- prometheus.MustNewConstMetric(Up, prometheus.GaugeValue, up)
+}
+
+// Describe is called by the Prometheus client on startup. It should return a description of the metrics that are exported.
+func (r *Collector) Describe(ch chan<- *prometheus.Desc) {
+	StorageGauge.Describe(ch)
+	OperationsGauge.Describe(ch)
+	RequestCount.Describe(ch)
+	RequestErrorsCount.Describe(ch)
+	NextScrapeGuage.Describe(ch)
 }
 
 // S3BillingData is the struct for the data we will be collecting
@@ -347,35 +351,37 @@ func getComponentFromKey(key string) string {
 }
 
 // ExportBillingData will query the previous 30 days of S3 billing data and export it to the prometheus metrics
-func ExportBillingData(client *costexplorer.Client) error {
+func ExportBillingData(client *costexplorer.Client, ch chan<- prometheus.Metric) float64 {
 	// We go one day into the past as the current days billing data has no guarantee of being complete
 	endDate := time.Now().AddDate(0, 0, -1)
 	// Current assumption is that we're going to pull 30 days worth of billing data
 	startDate := endDate.AddDate(0, 0, -30)
 	s3BillingData, err := getBillingData(client, startDate, endDate)
 	if err != nil {
-		return err
+		return 0
 	}
 
-	exportMetrics(s3BillingData)
-	return nil
+	exportMetrics(s3BillingData, ch)
+	return 1
 }
 
 // exportMetrics will iterate over the S3BillingData and export the metrics to prometheus
-func exportMetrics(s3BillingData S3BillingData) {
+func exportMetrics(s3BillingData S3BillingData, ch chan<- prometheus.Metric) {
 	log.Printf("Exporting metrics for %d regions\n", len(s3BillingData.Regions))
 	for region, pricingModel := range s3BillingData.Regions {
 		for component, pricing := range pricingModel.Model {
+			log.Printf("Exporting metrics for %s:%v\n", region, pricing)
 			switch component {
 			case "Requests-Tier1":
-				OperationsGauge.WithLabelValues(region, StandardLabel, "1").Set(pricing.UnitCost)
+				ch <- prometheus.MustNewConstMetric(OperationsGauge.WithLabelValues(region, StandardLabel, "1").Desc(), prometheus.GaugeValue, pricing.UnitCost, region, StandardLabel, "1")
 			case "Requests-Tier2":
-				OperationsGauge.WithLabelValues(region, StandardLabel, "2").Set(pricing.UnitCost)
+				ch <- prometheus.MustNewConstMetric(OperationsGauge.WithLabelValues(region, StandardLabel, "2").Desc(), prometheus.GaugeValue, pricing.UnitCost, region, StandardLabel, "2")
 			case "TimedStorage":
-				StorageGauge.WithLabelValues(region, StandardLabel).Set(pricing.UnitCost)
+				ch <- prometheus.MustNewConstMetric(StorageGauge.WithLabelValues(region, StandardLabel).Desc(), prometheus.GaugeValue, pricing.UnitCost, region, StandardLabel)
 			}
 		}
 	}
+	return
 }
 
 // unitCostForComponent will calculate the unit cost for a given component. This is necessary because the
