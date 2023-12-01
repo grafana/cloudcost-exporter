@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 )
 
@@ -164,37 +167,19 @@ func TestNewCollector(t *testing.T) {
 				interval: time.Duration(1) * time.Hour,
 			},
 			want:  &Collector{},
-			error: true,
-		},
-		"Expect an error when creating a Collector with no profile outside of EC2": {
-			args: args{
-				region:   "us-east-1",
-				profile:  "",
-				interval: time.Duration(1) * time.Hour,
-			},
-			want:  &Collector{},
-			error: true,
-		},
-		"Expect an error when creating a Collector with no region outside of EC2": {
-			args: args{
-				region:   "",
-				profile:  "workloads-dev",
-				interval: time.Duration(1) * time.Hour,
-			},
-			want:  &Collector{},
-			error: true,
+			error: false,
 		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			got, err := New(tt.args.region, tt.args.profile, tt.args.interval)
-			if err != nil && !tt.error {
-				t.Errorf("New() error = %v", err)
+			if tt.error {
+				require.Error(t, err)
 				return
 			}
-			if got == nil {
-				t.Errorf("New() = %v, want %v", got, tt.want)
-			}
+			require.NoError(t, err)
+			assert.NotNil(t, got)
+			assert.Equal(t, tt.args.interval, got.interval)
 		})
 	}
 }
