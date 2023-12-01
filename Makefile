@@ -1,7 +1,12 @@
 .PHONY: build-image build-binary build test push push-dev
 
 current_makefile_dir := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
-include $(current_makefile_dir)/../common.inc
+
+# deployment_tools/docker/image-tag.sh
+VERSION=dev-$(shell date +%Y-%m-%d)-$(shell git rev-parse --short HEAD)
+
+# deployment_tools/docker/common.inc
+IMAGE_PREFIX=us.gcr.io/kubernetes-dev
 
 IMAGE_NAME=cloudcost-exporter
 IMAGE_NAME_LATEST=${IMAGE_PREFIX}/${IMAGE_NAME}:latest
