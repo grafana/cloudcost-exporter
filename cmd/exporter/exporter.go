@@ -33,7 +33,7 @@ func ProviderFlags(fs *flag.FlagSet, awsProfiles, gcpProjects, awsServices, gcpS
 func main() {
 	var cfg config.Config
 	ProviderFlags(flag.CommandLine, &cfg.Providers.AWS.Profiles, &cfg.Providers.GCP.Projects, &cfg.Providers.AWS.Services, &cfg.Providers.GCP.Services)
-	targetProvider := flag.String("provider", "aws", "AWS or GCP")
+	targetProvider := flag.String("provider", "aws", "aws or gcp")
 	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
 	flag.StringVar(&cfg.ProjectID, "project-id", "ops-tools-1203", "Project ID to target.")
