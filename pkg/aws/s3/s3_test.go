@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -151,9 +152,8 @@ func TestS3BillingData_AddRegion(t *testing.T) {
 
 func TestNewCollector(t *testing.T) {
 	type args struct {
-		region   string
-		profile  string
 		interval time.Duration
+		client   *costexplorer.Client
 	}
 	tests := map[string]struct {
 		args  args
@@ -162,8 +162,6 @@ func TestNewCollector(t *testing.T) {
 	}{
 		"Create a new collector": {
 			args: args{
-				region:   "us-east-1",
-				profile:  "workloads-dev",
 				interval: time.Duration(1) * time.Hour,
 			},
 			want:  &Collector{},
@@ -172,7 +170,7 @@ func TestNewCollector(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			got, err := New(tt.args.region, tt.args.profile, tt.args.interval)
+			got, err := New(tt.args.interval, tt.args.client)
 			if tt.error {
 				require.Error(t, err)
 				return
