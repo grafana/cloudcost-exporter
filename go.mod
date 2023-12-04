@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/billing v1.17.4
 	cloud.google.com/go/compute v1.23.3
 	cloud.google.com/go/storage v1.35.1
-	github.com/aws/aws-sdk-go-v2 v1.23.4
+	github.com/aws/aws-sdk-go-v2 v1.23.5
 	github.com/aws/aws-sdk-go-v2/config v1.25.10
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.33.1
 	github.com/google/go-cmp v0.6.0
