@@ -2,9 +2,13 @@ package gcs
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"cloud.google.com/go/storage"
+	"github.com/stretchr/testify/assert"
+	"google.golang.org/api/option"
 
 	"github.com/grafana/cloudcost-exporter/mocks/pkg/google/gcs"
 )
@@ -29,27 +33,50 @@ func TestNewBucketClient(t *testing.T) {
 
 func TestBucketClient_List(t *testing.T) {
 	tests := map[string]struct {
-		client   *BucketClient
+		server   *httptest.Server
 		projects []string
-		want     []*storage.BucketAttrs
+		want     int
+		wantErr  bool
 	}{
 		"no projects should result in no results": {
-			client:   NewBucketClient(gcs.NewStorageClientInterface(t)),
-			projects: []string{},
+			projects: []string{"project-1"},
+			server: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"items": []}`))
+			})),
+			want:    0,
+			wantErr: false,
+		},
+		"one item should result in one bucket": {
+			projects: []string{"project-1"},
+			server: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"items": [{"name": "testing-123"}]}`))
+			})),
+			want:    1,
+			wantErr: false,
+		},
+		"An error should be handled": {
+			projects: []string{"project-1"},
+			server: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(``))
+			},
+			)),
+			want:    0,
+			wantErr: true,
 		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			for _, project := range test.projects {
-				got, err := test.client.List(context.Background(), project)
-				if err != nil {
-					t.Errorf("unexpected error: %s", err)
-				}
-				if len(got) != len(test.want) {
-					t.Errorf("expected %d buckets, got %d", len(test.want), len(got))
-				}
+				sc, _ := storage.NewClient(context.Background(), option.WithEndpoint(test.server.URL))
+				bc := NewBucketClient(sc)
+				got, err := bc.List(context.Background(), project)
+				assert.Equal(t, test.wantErr, err != nil)
+				assert.NotNil(t, got)
+				assert.Equal(t, test.want, len(got))
 			}
-
 		})
 	}
 }
