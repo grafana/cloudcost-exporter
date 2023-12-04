@@ -71,7 +71,7 @@ func TestBucketClient_List(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			for _, project := range test.projects {
-				sc, err := storage.NewClient(context.Background(), option.WithEndpoint(test.server.URL))
+				sc, err := storage.NewClient(context.Background(), option.WithEndpoint(test.server.URL), option.WithAPIKey("hunter2"))
 				require.NoError(t, err)
 				bc := NewBucketClient(sc)
 				got, err := bc.List(context.Background(), project)
