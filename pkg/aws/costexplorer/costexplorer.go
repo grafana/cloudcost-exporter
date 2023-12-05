@@ -7,15 +7,15 @@ import (
 )
 
 var (
-	_ CostExplorable = Client{}
+	_ CostExplorer = Client{}
 )
 
-type CostExplorable interface {
+type CostExplorer interface {
 	GetCostAndUsage(ctx context.Context, params *costexplorer.GetCostAndUsageInput, optFns ...func(*costexplorer.Options)) (*costexplorer.GetCostAndUsageOutput, error)
 }
 
 type Client struct {
-	c CostExplorable
+	c CostExplorer
 }
 
 func (c Client) GetCostAndUsage(ctx context.Context, params *costexplorer.GetCostAndUsageInput, optFns ...func(*costexplorer.Options)) (*costexplorer.GetCostAndUsageOutput, error) {

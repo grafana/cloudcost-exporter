@@ -160,7 +160,7 @@ func TestS3BillingData_AddRegion(t *testing.T) {
 func TestNewCollector(t *testing.T) {
 	type args struct {
 		interval time.Duration
-		client   costexplorer.CostExplorable
+		client   costexplorer.CostExplorer
 	}
 	tests := map[string]struct {
 		args  args
@@ -177,7 +177,7 @@ func TestNewCollector(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			c := mockcostexplorer.NewCostExplorable(t)
+			c := mockcostexplorer.NewCostExplorer(t)
 
 			got, err := New(tt.args.interval, c)
 			if tt.error {
@@ -221,7 +221,7 @@ func TestExportBillingData(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ce := mockcostexplorer.NewCostExplorable(t)
+			ce := mockcostexplorer.NewCostExplorer(t)
 			if tc.GetCostAndUsage != nil {
 				ce.EXPECT().
 					GetCostAndUsage(mock.Anything, mock.Anything, mock.Anything).
