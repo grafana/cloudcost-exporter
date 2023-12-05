@@ -1,10 +1,17 @@
 package gcs
 
 import (
+	"context"
 	"testing"
 
+	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
+	compute "cloud.google.com/go/compute/apiv1"
+	"github.com/stretchr/testify/assert"
+	"google.golang.org/api/option"
 	"google.golang.org/genproto/googleapis/type/money"
+
+	"github.com/grafana/cloudcost-exporter/mocks/pkg/google/gcs"
 )
 
 func TestStorageclassFromSkuDescription(t *testing.T) {
@@ -130,4 +137,16 @@ func TestMisformedPricingInfoFromSku(t *testing.T) {
 			t.Errorf(testcase.descr)
 		}
 	}
+}
+
+func TestNew(t *testing.T) {
+	billingClient, _ := billingv1.NewCloudCatalogClient(context.Background(), option.WithAPIKey("hunter2"))
+	regionsClient, _ := compute.NewRegionsRESTClient(context.Background())
+	storageClient := gcs.NewStorageClientInterface(t)
+	t.Run("should return a non-nil client", func(t *testing.T) {
+		client, _ := New(&Config{
+			ProjectId: "project-1",
+		}, billingClient, regionsClient, storageClient)
+		assert.NotNil(t, client)
+	})
 }
