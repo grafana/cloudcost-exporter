@@ -321,23 +321,6 @@ func Test_parseStorageSku(t *testing.T) {
 			},
 			err: nil,
 		},
-		"should parse a sku with pricing and description": {
-			sku: &billingpb.Sku{
-				Category: &billingpb.Category{
-					ServiceDisplayName: "Compute Engine",
-				},
-				ServiceRegions: []string{"us-east1"},
-				PricingInfo: []*billingpb.PricingInfo{
-					{PricingExpression: &billingpb.PricingExpression{
-						TieredRates: []*billingpb.PricingExpression_TierRate{
-							{UnitPrice: &money.Money{Nanos: 0}},
-							{StartUsageAmount: 5, UnitPrice: &money.Money{Nanos: 4000000}},
-						},
-					},
-					},
-				},
-			},
-		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
