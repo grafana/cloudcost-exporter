@@ -271,6 +271,10 @@ func parseBillingData(outputs []*awscostexplorer.GetCostAndUsageOutput) S3Billin
 	for _, output := range outputs {
 		for _, result := range output.ResultsByTime {
 			for _, group := range result.Groups {
+				if group.Keys == nil {
+					log.Printf("skipping group without keys")
+					continue
+				}
 				key := group.Keys[0]
 				region := getRegionFromKey(key)
 				component := getComponentFromKey(key)
