@@ -250,3 +250,99 @@ func Test_parseOpSku(t *testing.T) {
 		})
 	}
 }
+func Test_parseStorageSku(t *testing.T) {
+	tests := map[string]struct {
+		sku *billingpb.Sku
+		err error
+	}{
+		"should fail to parse sku with no pricing info": {
+			sku: &billingpb.Sku{
+				Category: &billingpb.Category{
+					ServiceDisplayName: "Compute Engine",
+				},
+				ServiceRegions: []string{"us-east1"},
+			},
+			err: invalidSku,
+		},
+		"should fail to parse sku with unknown pricing unit": {
+			sku: &billingpb.Sku{
+				Category: &billingpb.Category{
+					ServiceDisplayName: "Compute Engine",
+				},
+				ServiceRegions: []string{"us-east1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{PricingExpression: &billingpb.PricingExpression{
+						UsageUnitDescription: "unknown",
+						TieredRates: []*billingpb.PricingExpression_TierRate{
+							{UnitPrice: &money.Money{Nanos: 0}},
+							{StartUsageAmount: 5, UnitPrice: &money.Money{Nanos: 4000000}},
+						},
+					},
+					},
+				},
+			},
+			err: unknownPricingUnit,
+		},
+		"should parse a sku with one pricing unit with gibDaily": {
+			sku: &billingpb.Sku{
+				Category: &billingpb.Category{
+					ServiceDisplayName: "Compute Engine",
+				},
+				ServiceRegions: []string{"us-east1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{PricingExpression: &billingpb.PricingExpression{
+						UsageUnitDescription: gibDay,
+						TieredRates: []*billingpb.PricingExpression_TierRate{
+							{UnitPrice: &money.Money{Nanos: 0}},
+							{StartUsageAmount: 5, UnitPrice: &money.Money{Nanos: 4000000}},
+						},
+					},
+					},
+				},
+			},
+			err: nil,
+		},
+		"should parse a sku with one pricing unit with gibMonthly": {
+			sku: &billingpb.Sku{
+				Category: &billingpb.Category{
+					ServiceDisplayName: "Compute Engine",
+				},
+				ServiceRegions: []string{"us-east1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{PricingExpression: &billingpb.PricingExpression{
+						UsageUnitDescription: gibMonthly,
+						TieredRates: []*billingpb.PricingExpression_TierRate{
+							{UnitPrice: &money.Money{Nanos: 0}},
+							{StartUsageAmount: 5, UnitPrice: &money.Money{Nanos: 4000000}},
+						},
+					},
+					},
+				},
+			},
+			err: nil,
+		},
+		"should parse a sku with pricing and description": {
+			sku: &billingpb.Sku{
+				Category: &billingpb.Category{
+					ServiceDisplayName: "Compute Engine",
+				},
+				ServiceRegions: []string{"us-east1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{
+							{UnitPrice: &money.Money{Nanos: 0}},
+							{StartUsageAmount: 5, UnitPrice: &money.Money{Nanos: 4000000}},
+						},
+					},
+					},
+				},
+			},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := parseStorageSku(tt.sku)
+			assert.ErrorIs(t, err, tt.err)
+		})
+	}
+}

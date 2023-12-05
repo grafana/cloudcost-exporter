@@ -76,8 +76,9 @@ var (
 )
 
 var (
-	taggingError = errors.New("tagging sku's is not supported")
-	invalidSku   = errors.New("invalid sku")
+	taggingError       = errors.New("tagging sku's is not supported")
+	invalidSku         = errors.New("invalid sku")
+	unknownPricingUnit = errors.New("unknown pricing unit")
 )
 
 // This data was pulled from https://console.cloud.google.com/billing/01330B-0FCEED-DEADF1/pricing?organizationId=803894190427&project=grafanalabs-global on 2023-07-28
@@ -142,6 +143,8 @@ var operationsDiscountMap = map[string]map[string]map[string]float64{
 
 const (
 	collectorName = "GCS"
+	gibMonthly    = "gibibyte month"
+	gibDay        = "gibibyte day"
 )
 
 type Collector struct {
@@ -405,27 +408,28 @@ func getPriceFromSku(sku *billingpb.Sku) (float64, error) {
 	return 1e-9 * float64(tierRate.UnitPrice.Nanos), nil // Convert NanoUSD to USD when return
 }
 
-func parseStorageSku(sku *billingpb.Sku) {
-	priceInfo := sku.PricingInfo[0]
+func parseStorageSku(sku *billingpb.Sku) error {
 	price, err := getPriceFromSku(sku)
 	if err != nil {
-		// TODO(fedor): just skip bad sku for now
-		log.Printf("error getting price for sku: %v", err)
+		return err
 	}
+	priceInfo := sku.PricingInfo[0]
 	priceUnit := priceInfo.PricingExpression.UsageUnitDescription
 
 	// Adjust price to hourly
-	if priceUnit == "gibibyte month" {
+	if priceUnit == gibMonthly {
 		price = price / 31 / 24
-	} else if priceUnit == "gibibyte day" { // For Early-Delete in Archive, CloudStorage and Nearline classes
+	} else if priceUnit == gibDay {
+		// For Early-Delete in Archive, CloudStorage and Nearline classes
 		price = price / 24
 	} else {
-		fmt.Fprintf(os.Stderr, "Unknown price unit for SKU: %s, unit: %s\n", sku.Description, priceUnit)
+		return fmt.Errorf("%w:%s, %s", unknownPricingUnit, sku.Description, priceUnit)
 	}
 
 	region := RegionNameSameAsStackdriver(sku.ServiceRegions[0])
 	storageclass := StorageClassFromSkuDescription(sku.Description, region)
 	StorageGauge.WithLabelValues(region, storageclass).Set(price)
+	return nil
 }
 
 func parseOpSku(sku *billingpb.Sku) error {
