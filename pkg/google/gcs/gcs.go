@@ -75,6 +75,11 @@ var (
 	baseRegions    = []string{"asia", "eu", "us", "asia1", "eur4", "nam4"}
 )
 
+var (
+	taggingError = errors.New("tagging sku's is not supported")
+	invalidSku   = errors.New("invalid sku")
+)
+
 // This data was pulled from https://console.cloud.google.com/billing/01330B-0FCEED-DEADF1/pricing?organizationId=803894190427&project=grafanalabs-global on 2023-07-28
 // @pokom purposefully left out three discounts that don't fit:
 // 1. Region Standard Tagging Class A Operations
@@ -135,18 +140,22 @@ var operationsDiscountMap = map[string]map[string]map[string]float64{
 	},
 }
 
+const (
+	collectorName = "GCS"
+)
+
 type Collector struct {
-	ProjectID     string
-	Projects      []string
-	client        *billingv1.CloudCatalogClient
-	serviceName   string
-	ctx           context.Context
-	interval      time.Duration
-	nextScrape    time.Time
-	regionsClient RegionsClient
-	bucketClient  *BucketClient
-	discount      int
-	CachedBuckets *BucketCache
+	ProjectID          string
+	Projects           []string
+	cloudCatalogClient CloudCatalogClient
+	serviceName        string
+	ctx                context.Context
+	interval           time.Duration
+	nextScrape         time.Time
+	regionsClient      RegionsClient
+	bucketClient       *BucketClient
+	discount           int
+	CachedBuckets      *BucketCache
 }
 
 type Config struct {
@@ -154,13 +163,19 @@ type Config struct {
 	Projects        string
 	DefaultDiscount int
 	ScrapeInterval  time.Duration
+	ServiceName     string
 }
 
 type RegionsClient interface {
 	List(ctx context.Context, req *computepb.ListRegionsRequest, opts ...gax.CallOption) *compute.RegionIterator
 }
 
-func New(config *Config, billingClient *billingv1.CloudCatalogClient, regionsClient RegionsClient, storageClient StorageClientInterface) (*Collector, error) {
+type CloudCatalogClient interface {
+	ListServices(ctx context.Context, req *billingpb.ListServicesRequest, opts ...gax.CallOption) *billingv1.ServiceIterator
+	ListSkus(ctx context.Context, req *billingpb.ListSkusRequest, opts ...gax.CallOption) *billingv1.SkuIterator
+}
+
+func New(config *Config, cloudCatalogClient CloudCatalogClient, regionsClient RegionsClient, storageClient StorageClientInterface) (*Collector, error) {
 	if config.ProjectId == "" {
 		return nil, fmt.Errorf("projectID cannot be empty")
 	}
@@ -173,20 +188,16 @@ func New(config *Config, billingClient *billingv1.CloudCatalogClient, regionsCli
 	}
 	bucketClient := NewBucketClient(storageClient)
 
-	serviceName, err := getServiceNameByReadableName(ctx, billingClient, "Cloud Storage")
-	if err != nil {
-		return nil, err
-	}
 	return &Collector{
-		ProjectID:     config.ProjectId,
-		Projects:      projects,
-		client:        billingClient,
-		regionsClient: regionsClient,
-		bucketClient:  bucketClient,
-		discount:      config.DefaultDiscount,
-		ctx:           ctx,
-		serviceName:   serviceName,
-		interval:      config.ScrapeInterval,
+		ProjectID:          config.ProjectId,
+		Projects:           projects,
+		cloudCatalogClient: cloudCatalogClient,
+		regionsClient:      regionsClient,
+		bucketClient:       bucketClient,
+		discount:           config.DefaultDiscount,
+		ctx:                ctx,
+		serviceName:        config.ServiceName,
+		interval:           config.ScrapeInterval,
 		// Set nextScrape to the current time minus the scrape interval so that the first scrape will run immediately
 		nextScrape:    time.Now().Add(-config.ScrapeInterval),
 		CachedBuckets: NewBucketCache(),
@@ -194,10 +205,10 @@ func New(config *Config, billingClient *billingv1.CloudCatalogClient, regionsCli
 }
 
 func (c *Collector) Name() string {
-	return "GCS"
+	return collectorName
 }
 
-func getServiceNameByReadableName(ctx context.Context, client *billingv1.CloudCatalogClient, name string) (string, error) {
+func GetServiceNameByReadableName(ctx context.Context, client CloudCatalogClient, name string) (string, error) {
 	serviceList := client.ListServices(ctx, &billingpb.ListServicesRequest{})
 	for {
 		row, err := serviceList.Next()
@@ -249,7 +260,7 @@ func (c *Collector) Collect() error {
 	if err != nil {
 		log.Printf("Error exporting bucket info: %v", err)
 	}
-	return ExportGCPCostData(c.ctx, c.client, c.serviceName)
+	return ExportGCPCostData(c.ctx, c.cloudCatalogClient, c.serviceName)
 }
 
 // ExportBucketInfo will list all buckets for a given project and export the data as a prometheus metric.
@@ -330,7 +341,7 @@ func ExporterOperationsDiscounts() {
 	}
 }
 
-func ExportGCPCostData(ctx context.Context, client *billingv1.CloudCatalogClient, serviceName string) error {
+func ExportGCPCostData(ctx context.Context, client CloudCatalogClient, serviceName string) error {
 	skuResponse := client.ListSkus(ctx, &billingpb.ListSkusRequest{
 		Parent: serviceName,
 	})
@@ -364,7 +375,9 @@ func ExportGCPCostData(ctx context.Context, client *billingv1.CloudCatalogClient
 			continue
 		}
 		if strings.HasSuffix(sku.Category.ResourceGroup, "Ops") {
-			parseOpSku(sku)
+			if err = parseOpSku(sku); err != nil {
+				log.Printf("error parsing op sku: %v", err)
+			}
 			continue
 		}
 		fmt.Fprintf(os.Stderr, "Unknown sku: %s\n", sku.Description)
@@ -376,7 +389,7 @@ func getPriceFromSku(sku *billingpb.Sku) (float64, error) {
 	// TODO: Do we need to support Multiple PricingInfo?
 	// That not needed here as we query only actual pricing
 	if len(sku.PricingInfo) < 1 {
-		return 0.0, fmt.Errorf("found sku without PricingInfo: %+v", sku)
+		return 0.0, fmt.Errorf("%w:%s", invalidSku, sku.Description)
 	}
 	priceInfo := sku.PricingInfo[0]
 
@@ -415,15 +428,14 @@ func parseStorageSku(sku *billingpb.Sku) {
 	StorageGauge.WithLabelValues(region, storageclass).Set(price)
 }
 
-func parseOpSku(sku *billingpb.Sku) {
+func parseOpSku(sku *billingpb.Sku) error {
 	if strings.Contains(sku.Description, "Tagging") {
-		return
+		return taggingError
 	}
 
 	price, err := getPriceFromSku(sku)
 	if err != nil {
-		// TODO(fedor): just skip bad sku for now
-		log.Printf("error getting price for sku: %v", err)
+		return err
 	}
 
 	region := RegionNameSameAsStackdriver(sku.ServiceRegions[0])
@@ -431,6 +443,7 @@ func parseOpSku(sku *billingpb.Sku) {
 	opclass := OpClassFromSkuDescription(sku.Description)
 
 	OperationsGauge.WithLabelValues(region, storageclass, opclass).Set(price)
+	return nil
 }
 
 // Return StorageClass similiar to what StackDriver has
@@ -458,6 +471,10 @@ func StorageClassFromSkuDescription(s string, region string) string {
 	return s
 }
 
+// OpClassFromSkuDescription normalizes sku description to one of the following:
+// - If the opsclass contains Class A, it's "class-a"
+// - If the opsclass contains Class B, it's "class-b"
+// - Otherwise, return the original opsclass
 func OpClassFromSkuDescription(s string) string {
 	if strings.Contains(s, "Class A") {
 		return "class-a"
@@ -467,8 +484,8 @@ func OpClassFromSkuDescription(s string) string {
 	return s
 }
 
-// Google Cost API returns region names exactly the same how they are refered in StackDriver metrics,
-// except one case:
+// RegionNameSameAsStackdriver will normalize region collectorName to be the same as what Stackdriver uses.
+// Google Cost API returns region names exactly the same how they are refered in StackDriver metrics except one case:
 // For Europe multi-region:
 // API returns "europe", while Stackdriver uses "eu" label value.
 func RegionNameSameAsStackdriver(s string) string {

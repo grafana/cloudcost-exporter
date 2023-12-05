@@ -44,9 +44,9 @@ func New(config *Config) (*GCP, error) {
 		return nil, fmt.Errorf("error creating compute computeService: %w", err)
 	}
 
-	billingService, err := billingv1.NewCloudCatalogClient(ctx)
+	cloudCatalogClient, err := billingv1.NewCloudCatalogClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("error creating billing billingService: %w", err)
+		return nil, fmt.Errorf("error creating cloudCatalogClient: %w", err)
 	}
 
 	regionsClient, err := computeapiv1.NewRegionsRESTClient(ctx)
@@ -65,12 +65,17 @@ func New(config *Config) (*GCP, error) {
 		var collector provider.Collector
 		switch strings.ToUpper(service) {
 		case "GCS":
+			serviceName, err := gcs.GetServiceNameByReadableName(ctx, cloudCatalogClient, "Cloud Storage")
+			if err != nil {
+				return nil, fmt.Errorf("could not get service name for GCS: %v", err)
+			}
 			collector, err = gcs.New(&gcs.Config{
 				ProjectId:       config.ProjectId,
 				Projects:        config.Projects,
 				ScrapeInterval:  config.ScrapeInterval,
 				DefaultDiscount: config.DefaultDiscount,
-			}, billingService, regionsClient, storageClient)
+				ServiceName:     serviceName,
+			}, cloudCatalogClient, regionsClient, storageClient)
 			if err != nil {
 				log.Printf("Error creating GCS collector: %s", err)
 				continue
@@ -78,7 +83,7 @@ func New(config *Config) (*GCP, error) {
 		case "GKE":
 			collector = compute.New(&compute.Config{
 				Projects: config.Projects,
-			}, computeService, billingService)
+			}, computeService, cloudCatalogClient)
 		default:
 			log.Printf("Unknown service %s", service)
 			// Continue to next service, no need to halt here

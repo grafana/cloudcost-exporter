@@ -18,7 +18,7 @@ func TestNewBucketClient(t *testing.T) {
 	tests := map[string]struct {
 		client StorageClientInterface
 	}{
-		"Empty client": {
+		"Empty cloudCatalogClient": {
 			client: gcs.NewStorageClientInterface(t),
 		},
 	}
@@ -26,7 +26,7 @@ func TestNewBucketClient(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			client := NewBucketClient(test.client)
 			if client == nil {
-				t.Errorf("expected client to be non-nil")
+				t.Errorf("expected cloudCatalogClient to be non-nil")
 			}
 		})
 	}
