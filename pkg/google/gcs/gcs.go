@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
@@ -15,6 +14,7 @@ import (
 	compute "cloud.google.com/go/compute/apiv1"
 	"cloud.google.com/go/compute/apiv1/computepb"
 	"cloud.google.com/go/storage"
+	"github.com/googleapis/gax-go/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/iterator"
 )
@@ -143,34 +143,10 @@ type Collector struct {
 	ctx           context.Context
 	interval      time.Duration
 	nextScrape    time.Time
-	regionsClient *compute.RegionsClient
+	regionsClient RegionsClient
 	bucketClient  *BucketClient
 	discount      int
 	CachedBuckets *BucketCache
-}
-
-type BucketCache struct {
-	Buckets map[string][]*storage.BucketAttrs
-	m       sync.RWMutex
-}
-
-func (c *BucketCache) Get(project string) []*storage.BucketAttrs {
-	c.m.RLock()
-	defer c.m.RUnlock()
-	return c.Buckets[project]
-}
-
-func (c *BucketCache) Set(project string, buckets []*storage.BucketAttrs) {
-	c.m.Lock()
-	defer c.m.Unlock()
-	c.Buckets[project] = buckets
-}
-
-func NewBucketCache() *BucketCache {
-	return &BucketCache{
-		Buckets: make(map[string][]*storage.BucketAttrs),
-		m:       sync.RWMutex{},
-	}
 }
 
 type Config struct {
@@ -180,7 +156,11 @@ type Config struct {
 	ScrapeInterval  time.Duration
 }
 
-func New(config *Config, billingClient *billingv1.CloudCatalogClient, regionsClient *compute.RegionsClient, storageClient StorageClientInterface) (*Collector, error) {
+type RegionsClient interface {
+	List(ctx context.Context, req *computepb.ListRegionsRequest, opts ...gax.CallOption) *compute.RegionIterator
+}
+
+func New(config *Config, billingClient *billingv1.CloudCatalogClient, regionsClient RegionsClient, storageClient StorageClientInterface) (*Collector, error) {
 	if config.ProjectId == "" {
 		return nil, fmt.Errorf("projectID cannot be empty")
 	}
@@ -304,7 +284,7 @@ func ExportBucketInfo(ctx context.Context, client *BucketClient, projects []stri
 	return nil
 }
 
-func ExportRegionalDiscounts(ctx context.Context, client *compute.RegionsClient, projectID string, discount int) error {
+func ExportRegionalDiscounts(ctx context.Context, client RegionsClient, projectID string, discount int) error {
 	req := &computepb.ListRegionsRequest{
 		Project: projectID,
 	}

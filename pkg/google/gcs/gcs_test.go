@@ -6,7 +6,6 @@ import (
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
-	compute "cloud.google.com/go/compute/apiv1"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
 	"google.golang.org/genproto/googleapis/type/money"
@@ -142,7 +141,7 @@ func TestMisformedPricingInfoFromSku(t *testing.T) {
 func TestNew(t *testing.T) {
 	billingClient, err := billingv1.NewCloudCatalogClient(context.Background(), option.WithAPIKey("hunter2"))
 	assert.NoError(t, err)
-	regionsClient, err := compute.NewRegionsRESTClient(context.Background())
+	regionsClient := gcs.NewRegionsClient(t)
 	assert.NoError(t, err)
 	storageClient := gcs.NewStorageClientInterface(t)
 	t.Run("should return a non-nil client", func(t *testing.T) {
