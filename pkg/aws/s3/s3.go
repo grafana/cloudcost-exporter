@@ -12,6 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
 // HoursInMonth is the average hours in a month, used to calculate the cost of storage
@@ -121,7 +123,7 @@ func (r *Collector) Name() string {
 }
 
 // Register is called prior to the first collection. It registers any custom metric that needs to be exported for AWS billing data
-func (r *Collector) Register(registry *prometheus.Registry) error {
+func (r *Collector) Register(registry provider.Registry) error {
 	registry.MustRegister(StorageGauge)
 	registry.MustRegister(OperationsGauge)
 	registry.MustRegister(RequestCount)

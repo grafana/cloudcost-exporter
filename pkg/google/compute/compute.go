@@ -14,6 +14,8 @@ import (
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"google.golang.org/api/compute/v1"
+
+	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
 var (
@@ -216,7 +218,7 @@ func stripOutKeyFromDescription(description string) string {
 	return strings.Trim(str, " ")
 }
 
-func (c *Collector) Register(registry *prometheus.Registry) error {
+func (c *Collector) Register(registry provider.Registry) error {
 	log.Println("Registering GKE metrics")
 	err := registry.Register(InstanceCPUHourlyCost)
 	if err != nil {

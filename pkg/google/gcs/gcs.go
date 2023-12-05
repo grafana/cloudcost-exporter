@@ -17,6 +17,8 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/iterator"
+
+	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
 var (
@@ -234,7 +236,7 @@ func getServiceNameByReadableName(ctx context.Context, client *billingv1.CloudCa
 	return "", fmt.Errorf("service \"%s\" not found", name)
 }
 
-func (r *Collector) Register(registry *prometheus.Registry) error {
+func (r *Collector) Register(registry provider.Registry) error {
 	log.Printf("Registering GCS metrics")
 	registry.MustRegister(StorageGauge)
 	registry.MustRegister(StorageDiscountGauge)

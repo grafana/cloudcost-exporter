@@ -11,7 +11,6 @@ import (
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	computeapiv1 "cloud.google.com/go/compute/apiv1"
 	"cloud.google.com/go/storage"
-	"github.com/prometheus/client_golang/prometheus"
 	computev1 "google.golang.org/api/compute/v1"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/compute"
@@ -93,7 +92,7 @@ func New(config *Config) (*GCP, error) {
 }
 
 // RegisterCollectors will iterate over all of the collectors instantiated during New and register their metrics.
-func (g *GCP) RegisterCollectors(registry *prometheus.Registry) error {
+func (g *GCP) RegisterCollectors(registry provider.Registry) error {
 	for _, c := range g.collectors {
 		if err := c.Register(registry); err != nil {
 			return err
