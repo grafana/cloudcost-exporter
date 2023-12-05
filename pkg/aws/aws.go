@@ -8,7 +8,6 @@ import (
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
-	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -68,7 +67,7 @@ func New(config *Config) (*AWS, error) {
 	}, nil
 }
 
-func (a *AWS) RegisterCollectors(registry *prometheus.Registry) error {
+func (a *AWS) RegisterCollectors(registry provider.Registry) error {
 	log.Printf("Registering %d collectors for AWS", len(a.collectors))
 	for _, c := range a.collectors {
 		if err := c.Register(registry); err != nil {
