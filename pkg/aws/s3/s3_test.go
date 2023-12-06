@@ -1,16 +1,23 @@
 package s3
 
 import (
+	"context"
 	"encoding/csv"
+	"fmt"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
+	awscostexplorer "github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+
+	mockcostexplorer "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/costexplorer"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/costexplorer"
+	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 )
 
 func Test_getDimensionFromKey(t *testing.T) {
@@ -153,7 +160,7 @@ func TestS3BillingData_AddRegion(t *testing.T) {
 func TestNewCollector(t *testing.T) {
 	type args struct {
 		interval time.Duration
-		client   *costexplorer.Client
+		client   costexplorer.CostExplorer
 	}
 	tests := map[string]struct {
 		args  args
@@ -170,7 +177,9 @@ func TestNewCollector(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			got, err := New(tt.args.interval, tt.args.client)
+			c := mockcostexplorer.NewCostExplorer(t)
+
+			got, err := New(tt.args.interval, c)
 			if tt.error {
 				require.Error(t, err)
 				return
@@ -178,6 +187,164 @@ func TestNewCollector(t *testing.T) {
 			require.NoError(t, err)
 			assert.NotNil(t, got)
 			assert.Equal(t, tt.args.interval, got.interval)
+		})
+	}
+}
+
+func TestCollector_Name(t *testing.T) {
+	c := &Collector{}
+	require.Equal(t, "S3", c.Name())
+}
+
+func TestCollector_Register(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	r := mock_provider.NewMockRegistry(ctrl)
+	r.EXPECT().MustRegister(gomock.Any()).Times(5)
+
+	c := &Collector{}
+	err := c.Register(r)
+	require.NoError(t, err)
+}
+
+func TestExportBillingData(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		GetCostAndUsage  func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error)
+		GetCostAndUsage2 func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error)
+		expectedError    error
+	}{
+		{
+			name: "cost and usage error is bubbled-up",
+			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+				return nil, fmt.Errorf("test cost and usage error")
+			},
+			expectedError: fmt.Errorf("test cost and usage error"),
+		},
+		{
+			name: "no cost and usage output",
+			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+				return &awscostexplorer.GetCostAndUsageOutput{}, nil
+			},
+		},
+		{
+			name: "cost and usage output - one result without keys",
+			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+				return &awscostexplorer.GetCostAndUsageOutput{
+					ResultsByTime: []types.ResultByTime{{
+						Groups: []types.Group{{
+							Keys: nil,
+						}},
+					}},
+				}, nil
+			},
+		},
+		{
+			name: "cost and usage output - one result with keys but non-existent region",
+			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+				return &awscostexplorer.GetCostAndUsageOutput{
+					ResultsByTime: []types.ResultByTime{{
+						Groups: []types.Group{{
+							Keys: []string{"non-existent-region"},
+						}},
+					}},
+				}, nil
+			},
+		},
+		{
+			name: "cost and usage output - one result with keys but special-case region",
+			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+				return &awscostexplorer.GetCostAndUsageOutput{
+					ResultsByTime: []types.ResultByTime{{
+						Groups: []types.Group{{
+							Keys: []string{"Requests-Tier1", "Requests-Tier2"},
+						}},
+					}},
+				}, nil
+			},
+		},
+		{
+			name: "cost and usage output - one result with keys and valid region with a hyphen",
+			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+				return &awscostexplorer.GetCostAndUsageOutput{
+					ResultsByTime: []types.ResultByTime{{
+						Groups: []types.Group{{
+							// TODO: region lookup failure
+							// TODO: test should fail
+							Keys: []string{"AWS GovCloud (US-East)-Requests-Tier1"},
+						}},
+					}},
+				}, nil
+			},
+		},
+		{
+			name: "cost and usage output - three results with keys and valid region without a hyphen",
+			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+				return &awscostexplorer.GetCostAndUsageOutput{
+					ResultsByTime: []types.ResultByTime{
+						{
+							Groups: []types.Group{{
+								Keys: []string{"APN1-Requests-Tier1"},
+							}},
+						},
+						{
+							Groups: []types.Group{{
+								Keys: []string{"APN2-Requests-Tier2"},
+							}},
+						},
+						{
+							Groups: []types.Group{{
+								Keys: []string{"APN3-TimedStorage"},
+							}},
+						},
+					},
+				}, nil
+			},
+		},
+		{
+			name: "cost and usage output - results with two pages",
+			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+				t := "token"
+				return &awscostexplorer.GetCostAndUsageOutput{
+					ResultsByTime: []types.ResultByTime{{
+						Groups: []types.Group{{
+							Keys: []string{"APN1-Requests-Tier1"},
+						}},
+					}},
+					NextPageToken: &t,
+				}, nil
+			},
+			GetCostAndUsage2: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+				return &awscostexplorer.GetCostAndUsageOutput{
+					ResultsByTime: []types.ResultByTime{{
+						Groups: []types.Group{{
+							Keys: []string{"APN2-Requests-Tier2"},
+						}},
+					}},
+				}, nil
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ce := mockcostexplorer.NewCostExplorer(t)
+			if tc.GetCostAndUsage != nil {
+				ce.EXPECT().
+					GetCostAndUsage(mock.Anything, mock.Anything, mock.Anything).
+					RunAndReturn(tc.GetCostAndUsage).
+					Once()
+			}
+			if tc.GetCostAndUsage2 != nil {
+				ce.EXPECT().
+					GetCostAndUsage(mock.Anything, mock.Anything, mock.Anything).
+					RunAndReturn(tc.GetCostAndUsage2).
+					Once()
+			}
+
+			err := ExportBillingData(ce)
+			if tc.expectedError != nil {
+				require.EqualError(t, err, tc.expectedError.Error())
+				return
+			}
+			require.NoError(t, err)
 		})
 	}
 }

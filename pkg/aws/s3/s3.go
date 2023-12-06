@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
+	awscostexplorer "github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/grafana/cloudcost-exporter/pkg/aws/costexplorer"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
@@ -103,13 +104,13 @@ var (
 // Collector is the AWS implementation of the Collector interface
 // It is responsible for registering and collecting metrics
 type Collector struct {
-	client     *costexplorer.Client
+	client     costexplorer.CostExplorer
 	interval   time.Duration
 	nextScrape time.Time
 }
 
 // New creates a new Collector with a client and scrape interval defined.
-func New(scrapeInterval time.Duration, client *costexplorer.Client) (*Collector, error) {
+func New(scrapeInterval time.Duration, client costexplorer.CostExplorer) (*Collector, error) {
 	return &Collector{
 		client:   client,
 		interval: scrapeInterval,
@@ -219,9 +220,9 @@ func (s S3BillingData) AddMetricGroup(region string, component string, group typ
 
 // getBillingData is responsible for making the API call to the AWS Cost Explorer API and parsing the response
 // into a S3BillingData struct
-func getBillingData(client *costexplorer.Client, startDate time.Time, endDate time.Time) (S3BillingData, error) {
+func getBillingData(client costexplorer.CostExplorer, startDate time.Time, endDate time.Time) (S3BillingData, error) {
 	log.Printf("Getting billing data for %s to %s\n", startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
-	input := &costexplorer.GetCostAndUsageInput{
+	input := &awscostexplorer.GetCostAndUsageInput{
 		TimePeriod: &types.DateInterval{
 			Start: aws.String(startDate.Format("2006-01-02")), // Specify the start date
 			End:   aws.String(endDate.Format("2006-01-02")),   // Specify the end date
@@ -243,7 +244,7 @@ func getBillingData(client *costexplorer.Client, startDate time.Time, endDate ti
 		},
 	}
 
-	var outputs []*costexplorer.GetCostAndUsageOutput
+	var outputs []*awscostexplorer.GetCostAndUsageOutput
 	for {
 		RequestCount.Inc()
 		output, err := client.GetCostAndUsage(context.TODO(), input)
@@ -263,13 +264,17 @@ func getBillingData(client *costexplorer.Client, startDate time.Time, endDate ti
 }
 
 // parseBillingData takes the output from the AWS Cost Explorer API and parses it into a S3BillingData struct
-func parseBillingData(outputs []*costexplorer.GetCostAndUsageOutput) S3BillingData {
+func parseBillingData(outputs []*awscostexplorer.GetCostAndUsageOutput) S3BillingData {
 	billingData := NewS3BillingData()
 
 	// Process the billing data in the 'output' variable
 	for _, output := range outputs {
 		for _, result := range output.ResultsByTime {
 			for _, group := range result.Groups {
+				if group.Keys == nil {
+					log.Printf("skipping group without keys")
+					continue
+				}
 				key := group.Keys[0]
 				region := getRegionFromKey(key)
 				component := getComponentFromKey(key)
@@ -328,7 +333,7 @@ func getComponentFromKey(key string) string {
 }
 
 // ExportBillingData will query the previous 30 days of S3 billing data and export it to the prometheus metrics
-func ExportBillingData(client *costexplorer.Client) error {
+func ExportBillingData(client costexplorer.CostExplorer) error {
 	// We go one day into the past as the current days billing data has no guarantee of being complete
 	endDate := time.Now().AddDate(0, 0, -1)
 	// Current assumption is that we're going to pull 30 days worth of billing data
