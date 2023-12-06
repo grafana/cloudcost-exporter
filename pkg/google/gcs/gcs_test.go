@@ -1,11 +1,18 @@
 package gcs
 
 import (
+	"context"
+	"fmt"
+	"net"
 	"testing"
 
+	billing "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/api/option"
 	"google.golang.org/genproto/googleapis/type/money"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/cloudcost-exporter/mocks/pkg/google/gcs"
 )
@@ -326,6 +333,69 @@ func Test_parseStorageSku(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			err := parseStorageSku(tt.sku)
 			assert.ErrorIs(t, err, tt.err)
+		})
+	}
+}
+
+type fakeCloudBillingServer struct {
+	billingpb.UnimplementedCloudCatalogServer
+}
+
+func (s *fakeCloudBillingServer) ListServices(_ context.Context, _ *billingpb.ListServicesRequest) (*billingpb.ListServicesResponse, error) {
+	return &billingpb.ListServicesResponse{
+		Services: []*billingpb.Service{
+			{
+				Name:        "services/6F81-5844-456A",
+				DisplayName: "Cloud Storage",
+			},
+		},
+	}, nil
+}
+
+func TestGetServiceNameByReadableName(t *testing.T) {
+
+	// We can't follow AWS's example as the CloudCatalogClient returns an iterator that has private fields that we can't easily override
+	// Let's try to see if we can use an httptest server to mock the response
+	tests := map[string]struct {
+		service string
+		want    string
+		wantErr assert.ErrorAssertionFunc
+	}{
+		"should return an error if the service is not found": {
+			service: "Does not exist",
+			want:    "",
+			wantErr: assert.Error,
+		},
+		"should return the service name": {
+			service: "Cloud Storage",
+			want:    "services/6F81-5844-456A",
+			wantErr: assert.NoError,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			l, err := net.Listen("tcp", "localhost:0")
+			assert.NoError(t, err)
+			gsrv := grpc.NewServer()
+			defer gsrv.Stop()
+			go func() {
+				if err = gsrv.Serve(l); err != nil {
+					t.Errorf("failed to serve: %v", err)
+				}
+			}()
+			billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudBillingServer{})
+			client, err := billing.NewCloudCatalogClient(context.Background(),
+				option.WithEndpoint(l.Addr().String()),
+				option.WithoutAuthentication(),
+				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+
+			assert.NoError(t, err)
+			ctx := context.Background()
+			got, err := GetServiceNameByReadableName(ctx, client, tt.service)
+			if !tt.wantErr(t, err, fmt.Sprintf("GetServiceNameByReadableName(%v, %v, %v)", ctx, client, tt.service)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "GetServiceNameByReadableName(%v, %v, %v)", ctx, client, tt.want)
 		})
 	}
 }
