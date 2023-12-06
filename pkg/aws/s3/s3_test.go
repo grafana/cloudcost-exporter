@@ -5,11 +5,14 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	awscostexplorer "github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -210,16 +213,52 @@ func TestCollector_Collect(t *testing.T) {
 	timeInPast := time.Now().Add(-48 * time.Hour)
 	timeInFuture := time.Now().Add(48 * time.Hour)
 
+	withoutNextScrape := []string{
+		"aws_s3_storage_hourly_cost",
+		"aws_s3_operations_cost",
+		"aws_cost_exporter_requests_total",
+		"aws_cost_exporter_request_errors_total",
+	}
+
+	withoutNextScrapeAndRequestsTotal := []string{
+		"aws_s3_storage_hourly_cost",
+		"aws_s3_operations_cost",
+		"aws_cost_exporter_request_errors_total",
+	}
+
+	justCostMetrics := []string{
+		"aws_s3_storage_hourly_cost",
+		"aws_s3_operations_cost",
+	}
+
 	for _, tc := range []struct {
 		name             string
 		nextScrape       time.Time
 		GetCostAndUsage  func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error)
 		GetCostAndUsage2 func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error)
-		expectedError    error
+
+		// metricNames can be nil to check all metrics, or a set of strings form an allow list of metrics to check.
+		metricNames        []string
+		expectedError      error
+		expectedExposition string
 	}{
 		{
 			name:       "skip collection",
 			nextScrape: timeInFuture,
+
+			// Next scrape should be zero, all other cases it will be a timestamp which is different on every test run,
+			// so we just assert the zero value here.
+			expectedExposition: `
+# HELP aws_cost_exporter_next_scrape The next time the exporter will scrape AWS billing data. Can be used to trigger alerts if now - nextScrape > interval
+# TYPE aws_cost_exporter_next_scrape gauge
+aws_cost_exporter_next_scrape 0
+# HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_request_errors_total counter
+aws_cost_exporter_request_errors_total 0
+# HELP aws_cost_exporter_requests_total Total number of requests made to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_requests_total counter
+aws_cost_exporter_requests_total 0
+`,
 		},
 		{
 			name:       "cost and usage error is bubbled-up",
@@ -235,6 +274,17 @@ func TestCollector_Collect(t *testing.T) {
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return &awscostexplorer.GetCostAndUsageOutput{}, nil
 			},
+			metricNames: withoutNextScrape,
+
+			// Requests total increases by one on each test case, so we just check it once here.
+			expectedExposition: `
+# HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_request_errors_total counter
+aws_cost_exporter_request_errors_total 1
+# HELP aws_cost_exporter_requests_total Total number of requests made to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_requests_total counter
+aws_cost_exporter_requests_total 2
+`,
 		},
 		{
 			name:       "cost and usage output - one result without keys",
@@ -248,6 +298,15 @@ func TestCollector_Collect(t *testing.T) {
 					}},
 				}, nil
 			},
+			metricNames: withoutNextScrapeAndRequestsTotal,
+
+			// Request errors total appears to always be "1" due to the error case above, so we check it for the last
+			// time here.
+			expectedExposition: `
+# HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_request_errors_total counter
+aws_cost_exporter_request_errors_total 1
+`,
 		},
 		{
 			name:       "cost and usage output - one result with keys but non-existent region",
@@ -261,6 +320,7 @@ func TestCollector_Collect(t *testing.T) {
 					}},
 				}, nil
 			},
+			metricNames: justCostMetrics,
 		},
 		{
 			name:       "cost and usage output - one result with keys but special-case region",
@@ -274,6 +334,7 @@ func TestCollector_Collect(t *testing.T) {
 					}},
 				}, nil
 			},
+			metricNames: justCostMetrics,
 		},
 		{
 			name:       "cost and usage output - one result with keys and valid region with a hyphen",
@@ -289,6 +350,7 @@ func TestCollector_Collect(t *testing.T) {
 					}},
 				}, nil
 			},
+			metricNames: justCostMetrics,
 		},
 		{
 			name:       "cost and usage output - three results with keys and valid region without a hyphen",
@@ -314,6 +376,16 @@ func TestCollector_Collect(t *testing.T) {
 					},
 				}, nil
 			},
+			metricNames: justCostMetrics,
+			expectedExposition: `
+# HELP aws_s3_operations_cost S3 operations cost per 1k requests
+# TYPE aws_s3_operations_cost gauge
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
+# HELP aws_s3_storage_hourly_cost S3 storage hourly cost in GiB
+# TYPE aws_s3_storage_hourly_cost gauge
+aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
+`,
 		},
 		{
 			name:       "cost and usage output - results with two pages",
@@ -338,6 +410,16 @@ func TestCollector_Collect(t *testing.T) {
 					}},
 				}, nil
 			},
+			metricNames: justCostMetrics,
+			expectedExposition: `
+# HELP aws_s3_operations_cost S3 operations cost per 1k requests
+# TYPE aws_s3_operations_cost gauge
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
+# HELP aws_s3_storage_hourly_cost S3 storage hourly cost in GiB
+# TYPE aws_s3_storage_hourly_cost gauge
+aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
+`,
 		},
 		{
 			name:       "cost and usage output - result with nil amount",
@@ -355,6 +437,16 @@ func TestCollector_Collect(t *testing.T) {
 					}},
 				}, nil
 			},
+			metricNames: justCostMetrics,
+			expectedExposition: `
+# HELP aws_s3_operations_cost S3 operations cost per 1k requests
+# TYPE aws_s3_operations_cost gauge
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
+# HELP aws_s3_storage_hourly_cost S3 storage hourly cost in GiB
+# TYPE aws_s3_storage_hourly_cost gauge
+aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
+`,
 		},
 		{
 			name:       "cost and usage output - result with invalid amount",
@@ -373,6 +465,16 @@ func TestCollector_Collect(t *testing.T) {
 					}},
 				}, nil
 			},
+			metricNames: justCostMetrics,
+			expectedExposition: `
+# HELP aws_s3_operations_cost S3 operations cost per 1k requests
+# TYPE aws_s3_operations_cost gauge
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
+# HELP aws_s3_storage_hourly_cost S3 storage hourly cost in GiB
+# TYPE aws_s3_storage_hourly_cost gauge
+aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
+`,
 		},
 		{
 			name:       "cost and usage output - result with nil unit",
@@ -391,6 +493,16 @@ func TestCollector_Collect(t *testing.T) {
 					}},
 				}, nil
 			},
+			metricNames: justCostMetrics,
+			expectedExposition: `
+# HELP aws_s3_operations_cost S3 operations cost per 1k requests
+# TYPE aws_s3_operations_cost gauge
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="1"} 1000
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
+# HELP aws_s3_storage_hourly_cost S3 storage hourly cost in GiB
+# TYPE aws_s3_storage_hourly_cost gauge
+aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
+`,
 		},
 		{
 			name:       "cost and usage output - result with valid amount and unit",
@@ -439,6 +551,18 @@ func TestCollector_Collect(t *testing.T) {
 					},
 				}, nil
 			},
+			metricNames: justCostMetrics,
+			expectedExposition: `
+# HELP aws_s3_operations_cost S3 operations cost per 1k requests
+# TYPE aws_s3_operations_cost gauge
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="1"} 1000
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="2"} 1000
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
+# HELP aws_s3_storage_hourly_cost S3 storage hourly cost in GiB
+# TYPE aws_s3_storage_hourly_cost gauge
+aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-1"} 0.0013689253935660506
+aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
+`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -466,6 +590,13 @@ func TestCollector_Collect(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
+
+			r := prometheus.NewPedanticRegistry()
+			err = c.Register(r)
+			assert.NoError(t, err)
+
+			err = testutil.CollectAndCompare(r, strings.NewReader(tc.expectedExposition), tc.metricNames...)
+			assert.NoError(t, err)
 		})
 	}
 }
