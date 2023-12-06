@@ -206,28 +206,39 @@ func TestCollector_Register(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestExportBillingData(t *testing.T) {
+func TestCollector_Collect(t *testing.T) {
+	timeInPast := time.Now().Add(-48 * time.Hour)
+	timeInFuture := time.Now().Add(48 * time.Hour)
+
 	for _, tc := range []struct {
 		name             string
+		nextScrape       time.Time
 		GetCostAndUsage  func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error)
 		GetCostAndUsage2 func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error)
 		expectedError    error
 	}{
 		{
-			name: "cost and usage error is bubbled-up",
+			name:       "skip collection",
+			nextScrape: timeInFuture,
+		},
+		{
+			name:       "cost and usage error is bubbled-up",
+			nextScrape: timeInPast,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return nil, fmt.Errorf("test cost and usage error")
 			},
 			expectedError: fmt.Errorf("test cost and usage error"),
 		},
 		{
-			name: "no cost and usage output",
+			name:       "no cost and usage output",
+			nextScrape: timeInPast,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return &awscostexplorer.GetCostAndUsageOutput{}, nil
 			},
 		},
 		{
-			name: "cost and usage output - one result without keys",
+			name:       "cost and usage output - one result without keys",
+			nextScrape: timeInPast,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return &awscostexplorer.GetCostAndUsageOutput{
 					ResultsByTime: []types.ResultByTime{{
@@ -239,7 +250,8 @@ func TestExportBillingData(t *testing.T) {
 			},
 		},
 		{
-			name: "cost and usage output - one result with keys but non-existent region",
+			name:       "cost and usage output - one result with keys but non-existent region",
+			nextScrape: timeInPast,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return &awscostexplorer.GetCostAndUsageOutput{
 					ResultsByTime: []types.ResultByTime{{
@@ -251,7 +263,8 @@ func TestExportBillingData(t *testing.T) {
 			},
 		},
 		{
-			name: "cost and usage output - one result with keys but special-case region",
+			name:       "cost and usage output - one result with keys but special-case region",
+			nextScrape: timeInPast,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return &awscostexplorer.GetCostAndUsageOutput{
 					ResultsByTime: []types.ResultByTime{{
@@ -263,7 +276,8 @@ func TestExportBillingData(t *testing.T) {
 			},
 		},
 		{
-			name: "cost and usage output - one result with keys and valid region with a hyphen",
+			name:       "cost and usage output - one result with keys and valid region with a hyphen",
+			nextScrape: timeInPast,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return &awscostexplorer.GetCostAndUsageOutput{
 					ResultsByTime: []types.ResultByTime{{
@@ -277,7 +291,8 @@ func TestExportBillingData(t *testing.T) {
 			},
 		},
 		{
-			name: "cost and usage output - three results with keys and valid region without a hyphen",
+			name:       "cost and usage output - three results with keys and valid region without a hyphen",
+			nextScrape: timeInPast,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return &awscostexplorer.GetCostAndUsageOutput{
 					ResultsByTime: []types.ResultByTime{
@@ -301,7 +316,8 @@ func TestExportBillingData(t *testing.T) {
 			},
 		},
 		{
-			name: "cost and usage output - results with two pages",
+			name:       "cost and usage output - results with two pages",
+			nextScrape: timeInPast,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				t := "token"
 				return &awscostexplorer.GetCostAndUsageOutput{
@@ -323,6 +339,107 @@ func TestExportBillingData(t *testing.T) {
 				}, nil
 			},
 		},
+		{
+			name:       "cost and usage output - result with nil amount",
+			nextScrape: timeInPast,
+			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+				return &awscostexplorer.GetCostAndUsageOutput{
+					ResultsByTime: []types.ResultByTime{{
+						Groups: []types.Group{{
+							Keys: []string{"APN1-Requests-Tier1"},
+							Metrics: map[string]types.MetricValue{
+								"UsageQuantity": {},
+								"UnblendedCost": {},
+							},
+						}},
+					}},
+				}, nil
+			},
+		},
+		{
+			name:       "cost and usage output - result with invalid amount",
+			nextScrape: timeInPast,
+			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+				a := ""
+				return &awscostexplorer.GetCostAndUsageOutput{
+					ResultsByTime: []types.ResultByTime{{
+						Groups: []types.Group{{
+							Keys: []string{"APN1-Requests-Tier1"},
+							Metrics: map[string]types.MetricValue{
+								"UsageQuantity": {Amount: &a},
+								"UnblendedCost": {Amount: &a},
+							},
+						}},
+					}},
+				}, nil
+			},
+		},
+		{
+			name:       "cost and usage output - result with nil unit",
+			nextScrape: timeInPast,
+			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+				a := "1"
+				return &awscostexplorer.GetCostAndUsageOutput{
+					ResultsByTime: []types.ResultByTime{{
+						Groups: []types.Group{{
+							Keys: []string{"APN1-Requests-Tier1"},
+							Metrics: map[string]types.MetricValue{
+								"UsageQuantity": {Amount: &a},
+								"UnblendedCost": {Amount: &a},
+							},
+						}},
+					}},
+				}, nil
+			},
+		},
+		{
+			name:       "cost and usage output - result with valid amount and unit",
+			nextScrape: timeInPast,
+			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+				a := "1"
+				u := "unit"
+				return &awscostexplorer.GetCostAndUsageOutput{
+					ResultsByTime: []types.ResultByTime{
+						{
+							Groups: []types.Group{{
+								Keys: []string{"APN1-Requests-Tier1"},
+								Metrics: map[string]types.MetricValue{
+									"UsageQuantity": {Amount: &a, Unit: &u},
+									"UnblendedCost": {Amount: &a, Unit: &u},
+								},
+							}},
+						},
+						{
+							Groups: []types.Group{{
+								Keys: []string{"APN1-Requests-Tier2"},
+								Metrics: map[string]types.MetricValue{
+									"UsageQuantity": {Amount: &a, Unit: &u},
+									"UnblendedCost": {Amount: &a, Unit: &u},
+								},
+							}},
+						},
+						{
+							Groups: []types.Group{{
+								Keys: []string{"APN1-TimedStorage"},
+								Metrics: map[string]types.MetricValue{
+									"UsageQuantity": {Amount: &a, Unit: &u},
+									"UnblendedCost": {Amount: &a, Unit: &u},
+								},
+							}},
+						},
+						{
+							Groups: []types.Group{{
+								Keys: []string{"APN1-unknown"},
+								Metrics: map[string]types.MetricValue{
+									"UsageQuantity": {Amount: &a, Unit: &u},
+									"UnblendedCost": {Amount: &a, Unit: &u},
+								},
+							}},
+						},
+					},
+				}, nil
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ce := mockcostexplorer.NewCostExplorer(t)
@@ -339,7 +456,11 @@ func TestExportBillingData(t *testing.T) {
 					Once()
 			}
 
-			err := ExportBillingData(ce)
+			c := &Collector{
+				client:     ce,
+				nextScrape: tc.nextScrape,
+			}
+			err := c.Collect()
 			if tc.expectedError != nil {
 				require.EqualError(t, err, tc.expectedError.Error())
 				return
