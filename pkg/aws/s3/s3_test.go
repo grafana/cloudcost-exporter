@@ -497,7 +497,7 @@ aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
 			expectedExposition: `
 # HELP aws_s3_operations_cost S3 operations cost per 1k requests
 # TYPE aws_s3_operations_cost gauge
-aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="1"} 1000
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="1"} 0.001
 aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
 # HELP aws_s3_storage_hourly_cost S3 storage hourly cost in GiB
 # TYPE aws_s3_storage_hourly_cost gauge
@@ -555,8 +555,8 @@ aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
 			expectedExposition: `
 # HELP aws_s3_operations_cost S3 operations cost per 1k requests
 # TYPE aws_s3_operations_cost gauge
-aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="1"} 1000
-aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="2"} 1000
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="1"} 0.001
+aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="2"} 0.001
 aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
 # HELP aws_s3_storage_hourly_cost S3 storage hourly cost in GiB
 # TYPE aws_s3_storage_hourly_cost gauge
@@ -597,6 +597,28 @@ aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
 
 			err = testutil.CollectAndCompare(r, strings.NewReader(tc.expectedExposition), tc.metricNames...)
 			assert.NoError(t, err)
+		})
+	}
+}
+
+func Test_unitCostForComponent(t *testing.T) {
+	tests := map[string]struct {
+		component string
+		pricing   *Pricing
+		want      float64
+	}{
+		"Requests-Tier1": {
+			component: "Requests-Tier1",
+			pricing: &Pricing{
+				Usage: 1.0,
+				Cost:  1.0,
+			},
+			want: 0.001,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, unitCostForComponent(tt.component, tt.pricing), "unitCostForComponent(%v, %v)", tt.component, tt.pricing)
 		})
 	}
 }
