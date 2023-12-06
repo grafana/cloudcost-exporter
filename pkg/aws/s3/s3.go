@@ -196,17 +196,26 @@ func (s S3BillingData) AddMetricGroup(region string, component string, group typ
 
 	componentsMap := s.Regions[region].Model[component]
 	for name, metric := range group.Metrics {
-		if name == "UsageQuantity" {
+		if metric.Amount == nil {
+			fmt.Printf("Error parsing amount: amount is nil\n")
+			continue
+		}
+
+		switch name {
+		case "UsageQuantity":
 			usageAmount, err := strconv.ParseFloat(*metric.Amount, 64)
 			if err != nil {
 				fmt.Printf("Error parsing usage amount: %v\n", err)
 				continue
 			}
 			componentsMap.Usage += usageAmount
-			componentsMap.Units = *metric.Unit
-		}
 
-		if name == "UnblendedCost" {
+			if metric.Unit == nil {
+				fmt.Printf("Error parsing amount: unit is nil\n")
+				continue
+			}
+			componentsMap.Units = *metric.Unit
+		case "UnblendedCost":
 			cost, err := strconv.ParseFloat(*metric.Amount, 64)
 			if err != nil {
 				fmt.Printf("Error parsing cost amount: %v\n", err)
