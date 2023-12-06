@@ -607,11 +607,35 @@ func Test_unitCostForComponent(t *testing.T) {
 		pricing   *Pricing
 		want      float64
 	}{
-		"Requests-Tier1": {
+		"Requests-Tier1 basic": {
 			component: "Requests-Tier1",
 			pricing: &Pricing{
 				Usage: 1.0,
 				Cost:  1.0,
+			},
+			want: 0.001,
+		},
+		"Requests-Tier1 with 1000's of requests": {
+			component: "Requests-Tier1",
+			pricing: &Pricing{
+				Usage: 1000.0,
+				Cost:  1.0,
+			},
+			want: 1e-6,
+		},
+		"Requests-Tier1 with 1000's of costs": {
+			component: "Requests-Tier1",
+			pricing: &Pricing{
+				Usage: 1.0,
+				Cost:  1000.0,
+			},
+			want: 1,
+		},
+		"Requests-Tier1 with 1000's of costs and 1000 requests": {
+			component: "Requests-Tier1",
+			pricing: &Pricing{
+				Usage: 1000.0,
+				Cost:  1000.0,
 			},
 			want: 0.001,
 		},
