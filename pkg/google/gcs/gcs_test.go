@@ -4,10 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	billing "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
+	computeapiv1 "cloud.google.com/go/compute/apiv1"
+	"cloud.google.com/go/storage"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
 	"google.golang.org/genproto/googleapis/type/money"
@@ -30,6 +34,9 @@ func TestStorageclassFromSkuDescription(t *testing.T) {
 		"Coldline Storage US Multi-region": {
 			"COLDLINE",
 		},
+		"Durable Reduced Availability Multi-region": {
+			"DRA",
+		},
 		"Standard Storage US Regional": {
 			"REGIONAL",
 		},
@@ -43,7 +50,7 @@ func TestStorageclassFromSkuDescription(t *testing.T) {
 
 	for name, f := range tt {
 		t.Run(name, func(t *testing.T) {
-			got := StorageClassFromSkuDescription(t.Name(), "any_regular_region")
+			got := StorageClassFromSkuDescription(name, "any_regular_region")
 			if got != f.exp {
 				t.Errorf("expecting storageclass %s, got %s", f.exp, got)
 			}
@@ -352,6 +359,77 @@ func (s *fakeCloudBillingServer) ListServices(_ context.Context, _ *billingpb.Li
 	}, nil
 }
 
+func (s *fakeCloudBillingServer) ListSkus(_ context.Context, _ *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
+	return &billingpb.ListSkusResponse{
+		Skus: []*billingpb.Sku{
+			{
+				Name:        "services/6F81-5844-456A/skus/0001-0001-0001",
+				Description: "US Regional Standard Storage",
+				Category: &billingpb.Category{
+					ServiceDisplayName: "Cloud Storage",
+					ResourceGroup:      "Storage",
+					ResourceFamily:     "Storage",
+				},
+			},
+			{
+				Name:        "services/6F81-5844-456A/skus/0001-0001-0001",
+				Description: "US Regional Standard Storage Durable Reduced Availability",
+				Category: &billingpb.Category{
+					ServiceDisplayName: "Cloud Storage",
+					ResourceGroup:      "Storage",
+					ResourceFamily:     "Storage",
+				},
+			},
+			{
+				Name:        "services/6F81-5844-456A/skus/0001-0001-0001",
+				Description: "US Regional Multi-Region Storage",
+				Category: &billingpb.Category{
+					ServiceDisplayName: "Cloud Storage",
+					ResourceGroup:      "Storage",
+					ResourceFamily:     "Storage",
+				},
+			},
+			{
+				Name:        "services/6F81-5844-456A/skus/0001-0001-0001",
+				Description: "Standard Storage US Regional Ops",
+				Category: &billingpb.Category{
+					ServiceDisplayName: "Cloud Storage",
+					ResourceGroup:      "Storage Ops",
+					ResourceFamily:     "Storage",
+				},
+			},
+			{
+				Name:        "services/6F81-5844-456A/skus/0001-0001-0001",
+				Description: "Standard Storage US Regional Early Delete",
+				Category: &billingpb.Category{
+					ServiceDisplayName: "Cloud Storage",
+					ResourceGroup:      "Storage",
+				},
+			},
+			{
+				Name:        "services/6F81-5844-456A/skus/0001-0001-0002",
+				Description: "US Multi-Region Data Retrieval",
+			},
+			{
+				Name:        "services/6F81-5844-456A/skus/0001-0001-0003",
+				Description: "Networking of some kind",
+				Category: &billingpb.Category{
+					ResourceGroup:  "Network",
+					ResourceFamily: "Network",
+				},
+			},
+			{
+				Name:        "services/6F81-5844-456A/skus/0001-0001-0004",
+				Description: "Autoclass Management Fee",
+			},
+			{
+				Name:        "services/6F81-5844-456A/skus/0001-0001-0005",
+				Description: "Bucket Tagging Storage",
+			},
+		},
+	}, nil
+}
+
 func TestGetServiceNameByReadableName(t *testing.T) {
 
 	// We can't follow AWS's example as the CloudCatalogClient returns an iterator that has private fields that we can't easily override
@@ -398,4 +476,54 @@ func TestGetServiceNameByReadableName(t *testing.T) {
 			assert.Equalf(t, tt.want, got, "GetServiceNameByReadableName(%v, %v, %v)", ctx, client, tt.want)
 		})
 	}
+}
+
+func TestCollector_Collect(t *testing.T) {
+	regionsHttptestServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"items": [{"name": "us-east1", "description": "us-east1", "resourceGroup": "Storage"}]}`))
+	}))
+	regionsClient, err := computeapiv1.NewRegionsRESTClient(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(regionsHttptestServer.URL))
+	assert.NoError(t, err)
+	assert.NotNil(t, regionsClient)
+
+	storageregionsHttptestServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"items": [
+	{"name": "testbucket-1", "location": "US-EAST1", "storageClass": "STANDARD", "locationType": "region"},
+	{"name": "testbucket-2", "location": "US", "storageClass": "STANDARD", "locationType": "multi-region"}
+]}`))
+	}))
+
+	storageClient, err := storage.NewClient(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(storageregionsHttptestServer.URL))
+	assert.NoError(t, err)
+	assert.NotNil(t, storageClient)
+
+	l, err := net.Listen("tcp", "localhost:0")
+	assert.NoError(t, err)
+
+	gsrv := grpc.NewServer()
+	defer gsrv.Stop()
+	go func() {
+		if err = gsrv.Serve(l); err != nil {
+			t.Errorf("failed to serve: %v", err)
+		}
+	}()
+	billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudBillingServer{})
+	cloudCatalogClient, err := billing.NewCloudCatalogClient(context.Background(),
+		option.WithEndpoint(l.Addr().String()),
+		option.WithoutAuthentication(),
+		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+
+	assert.NoError(t, err)
+	collector, err := New(&Config{
+		ProjectId:   "project-1",
+		ServiceName: "services/6F81-5844-456A",
+	}, cloudCatalogClient, regionsClient, storageClient)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, collector)
+
+	err = collector.Collect()
+	assert.NoError(t, err)
 }
