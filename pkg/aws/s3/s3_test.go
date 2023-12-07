@@ -220,17 +220,6 @@ func TestCollector_Collect(t *testing.T) {
 		"aws_cost_exporter_request_errors_total",
 	}
 
-	withoutNextScrapeAndRequestsTotal := []string{
-		"aws_s3_storage_hourly_cost",
-		"aws_s3_operations_cost",
-		"aws_cost_exporter_request_errors_total",
-	}
-
-	justCostMetrics := []string{
-		"aws_s3_storage_hourly_cost",
-		"aws_s3_operations_cost",
-	}
-
 	for _, tc := range []struct {
 		name             string
 		nextScrape       time.Time
@@ -275,15 +264,13 @@ aws_cost_exporter_requests_total 0
 				return &awscostexplorer.GetCostAndUsageOutput{}, nil
 			},
 			metricNames: withoutNextScrape,
-
-			// Requests total increases by one on each test case, so we just check it once here.
 			expectedExposition: `
 # HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
 # TYPE aws_cost_exporter_request_errors_total counter
-aws_cost_exporter_request_errors_total 1
+aws_cost_exporter_request_errors_total 0
 # HELP aws_cost_exporter_requests_total Total number of requests made to the AWS Cost Explorer API
 # TYPE aws_cost_exporter_requests_total counter
-aws_cost_exporter_requests_total 2
+aws_cost_exporter_requests_total 1
 `,
 		},
 		{
@@ -298,14 +285,14 @@ aws_cost_exporter_requests_total 2
 					}},
 				}, nil
 			},
-			metricNames: withoutNextScrapeAndRequestsTotal,
-
-			// Request errors total appears to always be "1" due to the error case above, so we check it for the last
-			// time here.
+			metricNames: withoutNextScrape,
 			expectedExposition: `
 # HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
 # TYPE aws_cost_exporter_request_errors_total counter
-aws_cost_exporter_request_errors_total 1
+aws_cost_exporter_request_errors_total 0
+# HELP aws_cost_exporter_requests_total Total number of requests made to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_requests_total counter
+aws_cost_exporter_requests_total 1
 `,
 		},
 		{
@@ -320,7 +307,15 @@ aws_cost_exporter_request_errors_total 1
 					}},
 				}, nil
 			},
-			metricNames: justCostMetrics,
+			metricNames: withoutNextScrape,
+			expectedExposition: `
+# HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_request_errors_total counter
+aws_cost_exporter_request_errors_total 0
+# HELP aws_cost_exporter_requests_total Total number of requests made to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_requests_total counter
+aws_cost_exporter_requests_total 1
+`,
 		},
 		{
 			name:       "cost and usage output - one result with keys but special-case region",
@@ -334,7 +329,15 @@ aws_cost_exporter_request_errors_total 1
 					}},
 				}, nil
 			},
-			metricNames: justCostMetrics,
+			metricNames: withoutNextScrape,
+			expectedExposition: `
+# HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_request_errors_total counter
+aws_cost_exporter_request_errors_total 0
+# HELP aws_cost_exporter_requests_total Total number of requests made to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_requests_total counter
+aws_cost_exporter_requests_total 1
+`,
 		},
 		{
 			name:       "cost and usage output - one result with keys and valid region with a hyphen",
@@ -350,7 +353,15 @@ aws_cost_exporter_request_errors_total 1
 					}},
 				}, nil
 			},
-			metricNames: justCostMetrics,
+			metricNames: withoutNextScrape,
+			expectedExposition: `
+# HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_request_errors_total counter
+aws_cost_exporter_request_errors_total 0
+# HELP aws_cost_exporter_requests_total Total number of requests made to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_requests_total counter
+aws_cost_exporter_requests_total 1
+`,
 		},
 		{
 			name:       "cost and usage output - three results with keys and valid region without a hyphen",
@@ -376,7 +387,7 @@ aws_cost_exporter_request_errors_total 1
 					},
 				}, nil
 			},
-			metricNames: justCostMetrics,
+			metricNames: withoutNextScrape,
 			expectedExposition: `
 # HELP aws_s3_operations_cost S3 operations cost per 1k requests
 # TYPE aws_s3_operations_cost gauge
@@ -385,6 +396,12 @@ aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-2",tier="2"}
 # HELP aws_s3_storage_hourly_cost S3 storage hourly cost in GiB
 # TYPE aws_s3_storage_hourly_cost gauge
 aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
+# HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_request_errors_total counter
+aws_cost_exporter_request_errors_total 0
+# HELP aws_cost_exporter_requests_total Total number of requests made to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_requests_total counter
+aws_cost_exporter_requests_total 1
 `,
 		},
 		{
@@ -410,15 +427,18 @@ aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
 					}},
 				}, nil
 			},
-			metricNames: justCostMetrics,
+			metricNames: withoutNextScrape,
 			expectedExposition: `
 # HELP aws_s3_operations_cost S3 operations cost per 1k requests
 # TYPE aws_s3_operations_cost gauge
 aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
 aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
-# HELP aws_s3_storage_hourly_cost S3 storage hourly cost in GiB
-# TYPE aws_s3_storage_hourly_cost gauge
-aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
+# HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_request_errors_total counter
+aws_cost_exporter_request_errors_total 0
+# HELP aws_cost_exporter_requests_total Total number of requests made to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_requests_total counter
+aws_cost_exporter_requests_total 2
 `,
 		},
 		{
@@ -437,15 +457,17 @@ aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
 					}},
 				}, nil
 			},
-			metricNames: justCostMetrics,
+			metricNames: withoutNextScrape,
 			expectedExposition: `
 # HELP aws_s3_operations_cost S3 operations cost per 1k requests
 # TYPE aws_s3_operations_cost gauge
 aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
-aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
-# HELP aws_s3_storage_hourly_cost S3 storage hourly cost in GiB
-# TYPE aws_s3_storage_hourly_cost gauge
-aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
+# HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_request_errors_total counter
+aws_cost_exporter_request_errors_total 0
+# HELP aws_cost_exporter_requests_total Total number of requests made to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_requests_total counter
+aws_cost_exporter_requests_total 1
 `,
 		},
 		{
@@ -465,15 +487,17 @@ aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
 					}},
 				}, nil
 			},
-			metricNames: justCostMetrics,
+			metricNames: withoutNextScrape,
 			expectedExposition: `
 # HELP aws_s3_operations_cost S3 operations cost per 1k requests
 # TYPE aws_s3_operations_cost gauge
 aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
-aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
-# HELP aws_s3_storage_hourly_cost S3 storage hourly cost in GiB
-# TYPE aws_s3_storage_hourly_cost gauge
-aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
+# HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_request_errors_total counter
+aws_cost_exporter_request_errors_total 0
+# HELP aws_cost_exporter_requests_total Total number of requests made to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_requests_total counter
+aws_cost_exporter_requests_total 1
 `,
 		},
 		{
@@ -493,15 +517,17 @@ aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
 					}},
 				}, nil
 			},
-			metricNames: justCostMetrics,
+			metricNames: withoutNextScrape,
 			expectedExposition: `
 # HELP aws_s3_operations_cost S3 operations cost per 1k requests
 # TYPE aws_s3_operations_cost gauge
 aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="1"} 1000
-aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
-# HELP aws_s3_storage_hourly_cost S3 storage hourly cost in GiB
-# TYPE aws_s3_storage_hourly_cost gauge
-aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
+# HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_request_errors_total counter
+aws_cost_exporter_request_errors_total 0
+# HELP aws_cost_exporter_requests_total Total number of requests made to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_requests_total counter
+aws_cost_exporter_requests_total 1
 `,
 		},
 		{
@@ -551,17 +577,21 @@ aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
 					},
 				}, nil
 			},
-			metricNames: justCostMetrics,
+			metricNames: withoutNextScrape,
 			expectedExposition: `
+# HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_request_errors_total counter
+aws_cost_exporter_request_errors_total 0
+# HELP aws_cost_exporter_requests_total Total number of requests made to the AWS Cost Explorer API
+# TYPE aws_cost_exporter_requests_total counter
+aws_cost_exporter_requests_total 1
 # HELP aws_s3_operations_cost S3 operations cost per 1k requests
 # TYPE aws_s3_operations_cost gauge
 aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="1"} 1000
 aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-1",tier="2"} 1000
-aws_s3_operations_cost{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
 # HELP aws_s3_storage_hourly_cost S3 storage hourly cost in GiB
 # TYPE aws_s3_storage_hourly_cost gauge
 aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-1"} 0.0013689253935660506
-aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
 `,
 		},
 	} {
@@ -583,6 +613,7 @@ aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-3"} 0
 			c := &Collector{
 				client:     ce,
 				nextScrape: tc.nextScrape,
+				metrics:    NewMetrics(),
 			}
 			err := c.Collect()
 			if tc.expectedError != nil {
