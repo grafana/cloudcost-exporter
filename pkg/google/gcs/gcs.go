@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"time"
 
@@ -316,7 +315,6 @@ func ExportRegionalDiscounts(ctx context.Context, client RegionsClient, projectI
 		}
 		regions = append(regions, *resp.Name)
 	}
-
 	percentDiscount := float64(discount) / 100.0
 	for _, storageClass := range storageClasses {
 		for _, region := range regions {
@@ -376,7 +374,9 @@ func ExportGCPCostData(ctx context.Context, client CloudCatalogClient, serviceNa
 			if strings.Contains(sku.Description, "Early Delete") {
 				continue // to skip "Unknown sku"
 			}
-			parseStorageSku(sku)
+			if err = parseStorageSku(sku); err != nil {
+				log.Printf("error parsing storage sku: %v", err)
+			}
 			continue
 		}
 		if strings.HasSuffix(sku.Category.ResourceGroup, "Ops") {
@@ -385,7 +385,7 @@ func ExportGCPCostData(ctx context.Context, client CloudCatalogClient, serviceNa
 			}
 			continue
 		}
-		fmt.Fprintf(os.Stderr, "Unknown sku: %s\n", sku.Description)
+		log.Printf("Unknown sku: %s\n", sku.Description)
 	}
 	return nil
 }
