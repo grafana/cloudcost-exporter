@@ -6,12 +6,15 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	billing "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	computeapiv1 "cloud.google.com/go/compute/apiv1"
 	"cloud.google.com/go/storage"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
 	"google.golang.org/genproto/googleapis/type/money"
@@ -259,7 +262,7 @@ func Test_parseOpSku(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := parseOpSku(tt.sku)
+			err := parseOpSku(tt.sku, NewMetrics())
 			assert.ErrorIs(t, err, tt.err)
 		})
 	}
@@ -338,7 +341,7 @@ func Test_parseStorageSku(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := parseStorageSku(tt.sku)
+			err := parseStorageSku(tt.sku, NewMetrics())
 			assert.ErrorIs(t, err, tt.err)
 		})
 	}
@@ -370,6 +373,17 @@ func (s *fakeCloudBillingServer) ListSkus(_ context.Context, _ *billingpb.ListSk
 					ResourceGroup:      "Storage",
 					ResourceFamily:     "Storage",
 				},
+				ServiceRegions: []string{"us-east1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{PricingExpression: &billingpb.PricingExpression{
+						UsageUnitDescription: gibDay,
+						TieredRates: []*billingpb.PricingExpression_TierRate{
+							{UnitPrice: &money.Money{Nanos: 0}},
+							{StartUsageAmount: 5, UnitPrice: &money.Money{Nanos: 4000000}},
+						},
+					},
+					},
+				},
 			},
 			{
 				Name:        "services/6F81-5844-456A/skus/0001-0001-0001",
@@ -388,14 +402,36 @@ func (s *fakeCloudBillingServer) ListSkus(_ context.Context, _ *billingpb.ListSk
 					ResourceGroup:      "Storage",
 					ResourceFamily:     "Storage",
 				},
+				ServiceRegions: []string{"us-east1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{PricingExpression: &billingpb.PricingExpression{
+						UsageUnitDescription: gibMonthly,
+						TieredRates: []*billingpb.PricingExpression_TierRate{
+							{UnitPrice: &money.Money{Nanos: 0}},
+							{StartUsageAmount: 5, UnitPrice: &money.Money{Nanos: 4000000}},
+						},
+					},
+					},
+				},
 			},
 			{
 				Name:        "services/6F81-5844-456A/skus/0001-0001-0001",
-				Description: "Standard Storage US Regional Ops",
+				Description: "Standard Storage US Regional Ops Class A",
 				Category: &billingpb.Category{
 					ServiceDisplayName: "Cloud Storage",
 					ResourceGroup:      "Storage Ops",
 					ResourceFamily:     "Storage",
+				},
+				ServiceRegions: []string{"us-east1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{PricingExpression: &billingpb.PricingExpression{
+						UsageUnitDescription: gibMonthly,
+						TieredRates: []*billingpb.PricingExpression_TierRate{
+							{UnitPrice: &money.Money{Nanos: 0}},
+							{StartUsageAmount: 5, UnitPrice: &money.Money{Nanos: 4000000}},
+						},
+					},
+					},
 				},
 			},
 			{
@@ -475,27 +511,28 @@ func TestGetServiceNameByReadableName(t *testing.T) {
 			}
 			assert.Equalf(t, tt.want, got, "GetServiceNameByReadableName(%v, %v, %v)", ctx, client, tt.want)
 		})
+
 	}
 }
 
 func TestCollector_Collect(t *testing.T) {
 	regionsHttptestServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"items": [{"name": "us-east1", "description": "us-east1", "resourceGroup": "Storage"}]}`))
+		_, _ = w.Write([]byte(`{"items": [{"name": "us-east1", "description": "us-east1", "resourceGroup": "Storage"}]}`))
 	}))
 	regionsClient, err := computeapiv1.NewRegionsRESTClient(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(regionsHttptestServer.URL))
 	assert.NoError(t, err)
 	assert.NotNil(t, regionsClient)
 
-	storageregionsHttptestServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	storageHttptestServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"items": [
+		_, _ = w.Write([]byte(`{"items": [
 	{"name": "testbucket-1", "location": "US-EAST1", "storageClass": "STANDARD", "locationType": "region"},
 	{"name": "testbucket-2", "location": "US", "storageClass": "STANDARD", "locationType": "multi-region"}
 ]}`))
 	}))
 
-	storageClient, err := storage.NewClient(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(storageregionsHttptestServer.URL))
+	storageClient, err := storage.NewClient(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(storageHttptestServer.URL))
 	assert.NoError(t, err)
 	assert.NotNil(t, storageClient)
 
@@ -525,5 +562,92 @@ func TestCollector_Collect(t *testing.T) {
 	assert.NotNil(t, collector)
 
 	err = collector.Collect()
+	assert.NoError(t, err)
+
+	r := prometheus.NewPedanticRegistry()
+	err = collector.Register(r)
+	assert.NoError(t, err)
+
+	metricNames := []string{
+		"gcp_gcs_storage_hourly_cost",
+		"gcp_gcs_storage_discount",
+		"gcp_gcs_operations_cost",
+		"gcp_gcs_operations_discount",
+		"gcp_gcs_bucket_info",
+	}
+	err = testutil.CollectAndCompare(r, strings.NewReader(`
+   # HELP gcp_gcs_bucket_info GCS bucket info
+# TYPE gcp_gcs_bucket_info gauge
+gcp_gcs_bucket_info{bucket_name="testbucket-1",location="us-east1",location_type="region",storage_class="STANDARD"} 1
+gcp_gcs_bucket_info{bucket_name="testbucket-2",location="us",location_type="multi-region",storage_class="STANDARD"} 1
+# HELP gcp_gcs_operations_cost GCS operations cost per 1k requests
+# TYPE gcp_gcs_operations_cost gauge
+gcp_gcs_operations_cost{location="us-east1",opclass="class-a",storage_class="REGIONAL"} 0.004
+# HELP gcp_gcs_operations_discount GCS operations discount
+# TYPE gcp_gcs_operations_discount gauge
+gcp_gcs_operations_discount{location_type="dual-region",opclass="class-a",storage_class="MULTI_REGIONAL"} 0.595
+gcp_gcs_operations_discount{location_type="dual-region",opclass="class-a",storage_class="STANDARD"} 0.595
+gcp_gcs_operations_discount{location_type="dual-region",opclass="class-b",storage_class="MULTI_REGIONAL"} 0.19
+gcp_gcs_operations_discount{location_type="dual-region",opclass="class-b",storage_class="STANDARD"} 0.19
+gcp_gcs_operations_discount{location_type="multi-region",opclass="class-a",storage_class="COLDLINE"} 0.795
+gcp_gcs_operations_discount{location_type="multi-region",opclass="class-a",storage_class="MULTI_REGIONAL"} 0.595
+gcp_gcs_operations_discount{location_type="multi-region",opclass="class-a",storage_class="NEARLINE"} 0.595
+gcp_gcs_operations_discount{location_type="multi-region",opclass="class-a",storage_class="STANDARD"} 0.595
+gcp_gcs_operations_discount{location_type="multi-region",opclass="class-b",storage_class="COLDLINE"} 0.19
+gcp_gcs_operations_discount{location_type="multi-region",opclass="class-b",storage_class="MULTI_REGIONAL"} 0.19
+gcp_gcs_operations_discount{location_type="multi-region",opclass="class-b",storage_class="NEARLINE"} 0.19
+gcp_gcs_operations_discount{location_type="multi-region",opclass="class-b",storage_class="STANDARD"} 0.19
+gcp_gcs_operations_discount{location_type="region",opclass="class-a",storage_class="ARCHIVE"} 0.19
+gcp_gcs_operations_discount{location_type="region",opclass="class-a",storage_class="COLDLINE"} 0.595
+gcp_gcs_operations_discount{location_type="region",opclass="class-a",storage_class="NEARLINE"} 0.19
+gcp_gcs_operations_discount{location_type="region",opclass="class-a",storage_class="REGIONAL"} 0.19
+gcp_gcs_operations_discount{location_type="region",opclass="class-a",storage_class="STANDARD"} 0.19
+gcp_gcs_operations_discount{location_type="region",opclass="class-b",storage_class="ARCHIVE"} 0.19
+gcp_gcs_operations_discount{location_type="region",opclass="class-b",storage_class="COLDLINE"} 0.19
+gcp_gcs_operations_discount{location_type="region",opclass="class-b",storage_class="NEARLINE"} 0.19
+gcp_gcs_operations_discount{location_type="region",opclass="class-b",storage_class="REGIONAL"} 0.19
+gcp_gcs_operations_discount{location_type="region",opclass="class-b",storage_class="STANDARD"} 0.19
+# HELP gcp_gcs_storage_discount GCS storage discount
+# TYPE gcp_gcs_storage_discount gauge
+gcp_gcs_storage_discount{location="asia",storage_class="ARCHIVE"} 0
+gcp_gcs_storage_discount{location="asia",storage_class="COLDLINE"} 0
+gcp_gcs_storage_discount{location="asia",storage_class="MULTI_REGIONAL"} 0
+gcp_gcs_storage_discount{location="asia",storage_class="NEARLINE"} 0
+gcp_gcs_storage_discount{location="asia",storage_class="STANDARD"} 0
+gcp_gcs_storage_discount{location="asia1",storage_class="ARCHIVE"} 0
+gcp_gcs_storage_discount{location="asia1",storage_class="COLDLINE"} 0
+gcp_gcs_storage_discount{location="asia1",storage_class="MULTI_REGIONAL"} 0
+gcp_gcs_storage_discount{location="asia1",storage_class="NEARLINE"} 0
+gcp_gcs_storage_discount{location="asia1",storage_class="STANDARD"} 0
+gcp_gcs_storage_discount{location="eu",storage_class="ARCHIVE"} 0
+gcp_gcs_storage_discount{location="eu",storage_class="COLDLINE"} 0
+gcp_gcs_storage_discount{location="eu",storage_class="MULTI_REGIONAL"} 0
+gcp_gcs_storage_discount{location="eu",storage_class="NEARLINE"} 0
+gcp_gcs_storage_discount{location="eu",storage_class="STANDARD"} 0
+gcp_gcs_storage_discount{location="eur4",storage_class="ARCHIVE"} 0
+gcp_gcs_storage_discount{location="eur4",storage_class="COLDLINE"} 0
+gcp_gcs_storage_discount{location="eur4",storage_class="MULTI_REGIONAL"} 0
+gcp_gcs_storage_discount{location="eur4",storage_class="NEARLINE"} 0
+gcp_gcs_storage_discount{location="eur4",storage_class="STANDARD"} 0
+gcp_gcs_storage_discount{location="nam4",storage_class="ARCHIVE"} 0
+gcp_gcs_storage_discount{location="nam4",storage_class="COLDLINE"} 0
+gcp_gcs_storage_discount{location="nam4",storage_class="MULTI_REGIONAL"} 0
+gcp_gcs_storage_discount{location="nam4",storage_class="NEARLINE"} 0
+gcp_gcs_storage_discount{location="nam4",storage_class="STANDARD"} 0
+gcp_gcs_storage_discount{location="us",storage_class="ARCHIVE"} 0
+gcp_gcs_storage_discount{location="us",storage_class="COLDLINE"} 0
+gcp_gcs_storage_discount{location="us",storage_class="MULTI_REGIONAL"} 0
+gcp_gcs_storage_discount{location="us",storage_class="NEARLINE"} 0
+gcp_gcs_storage_discount{location="us",storage_class="STANDARD"} 0
+gcp_gcs_storage_discount{location="us-east1",storage_class="ARCHIVE"} 0
+gcp_gcs_storage_discount{location="us-east1",storage_class="COLDLINE"} 0
+gcp_gcs_storage_discount{location="us-east1",storage_class="NEARLINE"} 0
+gcp_gcs_storage_discount{location="us-east1",storage_class="REGIONAL"} 0
+gcp_gcs_storage_discount{location="us-east1",storage_class="STANDARD"} 0
+# HELP gcp_gcs_storage_hourly_cost GCS storage hourly cost in GiB
+# TYPE gcp_gcs_storage_hourly_cost gauge
+gcp_gcs_storage_hourly_cost{location="us-east1",storage_class="MULTI_REGIONAL"} 5.376344086021506e-06
+gcp_gcs_storage_hourly_cost{location="us-east1",storage_class="REGIONAL"} 0.00016666666666666666
+`), metricNames...)
 	assert.NoError(t, err)
 }
