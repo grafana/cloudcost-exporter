@@ -64,42 +64,57 @@ var billingToRegionMap = map[string]string{
 	"AWS GovCloud (US)":      "us-gov-west-1",
 }
 
-// Create two metrics that are gauges
-var (
+// Metrics exported by this collector.
+type Metrics struct {
 	// StorageGauge measures the cost of storage in $/GiB, per region and class.
-	StorageGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "aws_s3_storage_hourly_cost",
-		Help: "S3 storage hourly cost in GiB",
-	},
-		[]string{"region", "class"},
-	)
+	StorageGauge *prometheus.GaugeVec
 
 	// OperationsGauge measures the cost of operations in $/1k requests
-	OperationsGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "aws_s3_operations_cost",
-		Help: "S3 operations cost per 1k requests",
-	},
-		[]string{"region", "class", "tier"},
-	)
+	OperationsGauge *prometheus.GaugeVec
 
 	// RequestCount is a counter that tracks the number of requests made to the AWS Cost Explorer API
-	RequestCount = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "aws_cost_exporter_requests_total",
-		Help: "Total number of requests made to the AWS Cost Explorer API",
-	})
+	RequestCount prometheus.Counter
 
 	// RequestErrorsCount is a counter that tracks the number of errors when making requests to the AWS Cost Explorer API
-	RequestErrorsCount = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "aws_cost_exporter_request_errors_total",
-		Help: "Total number of errors when making requests to the AWS Cost Explorer API",
-	})
+	RequestErrorsCount prometheus.Counter
 
-	// NextScrapeGuage is a gauge that tracks the next time the exporter will scrape AWS billing data
-	NextScrapeGuage = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "aws_cost_exporter_next_scrape",
-		Help: "The next time the exporter will scrape AWS billing data. Can be used to trigger alerts if now - nextScrape > interval",
-	})
-)
+	// NextScrapeGauge is a gauge that tracks the next time the exporter will scrape AWS billing data
+	NextScrapeGauge prometheus.Gauge
+}
+
+// NewMetrics returns a new Metrics instance.
+func NewMetrics() Metrics {
+	return Metrics{
+		StorageGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "aws_s3_storage_hourly_cost",
+			Help: "S3 storage hourly cost in GiB",
+		},
+			[]string{"region", "class"},
+		),
+
+		OperationsGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "aws_s3_operations_cost",
+			Help: "S3 operations cost per 1k requests",
+		},
+			[]string{"region", "class", "tier"},
+		),
+
+		RequestCount: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "aws_cost_exporter_requests_total",
+			Help: "Total number of requests made to the AWS Cost Explorer API",
+		}),
+
+		RequestErrorsCount: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "aws_cost_exporter_request_errors_total",
+			Help: "Total number of errors when making requests to the AWS Cost Explorer API",
+		}),
+
+		NextScrapeGauge: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "aws_cost_exporter_next_scrape",
+			Help: "The next time the exporter will scrape AWS billing data. Can be used to trigger alerts if now - nextScrape > interval",
+		}),
+	}
+}
 
 // Collector is the AWS implementation of the Collector interface
 // It is responsible for registering and collecting metrics
@@ -107,6 +122,7 @@ type Collector struct {
 	client     costexplorer.CostExplorer
 	interval   time.Duration
 	nextScrape time.Time
+	metrics    Metrics
 }
 
 // New creates a new Collector with a client and scrape interval defined.
@@ -116,6 +132,7 @@ func New(scrapeInterval time.Duration, client costexplorer.CostExplorer) (*Colle
 		interval: scrapeInterval,
 		// Initially Set nextScrape to the current time minus the scrape interval so that the first scrape will run immediately
 		nextScrape: time.Now().Add(-scrapeInterval),
+		metrics:    NewMetrics(),
 	}, nil
 }
 
@@ -125,11 +142,11 @@ func (r *Collector) Name() string {
 
 // Register is called prior to the first collection. It registers any custom metric that needs to be exported for AWS billing data
 func (r *Collector) Register(registry provider.Registry) error {
-	registry.MustRegister(StorageGauge)
-	registry.MustRegister(OperationsGauge)
-	registry.MustRegister(RequestCount)
-	registry.MustRegister(NextScrapeGuage)
-	registry.MustRegister(RequestErrorsCount)
+	registry.MustRegister(r.metrics.StorageGauge)
+	registry.MustRegister(r.metrics.OperationsGauge)
+	registry.MustRegister(r.metrics.RequestCount)
+	registry.MustRegister(r.metrics.NextScrapeGauge)
+	registry.MustRegister(r.metrics.RequestErrorsCount)
 
 	return nil
 }
@@ -143,8 +160,8 @@ func (r *Collector) Collect() error {
 		return nil
 	}
 	r.nextScrape = time.Now().Add(r.interval)
-	NextScrapeGuage.Set(float64(r.nextScrape.Unix()))
-	return ExportBillingData(r.client)
+	r.metrics.NextScrapeGauge.Set(float64(r.nextScrape.Unix()))
+	return ExportBillingData(r.client, r.metrics)
 }
 
 // S3BillingData is the struct for the data we will be collecting
@@ -229,7 +246,7 @@ func (s S3BillingData) AddMetricGroup(region string, component string, group typ
 
 // getBillingData is responsible for making the API call to the AWS Cost Explorer API and parsing the response
 // into a S3BillingData struct
-func getBillingData(client costexplorer.CostExplorer, startDate time.Time, endDate time.Time) (S3BillingData, error) {
+func getBillingData(client costexplorer.CostExplorer, startDate time.Time, endDate time.Time, m Metrics) (S3BillingData, error) {
 	log.Printf("Getting billing data for %s to %s\n", startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
 	input := &awscostexplorer.GetCostAndUsageInput{
 		TimePeriod: &types.DateInterval{
@@ -255,11 +272,11 @@ func getBillingData(client costexplorer.CostExplorer, startDate time.Time, endDa
 
 	var outputs []*awscostexplorer.GetCostAndUsageOutput
 	for {
-		RequestCount.Inc()
+		m.RequestCount.Inc()
 		output, err := client.GetCostAndUsage(context.TODO(), input)
 		if err != nil {
 			log.Printf("Error getting cost and usage: %v\n", err)
-			RequestErrorsCount.Inc()
+			m.RequestErrorsCount.Inc()
 			return S3BillingData{}, err
 		}
 		outputs = append(outputs, output)
@@ -342,32 +359,32 @@ func getComponentFromKey(key string) string {
 }
 
 // ExportBillingData will query the previous 30 days of S3 billing data and export it to the prometheus metrics
-func ExportBillingData(client costexplorer.CostExplorer) error {
+func ExportBillingData(client costexplorer.CostExplorer, m Metrics) error {
 	// We go one day into the past as the current days billing data has no guarantee of being complete
 	endDate := time.Now().AddDate(0, 0, -1)
 	// Current assumption is that we're going to pull 30 days worth of billing data
 	startDate := endDate.AddDate(0, 0, -30)
-	s3BillingData, err := getBillingData(client, startDate, endDate)
+	s3BillingData, err := getBillingData(client, startDate, endDate, m)
 	if err != nil {
 		return err
 	}
 
-	exportMetrics(s3BillingData)
+	exportMetrics(s3BillingData, m)
 	return nil
 }
 
 // exportMetrics will iterate over the S3BillingData and export the metrics to prometheus
-func exportMetrics(s3BillingData S3BillingData) {
+func exportMetrics(s3BillingData S3BillingData, m Metrics) {
 	log.Printf("Exporting metrics for %d regions\n", len(s3BillingData.Regions))
 	for region, pricingModel := range s3BillingData.Regions {
 		for component, pricing := range pricingModel.Model {
 			switch component {
 			case "Requests-Tier1":
-				OperationsGauge.WithLabelValues(region, StandardLabel, "1").Set(pricing.UnitCost)
+				m.OperationsGauge.WithLabelValues(region, StandardLabel, "1").Set(pricing.UnitCost)
 			case "Requests-Tier2":
-				OperationsGauge.WithLabelValues(region, StandardLabel, "2").Set(pricing.UnitCost)
+				m.OperationsGauge.WithLabelValues(region, StandardLabel, "2").Set(pricing.UnitCost)
 			case "TimedStorage":
-				StorageGauge.WithLabelValues(region, StandardLabel).Set(pricing.UnitCost)
+				m.StorageGauge.WithLabelValues(region, StandardLabel).Set(pricing.UnitCost)
 			}
 		}
 	}
