@@ -29,7 +29,7 @@ type Metrics struct {
 	BucketListHistogram        *prometheus.HistogramVec
 	BucketListStatus           *prometheus.CounterVec
 	CloudCostExporterHistogram *prometheus.HistogramVec
-	NextScrapeScrapeGuage      prometheus.Gauge
+	NextScrapeScrapeGauge      prometheus.Gauge
 }
 
 func NewMetrics() *Metrics {
@@ -62,7 +62,7 @@ func NewMetrics() *Metrics {
 			[]string{"location", "location_type", "storage_class", "bucket_name"},
 		),
 
-		NextScrapeScrapeGuage: prometheus.NewGauge(prometheus.GaugeOpts{
+		NextScrapeScrapeGauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "gcp_cost_exporter_next_scrape",
 			Help: "The next time the exporter will scrape GCP billing data. Can be used to trigger alerts if now - nextScrape > interval",
 		}),
@@ -252,7 +252,7 @@ func (r *Collector) Register(registry provider.Registry) error {
 	registry.MustRegister(r.metrics.BucketListHistogram)
 	registry.MustRegister(r.metrics.BucketListStatus)
 	registry.MustRegister(r.metrics.CloudCostExporterHistogram)
-	registry.MustRegister(r.metrics.NextScrapeScrapeGuage)
+	registry.MustRegister(r.metrics.NextScrapeScrapeGauge)
 	return nil
 }
 
@@ -267,7 +267,7 @@ func (c *Collector) Collect() error {
 	}
 	defer c.metrics.CloudCostExporterHistogram.WithLabelValues("gcp").Observe(time.Since(now).Seconds())
 	c.nextScrape = time.Now().Add(c.interval)
-	c.metrics.NextScrapeScrapeGuage.Set(float64(c.nextScrape.Unix()))
+	c.metrics.NextScrapeScrapeGauge.Set(float64(c.nextScrape.Unix()))
 	ExporterOperationsDiscounts(c.metrics)
 	err := ExportRegionalDiscounts(c.ctx, c.regionsClient, c.ProjectID, c.discount, c.metrics)
 	if err != nil {
