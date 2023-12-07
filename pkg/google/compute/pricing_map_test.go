@@ -4,13 +4,302 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/google/go-cmp/cmp"
-	"google.golang.org/genproto/googleapis/type/money"
 	"os"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/type/money"
+
 	"cloud.google.com/go/billing/apiv1/billingpb"
 )
+
+func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		pm               StructuredPricingMap
+		ms               *MachineSpec
+		expectedCPUPrice float64
+		expectedRAMPRice float64
+		expectedError    error
+	}{
+		{
+			name:          "regions is nil",
+			expectedError: RegionNotFound,
+		},
+		{
+			name:          "nil machine spec",
+			pm:            StructuredPricingMap{Regions: map[string]*FamilyPricing{"": {}}},
+			expectedError: RegionNotFound,
+		},
+		{
+			name:          "region not found",
+			pm:            StructuredPricingMap{Regions: map[string]*FamilyPricing{"": {}}},
+			ms:            &MachineSpec{Region: "missing region"},
+			expectedError: RegionNotFound,
+		},
+		{
+			name:          "family type not found",
+			pm:            StructuredPricingMap{Regions: map[string]*FamilyPricing{"region": {}}},
+			ms:            &MachineSpec{Region: "region"},
+			expectedError: FamilyTypeNotFound,
+		},
+		{
+			name: "on-demand",
+			pm: StructuredPricingMap{
+				Regions: map[string]*FamilyPricing{
+					"region": {
+						Family: map[string]*PriceTiers{
+							"family": {
+								OnDemand: ComputePrices{
+									Cpu: 1,
+									Ram: 2,
+								},
+							},
+						},
+					},
+				},
+			},
+			ms: &MachineSpec{
+				Region: "region",
+				Family: "family",
+			},
+			expectedCPUPrice: 1,
+			expectedRAMPRice: 2,
+		},
+		{
+			name: "spot",
+			pm: StructuredPricingMap{
+				Regions: map[string]*FamilyPricing{
+					"region": {
+						Family: map[string]*PriceTiers{
+							"family": {
+								Spot: ComputePrices{
+									Cpu: 3,
+									Ram: 4,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedCPUPrice: 3,
+			expectedRAMPRice: 4,
+			ms: &MachineSpec{
+				Region:       "region",
+				Family:       "family",
+				SpotInstance: true,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, r, err := tc.pm.GetCostOfInstance(tc.ms)
+			if tc.expectedError != nil {
+				require.EqualError(t, err, tc.expectedError.Error())
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedCPUPrice, c, "cpu price mismatch")
+			require.Equal(t, tc.expectedRAMPRice, r, "ram price mismatch")
+		})
+	}
+}
+
+func TestGeneratePricingMap(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		skus               []*billingpb.Sku
+		expectedPricingMap *StructuredPricingMap
+		expectedError      error
+	}{
+		{
+			name:          "no skus",
+			expectedError: SkuNotFound,
+		},
+		{
+			name: "empty sku, empty pricing map",
+			skus: []*billingpb.Sku{{}},
+			expectedPricingMap: &StructuredPricingMap{
+				Regions: map[string]*FamilyPricing{},
+			},
+		},
+		{
+			name:          "nil sku, bubble-up error",
+			skus:          []*billingpb.Sku{nil},
+			expectedError: SkuIsNil,
+		},
+		{
+			name: "sku not relevant",
+			skus: []*billingpb.Sku{{
+				Description: "Nvidia L4 GPU attached to Spot Preemptible VMs running in Hong Kong",
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &StructuredPricingMap{
+				Regions: map[string]*FamilyPricing{},
+			},
+		},
+		{
+			name: "sku not parsable",
+			skus: []*billingpb.Sku{{
+				Description: "No more guava's allowed in the codebase",
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &StructuredPricingMap{
+				Regions: map[string]*FamilyPricing{},
+			},
+		},
+		{
+			name: "on-demand cpu",
+			skus: []*billingpb.Sku{{
+				Description:    "G2 Instance Core running in Sao Paulo",
+				ServiceRegions: []string{"europe-west1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &StructuredPricingMap{
+				Regions: map[string]*FamilyPricing{
+					"europe-west1": {
+						Family: map[string]*PriceTiers{
+							"g2": {
+								OnDemand: ComputePrices{
+									Cpu: 1,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "on-demand ram",
+			skus: []*billingpb.Sku{{
+				Description:    "G2 Instance Ram running in Belgium",
+				ServiceRegions: []string{"europe-west1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &StructuredPricingMap{
+				Regions: map[string]*FamilyPricing{
+					"europe-west1": {
+						Family: map[string]*PriceTiers{
+							"g2": {
+								OnDemand: ComputePrices{
+									Ram: 1,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "spot cpu",
+			skus: []*billingpb.Sku{{
+				Description:    "Spot Preemptible E2 Instance Core running in Salt Lake City",
+				ServiceRegions: []string{"europe-west1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &StructuredPricingMap{
+				Regions: map[string]*FamilyPricing{
+					"europe-west1": {
+						Family: map[string]*PriceTiers{
+							"e2": {
+								Spot: ComputePrices{
+									Cpu: 1,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "spot ram",
+			skus: []*billingpb.Sku{{
+				Description:    "Spot Preemptible Compute optimized Ram running in Montreal",
+				ServiceRegions: []string{"europe-west1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &StructuredPricingMap{
+				Regions: map[string]*FamilyPricing{
+					"europe-west1": {
+						Family: map[string]*PriceTiers{
+							"c2": {
+								Spot: ComputePrices{
+									Ram: 1,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pm, err := GeneratePricingMap(tc.skus)
+			if tc.expectedError != nil {
+				require.EqualError(t, err, tc.expectedError.Error())
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedPricingMap, pm)
+		})
+	}
+}
+
+func Test_getDataFromSku_sadPaths(t *testing.T) {
+	_, err := getDataFromSku(nil)
+	require.ErrorIs(t, err, SkuIsNil)
+
+	_, err = getDataFromSku(&billingpb.Sku{})
+	require.ErrorIs(t, err, PricingDataIsOff)
+}
 
 func Test_getDataFromSku(t *testing.T) {
 	tests := map[string]struct {
@@ -145,6 +434,10 @@ func Test_getDataFromSku(t *testing.T) {
 			price:             12,
 			wantParsedSkuData: nil,
 			wantError:         SkuNotRelevant,
+		},
+		"Not parsable": {
+			description: "No more guava's allowed in the codebase",
+			wantError:   SkuNotParsable,
 		},
 	}
 	for name, tt := range tests {

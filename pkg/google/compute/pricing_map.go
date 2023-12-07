@@ -10,6 +10,7 @@ import (
 )
 
 var (
+	SkuIsNil           = errors.New("sku is nil")
 	SkuNotParsable     = errors.New("can't parse sku")
 	SkuNotRelevant     = errors.New("sku isn't relevant for the current use cases")
 	PricingDataIsOff   = errors.New("pricing data in sku isn't parsable")
@@ -78,6 +79,9 @@ func NewStructuredPricingMap() *StructuredPricingMap {
 }
 
 func (m StructuredPricingMap) GetCostOfInstance(instance *MachineSpec) (float64, float64, error) {
+	if len(m.Regions) == 0 || instance == nil {
+		return 0, 0, RegionNotFound
+	}
 	if _, ok := m.Regions[instance.Region]; !ok {
 		return 0, 0, RegionNotFound
 	}
@@ -203,6 +207,9 @@ func getMatchMap(regex *regexp.Regexp, match []string) map[string]string {
 }
 
 func getDataFromSku(sku *billingpb.Sku) (*ParsedSkuData, error) {
+	if sku == nil {
+		return nil, SkuIsNil
+	}
 	price, err := getPricingInfoFromSku(sku)
 	if err != nil {
 		return nil, PricingDataIsOff
