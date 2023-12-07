@@ -378,8 +378,7 @@ func exportMetrics(s3BillingData S3BillingData) {
 func unitCostForComponent(component string, pricing *Pricing) float64 {
 	switch component {
 	case "Requests-Tier1", "Requests-Tier2":
-		unitCost := pricing.Cost / pricing.Usage / 1000.0
-		return unitCost
+		return pricing.Cost / (pricing.Usage / 1000)
 	case "TimedStorage":
 		return (pricing.Cost / HoursInMonth) / pricing.Usage
 	default:
