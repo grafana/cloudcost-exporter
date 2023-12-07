@@ -20,57 +20,6 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
-var (
-	StorageGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "gcp_gcs_storage_hourly_cost",
-		Help: "GCS storage hourly cost in GiB",
-	},
-		[]string{"location", "storage_class"},
-	)
-
-	StorageDiscountGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "gcp_gcs_storage_discount",
-		Help: "GCS storage discount",
-	}, []string{"location", "storage_class"})
-
-	OperationsGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "gcp_gcs_operations_cost",
-		Help: "GCS operations cost per 1k requests",
-	},
-		[]string{"location", "storage_class", "opclass"},
-	)
-	OperationsDiscountGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "gcp_gcs_operations_discount",
-		Help: "GCS operations discount",
-	}, []string{"location_type", "storage_class", "opclass"})
-
-	BucketInfo = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "gcp_gcs_bucket_info",
-		Help: "GCS bucket info",
-	},
-		[]string{"location", "location_type", "storage_class", "bucket_name"},
-	)
-
-	NextScrapeScrapeGuage = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "gcp_cost_exporter_next_scrape",
-		Help: "The next time the exporter will scrape GCP billing data. Can be used to trigger alerts if now - nextScrape > interval",
-	})
-
-	BucketListHistogram = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "cloudcost_exporter_gcs_bucket_list_duration_seconds",
-		Help: "Histogram for the duration of GCS bucket list operations",
-	}, []string{"project_id"})
-
-	BucketListStatus = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "cloudcost_exporter_gcs_bucket_list_status",
-		Help: "Status of GCS bucket list operations",
-	}, []string{"project_id", "status"})
-	CloudCostExporterHistogram = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "cloudcost_exporter_duration_seconds",
-		Help: "Histogram for the duration of cloudcost exporter operations",
-	}, []string{"provider"})
-)
-
 type Metrics struct {
 	StorageGauge               *prometheus.GaugeVec
 	StorageDiscountGauge       *prometheus.GaugeVec
@@ -80,10 +29,57 @@ type Metrics struct {
 	BucketListHistogram        *prometheus.HistogramVec
 	BucketListStatus           *prometheus.CounterVec
 	CloudCostExporterHistogram *prometheus.HistogramVec
+	NextScrapeScrapeGuage      prometheus.Gauge
 }
 
-func NewMetrics() {
+func NewMetrics() *Metrics {
+	return &Metrics{
 
+		StorageGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "gcp_gcs_storage_hourly_cost",
+			Help: "GCS storage hourly cost in GiB",
+		},
+			[]string{"location", "storage_class"},
+		),
+		StorageDiscountGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "gcp_gcs_storage_discount",
+			Help: "GCS storage discount",
+		}, []string{"location", "storage_class"}),
+		OperationsGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "gcp_gcs_operations_cost",
+			Help: "GCS operations cost per 1k requests",
+		},
+			[]string{"location", "storage_class", "opclass"},
+		),
+		OperationsDiscountGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "gcp_gcs_operations_discount",
+			Help: "GCS operations discount",
+		}, []string{"location_type", "storage_class", "opclass"}),
+		BucketInfo: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "gcp_gcs_bucket_info",
+			Help: "GCS bucket info",
+		},
+			[]string{"location", "location_type", "storage_class", "bucket_name"},
+		),
+
+		NextScrapeScrapeGuage: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "gcp_cost_exporter_next_scrape",
+			Help: "The next time the exporter will scrape GCP billing data. Can be used to trigger alerts if now - nextScrape > interval",
+		}),
+
+		BucketListHistogram: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name: "cloudcost_exporter_gcs_bucket_list_duration_seconds",
+			Help: "Histogram for the duration of GCS bucket list operations",
+		}, []string{"project_id"}),
+
+		BucketListStatus: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "cloudcost_exporter_gcs_bucket_list_status",
+			Help: "Status of GCS bucket list operations",
+		}, []string{"project_id", "status"}),
+		CloudCostExporterHistogram: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name: "cloudcost_exporter_duration_seconds",
+			Help: "Histogram for the duration of cloudcost exporter operations",
+		}, []string{"provider"})}
 }
 
 var (
@@ -175,6 +171,7 @@ type Collector struct {
 	bucketClient       *BucketClient
 	discount           int
 	CachedBuckets      *BucketCache
+	metrics            *Metrics
 }
 
 type Config struct {
@@ -220,6 +217,7 @@ func New(config *Config, cloudCatalogClient CloudCatalogClient, regionsClient Re
 		// Set nextScrape to the current time minus the scrape interval so that the first scrape will run immediately
 		nextScrape:    time.Now().Add(-config.ScrapeInterval),
 		CachedBuckets: NewBucketCache(),
+		metrics:       NewMetrics(),
 	}, nil
 }
 
@@ -246,15 +244,15 @@ func GetServiceNameByReadableName(ctx context.Context, client CloudCatalogClient
 
 func (r *Collector) Register(registry provider.Registry) error {
 	log.Printf("Registering GCS metrics")
-	registry.MustRegister(StorageGauge)
-	registry.MustRegister(StorageDiscountGauge)
-	registry.MustRegister(OperationsDiscountGauge)
-	registry.MustRegister(OperationsGauge)
-	registry.MustRegister(BucketInfo)
-	registry.MustRegister(BucketListHistogram)
-	registry.MustRegister(BucketListStatus)
-	registry.MustRegister(CloudCostExporterHistogram)
-	registry.MustRegister(NextScrapeScrapeGuage)
+	registry.MustRegister(r.metrics.StorageGauge)
+	registry.MustRegister(r.metrics.StorageDiscountGauge)
+	registry.MustRegister(r.metrics.OperationsDiscountGauge)
+	registry.MustRegister(r.metrics.OperationsGauge)
+	registry.MustRegister(r.metrics.BucketInfo)
+	registry.MustRegister(r.metrics.BucketListHistogram)
+	registry.MustRegister(r.metrics.BucketListStatus)
+	registry.MustRegister(r.metrics.CloudCostExporterHistogram)
+	registry.MustRegister(r.metrics.NextScrapeScrapeGuage)
 	return nil
 }
 
@@ -267,24 +265,24 @@ func (c *Collector) Collect() error {
 	if c.nextScrape.After(now) {
 		return nil
 	}
-	defer CloudCostExporterHistogram.WithLabelValues("gcp").Observe(time.Since(now).Seconds())
+	defer c.metrics.CloudCostExporterHistogram.WithLabelValues("gcp").Observe(time.Since(now).Seconds())
 	c.nextScrape = time.Now().Add(c.interval)
-	NextScrapeScrapeGuage.Set(float64(c.nextScrape.Unix()))
-	ExporterOperationsDiscounts()
-	err := ExportRegionalDiscounts(c.ctx, c.regionsClient, c.ProjectID, c.discount)
+	c.metrics.NextScrapeScrapeGuage.Set(float64(c.nextScrape.Unix()))
+	ExporterOperationsDiscounts(c.metrics)
+	err := ExportRegionalDiscounts(c.ctx, c.regionsClient, c.ProjectID, c.discount, c.metrics)
 	if err != nil {
 		log.Printf("Error exporting regional discounts: %v", err)
 	}
-	err = ExportBucketInfo(c.ctx, c.bucketClient, c.Projects, c.CachedBuckets)
+	err = ExportBucketInfo(c.ctx, c.bucketClient, c.Projects, c.CachedBuckets, c.metrics)
 	if err != nil {
 		log.Printf("Error exporting bucket info: %v", err)
 	}
-	return ExportGCPCostData(c.ctx, c.cloudCatalogClient, c.serviceName)
+	return ExportGCPCostData(c.ctx, c.cloudCatalogClient, c.serviceName, c.metrics)
 }
 
 // ExportBucketInfo will list all buckets for a given project and export the data as a prometheus metric.
 // If there are any errors listing buckets, it will export the cached buckets for the project.
-func ExportBucketInfo(ctx context.Context, client *BucketClient, projects []string, cachedBuckets *BucketCache) error {
+func ExportBucketInfo(ctx context.Context, client *BucketClient, projects []string, cachedBuckets *BucketCache, m *Metrics) error {
 	var buckets []*storage.BucketAttrs
 	for _, project := range projects {
 		start := time.Now()
@@ -294,8 +292,8 @@ func ExportBucketInfo(ctx context.Context, client *BucketClient, projects []stri
 		if err != nil {
 			// We don't want to block here as it's not critical to the exporter
 			log.Printf("error listing buckets for %s: %v", project, err)
-			BucketListHistogram.WithLabelValues(project).Observe(time.Since(start).Seconds())
-			BucketListStatus.WithLabelValues(project, "error").Inc()
+			m.BucketListHistogram.WithLabelValues(project).Observe(time.Since(start).Seconds())
+			m.BucketListStatus.WithLabelValues(project, "error").Inc()
 			buckets = cachedBuckets.Get(project)
 			log.Printf("pulling %d cached buckets for project %s", len(buckets), project)
 		}
@@ -305,16 +303,16 @@ func ExportBucketInfo(ctx context.Context, client *BucketClient, projects []stri
 
 		for _, bucket := range buckets {
 			// Location is always in caps, and the metrics that need to join up on it are in lower case
-			BucketInfo.WithLabelValues(strings.ToLower(bucket.Location), bucket.LocationType, bucket.StorageClass, bucket.Name).Set(1)
+			m.BucketInfo.WithLabelValues(strings.ToLower(bucket.Location), bucket.LocationType, bucket.StorageClass, bucket.Name).Set(1)
 		}
-		BucketListHistogram.WithLabelValues(project).Observe(time.Since(start).Seconds())
-		BucketListStatus.WithLabelValues(project, "success").Inc()
+		m.BucketListHistogram.WithLabelValues(project).Observe(time.Since(start).Seconds())
+		m.BucketListStatus.WithLabelValues(project, "success").Inc()
 	}
 
 	return nil
 }
 
-func ExportRegionalDiscounts(ctx context.Context, client RegionsClient, projectID string, discount int) error {
+func ExportRegionalDiscounts(ctx context.Context, client RegionsClient, projectID string, discount int, m *Metrics) error {
 	req := &computepb.ListRegionsRequest{
 		Project: projectID,
 	}
@@ -333,7 +331,7 @@ func ExportRegionalDiscounts(ctx context.Context, client RegionsClient, projectI
 	percentDiscount := float64(discount) / 100.0
 	for _, storageClass := range storageClasses {
 		for _, region := range regions {
-			StorageDiscountGauge.WithLabelValues(region, strings.ToUpper(storageClass)).Set(percentDiscount)
+			m.StorageDiscountGauge.WithLabelValues(region, strings.ToUpper(storageClass)).Set(percentDiscount)
 		}
 		// Base Regions are specific to `MULTI_REGION` buckets that do not have a specific region
 		// Breakdown for buckets with these regions: https://ops.grafana-ops.net/explore?panes=%7B%229oU%22:%7B%22datasource%22:%22000000134%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22expr%22:%22sum%28count%20by%20%28bucket_name%29%20%28stackdriver_gcs_bucket_storage_googleapis_com_storage_total_bytes%7Blocation%3D~%5C%22asia%7Ceu%7Cus%5C%22%7D%29%29%22,%22range%22:true,%22instant%22:true,%22datasource%22:%7B%22type%22:%22prometheus%22,%22uid%22:%22000000134%22%7D,%22editorMode%22:%22code%22,%22legendFormat%22:%22__auto%22%7D,%7B%22refId%22:%22B%22,%22expr%22:%22sum%28count%20by%20%28bucket_name%29%20%28stackdriver_gcs_bucket_storage_googleapis_com_storage_total_bytes%7Blocation%21~%5C%22asia%7Ceu%7Cus%5C%22%7D%29%29%22,%22range%22:true,%22instant%22:true,%22datasource%22:%7B%22type%22:%22prometheus%22,%22uid%22:%22000000134%22%7D,%22editorMode%22:%22code%22,%22legendFormat%22:%22__auto%22%7D%5D,%22range%22:%7B%22from%22:%22now-6h%22,%22to%22:%22now%22%7D%7D%7D&schemaVersion=1&orgId=1
@@ -342,24 +340,24 @@ func ExportRegionalDiscounts(ctx context.Context, client RegionsClient, projectI
 				// This is a hack to align storage classes with stackdriver_exporter
 				storageClass = "MULTI_REGIONAL"
 			}
-			StorageDiscountGauge.WithLabelValues(region, strings.ToUpper(storageClass)).Set(percentDiscount)
+			m.StorageDiscountGauge.WithLabelValues(region, strings.ToUpper(storageClass)).Set(percentDiscount)
 		}
 	}
 
 	return nil
 }
 
-func ExporterOperationsDiscounts() {
+func ExporterOperationsDiscounts(m *Metrics) {
 	for locationType, locationMap := range operationsDiscountMap {
 		for storageClass, storageClassmap := range locationMap {
 			for opsClass, discount := range storageClassmap {
-				OperationsDiscountGauge.WithLabelValues(locationType, strings.ToUpper(storageClass), opsClass).Set(discount)
+				m.OperationsDiscountGauge.WithLabelValues(locationType, strings.ToUpper(storageClass), opsClass).Set(discount)
 			}
 		}
 	}
 }
 
-func ExportGCPCostData(ctx context.Context, client CloudCatalogClient, serviceName string) error {
+func ExportGCPCostData(ctx context.Context, client CloudCatalogClient, serviceName string, m *Metrics) error {
 	skuResponse := client.ListSkus(ctx, &billingpb.ListSkusRequest{
 		Parent: serviceName,
 	})
@@ -389,13 +387,13 @@ func ExportGCPCostData(ctx context.Context, client CloudCatalogClient, serviceNa
 			if strings.Contains(sku.Description, "Early Delete") {
 				continue // to skip "Unknown sku"
 			}
-			if err = parseStorageSku(sku); err != nil {
+			if err = parseStorageSku(sku, m); err != nil {
 				log.Printf("error parsing storage sku: %v", err)
 			}
 			continue
 		}
 		if strings.HasSuffix(sku.Category.ResourceGroup, "Ops") {
-			if err = parseOpSku(sku); err != nil {
+			if err = parseOpSku(sku, m); err != nil {
 				log.Printf("error parsing op sku: %v", err)
 			}
 			continue
@@ -425,7 +423,7 @@ func getPriceFromSku(sku *billingpb.Sku) (float64, error) {
 	return 1e-9 * float64(tierRate.UnitPrice.Nanos), nil // Convert NanoUSD to USD when return
 }
 
-func parseStorageSku(sku *billingpb.Sku) error {
+func parseStorageSku(sku *billingpb.Sku, m *Metrics) error {
 	price, err := getPriceFromSku(sku)
 	if err != nil {
 		return err
@@ -445,11 +443,11 @@ func parseStorageSku(sku *billingpb.Sku) error {
 
 	region := RegionNameSameAsStackdriver(sku.ServiceRegions[0])
 	storageclass := StorageClassFromSkuDescription(sku.Description, region)
-	StorageGauge.WithLabelValues(region, storageclass).Set(price)
+	m.StorageGauge.WithLabelValues(region, storageclass).Set(price)
 	return nil
 }
 
-func parseOpSku(sku *billingpb.Sku) error {
+func parseOpSku(sku *billingpb.Sku, m *Metrics) error {
 	if strings.Contains(sku.Description, "Tagging") {
 		return taggingError
 	}
@@ -463,11 +461,11 @@ func parseOpSku(sku *billingpb.Sku) error {
 	storageclass := StorageClassFromSkuDescription(sku.Description, region)
 	opclass := OpClassFromSkuDescription(sku.Description)
 
-	OperationsGauge.WithLabelValues(region, storageclass, opclass).Set(price)
+	m.OperationsGauge.WithLabelValues(region, storageclass, opclass).Set(price)
 	return nil
 }
 
-// Return StorageClass similiar to what StackDriver has
+// StorageClassFromSkuDescription normalize sku description to match the output from stackdriver exporter
 func StorageClassFromSkuDescription(s string, region string) string {
 	if strings.Contains(s, "Coldline") {
 		return "COLDLINE"
