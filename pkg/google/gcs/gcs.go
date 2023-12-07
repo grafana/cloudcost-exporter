@@ -56,12 +56,12 @@ var (
 		Help: "The next time the exporter will scrape GCP billing data. Can be used to trigger alerts if now - nextScrape > interval",
 	})
 
-	GCSBucketListHistogram = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	BucketListHistogram = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name: "cloudcost_exporter_gcs_bucket_list_duration_seconds",
 		Help: "Histogram for the duration of GCS bucket list operations",
 	}, []string{"project_id"})
 
-	GCSBucketListStatus = prometheus.NewCounterVec(prometheus.CounterOpts{
+	BucketListStatus = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "cloudcost_exporter_gcs_bucket_list_status",
 		Help: "Status of GCS bucket list operations",
 	}, []string{"project_id", "status"})
@@ -70,6 +70,21 @@ var (
 		Help: "Histogram for the duration of cloudcost exporter operations",
 	}, []string{"provider"})
 )
+
+type Metrics struct {
+	StorageGauge               *prometheus.GaugeVec
+	StorageDiscountGauge       *prometheus.GaugeVec
+	OperationsGauge            *prometheus.GaugeVec
+	OperationsDiscountGauge    *prometheus.GaugeVec
+	BucketInfo                 *prometheus.GaugeVec
+	BucketListHistogram        *prometheus.HistogramVec
+	BucketListStatus           *prometheus.CounterVec
+	CloudCostExporterHistogram *prometheus.HistogramVec
+}
+
+func NewMetrics() {
+
+}
 
 var (
 	storageClasses = []string{"Standard", "Regional", "Nearline", "Coldline", "Archive"}
@@ -236,8 +251,8 @@ func (r *Collector) Register(registry provider.Registry) error {
 	registry.MustRegister(OperationsDiscountGauge)
 	registry.MustRegister(OperationsGauge)
 	registry.MustRegister(BucketInfo)
-	registry.MustRegister(GCSBucketListHistogram)
-	registry.MustRegister(GCSBucketListStatus)
+	registry.MustRegister(BucketListHistogram)
+	registry.MustRegister(BucketListStatus)
 	registry.MustRegister(CloudCostExporterHistogram)
 	registry.MustRegister(NextScrapeScrapeGuage)
 	return nil
@@ -279,8 +294,8 @@ func ExportBucketInfo(ctx context.Context, client *BucketClient, projects []stri
 		if err != nil {
 			// We don't want to block here as it's not critical to the exporter
 			log.Printf("error listing buckets for %s: %v", project, err)
-			GCSBucketListHistogram.WithLabelValues(project).Observe(time.Since(start).Seconds())
-			GCSBucketListStatus.WithLabelValues(project, "error").Inc()
+			BucketListHistogram.WithLabelValues(project).Observe(time.Since(start).Seconds())
+			BucketListStatus.WithLabelValues(project, "error").Inc()
 			buckets = cachedBuckets.Get(project)
 			log.Printf("pulling %d cached buckets for project %s", len(buckets), project)
 		}
@@ -292,8 +307,8 @@ func ExportBucketInfo(ctx context.Context, client *BucketClient, projects []stri
 			// Location is always in caps, and the metrics that need to join up on it are in lower case
 			BucketInfo.WithLabelValues(strings.ToLower(bucket.Location), bucket.LocationType, bucket.StorageClass, bucket.Name).Set(1)
 		}
-		GCSBucketListHistogram.WithLabelValues(project).Observe(time.Since(start).Seconds())
-		GCSBucketListStatus.WithLabelValues(project, "success").Inc()
+		BucketListHistogram.WithLabelValues(project).Observe(time.Since(start).Seconds())
+		BucketListStatus.WithLabelValues(project, "success").Inc()
 	}
 
 	return nil
@@ -500,3 +515,72 @@ func RegionNameSameAsStackdriver(s string) string {
 	}
 	return s
 }
+
+//# HELP gcp_gcs_bucket_info GCS bucket info
+//# TYPE gcp_gcs_bucket_info gauge
+//gcp_gcs_bucket_info{bucket_name="testbucket-1",location="us-east1",location_type="region",storage_class="STANDARD"} 1
+//gcp_gcs_bucket_info{bucket_name="testbucket-2",location="us",location_type="multi-region",storage_class="STANDARD"} 1
+//# HELP gcp_gcs_operations_cost GCS operations cost per 1k requests
+//# TYPE gcp_gcs_operations_cost GAUGE
+//GCP_GCS_OPERATIONS_COST{location="us-east1",opclass="",storage_class=""} 0.004
+//# HELP gcp_gcs_operations_discount GCS operations discount
+//# TYPE gcp_gcs_operations_discount gauge
+//gcp_gcs_operations_discount{location_type="dual-region",opclass="class-a",storage_class="MULTI_REGIONAL"} 0.595
+//gcp_gcs_operations_discount{location_type="dual-region",opclass="class-a",storage_class="STANDARD"} 0.595
+//gcp_gcs_operations_discount{location_type="dual-region",opclass="class-b",storage_class="MULTI_REGIONAL"} 0.19
+//gcp_gcs_operations_discount{location_type="dual-region",opclass="class-b",storage_class="STANDARD"} 0.19
+//gcp_gcs_operations_discount{location_type="multi-region",opclass="class-a",storage_class="COLDLINE"} 0.795
+//gcp_gcs_operations_discount{location_type="multi-region",opclass="class-a",storage_class="MULTI_REGIONAL"} 0.595
+//gcp_gcs_operations_discount{location_type="multi-region",opclass="class-a",storage_class="NEARLINE"} 0.595
+//gcp_gcs_operations_discount{location_type="multi-region",opclass="class-a",storage_class="STANDARD"} 0.595
+//gcp_gcs_operations_discount{location_type="multi-region",opclass="class-b",storage_class="COLDLINE"} 0.19
+//gcp_gcs_operations_discount{location_type="multi-region",opclass="class-b",storage_class="MULTI_REGIONAL"} 0.19
+//gcp_gcs_operations_discount{location_type="multi-region",opclass="class-b",storage_class="NEARLINE"} 0.19
+//gcp_gcs_operations_discount{location_type="multi-region",opclass="class-b",storage_class="STANDARD"} 0.19
+//gcp_gcs_operations_discount{location_type="region",opclass="class-a",storage_class="ARCHIVE"} 0.19
+//gcp_gcs_operations_discount{location_type="region",opclass="class-a",storage_class="COLDLINE"} 0.595
+//gcp_gcs_operations_discount{location_type="region",opclass="class-a",storage_class="NEARLINE"} 0.19
+//gcp_gcs_operations_discount{location_type="region",opclass="class-a",storage_class="REGIONAL"} 0.19
+//gcp_gcs_operations_discount{location_type="region",opclass="class-a",storage_class="STANDARD"} 0.19
+//gcp_gcs_operations_discount{location_type="region",opclass="class-b",storage_class="ARCHIVE"} 0.19
+//gcp_gcs_operations_discount{location_type="region",opclass="class-b",storage_class="COLDLINE"} 0.19
+//gcp_gcs_operations_discount{location_type="region",opclass="class-b",storage_class="NEARLINE"} 0.19
+//gcp_gcs_operations_discount{location_type="region",opclass="class-b",storage_class="REGIONAL"} 0.19
+//gcp_gcs_operations_discount{location_type="region",opclass="class-b",storage_class="STANDARD"} 0.19
+//# HELP gcp_gcs_storage_discount GCS storage discount
+//# TYPE gcp_gcs_storage_discount gauge
+//gcp_gcs_storage_discount{location="asia",storage_class="ARCHIVE"} 0
+//gcp_gcs_storage_discount{location="asia",storage_class="COLDLINE"} 0
+//gcp_gcs_storage_discount{location="asia",storage_class="MULTI_REGIONAL"} 0
+//gcp_gcs_storage_discount{location="asia",storage_class="NEARLINE"} 0
+//gcp_gcs_storage_discount{location="asia",storage_class="STANDARD"} 0
+//gcp_gcs_storage_discount{location="asia1",storage_class="ARCHIVE"} 0
+//gcp_gcs_storage_discount{location="asia1",storage_class="COLDLINE"} 0
+//gcp_gcs_storage_discount{location="asia1",storage_class="MULTI_REGIONAL"} 0
+//gcp_gcs_storage_discount{location="asia1",storage_class="NEARLINE"} 0
+//gcp_gcs_storage_discount{location="asia1",storage_class="STANDARD"} 0
+//gcp_gcs_storage_discount{location="eu",storage_class="ARCHIVE"} 0
+//gcp_gcs_storage_discount{location="eu",storage_class="COLDLINE"} 0
+//gcp_gcs_storage_discount{location="eu",storage_class="MULTI_REGIONAL"} 0
+//gcp_gcs_storage_discount{location="eu",storage_class="NEARLINE"} 0
+//gcp_gcs_storage_discount{location="eu",storage_class="STANDARD"} 0
+//gcp_gcs_storage_discount{location="eur4",storage_class="ARCHIVE"} 0
+//gcp_gcs_storage_discount{location="eur4",storage_class="COLDLINE"} 0
+//gcp_gcs_storage_discount{location="eur4",storage_class="MULTI_REGIONAL"} 0
+//gcp_gcs_storage_discount{location="eur4",storage_class="NEARLINE"} 0
+//gcp_gcs_storage_discount{location="eur4",storage_class="STANDARD"} 0
+//gcp_gcs_storage_discount{location="nam4",storage_class="ARCHIVE"} 0
+//gcp_gcs_storage_discount{location="nam4",storage_class="COLDLINE"} 0
+//gcp_gcs_storage_discount{location="nam4",storage_class="MULTI_REGIONAL"} 0
+//gcp_gcs_storage_discount{location="nam4",storage_class="NEARLINE"} 0
+//gcp_gcs_storage_discount{location="nam4",storage_class="STANDARD"} 0
+//gcp_gcs_storage_discount{location="us",storage_class="ARCHIVE"} 0
+//gcp_gcs_storage_discount{location="us",storage_class="COLDLINE"} 0
+//gcp_gcs_storage_discount{location="us",storage_class="MULTI_REGIONAL"} 0
+//gcp_gcs_storage_discount{location="us",storage_class="NEARLINE"} 0
+//gcp_gcs_storage_discount{location="us",storage_class="STANDARD"} 0
+//gcp_gcs_storage_discount{location="us-east1",storage_class="ARCHIVE"} 0
+//gcp_gcs_storage_discount{location="us-east1",storage_class="COLDLINE"} 0
+//gcp_gcs_storage_discount{location="us-east1",storage_class="NEARLINE"} 0
+//gcp_gcs_storage_discount{location="us-east1",storage_class="REGIONAL"} 0
+//gcp_gcs_storage_discount{location="us-east1",storage_class="STANDARD"} 0
