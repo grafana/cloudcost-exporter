@@ -13,14 +13,15 @@ type BucketCache struct {
 
 func (c *BucketCache) Get(project string) []*storage.BucketAttrs {
 	c.m.RLock()
-	defer c.m.RUnlock()
-	return c.Buckets[project]
+	buckets := c.Buckets[project]
+	c.m.RUnlock()
+	return buckets
 }
 
 func (c *BucketCache) Set(project string, buckets []*storage.BucketAttrs) {
 	c.m.Lock()
-	defer c.m.Unlock()
 	c.Buckets[project] = buckets
+	c.m.Unlock()
 }
 
 func NewBucketCache() *BucketCache {
