@@ -467,7 +467,6 @@ func (s *fakeCloudBillingServer) ListSkus(_ context.Context, _ *billingpb.ListSk
 }
 
 func TestGetServiceNameByReadableName(t *testing.T) {
-
 	// We can't follow AWS's example as the CloudCatalogClient returns an iterator that has private fields that we can't easily override
 	// Let's try to see if we can use an httptest server to mock the response
 	tests := map[string]struct {
