@@ -171,10 +171,6 @@ func getMachineFamily(machineType string) string {
 		return ""
 	}
 	split := strings.Split(machineType, "-")
-	if len(split) < 2 {
-		log.Printf("Machine type %s doesn't contain a -", machineType)
-		return ""
-	}
 	return strings.ToLower(split[0])
 }
 
