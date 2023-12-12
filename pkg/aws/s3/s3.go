@@ -240,8 +240,9 @@ func (s S3BillingData) AddMetricGroup(region string, component string, group typ
 			}
 			componentsMap.Cost += cost
 		}
-		componentsMap.UnitCost = unitCostForComponent(component, componentsMap)
 	}
+
+	componentsMap.UnitCost = unitCostForComponent(component, componentsMap)
 }
 
 // getBillingData is responsible for making the API call to the AWS Cost Explorer API and parsing the response
@@ -393,6 +394,13 @@ func exportMetrics(s3BillingData S3BillingData, m Metrics) {
 // unitCostForComponent will calculate the unit cost for a given component. This is necessary because the
 // unit cost will depend on the type of component.
 func unitCostForComponent(component string, pricing *Pricing) float64 {
+	// If the usage is 0, we don't want to divide by 0 which would result in NaN metrics _or_ +Inf
+	// TODO: Assess if we should return the pricing.Cost instead
+	if pricing.Usage == 0 {
+		log.Printf("Usage is 0 for component: %s\n", component)
+		return 0
+	}
+
 	switch component {
 	case "Requests-Tier1", "Requests-Tier2":
 		return pricing.Cost / (pricing.Usage / 1000)
