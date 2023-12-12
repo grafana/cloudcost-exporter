@@ -10,6 +10,7 @@ import (
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/api/compute/v1"
 )
 
@@ -46,6 +47,10 @@ func Test_stripOutKeyFromDescription(t *testing.T) {
 		"simple": {
 			description: "N1 Predefined Instance Core running in Americas",
 			want:        "N1 Predefined Instance Core",
+		},
+		"commitment v1: empty": {
+			description: "Commitment v1:",
+			want:        "",
 		},
 		"commitment v1": {
 			description: "Commitment v1: N2 Predefined Instance Core in Americas",
@@ -141,7 +146,7 @@ func Test_GetMachineFamily(t *testing.T) {
 	}
 }
 
-// development tests: Following tests are ment to be run locally and not suited for CI
+// development tests: Following tests are meant to be run locally and not suited for CI
 // If you need this tests for debugging purposes please run `TestGenerateTestFiles` first
 // and then you can run the rest of tests as needed.
 
@@ -243,5 +248,73 @@ func TestListInstances(t *testing.T) {
 	}
 	for _, instance := range instances {
 		fmt.Printf("%v:%s\n", instance.Instance, instance.Family)
+	}
+}
+
+func TestNewMachineSpec(t *testing.T) {
+	tests := map[string]struct {
+		instance *compute.Instance
+		want     *MachineSpec
+	}{
+		"basic instance": {
+			instance: &compute.Instance{
+				Name:        "test",
+				MachineType: "abc/abc-def",
+				Zone:        "testing/abc-123",
+				Scheduling: &compute.Scheduling{
+					ProvisioningModel: "test",
+				},
+			},
+			want: &MachineSpec{
+				Instance:     "test",
+				Zone:         "abc-123",
+				Region:       "abc",
+				MachineType:  "abc-def",
+				Family:       "abc",
+				SpotInstance: false,
+			},
+		},
+		"machine type with no value": {
+			instance: &compute.Instance{
+				Name:        "test",
+				MachineType: "abc/",
+				Zone:        "testing/abc-123",
+				Scheduling: &compute.Scheduling{
+					ProvisioningModel: "test",
+				},
+			},
+			want: &MachineSpec{
+				Instance:     "test",
+				Zone:         "abc-123",
+				Region:       "abc",
+				MachineType:  "",
+				Family:       "",
+				SpotInstance: false,
+			},
+		},
+		"spot instance": {
+			instance: &compute.Instance{
+				Name:        "test",
+				MachineType: "abc/abc-def",
+				Zone:        "testing/abc-123",
+				Scheduling: &compute.Scheduling{
+					ProvisioningModel: "SPOT",
+				},
+			},
+			want: &MachineSpec{
+				Instance:     "test",
+				Zone:         "abc-123",
+				Region:       "abc",
+				MachineType:  "abc-def",
+				Family:       "abc",
+				SpotInstance: true,
+			},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := NewMachineSpec(test.instance)
+			require.Equal(t, got, test.want)
+		})
 	}
 }

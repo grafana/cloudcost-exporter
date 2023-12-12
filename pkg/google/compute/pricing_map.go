@@ -17,21 +17,21 @@ var (
 	ErrorInRegions     = errors.New("there is an error in the Regions data")
 	RegionNotFound     = errors.New("region wasn't found in pricing map")
 	FamilyTypeNotFound = errors.New("family wasn't found in pricing map for this region")
-	spot               = `(?P<spot>Spot Preemptible )`
-	machineType        = `(?P<machineType>\w{1,3})`
+	spotRegex          = `(?P<spot>Spot Preemptible )`
+	machineTypeRegex   = `(?P<machineType>\w{1,3})`
 	amd                = `(?P<amd> AMD)`
 	n1Suffix           = `(?: Predefined)`
 	resource           = `(?P<resource>Core|Ram)`
-	region             = `\w+(?: \w+){0,2}`
+	regionRegex        = `\w+(?: \w+){0,2}`
 	computeOptimized   = `(?P<optimized> ?Compute optimized)`
 	onDemandString     = fmt.Sprintf(`^%v?(?:%v|%v)%v?%v?(?: Instance)? %v running in %v$`,
-		spot,
-		machineType,
+		spotRegex,
+		machineTypeRegex,
 		computeOptimized,
 		n1Suffix,
 		amd,
 		resource,
-		region)
+		regionRegex)
 	reOnDemand = regexp.MustCompile(onDemandString)
 )
 
