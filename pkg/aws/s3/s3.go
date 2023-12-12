@@ -240,8 +240,9 @@ func (s S3BillingData) AddMetricGroup(region string, component string, group typ
 			}
 			componentsMap.Cost += cost
 		}
-		componentsMap.UnitCost = unitCostForComponent(component, componentsMap)
 	}
+
+	componentsMap.UnitCost = unitCostForComponent(component, componentsMap)
 }
 
 // getBillingData is responsible for making the API call to the AWS Cost Explorer API and parsing the response
@@ -395,7 +396,8 @@ func exportMetrics(s3BillingData S3BillingData, m Metrics) {
 func unitCostForComponent(component string, pricing *Pricing) float64 {
 	switch component {
 	case "Requests-Tier1", "Requests-Tier2":
-		return pricing.Cost / (pricing.Usage / 1000)
+		unitCost := pricing.Cost / (pricing.Usage / 1000)
+		return unitCost
 	case "TimedStorage":
 		return (pricing.Cost / HoursInMonth) / pricing.Usage
 	default:
