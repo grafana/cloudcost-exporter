@@ -3,7 +3,7 @@ module github.com/grafana/cloudcost-exporter
 go 1.20
 
 require (
-	cloud.google.com/go/billing v1.17.4
+	cloud.google.com/go/billing v1.18.0
 	cloud.google.com/go/compute v1.23.3
 	cloud.google.com/go/storage v1.35.1
 	github.com/aws/aws-sdk-go-v2 v1.24.0
