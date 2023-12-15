@@ -496,6 +496,7 @@ func TestGetServiceNameByReadableName(t *testing.T) {
 					t.Errorf("failed to serve: %v", err)
 				}
 			}()
+
 			billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudBillingServer{})
 			client, err := billing.NewCloudCatalogClient(context.Background(),
 				option.WithEndpoint(l.Addr().String()),
