@@ -95,7 +95,7 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c, r, err := tc.pm.GetCostOfInstance(tc.ms)
 			if tc.expectedError != nil {
-				require.EqualError(t, err, tc.expectedError.Error())
+				require.ErrorIs(t, err, tc.expectedError)
 				return
 			}
 			require.NoError(t, err)
