@@ -7,6 +7,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/prometheus/client_golang/prometheus"
@@ -37,7 +38,8 @@ var (
 )
 
 type Config struct {
-	Projects string
+	Projects       string
+	ScrapeInterval time.Duration
 }
 
 // Collector implements the Collector interface for compute services in GKE.
@@ -47,6 +49,7 @@ type Collector struct {
 	PricingMap     *StructuredPricingMap
 	config         *Config
 	Projects       []string
+	NextScrape     time.Time
 }
 
 // New is a helper method to properly setup a compute.Collector struct.
@@ -225,9 +228,10 @@ func (c *Collector) Register(registry provider.Registry) error {
 }
 
 func (c *Collector) Collect() error {
-	log.Println("Collecting GKE metrics")
-	// TODO: Consider adding a timer to this so we can refresh after a certain period of time
-	if c.PricingMap == nil {
+	start := time.Now()
+	log.Printf("Collecting %s metrics", c.Name())
+	if c.PricingMap == nil || time.Now().After(c.NextScrape) {
+		log.Println("Refreshing pricing map")
 		serviceName, err := c.GetServiceName()
 		if err != nil {
 			return err
@@ -238,6 +242,8 @@ func (c *Collector) Collect() error {
 			return err
 		}
 		c.PricingMap = pricingMap
+		c.NextScrape = time.Now().Add(c.config.ScrapeInterval)
+		log.Printf("Finished refreshing pricing map in %s", time.Since(start))
 	}
 	for _, project := range c.Projects {
 		instances, err := c.ListInstances(project)
@@ -270,6 +276,7 @@ func (c *Collector) Collect() error {
 			}).Set(ramCost)
 		}
 	}
+	log.Printf("Finished collecting GKE metrics in %s", time.Since(start))
 
 	return nil
 }
