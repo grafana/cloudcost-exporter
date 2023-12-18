@@ -3,6 +3,7 @@ package compute
 import (
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 
@@ -14,7 +15,6 @@ var (
 	SkuNotParsable     = errors.New("can't parse sku")
 	SkuNotRelevant     = errors.New("sku isn't relevant for the current use cases")
 	PricingDataIsOff   = errors.New("pricing data in sku isn't parsable")
-	ErrorInRegions     = errors.New("there is an error in the Regions data")
 	RegionNotFound     = errors.New("region wasn't found in pricing map")
 	FamilyTypeNotFound = errors.New("family wasn't found in pricing map for this region")
 	spotRegex          = `(?P<spot>Spot Preemptible )`
@@ -83,10 +83,10 @@ func (m StructuredPricingMap) GetCostOfInstance(instance *MachineSpec) (float64,
 		return 0, 0, RegionNotFound
 	}
 	if _, ok := m.Regions[instance.Region]; !ok {
-		return 0, 0, RegionNotFound
+		return 0, 0, fmt.Errorf("%w: %s", RegionNotFound, instance.Region)
 	}
 	if _, ok := m.Regions[instance.Region].Family[instance.Family]; !ok {
-		return 0, 0, FamilyTypeNotFound
+		return 0, 0, fmt.Errorf("%w: %s", FamilyTypeNotFound, instance.Family)
 	}
 	priceTiers := m.Regions[instance.Region].Family[instance.Family]
 	computePrices := priceTiers.OnDemand
@@ -106,12 +106,15 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 		rawData, err := getDataFromSku(sku)
 
 		if errors.Is(err, SkuNotRelevant) {
+			log.Println(fmt.Errorf("%w: %s", SkuNotRelevant, sku.Description))
 			continue
 		}
 		if errors.Is(err, PricingDataIsOff) {
+			log.Println(fmt.Errorf("%w: %s", PricingDataIsOff, sku.Description))
 			continue
 		}
 		if errors.Is(err, SkuNotParsable) {
+			log.Println(fmt.Errorf("%w: %s", SkuNotParsable, sku.Description))
 			continue
 		}
 		if err != nil {

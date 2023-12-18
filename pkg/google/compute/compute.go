@@ -19,9 +19,10 @@ import (
 )
 
 var (
-	ServiceNotFound = errors.New("the service for compute engine wasn't found")
-	SkuNotFound     = errors.New("no sku was interested in us")
-	re              = regexp.MustCompile(`\bin\b`)
+	ServiceNotFound    = errors.New("the service for compute engine wasn't found")
+	SkuNotFound        = errors.New("no sku was interested in us")
+	ListInstancesError = errors.New("no list price was found for the sku")
+	re                 = regexp.MustCompile(`\bin\b`)
 )
 
 var (
@@ -112,7 +113,7 @@ func (c *Collector) ListInstances(projectID string) ([]*MachineSpec, error) {
 			Do()
 		if err != nil {
 			log.Printf("Error listing instance templates: %s", err)
-			return nil, err
+			return nil, fmt.Errorf("%w: %s", ListInstancesError, err.Error())
 		}
 		for _, instanceList := range instances.Items {
 			for _, instance := range instanceList.Instances {

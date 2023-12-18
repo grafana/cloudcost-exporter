@@ -5,13 +5,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/compute/v1"
+	computev1 "google.golang.org/api/compute/v1"
+	"google.golang.org/api/option"
+	"google.golang.org/genproto/googleapis/type/money"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 var collector *Collector
@@ -315,6 +327,261 @@ func TestNewMachineSpec(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			got := NewMachineSpec(test.instance)
 			require.Equal(t, got, test.want)
+		})
+	}
+}
+
+type fakeCloudCatalogServer struct {
+	billingpb.UnimplementedCloudCatalogServer
+}
+
+func (s *fakeCloudCatalogServer) ListServices(ctx context.Context, req *billingpb.ListServicesRequest) (*billingpb.ListServicesResponse, error) {
+	return &billingpb.ListServicesResponse{
+		Services: []*billingpb.Service{
+			{
+				DisplayName: "Compute Engine",
+				Name:        "compute-engine",
+			},
+		},
+	}, nil
+}
+
+func (s *fakeCloudCatalogServer) ListSkus(ctx context.Context, req *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
+	return &billingpb.ListSkusResponse{
+		Skus: []*billingpb.Sku{
+			{
+				Name:           "test",
+				Description:    "N1 Predefined Instance Core running in Americas",
+				ServiceRegions: []string{"us-central1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{
+						PricingExpression: &billingpb.PricingExpression{
+							TieredRates: []*billingpb.PricingExpression_TierRate{
+								{
+									UnitPrice: &money.Money{
+										CurrencyCode: "USD",
+										Nanos:        1e9,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				Name:           "test2",
+				Description:    "N1 Predefined Instance Ram running in Americas",
+				ServiceRegions: []string{"us-central1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{
+						PricingExpression: &billingpb.PricingExpression{
+							TieredRates: []*billingpb.PricingExpression_TierRate{
+								{
+									UnitPrice: &money.Money{
+										CurrencyCode: "USD",
+										Nanos:        1e9,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				Name:           "test-spot",
+				Description:    "Spot Preemptible N1 Instance Core running in Americas",
+				ServiceRegions: []string{"us-central1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{
+						PricingExpression: &billingpb.PricingExpression{
+							TieredRates: []*billingpb.PricingExpression_TierRate{
+								{
+									UnitPrice: &money.Money{
+										CurrencyCode: "USD",
+										Nanos:        1e9,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				Name:           "test2-spot",
+				Description:    "Spot Preemptible N1 Instance Ram running in Americas",
+				ServiceRegions: []string{"us-central1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{
+						PricingExpression: &billingpb.PricingExpression{
+							TieredRates: []*billingpb.PricingExpression_TierRate{
+								{
+									UnitPrice: &money.Money{
+										CurrencyCode: "USD",
+										Nanos:        1e9,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				Name:           "test",
+				Description:    "N2 Predefined Instance Core running in Americas",
+				ServiceRegions: []string{"us-central1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{
+						PricingExpression: &billingpb.PricingExpression{
+							TieredRates: []*billingpb.PricingExpression_TierRate{
+								{
+									UnitPrice: &money.Money{
+										CurrencyCode: "USD",
+										Nanos:        1e9,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				Name:           "test2",
+				Description:    "N2 Predefined Instance Ram running in Americas",
+				ServiceRegions: []string{"us-central1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{
+						PricingExpression: &billingpb.PricingExpression{
+							TieredRates: []*billingpb.PricingExpression_TierRate{
+								{
+									UnitPrice: &money.Money{
+										CurrencyCode: "USD",
+										Nanos:        1e9,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, nil
+}
+
+func TestCollector_Collect(t *testing.T) {
+	tests := map[string]struct {
+		config     *Config
+		testServer *httptest.Server
+		err        error
+	}{
+		"Handle http error": {
+			config: &Config{
+				Projects: "testing",
+			},
+			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			})),
+			err: ListInstancesError,
+		},
+		"Parse out regular response": {
+			config: &Config{
+				Projects: "testing,testing-1",
+			},
+			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				buf := &compute.InstanceAggregatedList{
+					Items: map[string]compute.InstancesScopedList{
+						"projects/testing/zones/us-central1-a": {
+							Instances: []*compute.Instance{
+								{
+									Name:        "test-n1",
+									MachineType: "abc/n1-slim",
+									Zone:        "testing/us-central1-a",
+									Scheduling: &compute.Scheduling{
+										ProvisioningModel: "test",
+									},
+								},
+								{
+									Name:        "test-n2",
+									MachineType: "abc/n2-slim",
+									Zone:        "testing/us-central1-a",
+									Scheduling: &compute.Scheduling{
+										ProvisioningModel: "test",
+									},
+								},
+								{
+									Name:        "test-n1-spot",
+									MachineType: "abc/n1-slim",
+									Zone:        "testing/us-central1-a",
+									Scheduling: &compute.Scheduling{
+										ProvisioningModel: "SPOT",
+									},
+								},
+							},
+						},
+					},
+				}
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode(buf)
+			})),
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(test.testServer.URL))
+			require.NoError(t, err)
+
+			l, err := net.Listen("tcp", "localhost:0")
+			require.NoError(t, err)
+			gsrv := grpc.NewServer()
+			defer gsrv.Stop()
+			go func() {
+				if err := gsrv.Serve(l); err != nil {
+					t.Errorf("failed to serve: %v", err)
+				}
+			}()
+
+			billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudCatalogServer{})
+			cloudCatalagClient, err := billingv1.NewCloudCatalogClient(context.Background(),
+				option.WithEndpoint(l.Addr().String()),
+				option.WithoutAuthentication(),
+				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
+			)
+
+			collector := New(test.config, computeService, cloudCatalagClient)
+
+			require.NotNil(t, collector)
+
+			err = collector.Collect()
+			if test.err != nil {
+				require.ErrorIs(t, err, test.err)
+				return
+			}
+
+			r := prometheus.NewPedanticRegistry()
+			err = collector.Register(r)
+			assert.NoError(t, err)
+			metricsNames := []string{
+				"instance_cpu_hourly_cost",
+				"instance_memory_hourly_cost",
+			}
+			err = testutil.CollectAndCompare(r, strings.NewReader(`
+	# HELP instance_cpu_hourly_cost The hourly cost of a GKE instance
+	# TYPE instance_cpu_hourly_cost gauge
+	instance_cpu_hourly_cost{family="n1",instance="test-n1-spot",machine_type="n1-slim",price_tier="spot",project="testing",provider="gcp",region="us-central1"} 1
+	instance_cpu_hourly_cost{family="n1",instance="test-n1-spot",machine_type="n1-slim",price_tier="spot",project="testing-1",provider="gcp",region="us-central1"} 1
+	instance_cpu_hourly_cost{family="n1",instance="test-n1",machine_type="n1-slim",price_tier="ondemand",project="testing",provider="gcp",region="us-central1"} 1
+	instance_cpu_hourly_cost{family="n1",instance="test-n1",machine_type="n1-slim",price_tier="ondemand",project="testing-1",provider="gcp",region="us-central1"} 1
+	instance_cpu_hourly_cost{family="n2",instance="test-n2",machine_type="n2-slim",price_tier="ondemand",project="testing",provider="gcp",region="us-central1"} 1
+	instance_cpu_hourly_cost{family="n2",instance="test-n2",machine_type="n2-slim",price_tier="ondemand",project="testing-1",provider="gcp",region="us-central1"} 1
+	# HELP instance_memory_hourly_cost The hourly cost of a GKE instance
+	# TYPE instance_memory_hourly_cost gauge
+	instance_memory_hourly_cost{family="n1",instance="test-n1-spot",machine_type="n1-slim",price_tier="spot",project="testing",provider="gcp",region="us-central1"} 1
+	instance_memory_hourly_cost{family="n1",instance="test-n1-spot",machine_type="n1-slim",price_tier="spot",project="testing-1",provider="gcp",region="us-central1"} 1
+	instance_memory_hourly_cost{family="n1",instance="test-n1",machine_type="n1-slim",price_tier="ondemand",project="testing",provider="gcp",region="us-central1"} 1
+	instance_memory_hourly_cost{family="n1",instance="test-n1",machine_type="n1-slim",price_tier="ondemand",project="testing-1",provider="gcp",region="us-central1"} 1
+	instance_memory_hourly_cost{family="n2",instance="test-n2",machine_type="n2-slim",price_tier="ondemand",project="testing",provider="gcp",region="us-central1"} 1
+	instance_memory_hourly_cost{family="n2",instance="test-n2",machine_type="n2-slim",price_tier="ondemand",project="testing-1",provider="gcp",region="us-central1"} 1
+`), metricsNames...)
+			assert.NoError(t, err)
 		})
 	}
 }
