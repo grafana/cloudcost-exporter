@@ -468,76 +468,102 @@ func (s *fakeCloudCatalogServer) ListSkus(ctx context.Context, req *billingpb.Li
 }
 
 func TestCollector_Collect(t *testing.T) {
-	computeTestServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		buf := &compute.InstanceAggregatedList{
-			Items: map[string]compute.InstancesScopedList{
-				"projects/testing/zones/us-central1-a": {
-					Instances: []*compute.Instance{
-						{
-							Name:        "test-n1",
-							MachineType: "abc/n1-slim",
-							Zone:        "testing/us-central1-a",
-							Scheduling: &compute.Scheduling{
-								ProvisioningModel: "test",
-							},
-						},
-						{
-							Name:        "test-n2",
-							MachineType: "abc/n2-slim",
-							Zone:        "testing/us-central1-a",
-							Scheduling: &compute.Scheduling{
-								ProvisioningModel: "test",
-							},
-						},
-						{
-							Name:        "test-n1-spot",
-							MachineType: "abc/n1-slim",
-							Zone:        "testing/us-central1-a",
-							Scheduling: &compute.Scheduling{
-								ProvisioningModel: "SPOT",
+	tests := map[string]struct {
+		config     *Config
+		testServer *httptest.Server
+		err        error
+	}{
+		"Handle http error": {
+			config: &Config{
+				Projects: "testing",
+			},
+			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			})),
+			err: ListInstancesError,
+		},
+		"Parse out regular response": {
+			config: &Config{
+				Projects: "testing,testing-1",
+			},
+			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				buf := &compute.InstanceAggregatedList{
+					Items: map[string]compute.InstancesScopedList{
+						"projects/testing/zones/us-central1-a": {
+							Instances: []*compute.Instance{
+								{
+									Name:        "test-n1",
+									MachineType: "abc/n1-slim",
+									Zone:        "testing/us-central1-a",
+									Scheduling: &compute.Scheduling{
+										ProvisioningModel: "test",
+									},
+								},
+								{
+									Name:        "test-n2",
+									MachineType: "abc/n2-slim",
+									Zone:        "testing/us-central1-a",
+									Scheduling: &compute.Scheduling{
+										ProvisioningModel: "test",
+									},
+								},
+								{
+									Name:        "test-n1-spot",
+									MachineType: "abc/n1-slim",
+									Zone:        "testing/us-central1-a",
+									Scheduling: &compute.Scheduling{
+										ProvisioningModel: "SPOT",
+									},
+								},
 							},
 						},
 					},
-				},
-			},
-		}
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(buf)
-	}))
-	computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(computeTestServer.URL))
-	require.NoError(t, err)
-
-	l, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	gsrv := grpc.NewServer()
-	defer gsrv.Stop()
-	go func() {
-		if err := gsrv.Serve(l); err != nil {
-			t.Errorf("failed to serve: %v", err)
-		}
-	}()
-	billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudCatalogServer{})
-	cloudCatalagClient, err := billingv1.NewCloudCatalogClient(context.Background(),
-		option.WithEndpoint(l.Addr().String()),
-		option.WithoutAuthentication(),
-		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
-	)
-	collector := New(&Config{
-		Projects: "testing,testing-1",
-	}, computeService, cloudCatalagClient)
-	require.NotNil(t, collector)
-
-	err = collector.Collect()
-	assert.NoError(t, err)
-
-	r := prometheus.NewPedanticRegistry()
-	err = collector.Register(r)
-	assert.NoError(t, err)
-	metricsNames := []string{
-		"instance_cpu_hourly_cost",
-		"instance_memory_hourly_cost",
+				}
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode(buf)
+			})),
+		},
 	}
-	err = testutil.CollectAndCompare(r, strings.NewReader(`
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(test.testServer.URL))
+			require.NoError(t, err)
+
+			l, err := net.Listen("tcp", "localhost:0")
+			require.NoError(t, err)
+			gsrv := grpc.NewServer()
+			defer gsrv.Stop()
+			go func() {
+				if err := gsrv.Serve(l); err != nil {
+					t.Errorf("failed to serve: %v", err)
+				}
+			}()
+
+			billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudCatalogServer{})
+			cloudCatalagClient, err := billingv1.NewCloudCatalogClient(context.Background(),
+				option.WithEndpoint(l.Addr().String()),
+				option.WithoutAuthentication(),
+				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
+			)
+
+			collector := New(test.config, computeService, cloudCatalagClient)
+
+			require.NotNil(t, collector)
+
+			err = collector.Collect()
+			if test.err != nil {
+				require.ErrorIs(t, err, test.err)
+				return
+			}
+
+			r := prometheus.NewPedanticRegistry()
+			err = collector.Register(r)
+			assert.NoError(t, err)
+			metricsNames := []string{
+				"instance_cpu_hourly_cost",
+				"instance_memory_hourly_cost",
+			}
+			err = testutil.CollectAndCompare(r, strings.NewReader(`
 	# HELP instance_cpu_hourly_cost The hourly cost of a GKE instance
 	# TYPE instance_cpu_hourly_cost gauge
 	instance_cpu_hourly_cost{family="n1",instance="test-n1-spot",machine_type="n1-slim",price_tier="spot",project="testing",provider="gcp",region="us-central1"} 1
@@ -555,5 +581,7 @@ func TestCollector_Collect(t *testing.T) {
 	instance_memory_hourly_cost{family="n2",instance="test-n2",machine_type="n2-slim",price_tier="ondemand",project="testing",provider="gcp",region="us-central1"} 1
 	instance_memory_hourly_cost{family="n2",instance="test-n2",machine_type="n2-slim",price_tier="ondemand",project="testing-1",provider="gcp",region="us-central1"} 1
 `), metricsNames...)
-	assert.NoError(t, err)
+			assert.NoError(t, err)
+		})
+	}
 }
