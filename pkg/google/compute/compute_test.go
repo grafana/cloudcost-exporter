@@ -585,3 +585,76 @@ func TestCollector_Collect(t *testing.T) {
 		})
 	}
 }
+
+func TestCollector_GetPricing(t *testing.T) {
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := &compute.InstanceAggregatedList{
+			Items: map[string]compute.InstancesScopedList{
+				"projects/testing/zones/us-central1-a": {
+					Instances: []*compute.Instance{
+						{
+							Name:        "test-n1",
+							MachineType: "abc/n1-slim",
+							Zone:        "testing/us-central1-a",
+							Scheduling: &compute.Scheduling{
+								ProvisioningModel: "test",
+							},
+						},
+						{
+							Name:        "test-n2",
+							MachineType: "abc/n2-slim",
+							Zone:        "testing/us-central1-a",
+							Scheduling: &compute.Scheduling{
+								ProvisioningModel: "test",
+							},
+						},
+						{
+							Name:        "test-n1-spot",
+							MachineType: "abc/n1-slim",
+							Zone:        "testing/us-central1-a",
+							Scheduling: &compute.Scheduling{
+								ProvisioningModel: "SPOT",
+							},
+						},
+					},
+				},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(buf)
+	}))
+
+	computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(testServer.URL))
+	require.NoError(t, err)
+
+	l, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	gsrv := grpc.NewServer()
+	defer gsrv.Stop()
+	go func() {
+		if err := gsrv.Serve(l); err != nil {
+			t.Errorf("failed to serve: %v", err)
+		}
+	}()
+
+	billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudCatalogServer{})
+	cloudCatalagClient, err := billingv1.NewCloudCatalogClient(context.Background(),
+		option.WithEndpoint(l.Addr().String()),
+		option.WithoutAuthentication(),
+		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
+	)
+
+	collector := New(&Config{
+		Projects: "testing",
+	}, computeService, cloudCatalagClient)
+
+	require.NotNil(t, collector)
+
+	err = collector.Collect()
+	require.NoError(t, err)
+	pricingMap := collector.PricingMap
+	err = collector.Collect()
+	require.Equal(t, pricingMap, collector.PricingMap)
+	// TODO: In a future iteration, it would be nice to override the cloudCatalogClient's response to be something different
+	// So that we can test that the pricing map is updated.
+}
