@@ -105,15 +105,15 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 		rawData, err := getDataFromSku(sku)
 
 		if errors.Is(err, SkuNotRelevant) {
-			fmt.Errorf("%w: %s", SkuNotRelevant, sku.Description)
+			fmt.Errorf("%w: %s\n", SkuNotRelevant, sku.Description)
 			continue
 		}
 		if errors.Is(err, PricingDataIsOff) {
-			fmt.Errorf("%w: %s", PricingDataIsOff, sku.Description)
+			fmt.Errorf("%w: %s\n", PricingDataIsOff, sku.Description)
 			continue
 		}
 		if errors.Is(err, SkuNotParsable) {
-			fmt.Errorf("%w: %s", SkuNotParsable, sku.Description)
+			fmt.Errorf("%w: %s\n", SkuNotParsable, sku.Description)
 			continue
 		}
 		if err != nil {
