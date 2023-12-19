@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
@@ -653,8 +654,16 @@ func TestCollector_GetPricing(t *testing.T) {
 	err = collector.Collect()
 	require.NoError(t, err)
 	pricingMap := collector.PricingMap
-	err = collector.Collect()
-	require.Equal(t, pricingMap, collector.PricingMap)
-	// TODO: In a future iteration, it would be nice to override the cloudCatalogClient's response to be something different
-	// So that we can test that the pricing map is updated.
+	t.Run("Test that the pricing map is cached", func(t *testing.T) {
+		err = collector.Collect()
+		require.Equal(t, pricingMap, collector.PricingMap)
+	})
+
+	t.Run("Test that the pricing map is updated after the next scrape", func(t *testing.T) {
+		// TODO: In a future iteration, it would be nice to override the cloudCatalogClient's response to be something different
+		// So that we can test that the pricing map is updated.
+		collector.NextScrape = time.Now().Add(-1 * time.Minute)
+		err = collector.Collect()
+		require.NotSame(t, pricingMap, collector.PricingMap)
+	})
 }
