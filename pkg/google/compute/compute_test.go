@@ -468,6 +468,47 @@ func (s *fakeCloudCatalogServer) ListSkus(ctx context.Context, req *billingpb.Li
 	}, nil
 }
 
+type fakeCloudCatalogServerSlimResults struct {
+	billingpb.UnimplementedCloudCatalogServer
+}
+
+func (s *fakeCloudCatalogServerSlimResults) ListServices(ctx context.Context, req *billingpb.ListServicesRequest) (*billingpb.ListServicesResponse, error) {
+	return &billingpb.ListServicesResponse{
+		Services: []*billingpb.Service{
+			{
+				DisplayName: "Compute Engine",
+				Name:        "compute-engine",
+			},
+		},
+	}, nil
+}
+
+func (s *fakeCloudCatalogServerSlimResults) ListSkus(ctx context.Context, req *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
+	return &billingpb.ListSkusResponse{
+		Skus: []*billingpb.Sku{
+			{
+				Name:           "test",
+				Description:    "N1 Predefined Instance Core running in Americas",
+				ServiceRegions: []string{"us-central1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{
+						PricingExpression: &billingpb.PricingExpression{
+							TieredRates: []*billingpb.PricingExpression_TierRate{
+								{
+									UnitPrice: &money.Money{
+										CurrencyCode: "USD",
+										Nanos:        1e9,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, nil
+}
+
 func TestCollector_Collect(t *testing.T) {
 	tests := map[string]struct {
 		config     *Config
@@ -627,43 +668,62 @@ func TestCollector_GetPricing(t *testing.T) {
 
 	computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(testServer.URL))
 	require.NoError(t, err)
-
-	l, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	gsrv := grpc.NewServer()
-	defer gsrv.Stop()
-	go func() {
-		if err := gsrv.Serve(l); err != nil {
-			t.Errorf("failed to serve: %v", err)
-		}
-	}()
-
-	billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudCatalogServer{})
-	cloudCatalagClient, err := billingv1.NewCloudCatalogClient(context.Background(),
-		option.WithEndpoint(l.Addr().String()),
-		option.WithoutAuthentication(),
-		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
-	)
-
+	// Create the collector with a nil billing service so we can override it on each test case
 	collector := New(&Config{
 		Projects: "testing",
-	}, computeService, cloudCatalagClient)
+	}, computeService, nil)
 
-	require.NotNil(t, collector)
-
-	err = collector.Collect()
-	require.NoError(t, err)
-	pricingMap := collector.PricingMap
+	var pricingMap *StructuredPricingMap
 	t.Run("Test that the pricing map is cached", func(t *testing.T) {
+		l, err := net.Listen("tcp", "localhost:0")
+		require.NoError(t, err)
+		gsrv := grpc.NewServer()
+		defer gsrv.Stop()
+		go func() {
+			if err := gsrv.Serve(l); err != nil {
+				t.Errorf("failed to serve: %v", err)
+			}
+		}()
+
+		billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudCatalogServer{})
+		cloudCatalagClient, err := billingv1.NewCloudCatalogClient(context.Background(),
+			option.WithEndpoint(l.Addr().String()),
+			option.WithoutAuthentication(),
+			option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
+		)
+
+		collector.billingService = cloudCatalagClient
+
+		require.NotNil(t, collector)
+
+		err = collector.Collect()
+		require.NoError(t, err)
+
+		pricingMap = collector.PricingMap
 		err = collector.Collect()
 		require.Equal(t, pricingMap, collector.PricingMap)
 	})
 
 	t.Run("Test that the pricing map is updated after the next scrape", func(t *testing.T) {
-		// TODO: In a future iteration, it would be nice to override the cloudCatalogClient's response to be something different
-		// So that we can test that the pricing map is updated.
+		l, err := net.Listen("tcp", "localhost:0")
+		require.NoError(t, err)
+		gsrv := grpc.NewServer()
+		defer gsrv.Stop()
+		go func() {
+			if err := gsrv.Serve(l); err != nil {
+				t.Errorf("failed to serve: %v", err)
+			}
+		}()
+		billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudCatalogServerSlimResults{})
+		cloudCatalogClient, _ := billingv1.NewCloudCatalogClient(context.Background(),
+			option.WithEndpoint(l.Addr().String()),
+			option.WithoutAuthentication(),
+			option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
+		)
+
+		collector.billingService = cloudCatalogClient
 		collector.NextScrape = time.Now().Add(-1 * time.Minute)
 		err = collector.Collect()
-		require.NotSame(t, pricingMap, collector.PricingMap)
+		require.NotEqual(t, pricingMap, collector.PricingMap)
 	})
 }
