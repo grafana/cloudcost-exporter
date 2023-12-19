@@ -81,7 +81,8 @@ func New(config *Config) (*GCP, error) {
 			}
 		case "GKE":
 			collector = compute.New(&compute.Config{
-				Projects: config.Projects,
+				Projects:       config.Projects,
+				ScrapeInterval: config.ScrapeInterval,
 			}, computeService, cloudCatalogClient)
 		default:
 			log.Printf("Unknown service %s", service)
