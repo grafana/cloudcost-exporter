@@ -15,7 +15,7 @@ require (
 	github.com/prometheus/client_model v0.5.0
 	github.com/prometheus/common v0.45.0
 	github.com/stretchr/testify v1.8.4
-	go.uber.org/mock v0.3.0
+	go.uber.org/mock v0.4.0
 	google.golang.org/api v0.154.0
 	google.golang.org/genproto v0.0.0-20231127180814-3a041ad873d4
 	google.golang.org/grpc v1.60.1
