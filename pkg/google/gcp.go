@@ -115,8 +115,9 @@ func (g *GCP) CollectMetrics() error {
 		go func(c provider.Collector) {
 			log.Printf("Collecting metrics from %s", c.Name())
 			defer wg.Done()
-			if err := c.Collect(); err != nil {
-				log.Printf("Error collecting metrics from %s: %s", c.Name(), err)
+			up := c.Collect()
+			if up != 1 {
+				log.Printf("Collector %s is not up: %f\n", c.Name(), up)
 			}
 		}(c)
 	}

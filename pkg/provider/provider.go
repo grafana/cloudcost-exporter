@@ -14,7 +14,7 @@ type Registry interface {
 
 type Collector interface {
 	Register(r Registry) error
-	Collect() error
+	Collect() float64
 	Name() string
 }
 

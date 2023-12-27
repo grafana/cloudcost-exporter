@@ -256,14 +256,15 @@ func (r *Collector) Register(registry provider.Registry) error {
 	return nil
 }
 
-func (c *Collector) Collect() error {
+func (c *Collector) Collect() float64 {
 	log.Printf("Collecting GCS metrics")
 	now := time.Now()
 
 	// If the nextScrape time is in the future, return nil and do not scrape
 	// Billing API calls are free in GCP, just use this logic so metrics are similiar to AWSD
 	if c.nextScrape.After(now) {
-		return nil
+		// TODO: We should stuff in logic here to update pricing data if it's been more than 24 hours
+		return 1
 	}
 	defer c.metrics.CloudCostExporterHistogram.WithLabelValues("gcp").Observe(time.Since(now).Seconds())
 	c.nextScrape = time.Now().Add(c.interval)
@@ -357,7 +358,7 @@ func ExporterOperationsDiscounts(m *Metrics) {
 	}
 }
 
-func ExportGCPCostData(ctx context.Context, client CloudCatalogClient, serviceName string, m *Metrics) error {
+func ExportGCPCostData(ctx context.Context, client CloudCatalogClient, serviceName string, m *Metrics) float64 {
 	skuResponse := client.ListSkus(ctx, &billingpb.ListSkusRequest{
 		Parent: serviceName,
 	})
@@ -367,7 +368,8 @@ func ExportGCPCostData(ctx context.Context, client CloudCatalogClient, serviceNa
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("error getting skus: %v", err)
+			log.Printf("error getting skus: %v", err)
+			return 0.0
 		}
 		// Skip Egress and Download costs as we don't count them yet
 		// Check category first as I've had random segfaults locally
@@ -400,7 +402,7 @@ func ExportGCPCostData(ctx context.Context, client CloudCatalogClient, serviceNa
 		}
 		log.Printf("Unknown sku: %s\n", sku.Description)
 	}
-	return nil
+	return 1.0
 }
 
 func getPriceFromSku(sku *billingpb.Sku) (float64, error) {

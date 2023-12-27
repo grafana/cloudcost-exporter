@@ -152,12 +152,13 @@ func (r *Collector) Register(registry provider.Registry) error {
 }
 
 // Collect is the function that will be called by the Prometheus client anytime a scrape is performed.
-func (r *Collector) Collect() error {
+func (r *Collector) Collect() float64 {
 	now := time.Now()
 	// If the nextScrape time is in the future, return nil and do not scrape
 	// :fire: This is to _mitigate_ expensive API calls to the cost explorer API
 	if r.nextScrape.After(now) {
-		return nil
+		// TODO: This shouldn't return an error.
+		return 0.0
 	}
 	r.nextScrape = time.Now().Add(r.interval)
 	r.metrics.NextScrapeGauge.Set(float64(r.nextScrape.Unix()))
@@ -360,18 +361,19 @@ func getComponentFromKey(key string) string {
 }
 
 // ExportBillingData will query the previous 30 days of S3 billing data and export it to the prometheus metrics
-func ExportBillingData(client costexplorer.CostExplorer, m Metrics) error {
+func ExportBillingData(client costexplorer.CostExplorer, m Metrics) float64 {
 	// We go one day into the past as the current days billing data has no guarantee of being complete
 	endDate := time.Now().AddDate(0, 0, -1)
 	// Current assumption is that we're going to pull 30 days worth of billing data
 	startDate := endDate.AddDate(0, 0, -30)
 	s3BillingData, err := getBillingData(client, startDate, endDate, m)
 	if err != nil {
-		return err
+		log.Printf("Error getting billing data: %v\n", err)
+		return 0
 	}
 
 	exportMetrics(s3BillingData, m)
-	return nil
+	return 1.0
 }
 
 // exportMetrics will iterate over the S3BillingData and export the metrics to prometheus

@@ -511,9 +511,10 @@ func (s *fakeCloudCatalogServerSlimResults) ListSkus(ctx context.Context, req *b
 
 func TestCollector_Collect(t *testing.T) {
 	tests := map[string]struct {
-		config     *Config
-		testServer *httptest.Server
-		err        error
+		config          *Config
+		testServer      *httptest.Server
+		err             error
+		collectResponse float64
 	}{
 		"Handle http error": {
 			config: &Config{
@@ -522,12 +523,14 @@ func TestCollector_Collect(t *testing.T) {
 			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			})),
-			err: ListInstancesError,
+			err:             ListInstancesError,
+			collectResponse: 0,
 		},
 		"Parse out regular response": {
 			config: &Config{
 				Projects: "testing,testing-1",
 			},
+			collectResponse: 1.0,
 			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				buf := &compute.InstanceAggregatedList{
 					Items: map[string]compute.InstancesScopedList{
@@ -592,9 +595,9 @@ func TestCollector_Collect(t *testing.T) {
 
 			require.NotNil(t, collector)
 
-			err = collector.Collect()
-			if test.err != nil {
-				require.ErrorIs(t, err, test.err)
+			up := collector.Collect()
+			require.Equal(t, test.collectResponse, up)
+			if test.collectResponse == 0.0 {
 				return
 			}
 
@@ -696,11 +699,10 @@ func TestCollector_GetPricing(t *testing.T) {
 
 		require.NotNil(t, collector)
 
-		err = collector.Collect()
-		require.NoError(t, err)
+		_ = collector.Collect()
 
 		pricingMap = collector.PricingMap
-		err = collector.Collect()
+		_ = collector.Collect()
 		require.Equal(t, pricingMap, collector.PricingMap)
 	})
 
@@ -723,7 +725,7 @@ func TestCollector_GetPricing(t *testing.T) {
 
 		collector.billingService = cloudCatalogClient
 		collector.NextScrape = time.Now().Add(-1 * time.Minute)
-		err = collector.Collect()
+		_ = collector.Collect()
 		require.NotEqual(t, pricingMap, collector.PricingMap)
 	})
 }
