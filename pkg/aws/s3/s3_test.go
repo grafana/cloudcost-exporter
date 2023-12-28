@@ -228,12 +228,13 @@ func TestCollector_Collect(t *testing.T) {
 
 		// metricNames can be nil to check all metrics, or a set of strings form an allow list of metrics to check.
 		metricNames        []string
-		expectedError      error
+		expectedResponse   float64
 		expectedExposition string
 	}{
 		{
-			name:       "skip collection",
-			nextScrape: timeInFuture,
+			name:             "skip collection",
+			nextScrape:       timeInFuture,
+			expectedResponse: 0.0,
 
 			// Next scrape should be zero, all other cases it will be a timestamp which is different on every test run,
 			// so we just assert the zero value here.
@@ -255,7 +256,7 @@ aws_cost_exporter_requests_total 0
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return nil, fmt.Errorf("test cost and usage error")
 			},
-			expectedError: fmt.Errorf("test cost and usage error"),
+			expectedResponse: 0.0,
 		},
 		{
 			name:       "no cost and usage output",
@@ -272,10 +273,12 @@ aws_cost_exporter_request_errors_total 0
 # TYPE aws_cost_exporter_requests_total counter
 aws_cost_exporter_requests_total 1
 `,
+			expectedResponse: 1.0,
 		},
 		{
-			name:       "cost and usage output - one result without keys",
-			nextScrape: timeInPast,
+			name:             "cost and usage output - one result without keys",
+			nextScrape:       timeInPast,
+			expectedResponse: 1.0,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return &awscostexplorer.GetCostAndUsageOutput{
 					ResultsByTime: []types.ResultByTime{{
@@ -296,8 +299,9 @@ aws_cost_exporter_requests_total 1
 `,
 		},
 		{
-			name:       "cost and usage output - one result with keys but non-existent region",
-			nextScrape: timeInPast,
+			name:             "cost and usage output - one result with keys but non-existent region",
+			nextScrape:       timeInPast,
+			expectedResponse: 1.0,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return &awscostexplorer.GetCostAndUsageOutput{
 					ResultsByTime: []types.ResultByTime{{
@@ -318,8 +322,9 @@ aws_cost_exporter_requests_total 1
 `,
 		},
 		{
-			name:       "cost and usage output - one result with keys but special-case region",
-			nextScrape: timeInPast,
+			name:             "cost and usage output - one result with keys but special-case region",
+			nextScrape:       timeInPast,
+			expectedResponse: 1.0,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return &awscostexplorer.GetCostAndUsageOutput{
 					ResultsByTime: []types.ResultByTime{{
@@ -340,8 +345,9 @@ aws_cost_exporter_requests_total 1
 `,
 		},
 		{
-			name:       "cost and usage output - one result with keys and valid region with a hyphen",
-			nextScrape: timeInPast,
+			name:             "cost and usage output - one result with keys and valid region with a hyphen",
+			nextScrape:       timeInPast,
+			expectedResponse: 1.0,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return &awscostexplorer.GetCostAndUsageOutput{
 					ResultsByTime: []types.ResultByTime{{
@@ -364,8 +370,9 @@ aws_cost_exporter_requests_total 1
 `,
 		},
 		{
-			name:       "cost and usage output - three results with keys and valid region without a hyphen",
-			nextScrape: timeInPast,
+			name:             "cost and usage output - three results with keys and valid region without a hyphen",
+			nextScrape:       timeInPast,
+			expectedResponse: 1.0,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return &awscostexplorer.GetCostAndUsageOutput{
 					ResultsByTime: []types.ResultByTime{
@@ -405,8 +412,9 @@ aws_cost_exporter_requests_total 1
 `,
 		},
 		{
-			name:       "cost and usage output - results with two pages",
-			nextScrape: timeInPast,
+			name:             "cost and usage output - results with two pages",
+			nextScrape:       timeInPast,
+			expectedResponse: 1.0,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				t := "token"
 				return &awscostexplorer.GetCostAndUsageOutput{
@@ -442,8 +450,9 @@ aws_cost_exporter_requests_total 2
 `,
 		},
 		{
-			name:       "cost and usage output - result with nil amount",
-			nextScrape: timeInPast,
+			name:             "cost and usage output - result with nil amount",
+			nextScrape:       timeInPast,
+			expectedResponse: 1.0,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return &awscostexplorer.GetCostAndUsageOutput{
 					ResultsByTime: []types.ResultByTime{{
@@ -471,8 +480,9 @@ aws_cost_exporter_requests_total 1
 `,
 		},
 		{
-			name:       "cost and usage output - result with invalid amount",
-			nextScrape: timeInPast,
+			name:             "cost and usage output - result with invalid amount",
+			nextScrape:       timeInPast,
+			expectedResponse: 1.0,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				a := ""
 				return &awscostexplorer.GetCostAndUsageOutput{
@@ -501,8 +511,9 @@ aws_cost_exporter_requests_total 1
 `,
 		},
 		{
-			name:       "cost and usage output - result with nil unit",
-			nextScrape: timeInPast,
+			name:             "cost and usage output - result with nil unit",
+			nextScrape:       timeInPast,
+			expectedResponse: 1.0,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				a := "1"
 				return &awscostexplorer.GetCostAndUsageOutput{
@@ -531,8 +542,9 @@ aws_cost_exporter_requests_total 1
 `,
 		},
 		{
-			name:       "cost and usage output - result with valid amount and unit",
-			nextScrape: timeInPast,
+			name:             "cost and usage output - result with valid amount and unit",
+			nextScrape:       timeInPast,
+			expectedResponse: 1.0,
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				a := "1"
 				u := "unit"
@@ -615,15 +627,14 @@ aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-1"} 0.00
 				nextScrape: tc.nextScrape,
 				metrics:    NewMetrics(),
 			}
-			err := c.Collect()
-			if tc.expectedError != nil {
-				require.EqualError(t, err, tc.expectedError.Error())
+			up := c.Collect()
+			require.Equal(t, tc.expectedResponse, up)
+			if tc.expectedResponse == 0 {
 				return
 			}
-			require.NoError(t, err)
 
 			r := prometheus.NewPedanticRegistry()
-			err = c.Register(r)
+			err := c.Register(r)
 			assert.NoError(t, err)
 
 			err = testutil.CollectAndCompare(r, strings.NewReader(tc.expectedExposition), tc.metricNames...)

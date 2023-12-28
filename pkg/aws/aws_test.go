@@ -89,7 +89,7 @@ func Test_CollectMetrics(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
 		numCollectors int
-		collect       func() error
+		collect       func() float64
 		expectedError error
 	}{
 		{
@@ -98,15 +98,15 @@ func Test_CollectMetrics(t *testing.T) {
 		{
 			name:          "bubble-up single collector error",
 			numCollectors: 1,
-			collect: func() error {
-				return fmt.Errorf("test collect error")
+			collect: func() float64 {
+				return 0.0
 			},
-			expectedError: fmt.Errorf("test collect error"),
+			expectedError: fmt.Errorf("error collecting metrics for %q", "test"),
 		},
 		{
 			name:          "two collectors with no errors",
 			numCollectors: 2,
-			collect:       func() error { return nil },
+			collect:       func() float64 { return 1.0 },
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -114,6 +114,7 @@ func Test_CollectMetrics(t *testing.T) {
 			c := mock_provider.NewMockCollector(ctrl)
 			if tc.collect != nil {
 				c.EXPECT().Collect().DoAndReturn(tc.collect).Times(tc.numCollectors)
+				c.EXPECT().Name().Return("test").AnyTimes()
 			}
 
 			a := AWS{

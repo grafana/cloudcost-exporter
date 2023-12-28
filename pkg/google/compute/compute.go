@@ -227,19 +227,19 @@ func (c *Collector) Register(registry provider.Registry) error {
 	return registry.Register(InstanceMemoryHourlyCost)
 }
 
-func (c *Collector) Collect() error {
+func (c *Collector) Collect() float64 {
 	start := time.Now()
 	log.Printf("Collecting %s metrics", c.Name())
 	if c.PricingMap == nil || time.Now().After(c.NextScrape) {
 		log.Println("Refreshing pricing map")
 		serviceName, err := c.GetServiceName()
 		if err != nil {
-			return err
+			return 0
 		}
 		skus := c.GetPricing(serviceName)
 		pricingMap, err := GeneratePricingMap(skus)
 		if err != nil {
-			return err
+			return 0
 		}
 		c.PricingMap = pricingMap
 		c.NextScrape = time.Now().Add(c.config.ScrapeInterval)
@@ -248,7 +248,7 @@ func (c *Collector) Collect() error {
 	for _, project := range c.Projects {
 		instances, err := c.ListInstances(project)
 		if err != nil {
-			return err
+			return 0
 		}
 		for _, instance := range instances {
 			cpuCost, ramCost, err := c.PricingMap.GetCostOfInstance(instance)
@@ -278,7 +278,7 @@ func (c *Collector) Collect() error {
 	}
 	log.Printf("Finished collecting GKE metrics in %s", time.Since(start))
 
-	return nil
+	return 1.0
 }
 
 func priceTierForInstance(instance *MachineSpec) string {
