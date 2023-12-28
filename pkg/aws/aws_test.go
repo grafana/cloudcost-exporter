@@ -101,7 +101,7 @@ func Test_CollectMetrics(t *testing.T) {
 			collect: func() float64 {
 				return 0.0
 			},
-			expectedError: fmt.Errorf("error collecting metrics for test"),
+			expectedError: fmt.Errorf("error collecting metrics for %q", "test"),
 		},
 		{
 			name:          "two collectors with no errors",
