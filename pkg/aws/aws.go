@@ -80,9 +80,8 @@ func (a *AWS) RegisterCollectors(registry provider.Registry) error {
 func (a *AWS) CollectMetrics() error {
 	log.Printf("Collecting metrics for %d collectors for AWS", len(a.collectors))
 	for _, c := range a.collectors {
-		up := c.Collect()
-		if up == 0 {
-			return fmt.Errorf("error collecting metrics for %s", c.Name())
+		if up := c.Collect(); up == 0 {
+			return fmt.Errorf("error collecting metrics for %q", c.Name())
 		}
 	}
 	return nil
