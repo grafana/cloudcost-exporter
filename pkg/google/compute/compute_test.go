@@ -699,10 +699,12 @@ func TestCollector_GetPricing(t *testing.T) {
 
 		require.NotNil(t, collector)
 
-		_ = collector.Collect()
+		up := collector.Collect()
+		require.Equal(t, 1.0, up)
 
 		pricingMap = collector.PricingMap
-		_ = collector.Collect()
+		up = collector.Collect()
+		require.Equal(t, 1.0, up)
 		require.Equal(t, pricingMap, collector.PricingMap)
 	})
 
@@ -725,7 +727,8 @@ func TestCollector_GetPricing(t *testing.T) {
 
 		collector.billingService = cloudCatalogClient
 		collector.NextScrape = time.Now().Add(-1 * time.Minute)
-		_ = collector.Collect()
+		up := collector.Collect()
+		require.Equal(t, 1.0, up)
 		require.NotEqual(t, pricingMap, collector.PricingMap)
 	})
 }

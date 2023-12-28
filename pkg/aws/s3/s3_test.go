@@ -688,3 +688,24 @@ func Test_unitCostForComponent(t *testing.T) {
 		})
 	}
 }
+
+func TestCollector_MultipleCalls(t *testing.T) {
+	t.Run("Test multiple calls to the collect method", func(t *testing.T) {
+		ce := mockcostexplorer.NewCostExplorer(t)
+		ce.EXPECT().
+			GetCostAndUsage(mock.Anything, mock.Anything, mock.Anything).
+			Return(&awscostexplorer.GetCostAndUsageOutput{}, nil).
+			Times(2)
+
+		c := &Collector{
+			client:   ce,
+			metrics:  NewMetrics(),
+			interval: 1 * time.Hour,
+		}
+		up := c.Collect()
+		require.Equal(t, 1.0, up)
+
+		up = c.Collect()
+		require.Equal(t, 1.0, up)
+	})
+}
