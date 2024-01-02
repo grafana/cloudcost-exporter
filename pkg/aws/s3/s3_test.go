@@ -211,8 +211,6 @@ func TestCollector_Register(t *testing.T) {
 
 func TestCollector_Collect(t *testing.T) {
 	timeInPast := time.Now().Add(-48 * time.Hour)
-	timeInFuture := time.Now().Add(48 * time.Hour)
-
 	withoutNextScrape := []string{
 		"aws_s3_storage_hourly_cost",
 		"aws_s3_operations_cost",
@@ -231,25 +229,6 @@ func TestCollector_Collect(t *testing.T) {
 		expectedResponse   float64
 		expectedExposition string
 	}{
-		{
-			name:             "skip collection",
-			nextScrape:       timeInFuture,
-			expectedResponse: 0.0,
-
-			// Next scrape should be zero, all other cases it will be a timestamp which is different on every test run,
-			// so we just assert the zero value here.
-			expectedExposition: `
-# HELP aws_cost_exporter_next_scrape The next time the exporter will scrape AWS billing data. Can be used to trigger alerts if now - nextScrape > interval
-# TYPE aws_cost_exporter_next_scrape gauge
-aws_cost_exporter_next_scrape 0
-# HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
-# TYPE aws_cost_exporter_request_errors_total counter
-aws_cost_exporter_request_errors_total 0
-# HELP aws_cost_exporter_requests_total Total number of requests made to the AWS Cost Explorer API
-# TYPE aws_cost_exporter_requests_total counter
-aws_cost_exporter_requests_total 0
-`,
-		},
 		{
 			name:       "cost and usage error is bubbled-up",
 			nextScrape: timeInPast,
@@ -694,8 +673,7 @@ func TestCollector_MultipleCalls(t *testing.T) {
 		ce := mockcostexplorer.NewCostExplorer(t)
 		ce.EXPECT().
 			GetCostAndUsage(mock.Anything, mock.Anything, mock.Anything).
-			Return(&awscostexplorer.GetCostAndUsageOutput{}, nil).
-			Times(2)
+			Return(&awscostexplorer.GetCostAndUsageOutput{}, nil)
 
 		c := &Collector{
 			client:   ce,

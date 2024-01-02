@@ -117,7 +117,7 @@ func (g *GCP) CollectMetrics() error {
 			defer wg.Done()
 			up := c.Collect()
 			if up != 1 {
-				log.Printf("Collector %s is not up: %f\n", c.Name(), up)
+				log.Printf("Collector %s is not up\n", c.Name())
 			}
 		}(c)
 	}
