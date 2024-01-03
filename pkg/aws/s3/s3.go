@@ -202,7 +202,7 @@ func NewS3BillingData() *BillingData {
 // AddMetricGroup adds a metric group to the Region. If the key is empty, it will not add the metric group
 // to the Region. If the dimension is empty, it will not add the metric group to the Region.
 // Dimensions are cumulative and will be added to the same dimension if the dimension already exists.
-func (s BillingData) AddMetricGroup(region string, component string, group types.Group) {
+func (s *BillingData) AddMetricGroup(region string, component string, group types.Group) {
 	if region == "" || component == "" {
 		return
 	}

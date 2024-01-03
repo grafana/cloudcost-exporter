@@ -686,4 +686,26 @@ func TestCollector_MultipleCalls(t *testing.T) {
 		up = c.Collect()
 		require.Equal(t, 1.0, up)
 	})
+	// This tests if the collect method is thread safe. If it fails, then we need to implement a mutex.`
+	t.Run("Test multiple calls to collect method in parallel", func(t *testing.T) {
+		ce := mockcostexplorer.NewCostExplorer(t)
+		ce.EXPECT().
+			GetCostAndUsage(mock.Anything, mock.Anything, mock.Anything).
+			Return(&awscostexplorer.GetCostAndUsageOutput{}, nil)
+
+		c := &Collector{
+			client:   ce,
+			metrics:  NewMetrics(),
+			interval: 1 * time.Hour,
+		}
+		for i := 0; i < 10; i++ {
+			t.Run(fmt.Sprintf("Test %d", i), func(t *testing.T) {
+				t.Parallel()
+				for i := 0; i < 1000; i++ {
+					up := c.Collect()
+					require.Equal(t, 1.0, up)
+				}
+			})
+		}
+	})
 }
