@@ -6,6 +6,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -124,6 +125,7 @@ type Collector struct {
 	nextScrape  time.Time
 	metrics     Metrics
 	billingData *BillingData
+	m           sync.Mutex
 }
 
 // New creates a new Collector with a client and scrape interval defined.
@@ -134,6 +136,7 @@ func New(scrapeInterval time.Duration, client costexplorer.CostExplorer) (*Colle
 		// Initially Set nextScrape to the current time minus the scrape interval so that the first scrape will run immediately
 		nextScrape: time.Now().Add(-scrapeInterval),
 		metrics:    NewMetrics(),
+		m:          sync.Mutex{},
 	}, nil
 }
 
@@ -154,6 +157,8 @@ func (r *Collector) Register(registry provider.Registry) error {
 
 // Collect is the function that will be called by the Prometheus client anytime a scrape is performed.
 func (r *Collector) Collect() float64 {
+	r.m.Lock()
+	defer r.m.Unlock()
 	now := time.Now()
 	// :fire: Checking scrape interval is to _mitigate_ expensive API calls to the cost explorer API
 	if r.billingData == nil || now.After(r.nextScrape) {

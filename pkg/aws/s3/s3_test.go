@@ -733,18 +733,22 @@ func TestCollector_MultipleCalls(t *testing.T) {
 				},
 			}, nil
 		}
+		goroutines := 10
+		collectCalls := 1000
 		ce.EXPECT().
 			GetCostAndUsage(mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(getCostAndUsage)
+			RunAndReturn(getCostAndUsage).
+			Times(goroutines * collectCalls)
 
 		c := &Collector{
 			client:  ce,
 			metrics: NewMetrics(),
 		}
-		for i := 0; i < 10; i++ {
+
+		for i := 0; i < goroutines; i++ {
 			t.Run(fmt.Sprintf("Test %d", i), func(t *testing.T) {
 				t.Parallel()
-				for i := 0; i < 1000; i++ {
+				for j := 0; j < collectCalls; j++ {
 					up := c.Collect()
 					require.Equal(t, 1.0, up)
 				}
