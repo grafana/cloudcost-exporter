@@ -689,14 +689,57 @@ func TestCollector_MultipleCalls(t *testing.T) {
 	// This tests if the collect method is thread safe. If it fails, then we need to implement a mutex.`
 	t.Run("Test multiple calls to collect method in parallel", func(t *testing.T) {
 		ce := mockcostexplorer.NewCostExplorer(t)
+		getCostAndUsage := func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+			a := "1"
+			u := "unit"
+			return &awscostexplorer.GetCostAndUsageOutput{
+				ResultsByTime: []types.ResultByTime{
+					{
+						Groups: []types.Group{{
+							Keys: []string{"APN1-Requests-Tier1"},
+							Metrics: map[string]types.MetricValue{
+								"UsageQuantity": {Amount: &a, Unit: &u},
+								"UnblendedCost": {Amount: &a, Unit: &u},
+							},
+						}},
+					},
+					{
+						Groups: []types.Group{{
+							Keys: []string{"APN1-Requests-Tier2"},
+							Metrics: map[string]types.MetricValue{
+								"UsageQuantity": {Amount: &a, Unit: &u},
+								"UnblendedCost": {Amount: &a, Unit: &u},
+							},
+						}},
+					},
+					{
+						Groups: []types.Group{{
+							Keys: []string{"APN1-TimedStorage"},
+							Metrics: map[string]types.MetricValue{
+								"UsageQuantity": {Amount: &a, Unit: &u},
+								"UnblendedCost": {Amount: &a, Unit: &u},
+							},
+						}},
+					},
+					{
+						Groups: []types.Group{{
+							Keys: []string{"APN1-unknown"},
+							Metrics: map[string]types.MetricValue{
+								"UsageQuantity": {Amount: &a, Unit: &u},
+								"UnblendedCost": {Amount: &a, Unit: &u},
+							},
+						}},
+					},
+				},
+			}, nil
+		}
 		ce.EXPECT().
 			GetCostAndUsage(mock.Anything, mock.Anything, mock.Anything).
-			Return(&awscostexplorer.GetCostAndUsageOutput{}, nil)
+			RunAndReturn(getCostAndUsage)
 
 		c := &Collector{
-			client:   ce,
-			metrics:  NewMetrics(),
-			interval: 1 * time.Hour,
+			client:  ce,
+			metrics: NewMetrics(),
 		}
 		for i := 0; i < 10; i++ {
 			t.Run(fmt.Sprintf("Test %d", i), func(t *testing.T) {
