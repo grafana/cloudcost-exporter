@@ -81,7 +81,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Collect http server for prometheus
+	// CollectMetrics http server for prometheus
 	http.Handle(cfg.Server.Path, promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	}))

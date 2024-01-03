@@ -174,6 +174,16 @@ type Collector struct {
 	metrics            *Metrics
 }
 
+func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *Collector) Collect(ch <-chan prometheus.Metric) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 type Config struct {
 	ProjectId       string
 	Projects        string
@@ -256,7 +266,7 @@ func (r *Collector) Register(registry provider.Registry) error {
 	return nil
 }
 
-func (c *Collector) Collect() float64 {
+func (c *Collector) CollectMetrics() float64 {
 	log.Printf("Collecting GCS metrics")
 	now := time.Now()
 

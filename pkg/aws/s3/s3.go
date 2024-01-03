@@ -128,6 +128,16 @@ type Collector struct {
 	m           sync.Mutex
 }
 
+func (j *Collector) Describe(ch chan<- *prometheus.Desc) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (j *Collector) Collect(ch <-chan prometheus.Metric) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 // New creates a new Collector with a client and scrape interval defined.
 func New(scrapeInterval time.Duration, client costexplorer.CostExplorer) (*Collector, error) {
 	return &Collector{
@@ -156,7 +166,7 @@ func (r *Collector) Register(registry provider.Registry) error {
 }
 
 // Collect is the function that will be called by the Prometheus client anytime a scrape is performed.
-func (r *Collector) Collect() float64 {
+func (r *Collector) CollectMetrics() float64 {
 	r.m.Lock()
 	defer r.m.Unlock()
 	now := time.Now()

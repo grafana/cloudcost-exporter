@@ -8,6 +8,7 @@ import (
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -23,6 +24,16 @@ type Config struct {
 type AWS struct {
 	Config     *Config
 	collectors []provider.Collector
+}
+
+func (a *AWS) Describe(ch <-chan *prometheus.Desc) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (a *AWS) Collect(ch <-chan prometheus.Metric) error {
+	//TODO implement me
+	panic("implement me")
 }
 
 var services = []string{"S3"}
@@ -80,7 +91,7 @@ func (a *AWS) RegisterCollectors(registry provider.Registry) error {
 func (a *AWS) CollectMetrics() error {
 	log.Printf("Collecting metrics for %d collectors for AWS", len(a.collectors))
 	for _, c := range a.collectors {
-		if up := c.Collect(); up == 0 {
+		if up := c.CollectMetrics(); up == 0 {
 			return fmt.Errorf("error collecting metrics for %q", c.Name())
 		}
 	}

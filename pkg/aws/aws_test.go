@@ -113,7 +113,7 @@ func Test_CollectMetrics(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			c := mock_provider.NewMockCollector(ctrl)
 			if tc.collect != nil {
-				c.EXPECT().Collect().DoAndReturn(tc.collect).Times(tc.numCollectors)
+				c.EXPECT().CollectMetrics().DoAndReturn(tc.collect).Times(tc.numCollectors)
 				c.EXPECT().Name().Return("test").AnyTimes()
 			}
 

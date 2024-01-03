@@ -81,7 +81,7 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			if tt.collect != nil {
 
 				c.EXPECT().Name().Return("test").AnyTimes()
-				c.EXPECT().Collect().DoAndReturn(tt.collect).Times(tt.numCollectors)
+				c.EXPECT().CollectMetrics().DoAndReturn(tt.collect).Times(tt.numCollectors)
 			}
 			gcp := &GCP{
 				config:     &Config{},

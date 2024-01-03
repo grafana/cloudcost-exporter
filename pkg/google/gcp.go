@@ -11,6 +11,7 @@ import (
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	computeapiv1 "cloud.google.com/go/compute/apiv1"
 	"cloud.google.com/go/storage"
+	"github.com/prometheus/client_golang/prometheus"
 	computev1 "google.golang.org/api/compute/v1"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/compute"
@@ -21,6 +22,16 @@ import (
 type GCP struct {
 	config     *Config
 	collectors []provider.Collector
+}
+
+func (p *GCP) Describe(ch <-chan *prometheus.Desc) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (p *GCP) Collect(ch <-chan prometheus.Metric) error {
+	//TODO implement me
+	panic("implement me")
 }
 
 type Config struct {
@@ -115,7 +126,7 @@ func (g *GCP) CollectMetrics() error {
 		go func(c provider.Collector) {
 			log.Printf("Collecting metrics from %s", c.Name())
 			defer wg.Done()
-			up := c.Collect()
+			up := c.CollectMetrics()
 			if up != 1 {
 				log.Printf("Collector %s is not up\n", c.Name())
 			}

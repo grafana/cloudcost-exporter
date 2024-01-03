@@ -52,6 +52,16 @@ type Collector struct {
 	NextScrape     time.Time
 }
 
+func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *Collector) Collect(ch <-chan prometheus.Metric) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 // New is a helper method to properly setup a compute.Collector struct.
 func New(config *Config, computeService *compute.Service, billingService *billingv1.CloudCatalogClient) *Collector {
 	projects := strings.Split(config.Projects, ",")
@@ -229,7 +239,7 @@ func (c *Collector) Register(registry provider.Registry) error {
 	return registry.Register(InstanceMemoryHourlyCost)
 }
 
-func (c *Collector) Collect() float64 {
+func (c *Collector) CollectMetrics() float64 {
 	start := time.Now()
 	log.Printf("Collecting %s metrics", c.Name())
 	if c.PricingMap == nil || time.Now().After(c.NextScrape) {

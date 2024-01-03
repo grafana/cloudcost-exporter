@@ -14,11 +14,15 @@ type Registry interface {
 
 type Collector interface {
 	Register(r Registry) error
-	Collect() float64
+	CollectMetrics() float64
+	Collect(<-chan prometheus.Metric) error
+	Describe(chan<- *prometheus.Desc) error
 	Name() string
 }
 
 type Provider interface {
 	RegisterCollectors(r Registry) error
 	CollectMetrics() error
+	Collect(<-chan prometheus.Metric) error
+	Describe(<-chan *prometheus.Desc) error
 }
