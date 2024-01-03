@@ -211,8 +211,6 @@ func TestCollector_Register(t *testing.T) {
 
 func TestCollector_Collect(t *testing.T) {
 	timeInPast := time.Now().Add(-48 * time.Hour)
-	timeInFuture := time.Now().Add(48 * time.Hour)
-
 	withoutNextScrape := []string{
 		"aws_s3_storage_hourly_cost",
 		"aws_s3_operations_cost",
@@ -231,25 +229,6 @@ func TestCollector_Collect(t *testing.T) {
 		expectedResponse   float64
 		expectedExposition string
 	}{
-		{
-			name:             "skip collection",
-			nextScrape:       timeInFuture,
-			expectedResponse: 0.0,
-
-			// Next scrape should be zero, all other cases it will be a timestamp which is different on every test run,
-			// so we just assert the zero value here.
-			expectedExposition: `
-# HELP aws_cost_exporter_next_scrape The next time the exporter will scrape AWS billing data. Can be used to trigger alerts if now - nextScrape > interval
-# TYPE aws_cost_exporter_next_scrape gauge
-aws_cost_exporter_next_scrape 0
-# HELP aws_cost_exporter_request_errors_total Total number of errors when making requests to the AWS Cost Explorer API
-# TYPE aws_cost_exporter_request_errors_total counter
-aws_cost_exporter_request_errors_total 0
-# HELP aws_cost_exporter_requests_total Total number of requests made to the AWS Cost Explorer API
-# TYPE aws_cost_exporter_requests_total counter
-aws_cost_exporter_requests_total 0
-`,
-		},
 		{
 			name:       "cost and usage error is bubbled-up",
 			nextScrape: timeInPast,
@@ -687,4 +666,93 @@ func Test_unitCostForComponent(t *testing.T) {
 			assert.Equalf(t, tt.want, unitCostForComponent(tt.component, tt.pricing), "unitCostForComponent(%v, %v)", tt.component, tt.pricing)
 		})
 	}
+}
+
+func TestCollector_MultipleCalls(t *testing.T) {
+	t.Run("Test multiple calls to the collect method", func(t *testing.T) {
+		ce := mockcostexplorer.NewCostExplorer(t)
+		ce.EXPECT().
+			GetCostAndUsage(mock.Anything, mock.Anything, mock.Anything).
+			Return(&awscostexplorer.GetCostAndUsageOutput{}, nil)
+
+		c := &Collector{
+			client:   ce,
+			metrics:  NewMetrics(),
+			interval: 1 * time.Hour,
+		}
+		up := c.Collect()
+		require.Equal(t, 1.0, up)
+
+		up = c.Collect()
+		require.Equal(t, 1.0, up)
+	})
+	// This tests if the collect method is thread safe. If it fails, then we need to implement a mutex.`
+	t.Run("Test multiple calls to collect method in parallel", func(t *testing.T) {
+		ce := mockcostexplorer.NewCostExplorer(t)
+		getCostAndUsage := func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+			a := "1"
+			u := "unit"
+			return &awscostexplorer.GetCostAndUsageOutput{
+				ResultsByTime: []types.ResultByTime{
+					{
+						Groups: []types.Group{{
+							Keys: []string{"APN1-Requests-Tier1"},
+							Metrics: map[string]types.MetricValue{
+								"UsageQuantity": {Amount: &a, Unit: &u},
+								"UnblendedCost": {Amount: &a, Unit: &u},
+							},
+						}},
+					},
+					{
+						Groups: []types.Group{{
+							Keys: []string{"APN1-Requests-Tier2"},
+							Metrics: map[string]types.MetricValue{
+								"UsageQuantity": {Amount: &a, Unit: &u},
+								"UnblendedCost": {Amount: &a, Unit: &u},
+							},
+						}},
+					},
+					{
+						Groups: []types.Group{{
+							Keys: []string{"APN1-TimedStorage"},
+							Metrics: map[string]types.MetricValue{
+								"UsageQuantity": {Amount: &a, Unit: &u},
+								"UnblendedCost": {Amount: &a, Unit: &u},
+							},
+						}},
+					},
+					{
+						Groups: []types.Group{{
+							Keys: []string{"APN1-unknown"},
+							Metrics: map[string]types.MetricValue{
+								"UsageQuantity": {Amount: &a, Unit: &u},
+								"UnblendedCost": {Amount: &a, Unit: &u},
+							},
+						}},
+					},
+				},
+			}, nil
+		}
+		goroutines := 10
+		collectCalls := 1000
+		ce.EXPECT().
+			GetCostAndUsage(mock.Anything, mock.Anything, mock.Anything).
+			RunAndReturn(getCostAndUsage).
+			Times(goroutines * collectCalls)
+
+		c := &Collector{
+			client:  ce,
+			metrics: NewMetrics(),
+		}
+
+		for i := 0; i < goroutines; i++ {
+			t.Run(fmt.Sprintf("Test %d", i), func(t *testing.T) {
+				t.Parallel()
+				for j := 0; j < collectCalls; j++ {
+					up := c.Collect()
+					require.Equal(t, 1.0, up)
+				}
+			})
+		}
+	})
 }

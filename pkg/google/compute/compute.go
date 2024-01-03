@@ -148,6 +148,7 @@ func (c *Collector) GetServiceName() (string, error) {
 	return "", ServiceNotFound
 }
 
+// GetPricing will collect all the pricing information for a given service and return a list of skus.
 func (c *Collector) GetPricing(serviceName string) []*billingpb.Sku {
 	var skus []*billingpb.Sku
 	skuIterator := c.billingService.ListSkus(context.Background(), &billingpb.ListSkusRequest{Parent: serviceName})
@@ -158,6 +159,7 @@ func (c *Collector) GetPricing(serviceName string) []*billingpb.Sku {
 				break
 			}
 		}
+		// We don't include licensing skus in our pricing map
 		if !strings.Contains(strings.ToLower(sku.Description), "licensing") {
 			skus = append(skus, sku)
 		}
@@ -234,13 +236,16 @@ func (c *Collector) Collect() float64 {
 		log.Println("Refreshing pricing map")
 		serviceName, err := c.GetServiceName()
 		if err != nil {
+			log.Printf("Error getting service name: %s", err)
 			return 0
 		}
 		skus := c.GetPricing(serviceName)
 		pricingMap, err := GeneratePricingMap(skus)
 		if err != nil {
+			log.Printf("Error generating pricing map: %s", err)
 			return 0
 		}
+
 		c.PricingMap = pricingMap
 		c.NextScrape = time.Now().Add(c.config.ScrapeInterval)
 		log.Printf("Finished refreshing pricing map in %s", time.Since(start))

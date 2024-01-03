@@ -6,6 +6,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -119,10 +120,12 @@ func NewMetrics() Metrics {
 // Collector is the AWS implementation of the Collector interface
 // It is responsible for registering and collecting metrics
 type Collector struct {
-	client     costexplorer.CostExplorer
-	interval   time.Duration
-	nextScrape time.Time
-	metrics    Metrics
+	client      costexplorer.CostExplorer
+	interval    time.Duration
+	nextScrape  time.Time
+	metrics     Metrics
+	billingData *BillingData
+	m           sync.Mutex
 }
 
 // New creates a new Collector with a client and scrape interval defined.
@@ -133,6 +136,7 @@ func New(scrapeInterval time.Duration, client costexplorer.CostExplorer) (*Colle
 		// Initially Set nextScrape to the current time minus the scrape interval so that the first scrape will run immediately
 		nextScrape: time.Now().Add(-scrapeInterval),
 		metrics:    NewMetrics(),
+		m:          sync.Mutex{},
 	}, nil
 }
 
@@ -153,20 +157,30 @@ func (r *Collector) Register(registry provider.Registry) error {
 
 // Collect is the function that will be called by the Prometheus client anytime a scrape is performed.
 func (r *Collector) Collect() float64 {
+	r.m.Lock()
+	defer r.m.Unlock()
 	now := time.Now()
-	// If the nextScrape time is in the future, return nil and do not scrape
-	// :fire: This is to _mitigate_ expensive API calls to the cost explorer API
-	if r.nextScrape.After(now) {
-		// TODO: This shouldn't return an error.
-		return 0.0
+	// :fire: Checking scrape interval is to _mitigate_ expensive API calls to the cost explorer API
+	if r.billingData == nil || now.After(r.nextScrape) {
+		endDate := time.Now().AddDate(0, 0, -1)
+		// Current assumption is that we're going to pull 30 days worth of billing data
+		startDate := endDate.AddDate(0, 0, -30)
+		billingData, err := getBillingData(r.client, startDate, endDate, r.metrics)
+		if err != nil {
+			log.Printf("Error getting billing data: %v\n", err)
+			return 0
+		}
+		r.billingData = billingData
+		r.nextScrape = time.Now().Add(r.interval)
+		r.metrics.NextScrapeGauge.Set(float64(r.nextScrape.Unix()))
 	}
-	r.nextScrape = time.Now().Add(r.interval)
-	r.metrics.NextScrapeGauge.Set(float64(r.nextScrape.Unix()))
-	return ExportBillingData(r.client, r.metrics)
+
+	exportMetrics(r.billingData, r.metrics)
+	return 1.0
 }
 
-// S3BillingData is the struct for the data we will be collecting
-type S3BillingData struct {
+// BillingData is the struct for the data we will be collecting
+type BillingData struct {
 	// Regions is a map where string is the region and PricingModel is the value
 	Regions map[string]*PricingModel
 }
@@ -183,8 +197,8 @@ type Pricing struct {
 	UnitCost float64
 }
 
-func NewS3BillingData() S3BillingData {
-	return S3BillingData{
+func NewS3BillingData() *BillingData {
+	return &BillingData{
 		// string represents the region
 		Regions: make(map[string]*PricingModel),
 	}
@@ -193,7 +207,7 @@ func NewS3BillingData() S3BillingData {
 // AddMetricGroup adds a metric group to the Region. If the key is empty, it will not add the metric group
 // to the Region. If the dimension is empty, it will not add the metric group to the Region.
 // Dimensions are cumulative and will be added to the same dimension if the dimension already exists.
-func (s S3BillingData) AddMetricGroup(region string, component string, group types.Group) {
+func (s *BillingData) AddMetricGroup(region string, component string, group types.Group) {
 	if region == "" || component == "" {
 		return
 	}
@@ -248,7 +262,7 @@ func (s S3BillingData) AddMetricGroup(region string, component string, group typ
 
 // getBillingData is responsible for making the API call to the AWS Cost Explorer API and parsing the response
 // into a S3BillingData struct
-func getBillingData(client costexplorer.CostExplorer, startDate time.Time, endDate time.Time, m Metrics) (S3BillingData, error) {
+func getBillingData(client costexplorer.CostExplorer, startDate time.Time, endDate time.Time, m Metrics) (*BillingData, error) {
 	log.Printf("Getting billing data for %s to %s\n", startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
 	input := &awscostexplorer.GetCostAndUsageInput{
 		TimePeriod: &types.DateInterval{
@@ -279,7 +293,7 @@ func getBillingData(client costexplorer.CostExplorer, startDate time.Time, endDa
 		if err != nil {
 			log.Printf("Error getting cost and usage: %v\n", err)
 			m.RequestErrorsCount.Inc()
-			return S3BillingData{}, err
+			return &BillingData{}, err
 		}
 		outputs = append(outputs, output)
 		if output.NextPageToken == nil {
@@ -292,7 +306,7 @@ func getBillingData(client costexplorer.CostExplorer, startDate time.Time, endDa
 }
 
 // parseBillingData takes the output from the AWS Cost Explorer API and parses it into a S3BillingData struct
-func parseBillingData(outputs []*awscostexplorer.GetCostAndUsageOutput) S3BillingData {
+func parseBillingData(outputs []*awscostexplorer.GetCostAndUsageOutput) *BillingData {
 	billingData := NewS3BillingData()
 
 	// Process the billing data in the 'output' variable
@@ -360,24 +374,8 @@ func getComponentFromKey(key string) string {
 	return val
 }
 
-// ExportBillingData will query the previous 30 days of S3 billing data and export it to the prometheus metrics
-func ExportBillingData(client costexplorer.CostExplorer, m Metrics) float64 {
-	// We go one day into the past as the current days billing data has no guarantee of being complete
-	endDate := time.Now().AddDate(0, 0, -1)
-	// Current assumption is that we're going to pull 30 days worth of billing data
-	startDate := endDate.AddDate(0, 0, -30)
-	s3BillingData, err := getBillingData(client, startDate, endDate, m)
-	if err != nil {
-		log.Printf("Error getting billing data: %v\n", err)
-		return 0
-	}
-
-	exportMetrics(s3BillingData, m)
-	return 1.0
-}
-
 // exportMetrics will iterate over the S3BillingData and export the metrics to prometheus
-func exportMetrics(s3BillingData S3BillingData, m Metrics) {
+func exportMetrics(s3BillingData *BillingData, m Metrics) {
 	log.Printf("Exporting metrics for %d regions\n", len(s3BillingData.Regions))
 	for region, pricingModel := range s3BillingData.Regions {
 		for component, pricing := range pricingModel.Model {
