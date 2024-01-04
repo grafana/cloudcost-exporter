@@ -24,12 +24,12 @@ type GCP struct {
 	collectors []provider.Collector
 }
 
-func (p *GCP) Describe(ch <-chan *prometheus.Desc) error {
+func (p *GCP) Describe(ch chan<- *prometheus.Desc) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (p *GCP) Collect(ch <-chan prometheus.Metric) error {
+func (p *GCP) Collect(ch chan<- prometheus.Metric) {
 	//TODO implement me
 	panic("implement me")
 }

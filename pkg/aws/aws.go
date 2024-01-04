@@ -26,12 +26,12 @@ type AWS struct {
 	collectors []provider.Collector
 }
 
-func (a *AWS) Describe(ch <-chan *prometheus.Desc) error {
+func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (a *AWS) Collect(ch <-chan prometheus.Metric) error {
+func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	//TODO implement me
 	panic("implement me")
 }

@@ -240,11 +240,9 @@ func (m *MockProvider) EXPECT() *MockProviderMockRecorder {
 }
 
 // Collect mocks base method.
-func (m *MockProvider) Collect(arg0 <-chan prometheus.Metric) error {
+func (m *MockProvider) Collect(arg0 chan<- prometheus.Metric) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Collect", arg0)
-	ret0, _ := ret[0].(error)
-	return ret0
+	m.ctrl.Call(m, "Collect", arg0)
 }
 
 // Collect indicates an expected call of Collect.
@@ -268,11 +266,9 @@ func (mr *MockProviderMockRecorder) CollectMetrics() *gomock.Call {
 }
 
 // Describe mocks base method.
-func (m *MockProvider) Describe(arg0 <-chan *prometheus.Desc) error {
+func (m *MockProvider) Describe(arg0 chan<- *prometheus.Desc) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Describe", arg0)
-	ret0, _ := ret[0].(error)
-	return ret0
+	m.ctrl.Call(m, "Describe", arg0)
 }
 
 // Describe indicates an expected call of Describe.

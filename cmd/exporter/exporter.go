@@ -30,6 +30,10 @@ func ProviderFlags(fs *flag.FlagSet, awsProfiles, gcpProjects, awsServices, gcpS
 	fs.Var(gcpServices, "gcp.services", "GCP service(s).")
 }
 
+var (
+	UseInstrumentMetrics bool = false
+)
+
 func main() {
 	var cfg config.Config
 	ProviderFlags(flag.CommandLine, &cfg.Providers.AWS.Profiles, &cfg.Providers.GCP.Projects, &cfg.Providers.AWS.Services, &cfg.Providers.GCP.Services)
@@ -40,6 +44,7 @@ func main() {
 	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
 	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
+	flag.BoolVar(&UseInstrumentMetrics, "use-instrument-metrics-feature", false, "Use prometheus collector to collect metrics")
 	flag.Parse()
 
 	log.Print("Version ", version.Info())
@@ -75,16 +80,33 @@ func main() {
 		os.Exit(1)
 	}
 
-	gatherer, err = gathererFunc(csp)
-	if err != nil {
-		log.Printf("Error setting up gatherer: %s", err)
-		os.Exit(1)
+	var handler http.Handler
+	if UseInstrumentMetrics {
+		registry := prometheus.NewRegistry()
+		registry.MustRegister(
+			collectors.NewBuildInfoCollector(),
+			collectors.NewGoCollector(),
+			collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+			version.NewCollector("cloudcost_exporter"),
+			csp,
+		)
+
+		handler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+			EnableOpenMetrics: true,
+		})
+	} else {
+		gatherer, err = gathererFunc(csp)
+		if err != nil {
+			log.Printf("Error setting up gatherer: %s", err)
+			os.Exit(1)
+		}
+		handler = promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{
+			EnableOpenMetrics: true,
+		})
 	}
 
 	// CollectMetrics http server for prometheus
-	http.Handle(cfg.Server.Path, promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{
-		EnableOpenMetrics: true,
-	}))
+	http.Handle(cfg.Server.Path, handler)
 
 	log.Printf("Listening on %s:%s", cfg.Server.Address, cfg.Server.Path)
 	if err = http.ListenAndServe(cfg.Server.Address, nil); err != nil {

@@ -21,8 +21,7 @@ type Collector interface {
 }
 
 type Provider interface {
+	prometheus.Collector
 	RegisterCollectors(r Registry) error
 	CollectMetrics() error
-	Collect(<-chan prometheus.Metric) error
-	Describe(<-chan *prometheus.Desc) error
 }

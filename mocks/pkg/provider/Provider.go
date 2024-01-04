@@ -21,21 +21,8 @@ func (_m *Provider) EXPECT() *Provider_Expecter {
 }
 
 // Collect provides a mock function with given fields: _a0
-func (_m *Provider) Collect(_a0 <-chan prometheus.Metric) error {
-	ret := _m.Called(_a0)
-
-	if len(ret) == 0 {
-		panic("no return value specified for Collect")
-	}
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(<-chan prometheus.Metric) error); ok {
-		r0 = rf(_a0)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
+func (_m *Provider) Collect(_a0 chan<- prometheus.Metric) {
+	_m.Called(_a0)
 }
 
 // Provider_Collect_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Collect'
@@ -44,24 +31,24 @@ type Provider_Collect_Call struct {
 }
 
 // Collect is a helper method to define mock.On call
-//   - _a0 <-chan prometheus.Metric
+//   - _a0 chan<- prometheus.Metric
 func (_e *Provider_Expecter) Collect(_a0 interface{}) *Provider_Collect_Call {
 	return &Provider_Collect_Call{Call: _e.mock.On("Collect", _a0)}
 }
 
-func (_c *Provider_Collect_Call) Run(run func(_a0 <-chan prometheus.Metric)) *Provider_Collect_Call {
+func (_c *Provider_Collect_Call) Run(run func(_a0 chan<- prometheus.Metric)) *Provider_Collect_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(<-chan prometheus.Metric))
+		run(args[0].(chan<- prometheus.Metric))
 	})
 	return _c
 }
 
-func (_c *Provider_Collect_Call) Return(_a0 error) *Provider_Collect_Call {
-	_c.Call.Return(_a0)
+func (_c *Provider_Collect_Call) Return() *Provider_Collect_Call {
+	_c.Call.Return()
 	return _c
 }
 
-func (_c *Provider_Collect_Call) RunAndReturn(run func(<-chan prometheus.Metric) error) *Provider_Collect_Call {
+func (_c *Provider_Collect_Call) RunAndReturn(run func(chan<- prometheus.Metric)) *Provider_Collect_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -112,21 +99,8 @@ func (_c *Provider_CollectMetrics_Call) RunAndReturn(run func() error) *Provider
 }
 
 // Describe provides a mock function with given fields: _a0
-func (_m *Provider) Describe(_a0 <-chan *prometheus.Desc) error {
-	ret := _m.Called(_a0)
-
-	if len(ret) == 0 {
-		panic("no return value specified for Describe")
-	}
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(<-chan *prometheus.Desc) error); ok {
-		r0 = rf(_a0)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
+func (_m *Provider) Describe(_a0 chan<- *prometheus.Desc) {
+	_m.Called(_a0)
 }
 
 // Provider_Describe_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Describe'
@@ -135,24 +109,24 @@ type Provider_Describe_Call struct {
 }
 
 // Describe is a helper method to define mock.On call
-//   - _a0 <-chan *prometheus.Desc
+//   - _a0 chan<- *prometheus.Desc
 func (_e *Provider_Expecter) Describe(_a0 interface{}) *Provider_Describe_Call {
 	return &Provider_Describe_Call{Call: _e.mock.On("Describe", _a0)}
 }
 
-func (_c *Provider_Describe_Call) Run(run func(_a0 <-chan *prometheus.Desc)) *Provider_Describe_Call {
+func (_c *Provider_Describe_Call) Run(run func(_a0 chan<- *prometheus.Desc)) *Provider_Describe_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(<-chan *prometheus.Desc))
+		run(args[0].(chan<- *prometheus.Desc))
 	})
 	return _c
 }
 
-func (_c *Provider_Describe_Call) Return(_a0 error) *Provider_Describe_Call {
-	_c.Call.Return(_a0)
+func (_c *Provider_Describe_Call) Return() *Provider_Describe_Call {
+	_c.Call.Return()
 	return _c
 }
 
-func (_c *Provider_Describe_Call) RunAndReturn(run func(<-chan *prometheus.Desc) error) *Provider_Describe_Call {
+func (_c *Provider_Describe_Call) RunAndReturn(run func(chan<- *prometheus.Desc)) *Provider_Describe_Call {
 	_c.Call.Return(run)
 	return _c
 }
