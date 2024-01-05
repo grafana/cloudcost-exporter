@@ -90,6 +90,10 @@ func main() {
 			version.NewCollector("cloudcost_exporter"),
 			csp,
 		)
+		if err := csp.RegisterCollectors(registry); err != nil {
+			log.Printf("Error registering collectors: %s", err)
+			os.Exit(1)
+		}
 
 		handler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{
 			EnableOpenMetrics: true,

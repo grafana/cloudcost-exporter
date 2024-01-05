@@ -25,13 +25,15 @@ type GCP struct {
 }
 
 func (p *GCP) Describe(ch chan<- *prometheus.Desc) {
-	//TODO implement me
-	panic("implement me")
+	for _, c := range p.collectors {
+		c.Describe(ch)
+	}
 }
 
 func (p *GCP) Collect(ch chan<- prometheus.Metric) {
-	//TODO implement me
-	panic("implement me")
+	for _, c := range p.collectors {
+		c.Collect(ch)
+	}
 }
 
 type Config struct {

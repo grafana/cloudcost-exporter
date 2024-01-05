@@ -15,7 +15,7 @@ type Registry interface {
 type Collector interface {
 	Register(r Registry) error
 	CollectMetrics() float64
-	Collect(<-chan prometheus.Metric) error
+	Collect(chan<- prometheus.Metric) error
 	Describe(chan<- *prometheus.Desc) error
 	Name() string
 }

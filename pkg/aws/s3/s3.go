@@ -128,14 +128,15 @@ type Collector struct {
 	m           sync.Mutex
 }
 
-func (j *Collector) Describe(ch chan<- *prometheus.Desc) error {
-	//TODO implement me
-	panic("implement me")
+// Describe is used to register the metrics with the Prometheus client
+func (r *Collector) Describe(ch chan<- *prometheus.Desc) error {
+	return nil
 }
 
-func (j *Collector) Collect(ch <-chan prometheus.Metric) error {
-	//TODO implement me
-	panic("implement me")
+// Collect is the function that will be called by the Prometheus client anytime a scrape is performed.
+func (r *Collector) Collect(ch chan<- prometheus.Metric) error {
+	r.CollectMetrics()
+	return nil
 }
 
 // New creates a new Collector with a client and scrape interval defined.

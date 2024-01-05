@@ -53,13 +53,12 @@ type Collector struct {
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
-	//TODO implement me
-	panic("implement me")
+	return nil
 }
 
-func (c *Collector) Collect(ch <-chan prometheus.Metric) error {
-	//TODO implement me
-	panic("implement me")
+func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+	c.CollectMetrics()
+	return nil
 }
 
 // New is a helper method to properly setup a compute.Collector struct.

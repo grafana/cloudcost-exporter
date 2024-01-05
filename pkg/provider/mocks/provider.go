@@ -147,7 +147,7 @@ func (m *MockCollector) EXPECT() *MockCollectorMockRecorder {
 }
 
 // Collect mocks base method.
-func (m *MockCollector) Collect(arg0 <-chan prometheus.Metric) error {
+func (m *MockCollector) Collect(arg0 chan<- prometheus.Metric) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Collect", arg0)
 	ret0, _ := ret[0].(error)

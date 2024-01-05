@@ -21,7 +21,7 @@ func (_m *Collector) EXPECT() *Collector_Expecter {
 }
 
 // Collect provides a mock function with given fields: _a0
-func (_m *Collector) Collect(_a0 <-chan prometheus.Metric) error {
+func (_m *Collector) Collect(_a0 chan<- prometheus.Metric) error {
 	ret := _m.Called(_a0)
 
 	if len(ret) == 0 {
@@ -29,7 +29,7 @@ func (_m *Collector) Collect(_a0 <-chan prometheus.Metric) error {
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(<-chan prometheus.Metric) error); ok {
+	if rf, ok := ret.Get(0).(func(chan<- prometheus.Metric) error); ok {
 		r0 = rf(_a0)
 	} else {
 		r0 = ret.Error(0)
@@ -44,14 +44,14 @@ type Collector_Collect_Call struct {
 }
 
 // Collect is a helper method to define mock.On call
-//   - _a0 <-chan prometheus.Metric
+//   - _a0 chan<- prometheus.Metric
 func (_e *Collector_Expecter) Collect(_a0 interface{}) *Collector_Collect_Call {
 	return &Collector_Collect_Call{Call: _e.mock.On("Collect", _a0)}
 }
 
-func (_c *Collector_Collect_Call) Run(run func(_a0 <-chan prometheus.Metric)) *Collector_Collect_Call {
+func (_c *Collector_Collect_Call) Run(run func(_a0 chan<- prometheus.Metric)) *Collector_Collect_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(<-chan prometheus.Metric))
+		run(args[0].(chan<- prometheus.Metric))
 	})
 	return _c
 }
@@ -61,7 +61,7 @@ func (_c *Collector_Collect_Call) Return(_a0 error) *Collector_Collect_Call {
 	return _c
 }
 
-func (_c *Collector_Collect_Call) RunAndReturn(run func(<-chan prometheus.Metric) error) *Collector_Collect_Call {
+func (_c *Collector_Collect_Call) RunAndReturn(run func(chan<- prometheus.Metric) error) *Collector_Collect_Call {
 	_c.Call.Return(run)
 	return _c
 }
