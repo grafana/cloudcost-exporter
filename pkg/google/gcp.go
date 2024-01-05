@@ -19,6 +19,15 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
+var (
+	collectorSuccessDesc = prometheus.NewDesc(
+		prometheus.BuildFQName("cloudcost_exporter", "gcp", "collector_success"),
+		"Was the last scrape of the GCP metrics successful.",
+		[]string{"collector"},
+		nil,
+	)
+)
+
 type GCP struct {
 	config     *Config
 	collectors []provider.Collector
@@ -109,6 +118,7 @@ func (g *GCP) RegisterCollectors(registry provider.Registry) error {
 }
 
 func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
+	ch <- collectorSuccessDesc
 	for _, c := range g.collectors {
 		if err := c.Describe(ch); err != nil {
 			log.Printf("Error describing collector %s: %s", c.Name(), err)
@@ -122,10 +132,13 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 	for _, c := range g.collectors {
 		go func(c provider.Collector) {
 			defer wg.Done()
+			collectorSuccess := 1.0
 			if err := c.Collect(ch); err != nil {
 				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
+				collectorSuccess = 0.0
 			}
-
+			log.Printf("Collector success: %.2f", collectorSuccess)
+			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, collectorSuccess, c.Name())
 		}(c)
 	}
 	wg.Wait()

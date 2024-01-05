@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	dto "github.com/prometheus/client_model/go"
+
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 )
@@ -76,21 +78,30 @@ func TestGCP_CollectMetrics(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
+			ch := make(chan prometheus.Metric)
+			go func() {
+				for metric := range ch {
+					dtoMetric := &dto.Metric{}
+					_ = metric.Write(dtoMetric)
+					fmt.Println(dtoMetric.String())
+				}
+			}()
 			ctrl := gomock.NewController(t)
 			c := mock_provider.NewMockCollector(ctrl)
 			if tt.collect != nil {
 				c.EXPECT().Name().Return("test").AnyTimes()
-				c.EXPECT().Collect(nil).DoAndReturn(tt.collect).Times(tt.numCollectors)
+				c.EXPECT().Collect(ch).DoAndReturn(tt.collect).Times(tt.numCollectors)
 			}
 			gcp := &GCP{
 				config:     &Config{},
 				collectors: []provider.Collector{},
 			}
+
 			for i := 0; i < tt.numCollectors; i++ {
 				gcp.collectors = append(gcp.collectors, c)
 			}
-			// TODO: This test is now meaningless, we need to test the output of the metrics
-			gcp.Collect(nil)
+			gcp.Collect(ch)
+			close(ch)
 		})
 	}
 }

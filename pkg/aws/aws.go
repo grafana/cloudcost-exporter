@@ -27,25 +27,14 @@ type AWS struct {
 	collectors []provider.Collector
 }
 
-func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
-	for _, c := range a.collectors {
-		c.Describe(ch)
-	}
-}
-
-func (a *AWS) Collect(ch chan<- prometheus.Metric) {
-	wg := &sync.WaitGroup{}
-	wg.Add(len(a.collectors))
-	for _, c := range a.collectors {
-		go func(c provider.Collector) {
-			defer wg.Done()
-			if err := c.Collect(ch); err != nil {
-				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
-			}
-		}(c)
-	}
-	wg.Wait()
-}
+var (
+	collectorSuccessDesc = prometheus.NewDesc(
+		prometheus.BuildFQName("cloudcost_exporter", "aws", "collector_success"),
+		"Was the last scrape of the AWS metrics successful.",
+		[]string{"collector"},
+		nil,
+	)
+)
 
 var services = []string{"S3"}
 
@@ -97,4 +86,29 @@ func (a *AWS) RegisterCollectors(registry provider.Registry) error {
 		}
 	}
 	return nil
+}
+
+func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
+	for _, c := range a.collectors {
+		if err := c.Describe(ch); err != nil {
+			log.Printf("Error describing collector %s: %s", c.Name(), err)
+		}
+	}
+}
+
+func (a *AWS) Collect(ch chan<- prometheus.Metric) {
+	wg := &sync.WaitGroup{}
+	wg.Add(len(a.collectors))
+	for _, c := range a.collectors {
+		go func(c provider.Collector) {
+			defer wg.Done()
+			collectorSuccess := 1.0
+			if err := c.Collect(ch); err != nil {
+				collectorSuccess = 0.0
+				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
+			}
+			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, collectorSuccess, c.Name())
+		}(c)
+	}
+	wg.Wait()
 }

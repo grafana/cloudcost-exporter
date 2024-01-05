@@ -109,10 +109,16 @@ func Test_CollectMetrics(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			ch := make(chan prometheus.Metric)
+			go func() {
+				for range ch {
+					// This is necessary to ensure the test doesn't hang
+				}
+			}()
 			ctrl := gomock.NewController(t)
 			c := mock_provider.NewMockCollector(ctrl)
 			if tc.collect != nil {
-				c.EXPECT().Collect(nil).DoAndReturn(tc.collect).Times(tc.numCollectors)
+				c.EXPECT().Collect(ch).DoAndReturn(tc.collect).Times(tc.numCollectors)
 				c.EXPECT().Name().Return("test").AnyTimes()
 			}
 
@@ -124,8 +130,8 @@ func Test_CollectMetrics(t *testing.T) {
 				a.collectors = append(a.collectors, c)
 			}
 
-			a.Collect(nil)
-			// TODO: What we do we actually want to test here?
+			a.Collect(ch)
+			close(ch)
 		})
 	}
 }
