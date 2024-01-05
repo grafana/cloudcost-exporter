@@ -53,51 +53,6 @@ func (_c *Provider_Collect_Call) RunAndReturn(run func(chan<- prometheus.Metric)
 	return _c
 }
 
-// CollectMetrics provides a mock function with given fields:
-func (_m *Provider) CollectMetrics() error {
-	ret := _m.Called()
-
-	if len(ret) == 0 {
-		panic("no return value specified for CollectMetrics")
-	}
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func() error); ok {
-		r0 = rf()
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
-}
-
-// Provider_CollectMetrics_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CollectMetrics'
-type Provider_CollectMetrics_Call struct {
-	*mock.Call
-}
-
-// CollectMetrics is a helper method to define mock.On call
-func (_e *Provider_Expecter) CollectMetrics() *Provider_CollectMetrics_Call {
-	return &Provider_CollectMetrics_Call{Call: _e.mock.On("CollectMetrics")}
-}
-
-func (_c *Provider_CollectMetrics_Call) Run(run func()) *Provider_CollectMetrics_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run()
-	})
-	return _c
-}
-
-func (_c *Provider_CollectMetrics_Call) Return(_a0 error) *Provider_CollectMetrics_Call {
-	_c.Call.Return(_a0)
-	return _c
-}
-
-func (_c *Provider_CollectMetrics_Call) RunAndReturn(run func() error) *Provider_CollectMetrics_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // Describe provides a mock function with given fields: _a0
 func (_m *Provider) Describe(_a0 chan<- *prometheus.Desc) {
 	_m.Called(_a0)

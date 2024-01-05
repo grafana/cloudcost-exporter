@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -58,20 +59,19 @@ func Test_RegisterCollectors(t *testing.T) {
 func TestGCP_CollectMetrics(t *testing.T) {
 	tests := map[string]struct {
 		numCollectors int
-		collect       func() error
-		expectedError error
+		collect       func(chan<- prometheus.Metric) error
 	}{
 		"no error if no collectors": {},
 		"bubble-up single collector error": {
 			numCollectors: 1,
-			collect: func() error {
+			collect: func(chan<- prometheus.Metric) error {
 				return fmt.Errorf("test collect error")
 			},
 			// We don't want to bubble up the error from the collector, we just want to log it
 		},
 		"two collectors with no errors": {
 			numCollectors: 2,
-			collect:       func() error { return nil },
+			collect:       func(chan<- prometheus.Metric) error { return nil },
 		},
 	}
 	for name, tt := range tests {
@@ -79,9 +79,8 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			c := mock_provider.NewMockCollector(ctrl)
 			if tt.collect != nil {
-
 				c.EXPECT().Name().Return("test").AnyTimes()
-				c.EXPECT().CollectMetrics().DoAndReturn(tt.collect).Times(tt.numCollectors)
+				c.EXPECT().Collect(nil).DoAndReturn(tt.collect).Times(tt.numCollectors)
 			}
 			gcp := &GCP{
 				config:     &Config{},
@@ -90,12 +89,8 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			for i := 0; i < tt.numCollectors; i++ {
 				gcp.collectors = append(gcp.collectors, c)
 			}
-			err := gcp.CollectMetrics()
-			if tt.expectedError != nil {
-				require.EqualError(t, err, tt.expectedError.Error())
-				return
-			}
-			require.NoError(t, err)
+			// TODO: This test is now meaningless, we need to test the output of the metrics
+			gcp.Collect(nil)
 		})
 	}
 }

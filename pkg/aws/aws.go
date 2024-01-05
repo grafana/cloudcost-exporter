@@ -44,6 +44,7 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 			}
 		}(c)
 	}
+	wg.Wait()
 }
 
 var services = []string{"S3"}

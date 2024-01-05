@@ -251,20 +251,6 @@ func (mr *MockProviderMockRecorder) Collect(arg0 any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Collect", reflect.TypeOf((*MockProvider)(nil).Collect), arg0)
 }
 
-// CollectMetrics mocks base method.
-func (m *MockProvider) CollectMetrics() error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CollectMetrics")
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// CollectMetrics indicates an expected call of CollectMetrics.
-func (mr *MockProviderMockRecorder) CollectMetrics() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CollectMetrics", reflect.TypeOf((*MockProvider)(nil).CollectMetrics))
-}
-
 // Describe mocks base method.
 func (m *MockProvider) Describe(arg0 chan<- *prometheus.Desc) {
 	m.ctrl.T.Helper()
