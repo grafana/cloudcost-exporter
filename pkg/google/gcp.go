@@ -24,18 +24,6 @@ type GCP struct {
 	collectors []provider.Collector
 }
 
-func (p *GCP) Describe(ch chan<- *prometheus.Desc) {
-	for _, c := range p.collectors {
-		c.Describe(ch)
-	}
-}
-
-func (p *GCP) Collect(ch chan<- prometheus.Metric) {
-	for _, c := range p.collectors {
-		c.Collect(ch)
-	}
-}
-
 type Config struct {
 	ProjectId       string // ProjectID is where the project is running. Used for authentication.
 	Region          string
@@ -120,20 +108,25 @@ func (g *GCP) RegisterCollectors(registry provider.Registry) error {
 	return nil
 }
 
-// CollectMetrics will collect metrics from all collectors available on the Provider
-func (g *GCP) CollectMetrics() error {
+func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
+	for _, c := range g.collectors {
+		if err := c.Describe(ch); err != nil {
+			log.Printf("Error describing collector %s: %s", c.Name(), err)
+		}
+	}
+}
+
+func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 	wg := sync.WaitGroup{}
 	wg.Add(len(g.collectors))
 	for _, c := range g.collectors {
 		go func(c provider.Collector) {
-			log.Printf("Collecting metrics from %s", c.Name())
 			defer wg.Done()
-			up := c.CollectMetrics()
-			if up != 1 {
-				log.Printf("Collector %s is not up\n", c.Name())
+			if err := c.Collect(ch); err != nil {
+				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
 			}
+
 		}(c)
 	}
 	wg.Wait()
-	return nil
 }

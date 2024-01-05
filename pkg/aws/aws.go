@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -27,13 +28,22 @@ type AWS struct {
 }
 
 func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
-	//TODO implement me
-	panic("implement me")
+	for _, c := range a.collectors {
+		c.Describe(ch)
+	}
 }
 
 func (a *AWS) Collect(ch chan<- prometheus.Metric) {
-	//TODO implement me
-	panic("implement me")
+	wg := &sync.WaitGroup{}
+	wg.Add(len(a.collectors))
+	for _, c := range a.collectors {
+		go func(c provider.Collector) {
+			defer wg.Done()
+			if err := c.Collect(ch); err != nil {
+				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
+			}
+		}(c)
+	}
 }
 
 var services = []string{"S3"}
@@ -83,16 +93,6 @@ func (a *AWS) RegisterCollectors(registry provider.Registry) error {
 	for _, c := range a.collectors {
 		if err := c.Register(registry); err != nil {
 			return err
-		}
-	}
-	return nil
-}
-
-func (a *AWS) CollectMetrics() error {
-	log.Printf("Collecting metrics for %d collectors for AWS", len(a.collectors))
-	for _, c := range a.collectors {
-		if up := c.CollectMetrics(); up == 0 {
-			return fmt.Errorf("error collecting metrics for %q", c.Name())
 		}
 	}
 	return nil

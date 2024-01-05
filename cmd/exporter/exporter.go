@@ -14,8 +14,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/version"
 
-	dto "github.com/prometheus/client_model/go"
-
 	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	"github.com/grafana/cloudcost-exporter/pkg/aws"
 	"github.com/grafana/cloudcost-exporter/pkg/google"
@@ -49,7 +47,6 @@ func main() {
 
 	log.Print("Version ", version.Info())
 	log.Print("Build Context ", version.BuildContext())
-	var gatherer prometheus.GathererFunc
 
 	var csp provider.Provider
 	var err error
@@ -80,34 +77,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	var handler http.Handler
-	if UseInstrumentMetrics {
-		registry := prometheus.NewRegistry()
-		registry.MustRegister(
-			collectors.NewBuildInfoCollector(),
-			collectors.NewGoCollector(),
-			collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-			version.NewCollector("cloudcost_exporter"),
-			csp,
-		)
-		if err := csp.RegisterCollectors(registry); err != nil {
-			log.Printf("Error registering collectors: %s", err)
-			os.Exit(1)
-		}
-
-		handler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{
-			EnableOpenMetrics: true,
-		})
-	} else {
-		gatherer, err = gathererFunc(csp)
-		if err != nil {
-			log.Printf("Error setting up gatherer: %s", err)
-			os.Exit(1)
-		}
-		handler = promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{
-			EnableOpenMetrics: true,
-		})
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(
+		collectors.NewBuildInfoCollector(),
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		version.NewCollector("cloudcost_exporter"),
+		csp,
+	)
+	if err := csp.RegisterCollectors(registry); err != nil {
+		log.Printf("Error registering collectors: %s", err)
+		os.Exit(1)
 	}
+
+	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+		EnableOpenMetrics: true,
+	})
 
 	// CollectMetrics http server for prometheus
 	http.Handle(cfg.Server.Path, handler)
@@ -117,24 +102,4 @@ func main() {
 		log.Printf("Error listening and serving: %s", err)
 		os.Exit(1)
 	}
-}
-
-func gathererFunc(csp provider.Provider) (prometheus.GathererFunc, error) {
-	reg := prometheus.NewRegistry()
-	reg.MustRegister(
-		collectors.NewBuildInfoCollector(),
-		collectors.NewGoCollector(),
-		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		version.NewCollector("cloudcost_exporter"),
-	)
-	if err := csp.RegisterCollectors(reg); err != nil {
-		return nil, err
-	}
-
-	return func() ([]*dto.MetricFamily, error) {
-		if err := csp.CollectMetrics(); err != nil {
-			return nil, err
-		}
-		return reg.Gather()
-	}, nil
 }
