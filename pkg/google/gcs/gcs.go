@@ -234,6 +234,8 @@ func (c *Collector) Name() string {
 	return collectorName
 }
 
+// GetServiceNameByReadableName will list all services available for a given GCP project and find the service name for a given readable name
+// The service name is used to query the billing API to find the associated costs for the service.
 func GetServiceNameByReadableName(ctx context.Context, client CloudCatalogClient, name string) (string, error) {
 	serviceList := client.ListServices(ctx, &billingpb.ListServicesRequest{})
 	for {
@@ -251,17 +253,18 @@ func GetServiceNameByReadableName(ctx context.Context, client CloudCatalogClient
 	return "", fmt.Errorf("service \"%s\" not found", name)
 }
 
-func (r *Collector) Register(registry provider.Registry) error {
+// Register is called when the collector is created and is responsible for registering the metrics with the registry
+func (c *Collector) Register(registry provider.Registry) error {
 	log.Printf("Registering GCS metrics")
-	registry.MustRegister(r.metrics.StorageGauge)
-	registry.MustRegister(r.metrics.StorageDiscountGauge)
-	registry.MustRegister(r.metrics.OperationsDiscountGauge)
-	registry.MustRegister(r.metrics.OperationsGauge)
-	registry.MustRegister(r.metrics.BucketInfo)
-	registry.MustRegister(r.metrics.BucketListHistogram)
-	registry.MustRegister(r.metrics.BucketListStatus)
-	registry.MustRegister(r.metrics.CloudCostExporterHistogram)
-	registry.MustRegister(r.metrics.NextScrapeScrapeGauge)
+	registry.MustRegister(c.metrics.StorageGauge)
+	registry.MustRegister(c.metrics.StorageDiscountGauge)
+	registry.MustRegister(c.metrics.OperationsDiscountGauge)
+	registry.MustRegister(c.metrics.OperationsGauge)
+	registry.MustRegister(c.metrics.BucketInfo)
+	registry.MustRegister(c.metrics.BucketListHistogram)
+	registry.MustRegister(c.metrics.BucketListStatus)
+	registry.MustRegister(c.metrics.CloudCostExporterHistogram)
+	registry.MustRegister(c.metrics.NextScrapeScrapeGauge)
 	return nil
 }
 

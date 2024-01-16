@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/prometheus/client_golang/prometheus"
 
+	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
@@ -29,7 +30,7 @@ type AWS struct {
 
 var (
 	collectorSuccessDesc = prometheus.NewDesc(
-		prometheus.BuildFQName("cloudcost_exporter", "aws", "collector_success"),
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "collector_success"),
 		"Was the last scrape of the AWS metrics successful.",
 		[]string{"collector"},
 		nil,
@@ -37,6 +38,10 @@ var (
 )
 
 var services = []string{"S3"}
+
+const (
+	subsystem = "aws"
+)
 
 func New(config *Config) (*AWS, error) {
 	var collectors []provider.Collector

@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/version"
 
+	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	"github.com/grafana/cloudcost-exporter/pkg/aws"
 	"github.com/grafana/cloudcost-exporter/pkg/google"
@@ -42,7 +43,7 @@ func main() {
 	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
 	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
-	flag.BoolVar(&UseInstrumentMetrics, "use-instrument-metrics-feature", false, "Use prometheus collector to collect metrics")
+	flag.BoolVar(&UseInstrumentMetrics, "use-instrument-metrics-feature", false, "Use Prometheus collector to collect metrics")
 	flag.Parse()
 
 	log.Print("Version ", version.Info())
@@ -82,7 +83,7 @@ func main() {
 		collectors.NewBuildInfoCollector(),
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		version.NewCollector("cloudcost_exporter"),
+		version.NewCollector(cloudcost_exporter.ExporterName),
 		csp,
 	)
 	if err := csp.RegisterCollectors(registry); err != nil {

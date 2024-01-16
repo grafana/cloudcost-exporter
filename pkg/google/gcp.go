@@ -14,14 +14,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	computev1 "google.golang.org/api/compute/v1"
 
+	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/google/compute"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
+const (
+	subsystem = "gcp"
+)
+
 var (
 	collectorSuccessDesc = prometheus.NewDesc(
-		prometheus.BuildFQName("cloudcost_exporter", "gcp", "collector_success"),
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "collector_success"),
 		"Was the last scrape of the GCP metrics successful.",
 		[]string{"collector"},
 		nil,
@@ -107,7 +112,7 @@ func New(config *Config) (*GCP, error) {
 	}, nil
 }
 
-// RegisterCollectors will iterate over all of the collectors instantiated during New and register their metrics.
+// RegisterCollectors will iterate over all the collectors instantiated during New and register their metrics.
 func (g *GCP) RegisterCollectors(registry provider.Registry) error {
 	for _, c := range g.collectors {
 		if err := c.Register(registry); err != nil {
@@ -117,6 +122,7 @@ func (g *GCP) RegisterCollectors(registry provider.Registry) error {
 	return nil
 }
 
+// Describe implements the prometheus.Collector interface and will iterate over all the collectors instantiated during New and describe their metrics.
 func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collectorSuccessDesc
 	for _, c := range g.collectors {
@@ -126,6 +132,7 @@ func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
 	}
 }
 
+// Collect implements the prometheus.Collector interface and will iterate over all the collectors instantiated during New and collect their metrics.
 func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 	wg := sync.WaitGroup{}
 	wg.Add(len(g.collectors))
@@ -137,7 +144,7 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
 				collectorSuccess = 0.0
 			}
-			log.Printf("Collector success: %.2f", collectorSuccess)
+			log.Printf("Collector(%s) collect respose=%.2f", c.Name(), collectorSuccess)
 			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, collectorSuccess, c.Name())
 		}(c)
 	}
