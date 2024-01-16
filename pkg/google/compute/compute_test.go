@@ -585,17 +585,23 @@ func TestCollector_Collect(t *testing.T) {
 			}()
 
 			billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudCatalogServer{})
-			cloudCatalagClient, err := billingv1.NewCloudCatalogClient(context.Background(),
+			cloudCatalogClient, err := billingv1.NewCloudCatalogClient(context.Background(),
 				option.WithEndpoint(l.Addr().String()),
 				option.WithoutAuthentication(),
 				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
 			)
 
-			collector := New(test.config, computeService, cloudCatalagClient)
+			collector := New(test.config, computeService, cloudCatalogClient)
 
 			require.NotNil(t, collector)
 
-			up := collector.CollectMetrics()
+			ch := make(chan prometheus.Metric)
+			defer close(ch)
+			go func() {
+				for range ch {
+				}
+			}()
+			up := collector.CollectMetrics(ch)
 			require.Equal(t, test.collectResponse, up)
 			if test.collectResponse == 0.0 {
 				return
@@ -699,11 +705,19 @@ func TestCollector_GetPricing(t *testing.T) {
 
 		require.NotNil(t, collector)
 
-		up := collector.CollectMetrics()
+		ch := make(chan prometheus.Metric)
+		defer close(ch)
+
+		go func() {
+			for range ch {
+			}
+		}()
+
+		up := collector.CollectMetrics(ch)
 		require.Equal(t, 1.0, up)
 
 		pricingMap = collector.PricingMap
-		up = collector.CollectMetrics()
+		up = collector.CollectMetrics(ch)
 		require.Equal(t, 1.0, up)
 		require.Equal(t, pricingMap, collector.PricingMap)
 	})
@@ -727,7 +741,13 @@ func TestCollector_GetPricing(t *testing.T) {
 
 		collector.billingService = cloudCatalogClient
 		collector.NextScrape = time.Now().Add(-1 * time.Minute)
-		up := collector.CollectMetrics()
+		ch := make(chan prometheus.Metric)
+		defer close(ch)
+		go func() {
+			for range ch {
+			}
+		}()
+		up := collector.CollectMetrics(ch)
 		require.Equal(t, 1.0, up)
 		require.NotEqual(t, pricingMap, collector.PricingMap)
 	})

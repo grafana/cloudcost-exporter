@@ -179,7 +179,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 }
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	c.CollectMetrics()
+	c.CollectMetrics(ch)
 	return nil
 }
 
@@ -268,17 +268,17 @@ func (c *Collector) Register(registry provider.Registry) error {
 	return nil
 }
 
-func (c *Collector) CollectMetrics() float64 {
+// CollectMetrics is by `c.Collect` and can likely be refactored directly into `c.Collect`
+func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	log.Printf("Collecting GCS metrics")
 	now := time.Now()
 
 	// If the nextScrape time is in the future, return nil and do not scrape
-	// Billing API calls are free in GCP, just use this logic so metrics are similiar to AWSD
+	// Billing API calls are free in GCP, just use this logic so metrics are similar to AWS
 	if c.nextScrape.After(now) {
 		// TODO: We should stuff in logic here to update pricing data if it's been more than 24 hours
 		return 1
 	}
-	defer c.metrics.CloudCostExporterHistogram.WithLabelValues("gcp").Observe(time.Since(now).Seconds())
 	c.nextScrape = time.Now().Add(c.interval)
 	c.metrics.NextScrapeScrapeGauge.Set(float64(c.nextScrape.Unix()))
 	ExporterOperationsDiscounts(c.metrics)

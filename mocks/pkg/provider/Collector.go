@@ -66,17 +66,17 @@ func (_c *Collector_Collect_Call) RunAndReturn(run func(chan<- prometheus.Metric
 	return _c
 }
 
-// CollectMetrics provides a mock function with given fields:
-func (_m *Collector) CollectMetrics() float64 {
-	ret := _m.Called()
+// CollectMetrics provides a mock function with given fields: _a0
+func (_m *Collector) CollectMetrics(_a0 chan<- prometheus.Metric) float64 {
+	ret := _m.Called(_a0)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CollectMetrics")
 	}
 
 	var r0 float64
-	if rf, ok := ret.Get(0).(func() float64); ok {
-		r0 = rf()
+	if rf, ok := ret.Get(0).(func(chan<- prometheus.Metric) float64); ok {
+		r0 = rf(_a0)
 	} else {
 		r0 = ret.Get(0).(float64)
 	}
@@ -90,13 +90,14 @@ type Collector_CollectMetrics_Call struct {
 }
 
 // CollectMetrics is a helper method to define mock.On call
-func (_e *Collector_Expecter) CollectMetrics() *Collector_CollectMetrics_Call {
-	return &Collector_CollectMetrics_Call{Call: _e.mock.On("CollectMetrics")}
+//   - _a0 chan<- prometheus.Metric
+func (_e *Collector_Expecter) CollectMetrics(_a0 interface{}) *Collector_CollectMetrics_Call {
+	return &Collector_CollectMetrics_Call{Call: _e.mock.On("CollectMetrics", _a0)}
 }
 
-func (_c *Collector_CollectMetrics_Call) Run(run func()) *Collector_CollectMetrics_Call {
+func (_c *Collector_CollectMetrics_Call) Run(run func(_a0 chan<- prometheus.Metric)) *Collector_CollectMetrics_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run()
+		run(args[0].(chan<- prometheus.Metric))
 	})
 	return _c
 }
@@ -106,7 +107,7 @@ func (_c *Collector_CollectMetrics_Call) Return(_a0 float64) *Collector_CollectM
 	return _c
 }
 
-func (_c *Collector_CollectMetrics_Call) RunAndReturn(run func() float64) *Collector_CollectMetrics_Call {
+func (_c *Collector_CollectMetrics_Call) RunAndReturn(run func(chan<- prometheus.Metric) float64) *Collector_CollectMetrics_Call {
 	_c.Call.Return(run)
 	return _c
 }

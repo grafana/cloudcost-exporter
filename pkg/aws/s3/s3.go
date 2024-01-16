@@ -135,7 +135,7 @@ func (r *Collector) Describe(ch chan<- *prometheus.Desc) error {
 
 // Collect is the function that will be called by the Prometheus client anytime a scrape is performed.
 func (r *Collector) Collect(ch chan<- prometheus.Metric) error {
-	r.CollectMetrics()
+	r.CollectMetrics(ch)
 	return nil
 }
 
@@ -167,7 +167,7 @@ func (r *Collector) Register(registry provider.Registry) error {
 }
 
 // Collect is the function that will be called by the Prometheus client anytime a scrape is performed.
-func (r *Collector) CollectMetrics() float64 {
+func (r *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	r.m.Lock()
 	defer r.m.Unlock()
 	now := time.Now()
