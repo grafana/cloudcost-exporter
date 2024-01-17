@@ -2,7 +2,7 @@ package utils
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
-	. "github.com/prometheus/client_model/go"
+	"github.com/prometheus/client_model/go"
 )
 
 type LabelMap map[string]string
@@ -14,7 +14,7 @@ type MetricResult struct {
 }
 
 func ReadMetrics(metric prometheus.Metric) *MetricResult {
-	m := &Metric{}
+	m := &io_prometheus_client.Metric{}
 	err := metric.Write(m)
 	if err != nil {
 		return nil
