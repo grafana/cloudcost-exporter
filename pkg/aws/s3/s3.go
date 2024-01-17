@@ -129,13 +129,13 @@ type Collector struct {
 }
 
 // Describe is used to register the metrics with the Prometheus client
-func (r *Collector) Describe(ch chan<- *prometheus.Desc) error {
+func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	return nil
 }
 
 // Collect is the function that will be called by the Prometheus client anytime a scrape is performed.
-func (r *Collector) Collect(ch chan<- prometheus.Metric) error {
-	r.CollectMetrics(ch)
+func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+	c.CollectMetrics(ch)
 	return nil
 }
 
@@ -151,42 +151,42 @@ func New(scrapeInterval time.Duration, client costexplorer.CostExplorer) (*Colle
 	}, nil
 }
 
-func (r *Collector) Name() string {
+func (c *Collector) Name() string {
 	return "S3"
 }
 
 // Register is called prior to the first collection. It registers any custom metric that needs to be exported for AWS billing data
-func (r *Collector) Register(registry provider.Registry) error {
-	registry.MustRegister(r.metrics.StorageGauge)
-	registry.MustRegister(r.metrics.OperationsGauge)
-	registry.MustRegister(r.metrics.RequestCount)
-	registry.MustRegister(r.metrics.NextScrapeGauge)
-	registry.MustRegister(r.metrics.RequestErrorsCount)
+func (c *Collector) Register(registry provider.Registry) error {
+	registry.MustRegister(c.metrics.StorageGauge)
+	registry.MustRegister(c.metrics.OperationsGauge)
+	registry.MustRegister(c.metrics.RequestCount)
+	registry.MustRegister(c.metrics.NextScrapeGauge)
+	registry.MustRegister(c.metrics.RequestErrorsCount)
 
 	return nil
 }
 
 // Collect is the function that will be called by the Prometheus client anytime a scrape is performed.
-func (r *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
-	r.m.Lock()
-	defer r.m.Unlock()
+func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
+	c.m.Lock()
+	defer c.m.Unlock()
 	now := time.Now()
 	// :fire: Checking scrape interval is to _mitigate_ expensive API calls to the cost explorer API
-	if r.billingData == nil || now.After(r.nextScrape) {
+	if c.billingData == nil || now.After(c.nextScrape) {
 		endDate := time.Now().AddDate(0, 0, -1)
 		// Current assumption is that we're going to pull 30 days worth of billing data
 		startDate := endDate.AddDate(0, 0, -30)
-		billingData, err := getBillingData(r.client, startDate, endDate, r.metrics)
+		billingData, err := getBillingData(c.client, startDate, endDate, c.metrics)
 		if err != nil {
 			log.Printf("Error getting billing data: %v\n", err)
 			return 0
 		}
-		r.billingData = billingData
-		r.nextScrape = time.Now().Add(r.interval)
-		r.metrics.NextScrapeGauge.Set(float64(r.nextScrape.Unix()))
+		c.billingData = billingData
+		c.nextScrape = time.Now().Add(c.interval)
+		c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
 	}
 
-	exportMetrics(r.billingData, r.metrics)
+	exportMetrics(c.billingData, c.metrics)
 	return 1.0
 }
 
