@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -89,8 +90,7 @@ func Test_CollectMetrics(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
 		numCollectors int
-		collect       func() float64
-		expectedError error
+		collect       func(chan<- prometheus.Metric) error
 	}{
 		{
 			name: "no error if no collectors",
@@ -98,22 +98,27 @@ func Test_CollectMetrics(t *testing.T) {
 		{
 			name:          "bubble-up single collector error",
 			numCollectors: 1,
-			collect: func() float64 {
-				return 0.0
+			collect: func(chan<- prometheus.Metric) error {
+				return nil
 			},
-			expectedError: fmt.Errorf("error collecting metrics for %q", "test"),
 		},
 		{
 			name:          "two collectors with no errors",
 			numCollectors: 2,
-			collect:       func() float64 { return 1.0 },
+			collect:       func(chan<- prometheus.Metric) error { return nil },
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			ch := make(chan prometheus.Metric)
+			go func() {
+				for range ch {
+					// This is necessary to ensure the test doesn't hang
+				}
+			}()
 			ctrl := gomock.NewController(t)
 			c := mock_provider.NewMockCollector(ctrl)
 			if tc.collect != nil {
-				c.EXPECT().Collect().DoAndReturn(tc.collect).Times(tc.numCollectors)
+				c.EXPECT().Collect(ch).DoAndReturn(tc.collect).Times(tc.numCollectors)
 				c.EXPECT().Name().Return("test").AnyTimes()
 			}
 
@@ -125,12 +130,8 @@ func Test_CollectMetrics(t *testing.T) {
 				a.collectors = append(a.collectors, c)
 			}
 
-			err := a.CollectMetrics()
-			if tc.expectedError != nil {
-				require.EqualError(t, err, tc.expectedError.Error())
-				return
-			}
-			require.NoError(t, err)
+			a.Collect(ch)
+			close(ch)
 		})
 	}
 }

@@ -606,7 +606,7 @@ aws_s3_storage_hourly_cost{class="StandardStorage",region="ap-northeast-1"} 0.00
 				nextScrape: tc.nextScrape,
 				metrics:    NewMetrics(),
 			}
-			up := c.Collect()
+			up := c.CollectMetrics(nil)
 			require.Equal(t, tc.expectedResponse, up)
 			if tc.expectedResponse == 0 {
 				return
@@ -680,10 +680,10 @@ func TestCollector_MultipleCalls(t *testing.T) {
 			metrics:  NewMetrics(),
 			interval: 1 * time.Hour,
 		}
-		up := c.Collect()
+		up := c.CollectMetrics(nil)
 		require.Equal(t, 1.0, up)
 
-		up = c.Collect()
+		up = c.CollectMetrics(nil)
 		require.Equal(t, 1.0, up)
 	})
 	// This tests if the collect method is thread safe. If it fails, then we need to implement a mutex.`
@@ -749,7 +749,7 @@ func TestCollector_MultipleCalls(t *testing.T) {
 			t.Run(fmt.Sprintf("Test %d", i), func(t *testing.T) {
 				t.Parallel()
 				for j := 0; j < collectCalls; j++ {
-					up := c.Collect()
+					up := c.CollectMetrics(nil)
 					require.Equal(t, 1.0, up)
 				}
 			})

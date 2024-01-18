@@ -11,11 +11,26 @@ import (
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	computeapiv1 "cloud.google.com/go/compute/apiv1"
 	"cloud.google.com/go/storage"
+	"github.com/prometheus/client_golang/prometheus"
 	computev1 "google.golang.org/api/compute/v1"
 
+	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/google/compute"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
+)
+
+const (
+	subsystem = "gcp"
+)
+
+var (
+	collectorSuccessDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "collector_success"),
+		"Was the last scrape of the GCP metrics successful.",
+		[]string{"collector"},
+		nil,
+	)
 )
 
 type GCP struct {
@@ -97,7 +112,7 @@ func New(config *Config) (*GCP, error) {
 	}, nil
 }
 
-// RegisterCollectors will iterate over all of the collectors instantiated during New and register their metrics.
+// RegisterCollectors will iterate over all the collectors instantiated during New and register their metrics.
 func (g *GCP) RegisterCollectors(registry provider.Registry) error {
 	for _, c := range g.collectors {
 		if err := c.Register(registry); err != nil {
@@ -107,20 +122,31 @@ func (g *GCP) RegisterCollectors(registry provider.Registry) error {
 	return nil
 }
 
-// CollectMetrics will collect metrics from all collectors available on the Provider
-func (g *GCP) CollectMetrics() error {
+// Describe implements the prometheus.Collector interface and will iterate over all the collectors instantiated during New and describe their metrics.
+func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
+	ch <- collectorSuccessDesc
+	for _, c := range g.collectors {
+		if err := c.Describe(ch); err != nil {
+			log.Printf("Error describing collector %s: %s", c.Name(), err)
+		}
+	}
+}
+
+// Collect implements the prometheus.Collector interface and will iterate over all the collectors instantiated during New and collect their metrics.
+func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 	wg := sync.WaitGroup{}
 	wg.Add(len(g.collectors))
 	for _, c := range g.collectors {
 		go func(c provider.Collector) {
-			log.Printf("Collecting metrics from %s", c.Name())
 			defer wg.Done()
-			up := c.Collect()
-			if up != 1 {
-				log.Printf("Collector %s is not up\n", c.Name())
+			collectorSuccess := 1.0
+			if err := c.Collect(ch); err != nil {
+				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
+				collectorSuccess = 0.0
 			}
+			log.Printf("Collector(%s) collect respose=%.2f", c.Name(), collectorSuccess)
+			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, collectorSuccess, c.Name())
 		}(c)
 	}
 	wg.Wait()
-	return nil
 }

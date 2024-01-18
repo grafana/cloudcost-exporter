@@ -174,6 +174,15 @@ type Collector struct {
 	metrics            *Metrics
 }
 
+func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
+	return nil
+}
+
+func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+	c.CollectMetrics(ch)
+	return nil
+}
+
 type Config struct {
 	ProjectId       string
 	Projects        string
@@ -225,6 +234,8 @@ func (c *Collector) Name() string {
 	return collectorName
 }
 
+// GetServiceNameByReadableName will list all services available for a given GCP project and find the service name for a given readable name
+// The service name is used to query the billing API to find the associated costs for the service.
 func GetServiceNameByReadableName(ctx context.Context, client CloudCatalogClient, name string) (string, error) {
 	serviceList := client.ListServices(ctx, &billingpb.ListServicesRequest{})
 	for {
@@ -242,31 +253,32 @@ func GetServiceNameByReadableName(ctx context.Context, client CloudCatalogClient
 	return "", fmt.Errorf("service \"%s\" not found", name)
 }
 
-func (r *Collector) Register(registry provider.Registry) error {
+// Register is called when the collector is created and is responsible for registering the metrics with the registry
+func (c *Collector) Register(registry provider.Registry) error {
 	log.Printf("Registering GCS metrics")
-	registry.MustRegister(r.metrics.StorageGauge)
-	registry.MustRegister(r.metrics.StorageDiscountGauge)
-	registry.MustRegister(r.metrics.OperationsDiscountGauge)
-	registry.MustRegister(r.metrics.OperationsGauge)
-	registry.MustRegister(r.metrics.BucketInfo)
-	registry.MustRegister(r.metrics.BucketListHistogram)
-	registry.MustRegister(r.metrics.BucketListStatus)
-	registry.MustRegister(r.metrics.CloudCostExporterHistogram)
-	registry.MustRegister(r.metrics.NextScrapeScrapeGauge)
+	registry.MustRegister(c.metrics.StorageGauge)
+	registry.MustRegister(c.metrics.StorageDiscountGauge)
+	registry.MustRegister(c.metrics.OperationsDiscountGauge)
+	registry.MustRegister(c.metrics.OperationsGauge)
+	registry.MustRegister(c.metrics.BucketInfo)
+	registry.MustRegister(c.metrics.BucketListHistogram)
+	registry.MustRegister(c.metrics.BucketListStatus)
+	registry.MustRegister(c.metrics.CloudCostExporterHistogram)
+	registry.MustRegister(c.metrics.NextScrapeScrapeGauge)
 	return nil
 }
 
-func (c *Collector) Collect() float64 {
+// CollectMetrics is by `c.Collect` and can likely be refactored directly into `c.Collect`
+func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	log.Printf("Collecting GCS metrics")
 	now := time.Now()
 
 	// If the nextScrape time is in the future, return nil and do not scrape
-	// Billing API calls are free in GCP, just use this logic so metrics are similiar to AWSD
+	// Billing API calls are free in GCP, just use this logic so metrics are similar to AWS
 	if c.nextScrape.After(now) {
 		// TODO: We should stuff in logic here to update pricing data if it's been more than 24 hours
 		return 1
 	}
-	defer c.metrics.CloudCostExporterHistogram.WithLabelValues("gcp").Observe(time.Since(now).Seconds())
 	c.nextScrape = time.Now().Add(c.interval)
 	c.metrics.NextScrapeScrapeGauge.Set(float64(c.nextScrape.Unix()))
 	ExporterOperationsDiscounts(c.metrics)

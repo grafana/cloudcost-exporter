@@ -16,8 +16,6 @@ import (
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/compute/v1"
 	computev1 "google.golang.org/api/compute/v1"
@@ -25,6 +23,8 @@ import (
 	"google.golang.org/genproto/googleapis/type/money"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 var collector *Collector
@@ -515,6 +515,7 @@ func TestCollector_Collect(t *testing.T) {
 		testServer      *httptest.Server
 		err             error
 		collectResponse float64
+		expectedMetrics []*utils.MetricResult
 	}{
 		"Handle http error": {
 			config: &Config{
@@ -525,12 +526,184 @@ func TestCollector_Collect(t *testing.T) {
 			})),
 			err:             ListInstancesError,
 			collectResponse: 0,
+			expectedMetrics: []*utils.MetricResult{},
 		},
 		"Parse out regular response": {
 			config: &Config{
 				Projects: "testing,testing-1",
 			},
 			collectResponse: 1.0,
+			expectedMetrics: []*utils.MetricResult{
+				{
+					FqName: "cloudcost_exporter_gcp_compute_instance_cpu_hourly_cost",
+					Labels: map[string]string{
+						"family":       "n1",
+						"instance":     "test-n1",
+						"machine_type": "n1-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing",
+						"provider":     "gcp",
+						"region":       "us-central1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_exporter_gcp_compute_instance_memory_hourly_cost",
+					Labels: map[string]string{
+						"family":       "n1",
+						"instance":     "test-n1",
+						"machine_type": "n1-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing",
+						"provider":     "gcp",
+						"region":       "us-central1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_exporter_gcp_compute_instance_cpu_hourly_cost",
+					Labels: map[string]string{
+						"family":       "n2",
+						"instance":     "test-n2",
+						"machine_type": "n2-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing",
+						"provider":     "gcp",
+						"region":       "us-central1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_exporter_gcp_compute_instance_memory_hourly_cost",
+					Labels: map[string]string{
+						"family":       "n2",
+						"instance":     "test-n2",
+						"machine_type": "n2-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing",
+						"provider":     "gcp",
+						"region":       "us-central1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_exporter_gcp_compute_instance_cpu_hourly_cost",
+					Labels: map[string]string{
+						"family":       "n1",
+						"instance":     "test-n1-spot",
+						"machine_type": "n1-slim",
+						"price_tier":   "spot",
+						"project":      "testing",
+						"provider":     "gcp",
+						"region":       "us-central1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_exporter_gcp_compute_instance_memory_hourly_cost",
+					Labels: map[string]string{
+						"family":       "n1",
+						"instance":     "test-n1-spot",
+						"machine_type": "n1-slim",
+						"price_tier":   "spot",
+						"project":      "testing",
+						"provider":     "gcp",
+						"region":       "us-central1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+
+				{
+					FqName: "cloudcost_exporter_gcp_compute_instance_cpu_hourly_cost",
+					Labels: map[string]string{
+						"family":       "n1",
+						"instance":     "test-n1",
+						"machine_type": "n1-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing-1",
+						"provider":     "gcp",
+						"region":       "us-central1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_exporter_gcp_compute_instance_memory_hourly_cost",
+					Labels: map[string]string{
+						"family":       "n1",
+						"instance":     "test-n1",
+						"machine_type": "n1-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing-1",
+						"provider":     "gcp",
+						"region":       "us-central1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_exporter_gcp_compute_instance_cpu_hourly_cost",
+					Labels: map[string]string{
+						"family":       "n2",
+						"instance":     "test-n2",
+						"machine_type": "n2-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing-1",
+						"provider":     "gcp",
+						"region":       "us-central1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_exporter_gcp_compute_instance_memory_hourly_cost",
+					Labels: map[string]string{
+						"family":       "n2",
+						"instance":     "test-n2",
+						"machine_type": "n2-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing-1",
+						"provider":     "gcp",
+						"region":       "us-central1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_exporter_gcp_compute_instance_cpu_hourly_cost",
+					Labels: map[string]string{
+						"family":       "n1",
+						"instance":     "test-n1-spot",
+						"machine_type": "n1-slim",
+						"price_tier":   "spot",
+						"project":      "testing-1",
+						"provider":     "gcp",
+						"region":       "us-central1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_exporter_gcp_compute_instance_memory_hourly_cost",
+					Labels: map[string]string{
+						"family":       "n1",
+						"instance":     "test-n1-spot",
+						"machine_type": "n1-slim",
+						"price_tier":   "spot",
+						"project":      "testing-1",
+						"provider":     "gcp",
+						"region":       "us-central1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+			},
 			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				buf := &compute.InstanceAggregatedList{
 					Items: map[string]compute.InstancesScopedList{
@@ -571,6 +744,7 @@ func TestCollector_Collect(t *testing.T) {
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(test.testServer.URL))
 			require.NoError(t, err)
 
@@ -585,48 +759,32 @@ func TestCollector_Collect(t *testing.T) {
 			}()
 
 			billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudCatalogServer{})
-			cloudCatalagClient, err := billingv1.NewCloudCatalogClient(context.Background(),
+			cloudCatalogClient, err := billingv1.NewCloudCatalogClient(context.Background(),
 				option.WithEndpoint(l.Addr().String()),
 				option.WithoutAuthentication(),
 				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
 			)
 
-			collector := New(test.config, computeService, cloudCatalagClient)
+			collector := New(test.config, computeService, cloudCatalogClient)
 
 			require.NotNil(t, collector)
 
-			up := collector.Collect()
-			require.Equal(t, test.collectResponse, up)
-			if test.collectResponse == 0.0 {
-				return
-			}
+			ch := make(chan prometheus.Metric)
+			go func() {
+				if up := collector.CollectMetrics(ch); up != test.collectResponse {
+					t.Errorf("Expected up to be %f, but got %f", test.collectResponse, up)
+				}
+				close(ch)
+			}()
 
-			r := prometheus.NewPedanticRegistry()
-			err = collector.Register(r)
-			assert.NoError(t, err)
-			metricsNames := []string{
-				"instance_cpu_hourly_cost",
-				"instance_memory_hourly_cost",
+			for _, expectedMetric := range test.expectedMetrics {
+				m := utils.ReadMetrics(<-ch)
+				if strings.Contains(m.FqName, "next_scrape") {
+					// We don't have a great way right now of mocking out the time, so we just skip this metric and read the next available metric
+					m = utils.ReadMetrics(<-ch)
+				}
+				require.Equal(t, expectedMetric, m)
 			}
-			err = testutil.CollectAndCompare(r, strings.NewReader(`
-	# HELP instance_cpu_hourly_cost The hourly cost of a GKE instance
-	# TYPE instance_cpu_hourly_cost gauge
-	instance_cpu_hourly_cost{family="n1",instance="test-n1-spot",machine_type="n1-slim",price_tier="spot",project="testing",provider="gcp",region="us-central1"} 1
-	instance_cpu_hourly_cost{family="n1",instance="test-n1-spot",machine_type="n1-slim",price_tier="spot",project="testing-1",provider="gcp",region="us-central1"} 1
-	instance_cpu_hourly_cost{family="n1",instance="test-n1",machine_type="n1-slim",price_tier="ondemand",project="testing",provider="gcp",region="us-central1"} 1
-	instance_cpu_hourly_cost{family="n1",instance="test-n1",machine_type="n1-slim",price_tier="ondemand",project="testing-1",provider="gcp",region="us-central1"} 1
-	instance_cpu_hourly_cost{family="n2",instance="test-n2",machine_type="n2-slim",price_tier="ondemand",project="testing",provider="gcp",region="us-central1"} 1
-	instance_cpu_hourly_cost{family="n2",instance="test-n2",machine_type="n2-slim",price_tier="ondemand",project="testing-1",provider="gcp",region="us-central1"} 1
-	# HELP instance_memory_hourly_cost The hourly cost of a GKE instance
-	# TYPE instance_memory_hourly_cost gauge
-	instance_memory_hourly_cost{family="n1",instance="test-n1-spot",machine_type="n1-slim",price_tier="spot",project="testing",provider="gcp",region="us-central1"} 1
-	instance_memory_hourly_cost{family="n1",instance="test-n1-spot",machine_type="n1-slim",price_tier="spot",project="testing-1",provider="gcp",region="us-central1"} 1
-	instance_memory_hourly_cost{family="n1",instance="test-n1",machine_type="n1-slim",price_tier="ondemand",project="testing",provider="gcp",region="us-central1"} 1
-	instance_memory_hourly_cost{family="n1",instance="test-n1",machine_type="n1-slim",price_tier="ondemand",project="testing-1",provider="gcp",region="us-central1"} 1
-	instance_memory_hourly_cost{family="n2",instance="test-n2",machine_type="n2-slim",price_tier="ondemand",project="testing",provider="gcp",region="us-central1"} 1
-	instance_memory_hourly_cost{family="n2",instance="test-n2",machine_type="n2-slim",price_tier="ondemand",project="testing-1",provider="gcp",region="us-central1"} 1
-`), metricsNames...)
-			assert.NoError(t, err)
 		})
 	}
 }
@@ -699,11 +857,19 @@ func TestCollector_GetPricing(t *testing.T) {
 
 		require.NotNil(t, collector)
 
-		up := collector.Collect()
+		ch := make(chan prometheus.Metric)
+		defer close(ch)
+
+		go func() {
+			for range ch {
+			}
+		}()
+
+		up := collector.CollectMetrics(ch)
 		require.Equal(t, 1.0, up)
 
 		pricingMap = collector.PricingMap
-		up = collector.Collect()
+		up = collector.CollectMetrics(ch)
 		require.Equal(t, 1.0, up)
 		require.Equal(t, pricingMap, collector.PricingMap)
 	})
@@ -727,7 +893,13 @@ func TestCollector_GetPricing(t *testing.T) {
 
 		collector.billingService = cloudCatalogClient
 		collector.NextScrape = time.Now().Add(-1 * time.Minute)
-		up := collector.Collect()
+		ch := make(chan prometheus.Metric)
+		defer close(ch)
+		go func() {
+			for range ch {
+			}
+		}()
+		up := collector.CollectMetrics(ch)
 		require.Equal(t, 1.0, up)
 		require.NotEqual(t, pricingMap, collector.PricingMap)
 	})

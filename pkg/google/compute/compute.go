@@ -9,15 +9,17 @@ import (
 	"strings"
 	"time"
 
+	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/iterator"
 
-	billingv1 "cloud.google.com/go/billing/apiv1"
-	"google.golang.org/api/compute/v1"
-
+	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
+
+const subsystem = "gcp_compute"
 
 var (
 	ServiceNotFound    = errors.New("the service for compute engine wasn't found")
@@ -27,14 +29,24 @@ var (
 )
 
 var (
-	InstanceCPUHourlyCost = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "instance_cpu_hourly_cost",
-		Help: "The hourly cost of a GKE instance",
-	}, []string{"instance", "region", "family", "machine_type", "project", "price_tier", "provider"})
-	InstanceMemoryHourlyCost = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "instance_memory_hourly_cost",
-		Help: "The hourly cost of a GKE instance",
-	}, []string{"instance", "region", "family", "machine_type", "project", "price_tier", "provider"})
+	NextScrapeDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "next_scrape"),
+		"Next time GCP's compute submodule pricing map will be refreshed",
+		nil,
+		nil,
+	)
+	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "instance_cpu_hourly_cost"),
+		"The hourly cost per CPU core of a GCP Compute Instance",
+		[]string{"instance", "region", "family", "machine_type", "project", "price_tier", "provider"},
+		nil,
+	)
+	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "instance_memory_hourly_cost"),
+		"The hourly cost per GiB of memory for a GCP Compute Instance",
+		[]string{"instance", "region", "family", "machine_type", "project", "price_tier", "provider"},
+		nil,
+	)
 )
 
 type Config struct {
@@ -52,7 +64,22 @@ type Collector struct {
 	NextScrape     time.Time
 }
 
-// New is a helper method to properly setup a compute.Collector struct.
+func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
+	ch <- NextScrapeDesc
+	ch <- InstanceCPUHourlyCostDesc
+	ch <- InstanceMemoryHourlyCostDesc
+	return nil
+}
+
+func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+	up := c.CollectMetrics(ch)
+	if up == 0 {
+		return fmt.Errorf("error collecting metrics")
+	}
+	return nil
+}
+
+// New is a helper method to properly set up a compute.Collector struct.
 func New(config *Config, computeService *compute.Service, billingService *billingv1.CloudCatalogClient) *Collector {
 	projects := strings.Split(config.Projects, ",")
 	return &Collector{
@@ -105,7 +132,7 @@ func getRegionFromZone(zone string) string {
 	return zone[:strings.LastIndex(zone, "-")]
 }
 
-// ListInstances will collect all of the node instances that are running within a GCP project.
+// ListInstances will collect all the node instances that are running within a GCP project.
 func (c *Collector) ListInstances(projectID string) ([]*MachineSpec, error) {
 	var allInstances []*MachineSpec
 	var nextPageToken string
@@ -222,14 +249,10 @@ func stripOutKeyFromDescription(description string) string {
 
 func (c *Collector) Register(registry provider.Registry) error {
 	log.Println("Registering GKE metrics")
-	err := registry.Register(InstanceCPUHourlyCost)
-	if err != nil {
-		return err
-	}
-	return registry.Register(InstanceMemoryHourlyCost)
+	return nil
 }
 
-func (c *Collector) Collect() float64 {
+func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	start := time.Now()
 	log.Printf("Collecting %s metrics", c.Name())
 	if c.PricingMap == nil || time.Now().After(c.NextScrape) {
@@ -250,6 +273,7 @@ func (c *Collector) Collect() float64 {
 		c.NextScrape = time.Now().Add(c.config.ScrapeInterval)
 		log.Printf("Finished refreshing pricing map in %s", time.Since(start))
 	}
+	ch <- prometheus.MustNewConstMetric(NextScrapeDesc, prometheus.GaugeValue, float64(c.NextScrape.Unix()))
 	for _, project := range c.Projects {
 		instances, err := c.ListInstances(project)
 		if err != nil {
@@ -261,24 +285,27 @@ func (c *Collector) Collect() float64 {
 				log.Printf("Could not get cost of instance(%s): %s", instance.Instance, err)
 				continue
 			}
-			InstanceCPUHourlyCost.With(prometheus.Labels{
-				"project":      project,
-				"instance":     instance.Instance,
-				"price_tier":   priceTierForInstance(instance),
-				"machine_type": instance.MachineType,
-				"region":       instance.Region,
-				"family":       instance.Family,
-				"provider":     "gcp",
-			}).Set(cpuCost)
-			InstanceMemoryHourlyCost.With(prometheus.Labels{
-				"project":      project,
-				"instance":     instance.Instance,
-				"price_tier":   priceTierForInstance(instance),
-				"machine_type": instance.MachineType,
-				"region":       instance.Region,
-				"family":       instance.Family,
-				"provider":     "gcp",
-			}).Set(ramCost)
+			ch <- prometheus.MustNewConstMetric(
+				InstanceCPUHourlyCostDesc,
+				prometheus.GaugeValue,
+				cpuCost,
+				instance.Instance,
+				instance.Region,
+				instance.Family,
+				instance.MachineType,
+				project,
+				priceTierForInstance(instance),
+				"gcp")
+			ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc,
+				prometheus.GaugeValue,
+				ramCost,
+				instance.Instance,
+				instance.Region,
+				instance.Family,
+				instance.MachineType,
+				project,
+				priceTierForInstance(instance),
+				"gcp")
 		}
 	}
 	log.Printf("Finished collecting GKE metrics in %s", time.Since(start))

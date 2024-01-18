@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
+	"github.com/prometheus/client_golang/prometheus"
 
+	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
@@ -25,7 +28,20 @@ type AWS struct {
 	collectors []provider.Collector
 }
 
+var (
+	collectorSuccessDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "collector_success"),
+		"Was the last scrape of the AWS metrics successful.",
+		[]string{"collector"},
+		nil,
+	)
+)
+
 var services = []string{"S3"}
+
+const (
+	subsystem = "aws"
+)
 
 func New(config *Config) (*AWS, error) {
 	var collectors []provider.Collector
@@ -77,12 +93,27 @@ func (a *AWS) RegisterCollectors(registry provider.Registry) error {
 	return nil
 }
 
-func (a *AWS) CollectMetrics() error {
-	log.Printf("Collecting metrics for %d collectors for AWS", len(a.collectors))
+func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
 	for _, c := range a.collectors {
-		if up := c.Collect(); up == 0 {
-			return fmt.Errorf("error collecting metrics for %q", c.Name())
+		if err := c.Describe(ch); err != nil {
+			log.Printf("Error describing collector %s: %s", c.Name(), err)
 		}
 	}
-	return nil
+}
+
+func (a *AWS) Collect(ch chan<- prometheus.Metric) {
+	wg := &sync.WaitGroup{}
+	wg.Add(len(a.collectors))
+	for _, c := range a.collectors {
+		go func(c provider.Collector) {
+			defer wg.Done()
+			collectorSuccess := 1.0
+			if err := c.Collect(ch); err != nil {
+				collectorSuccess = 0.0
+				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
+			}
+			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, collectorSuccess, c.Name())
+		}(c)
+	}
+	wg.Wait()
 }

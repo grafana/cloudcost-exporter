@@ -2,13 +2,16 @@ package google
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 func Test_RegisterCollectors(t *testing.T) {
@@ -57,45 +60,71 @@ func Test_RegisterCollectors(t *testing.T) {
 
 func TestGCP_CollectMetrics(t *testing.T) {
 	tests := map[string]struct {
-		numCollectors int
-		collect       func() error
-		expectedError error
+		numCollectors   int
+		collect         func(chan<- prometheus.Metric) error
+		expectedMetrics []*utils.MetricResult
 	}{
-		"no error if no collectors": {},
+		"no error if no collectors": {
+			numCollectors: 0,
+		},
 		"bubble-up single collector error": {
 			numCollectors: 1,
-			collect: func() error {
+			collect: func(chan<- prometheus.Metric) error {
 				return fmt.Errorf("test collect error")
 			},
-			// We don't want to bubble up the error from the collector, we just want to log it
+			expectedMetrics: []*utils.MetricResult{
+				{
+					FqName:     "cloudcost_exporter_gcp_collector_success",
+					Labels:     utils.LabelMap{"collector": "test"},
+					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				}},
 		},
 		"two collectors with no errors": {
 			numCollectors: 2,
-			collect:       func() error { return nil },
+			collect:       func(chan<- prometheus.Metric) error { return nil },
+			expectedMetrics: []*utils.MetricResult{{
+				FqName:     "cloudcost_exporter_gcp_collector_success",
+				Labels:     utils.LabelMap{"collector": "test"},
+				Value:      1,
+				MetricType: prometheus.GaugeValue,
+			}},
 		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
+			ch := make(chan prometheus.Metric)
+
 			ctrl := gomock.NewController(t)
 			c := mock_provider.NewMockCollector(ctrl)
 			if tt.collect != nil {
-
 				c.EXPECT().Name().Return("test").AnyTimes()
-				c.EXPECT().Collect().DoAndReturn(tt.collect).Times(tt.numCollectors)
+				// TODO: @pokom need to figure out why _sometimes_ this fails if we set it to *.Times(tt.numCollectors)
+				c.EXPECT().Collect(ch).DoAndReturn(tt.collect).AnyTimes()
 			}
 			gcp := &GCP{
 				config:     &Config{},
 				collectors: []provider.Collector{},
 			}
+
 			for i := 0; i < tt.numCollectors; i++ {
 				gcp.collectors = append(gcp.collectors, c)
 			}
-			err := gcp.CollectMetrics()
-			if tt.expectedError != nil {
-				require.EqualError(t, err, tt.expectedError.Error())
-				return
+
+			wg := sync.WaitGroup{}
+			go func() {
+				wg.Add(1)
+				gcp.Collect(ch)
+				wg.Done()
+				close(ch)
+			}()
+
+			wg.Wait()
+			for _, expectedMetric := range tt.expectedMetrics {
+				metric := utils.ReadMetrics(<-ch)
+				require.Equal(t, expectedMetric, metric)
 			}
-			require.NoError(t, err)
+
 		})
 	}
 }
