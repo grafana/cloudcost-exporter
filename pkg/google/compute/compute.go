@@ -9,12 +9,11 @@ import (
 	"strings"
 	"time"
 
+	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/api/iterator"
-
-	billingv1 "cloud.google.com/go/billing/apiv1"
 	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/iterator"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -30,14 +29,6 @@ var (
 )
 
 var (
-	InstanceCPUHourlyCost = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "instance_cpu_hourly_cost",
-		Help: "The hourly cost of a GKE instance",
-	}, []string{"instance", "region", "family", "machine_type", "project", "price_tier", "provider"})
-	InstanceMemoryHourlyCost = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "instance_memory_hourly_cost",
-		Help: "The hourly cost of a GKE instance",
-	}, []string{"instance", "region", "family", "machine_type", "project", "price_tier", "provider"})
 	NextScrapeDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "next_scrape"),
 		"Next time GCP's compute submodule pricing map will be refreshed",
@@ -255,11 +246,7 @@ func stripOutKeyFromDescription(description string) string {
 
 func (c *Collector) Register(registry provider.Registry) error {
 	log.Println("Registering GKE metrics")
-	err := registry.Register(InstanceCPUHourlyCost)
-	if err != nil {
-		return err
-	}
-	return registry.Register(InstanceMemoryHourlyCost)
+	return nil
 }
 
 func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
@@ -295,26 +282,27 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 				log.Printf("Could not get cost of instance(%s): %s", instance.Instance, err)
 				continue
 			}
-			InstanceCPUHourlyCost.With(prometheus.Labels{
-				"project":      project,
-				"instance":     instance.Instance,
-				"price_tier":   priceTierForInstance(instance),
-				"machine_type": instance.MachineType,
-				"region":       instance.Region,
-				"family":       instance.Family,
-				"provider":     "gcp",
-			}).Set(cpuCost)
-			ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, cpuCost, instance.Instance, instance.Region, instance.Family, instance.MachineType, project, priceTierForInstance(instance), "gcp")
-			InstanceMemoryHourlyCost.With(prometheus.Labels{
-				"project":      project,
-				"instance":     instance.Instance,
-				"price_tier":   priceTierForInstance(instance),
-				"machine_type": instance.MachineType,
-				"region":       instance.Region,
-				"family":       instance.Family,
-				"provider":     "gcp",
-			}).Set(ramCost)
-			ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, ramCost, instance.Instance, instance.Region, instance.Family, instance.MachineType, project, priceTierForInstance(instance), "gcp")
+			ch <- prometheus.MustNewConstMetric(
+				InstanceCPUHourlyCostDesc,
+				prometheus.GaugeValue,
+				cpuCost,
+				instance.Instance,
+				instance.Region,
+				instance.Family,
+				instance.MachineType,
+				project,
+				priceTierForInstance(instance),
+				"gcp")
+			ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc,
+				prometheus.GaugeValue,
+				ramCost,
+				instance.Instance,
+				instance.Region,
+				instance.Family,
+				instance.MachineType,
+				project,
+				priceTierForInstance(instance),
+				"gcp")
 		}
 	}
 	log.Printf("Finished collecting GKE metrics in %s", time.Since(start))

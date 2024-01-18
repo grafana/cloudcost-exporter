@@ -74,6 +74,7 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			},
 			expectedMetrics: []*utils.MetricResult{
 				{
+					FqName:     "cloudcost_exporter_gcp_collector_success",
 					Labels:     utils.LabelMap{"collector": "test"},
 					Value:      0,
 					MetricType: prometheus.GaugeValue,
@@ -83,6 +84,7 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			numCollectors: 2,
 			collect:       func(chan<- prometheus.Metric) error { return nil },
 			expectedMetrics: []*utils.MetricResult{{
+				FqName:     "cloudcost_exporter_gcp_collector_success",
 				Labels:     utils.LabelMap{"collector": "test"},
 				Value:      1,
 				MetricType: prometheus.GaugeValue,
