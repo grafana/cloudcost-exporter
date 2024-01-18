@@ -29,10 +29,6 @@ func ProviderFlags(fs *flag.FlagSet, awsProfiles, gcpProjects, awsServices, gcpS
 	fs.Var(gcpServices, "gcp.services", "GCP service(s).")
 }
 
-var (
-	UseInstrumentMetrics bool = false
-)
-
 func main() {
 	var cfg config.Config
 	ProviderFlags(flag.CommandLine, &cfg.Providers.AWS.Profiles, &cfg.Providers.GCP.Projects, &cfg.Providers.AWS.Services, &cfg.Providers.GCP.Services)
@@ -43,7 +39,6 @@ func main() {
 	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
 	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
-	flag.BoolVar(&UseInstrumentMetrics, "use-instrument-metrics-feature", false, "Use Prometheus collector to collect metrics")
 	flag.Parse()
 
 	log.Print("Version ", version.Info())
