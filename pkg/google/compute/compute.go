@@ -72,7 +72,10 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 }
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	c.CollectMetrics(ch)
+	up := c.CollectMetrics(ch)
+	if up == 0 {
+		return fmt.Errorf("error collecting metrics")
+	}
 	return nil
 }
 
