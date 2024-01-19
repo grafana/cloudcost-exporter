@@ -94,7 +94,7 @@ func New(config *Config) (*GCP, error) {
 				log.Printf("Error creating GCS collector: %s", err)
 				continue
 			}
-		case "GKE":
+		case "COMPUTE":
 			collector = compute.New(&compute.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
