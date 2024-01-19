@@ -31,19 +31,19 @@ var (
 var (
 	NextScrapeDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "next_scrape"),
-		"Next time GCP's compute submodule pricing map will be refreshed",
+		"Next time GCP's compute submodule pricing map will be refreshed as unix timestamp",
 		nil,
 		nil,
 	)
 	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
-		"The hourly cost per CPU core in USD for a GCP Compute Instance",
+		"The processing cost of a GCP Compute Instance in USD/(core*h)",
 		[]string{"instance", "region", "family", "machine_type", "project", "price_tier"},
 		nil,
 	)
 	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_ram_usd_per_gib_hour"),
-		"The hourly cost per GiB of memory in USD for a GCP Compute Instance",
+		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_ram_usd_per_gibyte_hour"),
+		"The memory cost of a GCP Compute Instance in USD/(GiB*h)",
 		[]string{"instance", "region", "family", "machine_type", "project", "price_tier"},
 		nil,
 	)

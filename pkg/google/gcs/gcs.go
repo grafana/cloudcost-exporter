@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"log"
 	"strings"
 	"time"
@@ -20,66 +21,63 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
+const subsystem = "gcp_gcs"
+
 type Metrics struct {
-	StorageGauge               *prometheus.GaugeVec
-	StorageDiscountGauge       *prometheus.GaugeVec
-	OperationsGauge            *prometheus.GaugeVec
-	OperationsDiscountGauge    *prometheus.GaugeVec
-	BucketInfo                 *prometheus.GaugeVec
-	BucketListHistogram        *prometheus.HistogramVec
-	BucketListStatus           *prometheus.CounterVec
-	CloudCostExporterHistogram *prometheus.HistogramVec
-	NextScrapeScrapeGauge      prometheus.Gauge
+	StorageGauge            *prometheus.GaugeVec
+	StorageDiscountGauge    *prometheus.GaugeVec
+	OperationsGauge         *prometheus.GaugeVec
+	OperationsDiscountGauge *prometheus.GaugeVec
+	BucketInfo              *prometheus.GaugeVec
+	BucketListHistogram     *prometheus.HistogramVec
+	BucketListStatus        *prometheus.CounterVec
+	NextScrapeGauge         prometheus.Gauge
 }
 
 func NewMetrics() *Metrics {
 	return &Metrics{
 
 		StorageGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "gcp_gcs_storage_hourly_cost",
-			Help: "GCS storage hourly cost in GiB",
+			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "storage_by_location_usd_per_gibyte_hour"),
+			Help: "Storage cost of a GCS location in USD/(GiB*h)",
 		},
 			[]string{"location", "storage_class"},
 		),
 		StorageDiscountGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "gcp_gcs_storage_discount",
-			Help: "GCS storage discount",
+			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "storage_discount_by_location_usd_per_gibyte_hour"),
+			Help: "Discount for storage cost of a GCS location in USD/(GiB*h)",
 		}, []string{"location", "storage_class"}),
 		OperationsGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "gcp_gcs_operations_cost",
-			Help: "GCS operations cost per 1k requests",
+			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "operation_by_location_usd_per_krequest"),
+			Help: "Operation cost of a GCS location in USD/(1k req)",
 		},
 			[]string{"location", "storage_class", "opclass"},
 		),
 		OperationsDiscountGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "gcp_gcs_operations_discount",
-			Help: "GCS operations discount",
+			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "operation_discount_by_location_usd_per_krequest"),
+			Help: "Discount for operation cost of a GCS location in USD/(1k req)",
 		}, []string{"location_type", "storage_class", "opclass"}),
 		BucketInfo: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "gcp_gcs_bucket_info",
-			Help: "GCS bucket info",
+			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "bucket_info"),
+			Help: "Location and storage class information for a GCS bucket",
 		},
 			[]string{"location", "location_type", "storage_class", "bucket_name"},
 		),
-
-		NextScrapeScrapeGauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "gcp_cost_exporter_next_scrape",
+		// todo: every module so far has a "next_scrape" metric. Should we have a metric cloudcost_exporter_next_scrape{module=<gcp_gcs,gcp_compute,aws...>}?
+		NextScrapeGauge: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "next_scrape"),
 			Help: "The next time the exporter will scrape GCP billing data. Can be used to trigger alerts if now - nextScrape > interval",
 		}),
 
 		BucketListHistogram: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "cloudcost_exporter_gcs_bucket_list_duration_seconds",
-			Help: "Histogram for the duration of GCS bucket list operations",
+			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "bucket_list_duration_seconds"),
+			Help: "Histogram for the duration of GCS bucket list operations in seconds",
 		}, []string{"project_id"}),
 
 		BucketListStatus: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "cloudcost_exporter_gcs_bucket_list_status",
+			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "bucket_list_status_total"),
 			Help: "Status of GCS bucket list operations",
-		}, []string{"project_id", "status"}),
-		CloudCostExporterHistogram: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "cloudcost_exporter_duration_seconds",
-			Help: "Histogram for the duration of cloudcost exporter operations",
-		}, []string{"provider"})}
+		}, []string{"project_id", "status"})}
 }
 
 var (
@@ -263,8 +261,7 @@ func (c *Collector) Register(registry provider.Registry) error {
 	registry.MustRegister(c.metrics.BucketInfo)
 	registry.MustRegister(c.metrics.BucketListHistogram)
 	registry.MustRegister(c.metrics.BucketListStatus)
-	registry.MustRegister(c.metrics.CloudCostExporterHistogram)
-	registry.MustRegister(c.metrics.NextScrapeScrapeGauge)
+	registry.MustRegister(c.metrics.NextScrapeGauge)
 	return nil
 }
 
@@ -280,7 +277,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 		return 1
 	}
 	c.nextScrape = time.Now().Add(c.interval)
-	c.metrics.NextScrapeScrapeGauge.Set(float64(c.nextScrape.Unix()))
+	c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
 	ExporterOperationsDiscounts(c.metrics)
 	err := ExportRegionalDiscounts(c.ctx, c.regionsClient, c.ProjectID, c.discount, c.metrics)
 	if err != nil {
