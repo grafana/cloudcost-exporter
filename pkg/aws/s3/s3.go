@@ -3,7 +3,6 @@ package s3
 import (
 	"context"
 	"fmt"
-	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"log"
 	"strconv"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/prometheus/client_golang/prometheus"
 
+	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/costexplorer"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
