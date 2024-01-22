@@ -248,7 +248,7 @@ func stripOutKeyFromDescription(description string) string {
 }
 
 func (c *Collector) Register(registry provider.Registry) error {
-	log.Println("Registering Compute metrics")
+	log.Printf("Registering %s", c.Name())
 	return nil
 }
 
