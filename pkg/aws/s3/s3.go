@@ -114,7 +114,7 @@ func NewMetrics() Metrics {
 
 		NextScrapeGauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "next_scrape"),
-			Help: "The next time the exporter will scrape GCP billing data. Can be used to trigger alerts if now - nextScrape > interval",
+			Help: "The next time the exporter will scrape AWS billing data. Can be used to trigger alerts if now - nextScrape > interval",
 		}),
 	}
 }
