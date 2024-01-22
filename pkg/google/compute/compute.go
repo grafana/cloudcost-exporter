@@ -19,7 +19,10 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
-const subsystem = "gcp_compute"
+const (
+	subsystem       = "gcp_compute"
+	gkeClusterLabel = "goog-k8s-cluster-name"
+)
 
 var (
 	ServiceNotFound    = errors.New("the service for compute engine wasn't found")
@@ -38,13 +41,13 @@ var (
 	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "instance_cpu_hourly_cost"),
 		"The hourly cost per CPU core of a GCP Compute Instance",
-		[]string{"instance", "region", "family", "machine_type", "project", "price_tier", "provider"},
+		[]string{"instance", "region", "family", "machine_type", "project", "price_tier", "cluster"},
 		nil,
 	)
 	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "instance_memory_hourly_cost"),
 		"The hourly cost per GiB of memory for a GCP Compute Instance",
-		[]string{"instance", "region", "family", "machine_type", "project", "price_tier", "provider"},
+		[]string{"instance", "region", "family", "machine_type", "project", "price_tier", "cluster"},
 		nil,
 	)
 )
@@ -103,6 +106,7 @@ type MachineSpec struct {
 	Family       string
 	MachineType  string
 	SpotInstance bool
+	ClusterName  string
 }
 
 // NewMachineSpec will create a new MachineSpec from compute.Instance objects.
@@ -113,6 +117,7 @@ func NewMachineSpec(instance *compute.Instance) *MachineSpec {
 	machineType := getMachineTypeFromURL(instance.MachineType)
 	family := getMachineFamily(machineType)
 	spot := isSpotInstance(instance.Scheduling.ProvisioningModel)
+	clusterName := clusterName(instance)
 
 	return &MachineSpec{
 		Instance:     instance.Name,
@@ -121,6 +126,7 @@ func NewMachineSpec(instance *compute.Instance) *MachineSpec {
 		MachineType:  machineType,
 		Family:       family,
 		SpotInstance: spot,
+		ClusterName:  clusterName,
 	}
 }
 
@@ -156,6 +162,15 @@ func (c *Collector) ListInstances(projectID string) ([]*MachineSpec, error) {
 		}
 	}
 	return allInstances, nil
+}
+
+// clusterName will look for a label on the instance that indicates it's associated with a GKE cluster.
+// Returns the clusterName as a string or a blank string if it can't be found.
+func clusterName(instance *compute.Instance) string {
+	if value, ok := instance.Labels[gkeClusterLabel]; ok {
+		return value
+	}
+	return ""
 }
 
 func (c *Collector) GetServiceName() (string, error) {
@@ -285,27 +300,28 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 				log.Printf("Could not get cost of instance(%s): %s", instance.Instance, err)
 				continue
 			}
+			labelValues := []string{
+				instance.Instance,
+				instance.Region,
+				instance.Family,
+				instance.MachineType,
+				project,
+				priceTierForInstance(instance),
+				instance.ClusterName,
+			}
+
 			ch <- prometheus.MustNewConstMetric(
 				InstanceCPUHourlyCostDesc,
 				prometheus.GaugeValue,
 				cpuCost,
-				instance.Instance,
-				instance.Region,
-				instance.Family,
-				instance.MachineType,
-				project,
-				priceTierForInstance(instance),
-				"gcp")
+				labelValues...,
+			)
+
 			ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc,
 				prometheus.GaugeValue,
 				ramCost,
-				instance.Instance,
-				instance.Region,
-				instance.Family,
-				instance.MachineType,
-				project,
-				priceTierForInstance(instance),
-				"gcp")
+				labelValues...,
+			)
 		}
 	}
 	log.Printf("Finished collecting GKE metrics in %s", time.Since(start))
