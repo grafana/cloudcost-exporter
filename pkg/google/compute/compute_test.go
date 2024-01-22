@@ -195,7 +195,7 @@ func TestGenerateTestFiles(t *testing.T) {
 
 func Test_GetCostsOfInstances(t *testing.T) {
 	t.Skip("Local only test. Comment this line to execute test.")
-	instances, err := collector.ListInstances(projectUnderTest)
+	instances, err := ListInstances(projectUnderTest, collector.computeService)
 	if err != nil {
 		t.Errorf("Error listing clusters: %s", err)
 	}
@@ -228,7 +228,7 @@ func Test_GetCostsOfInstances(t *testing.T) {
 
 func TestGetPriceForOneMachine(t *testing.T) {
 	t.Skip("Local only test. Comment this line to execute test.")
-	instances, err := collector.ListInstances(projectUnderTest)
+	instances, err := ListInstances(projectUnderTest, collector.computeService)
 	file, err := os.Open("testdata/all-products.json")
 	if err != nil {
 		fmt.Printf("Error opening file: %s", err)
@@ -252,7 +252,7 @@ func TestGetPriceForOneMachine(t *testing.T) {
 
 func TestListInstances(t *testing.T) {
 	t.Skip("Local only test. Comment this line to execute test.")
-	instances, err := collector.ListInstances(projectUnderTest)
+	instances, err := ListInstances(projectUnderTest, collector.computeService)
 	if err != nil {
 		t.Errorf("Error listing clusters: %s", err)
 	}

@@ -19,7 +19,10 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
-const subsystem = "gcp_compute"
+const (
+	subsystem       = "gcp_compute"
+	gkeClusterLabel = "goog-k8s-cluster-name"
+)
 
 var (
 	ServiceNotFound    = errors.New("the service for compute engine wasn't found")
@@ -103,6 +106,7 @@ type MachineSpec struct {
 	Family       string
 	MachineType  string
 	SpotInstance bool
+	ClusterName  string
 }
 
 // NewMachineSpec will create a new MachineSpec from compute.Instance objects.
@@ -113,6 +117,7 @@ func NewMachineSpec(instance *compute.Instance) *MachineSpec {
 	machineType := getMachineTypeFromURL(instance.MachineType)
 	family := getMachineFamily(machineType)
 	spot := isSpotInstance(instance.Scheduling.ProvisioningModel)
+	clusterName := getClusterName(instance.Labels)
 
 	return &MachineSpec{
 		Instance:     instance.Name,
@@ -121,7 +126,15 @@ func NewMachineSpec(instance *compute.Instance) *MachineSpec {
 		MachineType:  machineType,
 		Family:       family,
 		SpotInstance: spot,
+		ClusterName:  clusterName,
 	}
+}
+
+func getClusterName(labels map[string]string) string {
+	if clusterName, ok := labels[gkeClusterLabel]; ok {
+		return clusterName
+	}
+	return ""
 }
 
 func isSpotInstance(model string) bool {
@@ -133,12 +146,12 @@ func getRegionFromZone(zone string) string {
 }
 
 // ListInstances will collect all the node instances that are running within a GCP project.
-func (c *Collector) ListInstances(projectID string) ([]*MachineSpec, error) {
+func ListInstances(projectID string, c *compute.Service) ([]*MachineSpec, error) {
 	var allInstances []*MachineSpec
 	var nextPageToken string
 	log.Printf("Listing instances for project %s", projectID)
 	for {
-		instances, err := c.computeService.Instances.AggregatedList(projectID).
+		instances, err := c.Instances.AggregatedList(projectID).
 			PageToken(nextPageToken).
 			Do()
 		if err != nil {
@@ -275,7 +288,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	}
 	ch <- prometheus.MustNewConstMetric(NextScrapeDesc, prometheus.GaugeValue, float64(c.NextScrape.Unix()))
 	for _, project := range c.Projects {
-		instances, err := c.ListInstances(project)
+		instances, err := ListInstances(project, c.computeService)
 		if err != nil {
 			return 0
 		}
