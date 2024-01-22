@@ -17,6 +17,7 @@ import (
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/google/compute"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
+	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
@@ -94,11 +95,16 @@ func New(config *Config) (*GCP, error) {
 				log.Printf("Error creating GCS collector: %s", err)
 				continue
 			}
-		case "GKE":
+		case "COMPUTE":
 			collector = compute.New(&compute.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
 			}, computeService, cloudCatalogClient)
+		case "GKE":
+			collector = gke.New((*gke.Config)(&compute.Config{
+				Projects:       config.Projects,
+				ScrapeInterval: config.ScrapeInterval,
+			}), computeService)
 		default:
 			log.Printf("Unknown service %s", service)
 			// Continue to next service, no need to halt here
