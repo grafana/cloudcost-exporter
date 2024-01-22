@@ -37,7 +37,7 @@ var (
 	)
 	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
-		"The processing cost of a GCP Compute Instance in USD/(core*h)",
+		"The cpu cost a GCP Compute Instance in USD/(core*h)",
 		[]string{"instance", "region", "family", "machine_type", "project", "price_tier"},
 		nil,
 	)
