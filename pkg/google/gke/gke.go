@@ -1,6 +1,7 @@
 package gke
 
 import (
+	"log"
 	"strings"
 	"time"
 
@@ -14,14 +15,21 @@ import (
 )
 
 const (
-	subsystem = "gke"
+	subsystem       = "gke"
+	gkeClusterLabel = "goog-k8s-cluster-name"
 )
 
 var (
-	gkeNodeInfoDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "node_info"),
-		"Information about GKE nodes",
-		[]string{"project", "instance_name", "cluster_name"},
+	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "instance_cpu_hourly_cost"),
+		"The hourly cost per CPU core of a GCP GKE Node",
+		[]string{"instance", "region", "family", "machine_type", "project", "price_tier", "provider", "cluster_name"},
+		nil,
+	)
+	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "instance_memory_hourly_cost"),
+		"The hourly cost per GiB of memory for a GCP GKE Node",
+		[]string{"instance", "region", "family", "machine_type", "project", "price_tier", "provider", "cluster_name"},
 		nil,
 	)
 )
@@ -32,9 +40,10 @@ type Config struct {
 }
 
 type Collector struct {
-	computeService *compute.Service
-	config         *Config
-	Projects       []string
+	computeService   *compute.Service
+	config           *Config
+	Projects         []string
+	computeCollector *gcp_compute.Collector
 }
 
 func (c *Collector) Register(_ provider.Registry) error {
@@ -45,35 +54,62 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	return 0
 }
 
-func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+func (c *Collector) Collect(ch chan<- prometheus.Metric) float64 {
+	start := time.Now()
+	log.Printf("Collecting %s metrics", c.Name())
+	err := c.computeCollector.RefreshPricingMap(start)
+	if err != nil {
+		return 0
+	}
+	// ch <- prometheus.MustNewConstMetric(NextScrapeDesc, prometheus.GaugeValue, float64(c.NextScrape.Unix()))
 	for _, project := range c.Projects {
 		instances, err := gcp_compute.ListInstances(project, c.computeService)
 		if err != nil {
-			return err
+			return 0
 		}
 		for _, instance := range instances {
-			if instance.ClusterName == "" {
+			cpuCost, ramCost, err := c.computeCollector.PricingMap.GetCostOfInstance(instance)
+			if err != nil {
+				log.Printf("Could not get cost of instance(%s): %s", instance.Instance, err)
 				continue
 			}
 			ch <- prometheus.MustNewConstMetric(
-				gkeNodeInfoDesc,
+				InstanceCPUHourlyCostDesc,
 				prometheus.GaugeValue,
-				1,
-				project,
+				cpuCost,
 				instance.Instance,
-				instance.ClusterName,
-			)
+				instance.Region,
+				instance.Family,
+				instance.MachineType,
+				project,
+				gcp_compute.PriceTierForInstance(instance),
+				"gcp",
+				getClusterName(instance.Labels))
+			ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc,
+				prometheus.GaugeValue,
+				ramCost,
+				instance.Instance,
+				instance.Region,
+				instance.Family,
+				instance.MachineType,
+				project,
+				gcp_compute.PriceTierForInstance(instance),
+				"gcp",
+				getClusterName(instance.Labels))
 		}
 	}
-	return nil
+	log.Printf("Finished collecting GKE metrics in %s", time.Since(start))
+
+	return 1.0
 }
 
-func New(config *Config, computeService *compute.Service) *Collector {
+func New(config *Config, computeService *compute.Service, computeCollector *gcp_compute.Collector) *Collector {
 	projects := strings.Split(config.Projects, ",")
 	return &Collector{
-		computeService: computeService,
-		config:         config,
-		Projects:       projects,
+		computeService:   computeService,
+		config:           config,
+		Projects:         projects,
+		computeCollector: computeCollector,
 	}
 }
 
@@ -84,4 +120,11 @@ func (c *Collector) Name() string {
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- gkeNodeInfoDesc
 	return nil
+}
+
+func getClusterName(labels map[string]string) string {
+	if clusterName, ok := labels[gkeClusterLabel]; ok {
+		return clusterName
+	}
+	return ""
 }

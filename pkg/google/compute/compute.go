@@ -20,15 +20,15 @@ import (
 )
 
 const (
-	subsystem       = "gcp_compute"
-	gkeClusterLabel = "goog-k8s-cluster-name"
+	subsystem = "gcp_compute"
 )
 
 var (
-	ServiceNotFound    = errors.New("the service for compute engine wasn't found")
-	SkuNotFound        = errors.New("no sku was interested in us")
-	ListInstancesError = errors.New("no list price was found for the sku")
-	re                 = regexp.MustCompile(`\bin\b`)
+	ServiceNotFound     = errors.New("the service for compute engine wasn't found")
+	SkuNotFound         = errors.New("no sku was interested in us")
+	ListInstancesError  = errors.New("no list price was found for the sku")
+	PricingRefreshError = errors.New("couldn't refresh pricing map")
+	re                  = regexp.MustCompile(`\bin\b`)
 )
 
 var (
@@ -106,7 +106,7 @@ type MachineSpec struct {
 	Family       string
 	MachineType  string
 	SpotInstance bool
-	ClusterName  string
+	Labels       map[string]string
 }
 
 // NewMachineSpec will create a new MachineSpec from compute.Instance objects.
@@ -117,7 +117,7 @@ func NewMachineSpec(instance *compute.Instance) *MachineSpec {
 	machineType := getMachineTypeFromURL(instance.MachineType)
 	family := getMachineFamily(machineType)
 	spot := isSpotInstance(instance.Scheduling.ProvisioningModel)
-	clusterName := getClusterName(instance.Labels)
+	labels := instance.Labels
 
 	return &MachineSpec{
 		Instance:     instance.Name,
@@ -126,15 +126,8 @@ func NewMachineSpec(instance *compute.Instance) *MachineSpec {
 		MachineType:  machineType,
 		Family:       family,
 		SpotInstance: spot,
-		ClusterName:  clusterName,
+		Labels:       labels,
 	}
-}
-
-func getClusterName(labels map[string]string) string {
-	if clusterName, ok := labels[gkeClusterLabel]; ok {
-		return clusterName
-	}
-	return ""
 }
 
 func isSpotInstance(model string) bool {
@@ -265,26 +258,32 @@ func (c *Collector) Register(registry provider.Registry) error {
 	return nil
 }
 
-func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
-	start := time.Now()
-	log.Printf("Collecting %s metrics", c.Name())
+func (c *Collector) RefreshPricingMap(start time.Time) error {
 	if c.PricingMap == nil || time.Now().After(c.NextScrape) {
 		log.Println("Refreshing pricing map")
 		serviceName, err := c.GetServiceName()
 		if err != nil {
-			log.Printf("Error getting service name: %s", err)
-			return 0
+			return fmt.Errorf("%w: Error getting service name: %s", PricingRefreshError, err)
 		}
 		skus := c.GetPricing(serviceName)
 		pricingMap, err := GeneratePricingMap(skus)
 		if err != nil {
-			log.Printf("Error generating pricing map: %s", err)
-			return 0
+			return fmt.Errorf("%w: Error generating pricing map: %s", PricingRefreshError, err)
 		}
 
 		c.PricingMap = pricingMap
 		c.NextScrape = time.Now().Add(c.config.ScrapeInterval)
 		log.Printf("Finished refreshing pricing map in %s", time.Since(start))
+	}
+	return nil
+}
+
+func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
+	start := time.Now()
+	log.Printf("Collecting %s metrics", c.Name())
+	err := c.RefreshPricingMap(start)
+	if err != nil {
+		return 0
 	}
 	ch <- prometheus.MustNewConstMetric(NextScrapeDesc, prometheus.GaugeValue, float64(c.NextScrape.Unix()))
 	for _, project := range c.Projects {
@@ -307,7 +306,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 				instance.Family,
 				instance.MachineType,
 				project,
-				priceTierForInstance(instance),
+				PriceTierForInstance(instance),
 				"gcp")
 			ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc,
 				prometheus.GaugeValue,
@@ -317,7 +316,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 				instance.Family,
 				instance.MachineType,
 				project,
-				priceTierForInstance(instance),
+				PriceTierForInstance(instance),
 				"gcp")
 		}
 	}
@@ -326,7 +325,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	return 1.0
 }
 
-func priceTierForInstance(instance *MachineSpec) string {
+func PriceTierForInstance(instance *MachineSpec) string {
 	if instance.SpotInstance {
 		return "spot"
 	}
