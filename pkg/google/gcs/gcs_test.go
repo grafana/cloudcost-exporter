@@ -576,14 +576,14 @@ func TestCollector_Collect(t *testing.T) {
 		"cloudcost_gcp_gcs_bucket_info",
 	}
 	err = testutil.CollectAndCompare(r, strings.NewReader(`
-   # HELP cloudcost_gcp_gcs_bucket_info Location and storage class information for a GCS bucket
+   # HELP cloudcost_gcp_gcs_bucket_info Location, location_type and storage class information for a GCS object by bucket_name
 # TYPE cloudcost_gcp_gcs_bucket_info gauge
 cloudcost_gcp_gcs_bucket_info{bucket_name="testbucket-1",location="us-east1",location_type="region",storage_class="STANDARD"} 1
 cloudcost_gcp_gcs_bucket_info{bucket_name="testbucket-2",location="us",location_type="multi-region",storage_class="STANDARD"} 1
-# HELP cloudcost_gcp_gcs_operation_by_location_usd_per_krequest Operation cost of a GCS location in USD/(1k req)
+# HELP cloudcost_gcp_gcs_operation_by_location_usd_per_krequest Operation cost of GCS objects by location, storage_class, and opclass. Cost represented in USD/(1k req)
 # TYPE cloudcost_gcp_gcs_operation_by_location_usd_per_krequest gauge
 cloudcost_gcp_gcs_operation_by_location_usd_per_krequest{location="us-east1",opclass="class-a",storage_class="REGIONAL"} 0.004
-# HELP cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest Discount for operation cost of a GCS location in USD/(1k req)
+# HELP cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest Discount for operation cost of GCS objects by location, storage_class, and opclass. Cost represented in USD/(1k req)
 # TYPE cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest gauge
 cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="dual-region",opclass="class-a",storage_class="MULTI_REGIONAL"} 0.595
 cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="dual-region",opclass="class-a",storage_class="STANDARD"} 0.595
@@ -607,7 +607,7 @@ cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type=
 cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-b",storage_class="NEARLINE"} 0.19
 cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-b",storage_class="REGIONAL"} 0.19
 cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-b",storage_class="STANDARD"} 0.19
-# HELP cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour Discount for storage cost of a GCS location in USD/(GiB*h)
+# HELP cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour Discount for storage cost of GCS objects by location and storage_class. Cost represented in USD/(GiB*h)
 # TYPE cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour gauge
 cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="asia",storage_class="ARCHIVE"} 0
 cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="asia",storage_class="COLDLINE"} 0
@@ -644,7 +644,7 @@ cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="us-
 cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="us-east1",storage_class="NEARLINE"} 0
 cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="us-east1",storage_class="REGIONAL"} 0
 cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="us-east1",storage_class="STANDARD"} 0
-# HELP cloudcost_gcp_gcs_storage_by_location_usd_per_gibyte_hour Storage cost of a GCS location in USD/(GiB*h)
+# HELP cloudcost_gcp_gcs_storage_by_location_usd_per_gibyte_hour Storage cost of GCS objects by location and storage_class. Cost represented in USD/(GiB*h)
 # TYPE cloudcost_gcp_gcs_storage_by_location_usd_per_gibyte_hour gauge
 cloudcost_gcp_gcs_storage_by_location_usd_per_gibyte_hour{location="us-east1",storage_class="MULTI_REGIONAL"} 5.376344086021506e-06
 cloudcost_gcp_gcs_storage_by_location_usd_per_gibyte_hour{location="us-east1",storage_class="REGIONAL"} 0.00016666666666666666

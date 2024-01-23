@@ -375,11 +375,11 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 1
 			},
 			metricNames: withoutNextScrape,
 			expectedExposition: `
-# HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of a S3 location in USD/(1k req)
+# HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
 cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
 cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
-# HELP cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour Storage cost of a S3 location in USD/(GiB*h)
+# HELP cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour Storage cost of S3 objects by region, class, and tier. Cost represented in USD/(GiB*h)
 # TYPE cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour gauge
 cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage",region="ap-northeast-3"} 0
 # HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
@@ -416,7 +416,7 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 1
 			},
 			metricNames: withoutNextScrape,
 			expectedExposition: `
-# HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of a S3 location in USD/(1k req)
+# HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
 cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
 cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
@@ -447,7 +447,7 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 2
 			},
 			metricNames: withoutNextScrape,
 			expectedExposition: `
-# HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of a S3 location in USD/(1k req)
+# HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
 cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
 # HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
@@ -478,7 +478,7 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 1
 			},
 			metricNames: withoutNextScrape,
 			expectedExposition: `
-# HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of a S3 location in USD/(1k req)
+# HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
 cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
 # HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
@@ -509,7 +509,7 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 1
 			},
 			metricNames: withoutNextScrape,
 			expectedExposition: `
-# HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of a S3 location in USD/(1k req)
+# HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
 cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 1000
 # HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
@@ -576,11 +576,11 @@ cloudcost_exporter_aws_s3_cost_api_requests_errors_total 0
 # HELP cloudcost_exporter_aws_s3_cost_api_requests_total Total number of requests made to the AWS Cost Explorer API
 # TYPE cloudcost_exporter_aws_s3_cost_api_requests_total counter
 cloudcost_exporter_aws_s3_cost_api_requests_total 1
-# HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of a S3 location in USD/(1k req)
+# HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
 cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 1000
 cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="2"} 1000
-# HELP cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour Storage cost of a S3 location in USD/(GiB*h)
+# HELP cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour Storage cost of S3 objects by region, class, and tier. Cost represented in USD/(GiB*h)
 # TYPE cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour gauge
 cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage",region="ap-northeast-1"} 0.0013689253935660506
 `,

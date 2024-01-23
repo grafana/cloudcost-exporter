@@ -90,14 +90,14 @@ func NewMetrics() Metrics {
 	return Metrics{
 		StorageGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "storage_by_location_usd_per_gibyte_hour"),
-			Help: "Storage cost of a S3 location in USD/(GiB*h)",
+			Help: "Storage cost of S3 objects by region, class, and tier. Cost represented in USD/(GiB*h)",
 		},
 			[]string{"region", "class"},
 		),
 
 		OperationsGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "operation_by_location_usd_per_krequest"),
-			Help: "Operation cost of a S3 location in USD/(1k req)",
+			Help: "Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)",
 		},
 			[]string{"region", "class", "tier"},
 		),

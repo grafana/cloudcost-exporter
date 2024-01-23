@@ -39,27 +39,27 @@ func NewMetrics() *Metrics {
 
 		StorageGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "storage_by_location_usd_per_gibyte_hour"),
-			Help: "Storage cost of a GCS location in USD/(GiB*h)",
+			Help: "Storage cost of GCS objects by location and storage_class. Cost represented in USD/(GiB*h)",
 		},
 			[]string{"location", "storage_class"},
 		),
 		StorageDiscountGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "storage_discount_by_location_usd_per_gibyte_hour"),
-			Help: "Discount for storage cost of a GCS location in USD/(GiB*h)",
+			Help: "Discount for storage cost of GCS objects by location and storage_class. Cost represented in USD/(GiB*h)",
 		}, []string{"location", "storage_class"}),
 		OperationsGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "operation_by_location_usd_per_krequest"),
-			Help: "Operation cost of a GCS location in USD/(1k req)",
+			Help: "Operation cost of GCS objects by location, storage_class, and opclass. Cost represented in USD/(1k req)",
 		},
 			[]string{"location", "storage_class", "opclass"},
 		),
 		OperationsDiscountGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "operation_discount_by_location_usd_per_krequest"),
-			Help: "Discount for operation cost of a GCS location in USD/(1k req)",
+			Help: "Discount for operation cost of GCS objects by location, storage_class, and opclass. Cost represented in USD/(1k req)",
 		}, []string{"location_type", "storage_class", "opclass"}),
 		BucketInfo: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "bucket_info"),
-			Help: "Location and storage class information for a GCS bucket",
+			Help: "Location, location_type and storage class information for a GCS object by bucket_name",
 		},
 			[]string{"location", "location_type", "storage_class", "bucket_name"},
 		),
