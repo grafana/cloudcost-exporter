@@ -7,9 +7,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/compute/v1"
 
-	gcp_compute "github.com/grafana/cloudcost-exporter/pkg/google/compute"
+	gcpCompute "github.com/grafana/cloudcost-exporter/pkg/google/compute"
 
-	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
+	cloudcostexporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
@@ -19,8 +19,14 @@ const (
 
 var (
 	gkeNodeInfoDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "node_info"),
+		prometheus.BuildFQName(cloudcostexporter.ExporterName, subsystem, "node_info"),
 		"Information about GKE nodes",
+		[]string{"project", "instance_name", "cluster_name"},
+		nil,
+	)
+	gkeNodeCPUHoulryCostDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcostexporter.ExporterName, subsystem, "node_cpu_hourly_cost"),
+		"Hourly cost of a GKE node",
 		[]string{"project", "instance_name", "cluster_name"},
 		nil,
 	)
@@ -47,7 +53,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	for _, project := range c.Projects {
-		instances, err := gcp_compute.ListInstances(project, c.computeService)
+		instances, err := gcpCompute.ListInstances(project, c.computeService)
 		if err != nil {
 			return err
 		}
@@ -83,5 +89,6 @@ func (c *Collector) Name() string {
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- gkeNodeInfoDesc
+	ch <- gkeNodeCPUHoulryCostDesc
 	return nil
 }
