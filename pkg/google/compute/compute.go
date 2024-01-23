@@ -31,20 +31,20 @@ var (
 var (
 	NextScrapeDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "next_scrape"),
-		"Next time GCP's compute submodule pricing map will be refreshed",
+		"Next time GCP's compute submodule pricing map will be refreshed as unix timestamp",
 		nil,
 		nil,
 	)
 	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "instance_cpu_hourly_cost"),
-		"The hourly cost per CPU core of a GCP Compute Instance",
-		[]string{"instance", "region", "family", "machine_type", "project", "price_tier", "provider"},
+		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
+		"The cpu cost a GCP Compute Instance in USD/(core*h)",
+		[]string{"instance", "region", "family", "machine_type", "project", "price_tier"},
 		nil,
 	)
 	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "instance_memory_hourly_cost"),
-		"The hourly cost per GiB of memory for a GCP Compute Instance",
-		[]string{"instance", "region", "family", "machine_type", "project", "price_tier", "provider"},
+		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_ram_usd_per_gibyte_hour"),
+		"The memory cost of a GCP Compute Instance in USD/(GiB*h)",
+		[]string{"instance", "region", "family", "machine_type", "project", "price_tier"},
 		nil,
 	)
 )
@@ -54,7 +54,7 @@ type Config struct {
 	ScrapeInterval time.Duration
 }
 
-// Collector implements the Collector interface for compute services in GKE.
+// Collector implements the Collector interface for compute services in Compute.
 type Collector struct {
 	computeService *compute.Service
 	billingService *billingv1.CloudCatalogClient
@@ -92,7 +92,7 @@ func New(config *Config, computeService *compute.Service, billingService *billin
 
 // Name returns a well formatted string for the name of the collector. Helpful for logging
 func (c *Collector) Name() string {
-	return "GKE Collector"
+	return "Compute Collector"
 }
 
 // MachineSpec is a slimmed down representation of a google compute.Instance struct
@@ -248,7 +248,7 @@ func stripOutKeyFromDescription(description string) string {
 }
 
 func (c *Collector) Register(registry provider.Registry) error {
-	log.Println("Registering GKE metrics")
+	log.Printf("Registering %s", c.Name())
 	return nil
 }
 
@@ -294,8 +294,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 				instance.Family,
 				instance.MachineType,
 				project,
-				priceTierForInstance(instance),
-				"gcp")
+				priceTierForInstance(instance))
 			ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc,
 				prometheus.GaugeValue,
 				ramCost,
@@ -304,11 +303,10 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 				instance.Family,
 				instance.MachineType,
 				project,
-				priceTierForInstance(instance),
-				"gcp")
+				priceTierForInstance(instance))
 		}
 	}
-	log.Printf("Finished collecting GKE metrics in %s", time.Since(start))
+	log.Printf("Finished collecting Compute metrics in %s", time.Since(start))
 
 	return 1.0
 }

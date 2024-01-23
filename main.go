@@ -4,4 +4,5 @@ package cloudcost_exporter
 
 const (
 	ExporterName = "cloudcost_exporter"
+	MetricPrefix = "cloudcost"
 )

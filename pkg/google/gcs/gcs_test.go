@@ -569,85 +569,85 @@ func TestCollector_Collect(t *testing.T) {
 	assert.NoError(t, err)
 
 	metricNames := []string{
-		"gcp_gcs_storage_hourly_cost",
-		"gcp_gcs_storage_discount",
-		"gcp_gcs_operations_cost",
-		"gcp_gcs_operations_discount",
-		"gcp_gcs_bucket_info",
+		"cloudcost_gcp_gcs_storage_by_location_usd_per_gibyte_hour",
+		"cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour",
+		"cloudcost_gcp_gcs_operation_by_location_usd_per_krequest",
+		"cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest",
+		"cloudcost_gcp_gcs_bucket_info",
 	}
 	err = testutil.CollectAndCompare(r, strings.NewReader(`
-   # HELP gcp_gcs_bucket_info GCS bucket info
-# TYPE gcp_gcs_bucket_info gauge
-gcp_gcs_bucket_info{bucket_name="testbucket-1",location="us-east1",location_type="region",storage_class="STANDARD"} 1
-gcp_gcs_bucket_info{bucket_name="testbucket-2",location="us",location_type="multi-region",storage_class="STANDARD"} 1
-# HELP gcp_gcs_operations_cost GCS operations cost per 1k requests
-# TYPE gcp_gcs_operations_cost gauge
-gcp_gcs_operations_cost{location="us-east1",opclass="class-a",storage_class="REGIONAL"} 0.004
-# HELP gcp_gcs_operations_discount GCS operations discount
-# TYPE gcp_gcs_operations_discount gauge
-gcp_gcs_operations_discount{location_type="dual-region",opclass="class-a",storage_class="MULTI_REGIONAL"} 0.595
-gcp_gcs_operations_discount{location_type="dual-region",opclass="class-a",storage_class="STANDARD"} 0.595
-gcp_gcs_operations_discount{location_type="dual-region",opclass="class-b",storage_class="MULTI_REGIONAL"} 0.19
-gcp_gcs_operations_discount{location_type="dual-region",opclass="class-b",storage_class="STANDARD"} 0.19
-gcp_gcs_operations_discount{location_type="multi-region",opclass="class-a",storage_class="COLDLINE"} 0.795
-gcp_gcs_operations_discount{location_type="multi-region",opclass="class-a",storage_class="MULTI_REGIONAL"} 0.595
-gcp_gcs_operations_discount{location_type="multi-region",opclass="class-a",storage_class="NEARLINE"} 0.595
-gcp_gcs_operations_discount{location_type="multi-region",opclass="class-a",storage_class="STANDARD"} 0.595
-gcp_gcs_operations_discount{location_type="multi-region",opclass="class-b",storage_class="COLDLINE"} 0.19
-gcp_gcs_operations_discount{location_type="multi-region",opclass="class-b",storage_class="MULTI_REGIONAL"} 0.19
-gcp_gcs_operations_discount{location_type="multi-region",opclass="class-b",storage_class="NEARLINE"} 0.19
-gcp_gcs_operations_discount{location_type="multi-region",opclass="class-b",storage_class="STANDARD"} 0.19
-gcp_gcs_operations_discount{location_type="region",opclass="class-a",storage_class="ARCHIVE"} 0.19
-gcp_gcs_operations_discount{location_type="region",opclass="class-a",storage_class="COLDLINE"} 0.595
-gcp_gcs_operations_discount{location_type="region",opclass="class-a",storage_class="NEARLINE"} 0.19
-gcp_gcs_operations_discount{location_type="region",opclass="class-a",storage_class="REGIONAL"} 0.19
-gcp_gcs_operations_discount{location_type="region",opclass="class-a",storage_class="STANDARD"} 0.19
-gcp_gcs_operations_discount{location_type="region",opclass="class-b",storage_class="ARCHIVE"} 0.19
-gcp_gcs_operations_discount{location_type="region",opclass="class-b",storage_class="COLDLINE"} 0.19
-gcp_gcs_operations_discount{location_type="region",opclass="class-b",storage_class="NEARLINE"} 0.19
-gcp_gcs_operations_discount{location_type="region",opclass="class-b",storage_class="REGIONAL"} 0.19
-gcp_gcs_operations_discount{location_type="region",opclass="class-b",storage_class="STANDARD"} 0.19
-# HELP gcp_gcs_storage_discount GCS storage discount
-# TYPE gcp_gcs_storage_discount gauge
-gcp_gcs_storage_discount{location="asia",storage_class="ARCHIVE"} 0
-gcp_gcs_storage_discount{location="asia",storage_class="COLDLINE"} 0
-gcp_gcs_storage_discount{location="asia",storage_class="MULTI_REGIONAL"} 0
-gcp_gcs_storage_discount{location="asia",storage_class="NEARLINE"} 0
-gcp_gcs_storage_discount{location="asia",storage_class="STANDARD"} 0
-gcp_gcs_storage_discount{location="asia1",storage_class="ARCHIVE"} 0
-gcp_gcs_storage_discount{location="asia1",storage_class="COLDLINE"} 0
-gcp_gcs_storage_discount{location="asia1",storage_class="MULTI_REGIONAL"} 0
-gcp_gcs_storage_discount{location="asia1",storage_class="NEARLINE"} 0
-gcp_gcs_storage_discount{location="asia1",storage_class="STANDARD"} 0
-gcp_gcs_storage_discount{location="eu",storage_class="ARCHIVE"} 0
-gcp_gcs_storage_discount{location="eu",storage_class="COLDLINE"} 0
-gcp_gcs_storage_discount{location="eu",storage_class="MULTI_REGIONAL"} 0
-gcp_gcs_storage_discount{location="eu",storage_class="NEARLINE"} 0
-gcp_gcs_storage_discount{location="eu",storage_class="STANDARD"} 0
-gcp_gcs_storage_discount{location="eur4",storage_class="ARCHIVE"} 0
-gcp_gcs_storage_discount{location="eur4",storage_class="COLDLINE"} 0
-gcp_gcs_storage_discount{location="eur4",storage_class="MULTI_REGIONAL"} 0
-gcp_gcs_storage_discount{location="eur4",storage_class="NEARLINE"} 0
-gcp_gcs_storage_discount{location="eur4",storage_class="STANDARD"} 0
-gcp_gcs_storage_discount{location="nam4",storage_class="ARCHIVE"} 0
-gcp_gcs_storage_discount{location="nam4",storage_class="COLDLINE"} 0
-gcp_gcs_storage_discount{location="nam4",storage_class="MULTI_REGIONAL"} 0
-gcp_gcs_storage_discount{location="nam4",storage_class="NEARLINE"} 0
-gcp_gcs_storage_discount{location="nam4",storage_class="STANDARD"} 0
-gcp_gcs_storage_discount{location="us",storage_class="ARCHIVE"} 0
-gcp_gcs_storage_discount{location="us",storage_class="COLDLINE"} 0
-gcp_gcs_storage_discount{location="us",storage_class="MULTI_REGIONAL"} 0
-gcp_gcs_storage_discount{location="us",storage_class="NEARLINE"} 0
-gcp_gcs_storage_discount{location="us",storage_class="STANDARD"} 0
-gcp_gcs_storage_discount{location="us-east1",storage_class="ARCHIVE"} 0
-gcp_gcs_storage_discount{location="us-east1",storage_class="COLDLINE"} 0
-gcp_gcs_storage_discount{location="us-east1",storage_class="NEARLINE"} 0
-gcp_gcs_storage_discount{location="us-east1",storage_class="REGIONAL"} 0
-gcp_gcs_storage_discount{location="us-east1",storage_class="STANDARD"} 0
-# HELP gcp_gcs_storage_hourly_cost GCS storage hourly cost in GiB
-# TYPE gcp_gcs_storage_hourly_cost gauge
-gcp_gcs_storage_hourly_cost{location="us-east1",storage_class="MULTI_REGIONAL"} 5.376344086021506e-06
-gcp_gcs_storage_hourly_cost{location="us-east1",storage_class="REGIONAL"} 0.00016666666666666666
+   # HELP cloudcost_gcp_gcs_bucket_info Location, location_type and storage class information for a GCS object by bucket_name
+# TYPE cloudcost_gcp_gcs_bucket_info gauge
+cloudcost_gcp_gcs_bucket_info{bucket_name="testbucket-1",location="us-east1",location_type="region",storage_class="STANDARD"} 1
+cloudcost_gcp_gcs_bucket_info{bucket_name="testbucket-2",location="us",location_type="multi-region",storage_class="STANDARD"} 1
+# HELP cloudcost_gcp_gcs_operation_by_location_usd_per_krequest Operation cost of GCS objects by location, storage_class, and opclass. Cost represented in USD/(1k req)
+# TYPE cloudcost_gcp_gcs_operation_by_location_usd_per_krequest gauge
+cloudcost_gcp_gcs_operation_by_location_usd_per_krequest{location="us-east1",opclass="class-a",storage_class="REGIONAL"} 0.004
+# HELP cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest Discount for operation cost of GCS objects by location, storage_class, and opclass. Cost represented in USD/(1k req)
+# TYPE cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest gauge
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="dual-region",opclass="class-a",storage_class="MULTI_REGIONAL"} 0.595
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="dual-region",opclass="class-a",storage_class="STANDARD"} 0.595
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="dual-region",opclass="class-b",storage_class="MULTI_REGIONAL"} 0.19
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="dual-region",opclass="class-b",storage_class="STANDARD"} 0.19
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="multi-region",opclass="class-a",storage_class="COLDLINE"} 0.795
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="multi-region",opclass="class-a",storage_class="MULTI_REGIONAL"} 0.595
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="multi-region",opclass="class-a",storage_class="NEARLINE"} 0.595
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="multi-region",opclass="class-a",storage_class="STANDARD"} 0.595
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="multi-region",opclass="class-b",storage_class="COLDLINE"} 0.19
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="multi-region",opclass="class-b",storage_class="MULTI_REGIONAL"} 0.19
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="multi-region",opclass="class-b",storage_class="NEARLINE"} 0.19
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="multi-region",opclass="class-b",storage_class="STANDARD"} 0.19
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-a",storage_class="ARCHIVE"} 0.19
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-a",storage_class="COLDLINE"} 0.595
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-a",storage_class="NEARLINE"} 0.19
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-a",storage_class="REGIONAL"} 0.19
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-a",storage_class="STANDARD"} 0.19
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-b",storage_class="ARCHIVE"} 0.19
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-b",storage_class="COLDLINE"} 0.19
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-b",storage_class="NEARLINE"} 0.19
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-b",storage_class="REGIONAL"} 0.19
+cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-b",storage_class="STANDARD"} 0.19
+# HELP cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour Discount for storage cost of GCS objects by location and storage_class. Cost represented in USD/(GiB*h)
+# TYPE cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour gauge
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="asia",storage_class="ARCHIVE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="asia",storage_class="COLDLINE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="asia",storage_class="MULTI_REGIONAL"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="asia",storage_class="NEARLINE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="asia",storage_class="STANDARD"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="asia1",storage_class="ARCHIVE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="asia1",storage_class="COLDLINE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="asia1",storage_class="MULTI_REGIONAL"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="asia1",storage_class="NEARLINE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="asia1",storage_class="STANDARD"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="eu",storage_class="ARCHIVE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="eu",storage_class="COLDLINE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="eu",storage_class="MULTI_REGIONAL"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="eu",storage_class="NEARLINE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="eu",storage_class="STANDARD"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="eur4",storage_class="ARCHIVE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="eur4",storage_class="COLDLINE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="eur4",storage_class="MULTI_REGIONAL"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="eur4",storage_class="NEARLINE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="eur4",storage_class="STANDARD"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="nam4",storage_class="ARCHIVE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="nam4",storage_class="COLDLINE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="nam4",storage_class="MULTI_REGIONAL"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="nam4",storage_class="NEARLINE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="nam4",storage_class="STANDARD"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="us",storage_class="ARCHIVE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="us",storage_class="COLDLINE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="us",storage_class="MULTI_REGIONAL"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="us",storage_class="NEARLINE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="us",storage_class="STANDARD"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="us-east1",storage_class="ARCHIVE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="us-east1",storage_class="COLDLINE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="us-east1",storage_class="NEARLINE"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="us-east1",storage_class="REGIONAL"} 0
+cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="us-east1",storage_class="STANDARD"} 0
+# HELP cloudcost_gcp_gcs_storage_by_location_usd_per_gibyte_hour Storage cost of GCS objects by location and storage_class. Cost represented in USD/(GiB*h)
+# TYPE cloudcost_gcp_gcs_storage_by_location_usd_per_gibyte_hour gauge
+cloudcost_gcp_gcs_storage_by_location_usd_per_gibyte_hour{location="us-east1",storage_class="MULTI_REGIONAL"} 5.376344086021506e-06
+cloudcost_gcp_gcs_storage_by_location_usd_per_gibyte_hour{location="us-east1",storage_class="REGIONAL"} 0.00016666666666666666
 `), metricNames...)
 	assert.NoError(t, err)
 }

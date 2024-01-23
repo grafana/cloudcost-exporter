@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/prometheus/client_golang/prometheus"
 
+	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/costexplorer"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
@@ -25,6 +26,7 @@ const (
 	HoursInMonth = 730.5
 	// This needs to line up with yace so we can properly join the data in PromQL
 	StandardLabel = "StandardStorage"
+	subsystem     = "aws_s3"
 )
 
 // billingToRegionMap maps the AWS billing region code to the AWS region
@@ -87,31 +89,31 @@ type Metrics struct {
 func NewMetrics() Metrics {
 	return Metrics{
 		StorageGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "aws_s3_storage_hourly_cost",
-			Help: "S3 storage hourly cost in GiB",
+			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "storage_by_location_usd_per_gibyte_hour"),
+			Help: "Storage cost of S3 objects by region, class, and tier. Cost represented in USD/(GiB*h)",
 		},
 			[]string{"region", "class"},
 		),
 
 		OperationsGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "aws_s3_operations_cost",
-			Help: "S3 operations cost per 1k requests",
+			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "operation_by_location_usd_per_krequest"),
+			Help: "Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)",
 		},
 			[]string{"region", "class", "tier"},
 		),
 
 		RequestCount: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "aws_cost_exporter_requests_total",
+			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "cost_api_requests_total"),
 			Help: "Total number of requests made to the AWS Cost Explorer API",
 		}),
 
 		RequestErrorsCount: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "aws_cost_exporter_request_errors_total",
+			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "cost_api_requests_errors_total"),
 			Help: "Total number of errors when making requests to the AWS Cost Explorer API",
 		}),
 
 		NextScrapeGauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "aws_cost_exporter_next_scrape",
+			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "next_scrape"),
 			Help: "The next time the exporter will scrape AWS billing data. Can be used to trigger alerts if now - nextScrape > interval",
 		}),
 	}
