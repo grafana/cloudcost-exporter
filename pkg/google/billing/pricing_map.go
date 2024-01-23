@@ -1,21 +1,26 @@
-package compute
+package billing
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 
+	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
+	"google.golang.org/api/iterator"
 )
 
 var (
+	SkuNotFound        = errors.New("no sku was interested in us")
 	SkuIsNil           = errors.New("sku is nil")
 	SkuNotParsable     = errors.New("can't parse sku")
 	SkuNotRelevant     = errors.New("sku isn't relevant for the current use cases")
 	PricingDataIsOff   = errors.New("pricing data in sku isn't parsable")
 	RegionNotFound     = errors.New("region wasn't found in pricing map")
 	FamilyTypeNotFound = errors.New("family wasn't found in pricing map for this region")
+	ServiceNotFound    = errors.New("the service for compute engine wasn't found")
 	spotRegex          = `(?P<spot>Spot Preemptible )`
 	machineTypeRegex   = `(?P<machineType>\w{1,3})`
 	amd                = `(?P<amd> AMD)`
@@ -240,4 +245,51 @@ func getDataFromSku(sku *billingpb.Sku) (*ParsedSkuData, error) {
 			getResourceType(matchMap["resource"])), nil
 	}
 	return nil, SkuNotParsable
+}
+
+func getPricingInfoFromSku(sku *billingpb.Sku) (int32, error) {
+	if len(sku.PricingInfo) == 0 {
+		return 0, fmt.Errorf("no pricing info found for sku %s", sku.Name)
+	}
+	pricingInfo := sku.PricingInfo[0]
+	if pricingInfo.PricingExpression.TieredRates == nil || len(pricingInfo.PricingExpression.TieredRates) < 1 {
+		return 0, fmt.Errorf("no tiered rates found for sku %s", sku.Name)
+	}
+	return pricingInfo.PricingExpression.TieredRates[0].UnitPrice.Nanos, nil
+}
+
+func GetServiceName(billingService *billingv1.CloudCatalogClient) (string, error) {
+	serviceIterator := billingService.ListServices(context.Background(), &billingpb.ListServicesRequest{PageSize: 5000})
+	for {
+		service, err := serviceIterator.Next()
+		if err != nil {
+			if errors.Is(err, iterator.Done) {
+				break
+			}
+			return "", err
+		}
+		if service.DisplayName == "Compute Engine" {
+			return service.Name, nil
+		}
+	}
+	return "", ServiceNotFound
+}
+
+// GetPricing will collect all the pricing information for a given service and return a list of skus.
+func GetPricing(billingService *billingv1.CloudCatalogClient, serviceName string) []*billingpb.Sku {
+	var skus []*billingpb.Sku
+	skuIterator := billingService.ListSkus(context.Background(), &billingpb.ListSkusRequest{Parent: serviceName})
+	for {
+		sku, err := skuIterator.Next()
+		if err != nil {
+			if errors.Is(err, iterator.Done) {
+				break
+			}
+		}
+		// We don't include licensing skus in our pricing map
+		if !strings.Contains(strings.ToLower(sku.Description), "licensing") {
+			skus = append(skus, sku)
+		}
+	}
+	return skus
 }
