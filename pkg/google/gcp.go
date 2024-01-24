@@ -101,10 +101,10 @@ func New(config *Config) (*GCP, error) {
 				ScrapeInterval: config.ScrapeInterval,
 			}, computeService, cloudCatalogClient)
 		case "GKE":
-			collector = gke.New((*gke.Config)(&compute.Config{
+			collector = gke.New(&gke.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
-			}), computeService, cloudCatalogClient)
+			}, computeService, cloudCatalogClient)
 		default:
 			log.Printf("Unknown service %s", service)
 			// Continue to next service, no need to halt here

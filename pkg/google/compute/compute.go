@@ -1,6 +1,7 @@
 package compute
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -125,14 +126,15 @@ func (c *Collector) Register(registry provider.Registry) error {
 func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	start := time.Now()
 	log.Printf("Collecting %s metrics", c.Name())
+	ctx := context.TODO()
 	if c.PricingMap == nil || time.Now().After(c.NextScrape) {
 		log.Println("Refreshing pricing map")
-		serviceName, err := billing.GetServiceName(c.billingService)
+		serviceName, err := billing.GetServiceName(ctx, c.billingService)
 		if err != nil {
 			log.Printf("Error getting service name: %s", err)
 			return 0
 		}
-		skus := billing.GetPricing(c.billingService, serviceName)
+		skus := billing.GetPricing(ctx, c.billingService, serviceName)
 		pricingMap, err := billing.GeneratePricingMap(skus)
 		if err != nil {
 			log.Printf("Error generating pricing map: %s", err)

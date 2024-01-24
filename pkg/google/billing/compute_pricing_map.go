@@ -1,15 +1,12 @@
 package billing
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 
-	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
-	"google.golang.org/api/iterator"
 )
 
 var (
@@ -38,6 +35,38 @@ var (
 		regionRegex)
 	reOnDemand = regexp.MustCompile(onDemandString)
 )
+
+type PriceTier int64
+
+const (
+	OnDemand PriceTier = iota
+	Spot
+)
+
+type ComputeResource int64
+
+const (
+	Cpu ComputeResource = iota
+	Ram
+)
+
+type ParsedSkuData struct {
+	Region          string
+	PriceTier       PriceTier
+	Price           int32
+	MachineType     string
+	ComputeResource ComputeResource
+}
+
+func NewParsedSkuData(region string, priceTier PriceTier, price int32, machineType string, computeResource ComputeResource) *ParsedSkuData {
+	return &ParsedSkuData{
+		Region:          region,
+		PriceTier:       priceTier,
+		Price:           price,
+		MachineType:     machineType,
+		ComputeResource: computeResource,
+	}
+}
 
 type ComputePrices struct {
 	Cpu float64
@@ -150,38 +179,6 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 	return pricingMap, nil
 }
 
-type PriceTier int64
-
-const (
-	OnDemand PriceTier = iota
-	Spot
-)
-
-type ComputeResource int64
-
-const (
-	Cpu ComputeResource = iota
-	Ram
-)
-
-type ParsedSkuData struct {
-	Region          string
-	PriceTier       PriceTier
-	Price           int32
-	MachineType     string
-	ComputeResource ComputeResource
-}
-
-func NewParsedSkuData(region string, priceTier PriceTier, price int32, machineType string, computeResource ComputeResource) *ParsedSkuData {
-	return &ParsedSkuData{
-		Region:          region,
-		PriceTier:       priceTier,
-		Price:           price,
-		MachineType:     machineType,
-		ComputeResource: computeResource,
-	}
-}
-
 var ignoreList = []string{
 	"Network",
 	"Nvidia",
@@ -194,23 +191,6 @@ var ignoreList = []string{
 	"Micro Instance",
 	"Small Instance",
 	"Memory-optimized",
-}
-
-func getResourceType(resource string) ComputeResource {
-	if resource == "Ram" {
-		return Ram
-	}
-	return Cpu
-}
-
-func getMatchMap(regex *regexp.Regexp, match []string) map[string]string {
-	result := make(map[string]string)
-	for i, name := range regex.SubexpNames() {
-		if i != 0 && name != "" {
-			result[name] = match[i]
-		}
-	}
-	return result
 }
 
 func getDataFromSku(sku *billingpb.Sku) (*ParsedSkuData, error) {
@@ -247,6 +227,18 @@ func getDataFromSku(sku *billingpb.Sku) (*ParsedSkuData, error) {
 	return nil, SkuNotParsable
 }
 
+// getResourceType will return the resource type for a given resource.
+// TODO: Need to ensure GPU's are handled as well, or at the very least we're not mixing GPU's and CPU's up.
+func getResourceType(resource string) ComputeResource {
+	if resource == "Ram" {
+		return Ram
+	}
+	return Cpu
+}
+
+// getPricingInfoFromSku will return the pricing for a given sku.
+// Pricing is represented in nanos, so we need to divide by 1e9 to get the price in dollars.
+// If there are multiple pricing options, we'll just take the first one.
 func getPricingInfoFromSku(sku *billingpb.Sku) (int32, error) {
 	if len(sku.PricingInfo) == 0 {
 		return 0, fmt.Errorf("no pricing info found for sku %s", sku.Name)
@@ -258,38 +250,12 @@ func getPricingInfoFromSku(sku *billingpb.Sku) (int32, error) {
 	return pricingInfo.PricingExpression.TieredRates[0].UnitPrice.Nanos, nil
 }
 
-func GetServiceName(billingService *billingv1.CloudCatalogClient) (string, error) {
-	serviceIterator := billingService.ListServices(context.Background(), &billingpb.ListServicesRequest{PageSize: 5000})
-	for {
-		service, err := serviceIterator.Next()
-		if err != nil {
-			if errors.Is(err, iterator.Done) {
-				break
-			}
-			return "", err
-		}
-		if service.DisplayName == "Compute Engine" {
-			return service.Name, nil
+func getMatchMap(regex *regexp.Regexp, match []string) map[string]string {
+	result := make(map[string]string)
+	for i, name := range regex.SubexpNames() {
+		if i != 0 && name != "" {
+			result[name] = match[i]
 		}
 	}
-	return "", ServiceNotFound
-}
-
-// GetPricing will collect all the pricing information for a given service and return a list of skus.
-func GetPricing(billingService *billingv1.CloudCatalogClient, serviceName string) []*billingpb.Sku {
-	var skus []*billingpb.Sku
-	skuIterator := billingService.ListSkus(context.Background(), &billingpb.ListSkusRequest{Parent: serviceName})
-	for {
-		sku, err := skuIterator.Next()
-		if err != nil {
-			if errors.Is(err, iterator.Done) {
-				break
-			}
-		}
-		// We don't include licensing skus in our pricing map
-		if !strings.Contains(strings.ToLower(sku.Description), "licensing") {
-			skus = append(skus, sku)
-		}
-	}
-	return skus
+	return result
 }

@@ -1,6 +1,7 @@
 package gke
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -38,7 +39,7 @@ var (
 )
 
 type Config struct {
-	Projects       string // ProjectID is where the project is running. Used for authentication.
+	Projects       string
 	ScrapeInterval time.Duration
 }
 
@@ -60,18 +61,20 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 }
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+	ctx := context.TODO()
 	if c.PricingMap == nil || time.Now().After(c.NextScrape) {
-		serviceName, err := billing.GetServiceName(c.billingService)
+		serviceName, err := billing.GetServiceName(ctx, c.billingService)
 		if err != nil {
 			return err
 		}
-		skus := billing.GetPricing(c.billingService, serviceName)
+		skus := billing.GetPricing(ctx, c.billingService, serviceName)
 		c.PricingMap, err = billing.GeneratePricingMap(skus)
 		if err != nil {
 			return err
 		}
 		c.NextScrape = time.Now().Add(c.config.ScrapeInterval)
 	}
+
 	for _, project := range c.Projects {
 		instances, err := gcpCompute.ListInstances(project, c.computeService)
 		if err != nil {
