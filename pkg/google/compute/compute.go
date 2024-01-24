@@ -55,7 +55,7 @@ type Config struct {
 type Collector struct {
 	computeService *compute.Service
 	billingService *billingv1.CloudCatalogClient
-	PricingMap     *billing.StructuredPricingMap
+	PricingMap     *StructuredPricingMap
 	config         *Config
 	Projects       []string
 	NextScrape     time.Time
@@ -93,8 +93,8 @@ func (c *Collector) Name() string {
 }
 
 // ListInstances will collect all the node instances that are running within a GCP project.
-func ListInstances(projectID string, c *compute.Service) ([]*billing.MachineSpec, error) {
-	var allInstances []*billing.MachineSpec
+func ListInstances(projectID string, c *compute.Service) ([]*MachineSpec, error) {
+	var allInstances []*MachineSpec
 	var nextPageToken string
 	log.Printf("Listing instances for project %s", projectID)
 	for {
@@ -107,7 +107,7 @@ func ListInstances(projectID string, c *compute.Service) ([]*billing.MachineSpec
 		}
 		for _, instanceList := range instances.Items {
 			for _, instance := range instanceList.Instances {
-				allInstances = append(allInstances, billing.NewMachineSpec(instance))
+				allInstances = append(allInstances, NewMachineSpec(instance))
 			}
 		}
 		nextPageToken = instances.NextPageToken
@@ -135,7 +135,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 			return 0
 		}
 		skus := billing.GetPricing(ctx, c.billingService, serviceName)
-		pricingMap, err := billing.GeneratePricingMap(skus)
+		pricingMap, err := GeneratePricingMap(skus)
 		if err != nil {
 			log.Printf("Error generating pricing map: %s", err)
 			return 0

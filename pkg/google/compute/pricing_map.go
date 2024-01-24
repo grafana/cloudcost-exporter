@@ -1,4 +1,4 @@
-package billing
+package compute
 
 import (
 	"errors"
@@ -17,7 +17,6 @@ var (
 	PricingDataIsOff   = errors.New("pricing data in sku isn't parsable")
 	RegionNotFound     = errors.New("region wasn't found in pricing map")
 	FamilyTypeNotFound = errors.New("family wasn't found in pricing map for this region")
-	ServiceNotFound    = errors.New("the service for compute engine wasn't found")
 	spotRegex          = `(?P<spot>Spot Preemptible )`
 	machineTypeRegex   = `(?P<machineType>\w{1,3})`
 	amd                = `(?P<amd> AMD)`
@@ -43,10 +42,10 @@ const (
 	Spot
 )
 
-type ComputeResource int64
+type Resource int64
 
 const (
-	Cpu ComputeResource = iota
+	Cpu Resource = iota
 	Ram
 )
 
@@ -55,10 +54,10 @@ type ParsedSkuData struct {
 	PriceTier       PriceTier
 	Price           int32
 	MachineType     string
-	ComputeResource ComputeResource
+	ComputeResource Resource
 }
 
-func NewParsedSkuData(region string, priceTier PriceTier, price int32, machineType string, computeResource ComputeResource) *ParsedSkuData {
+func NewParsedSkuData(region string, priceTier PriceTier, price int32, machineType string, computeResource Resource) *ParsedSkuData {
 	return &ParsedSkuData{
 		Region:          region,
 		PriceTier:       priceTier,
@@ -68,23 +67,23 @@ func NewParsedSkuData(region string, priceTier PriceTier, price int32, machineTy
 	}
 }
 
-type ComputePrices struct {
+type Prices struct {
 	Cpu float64
 	Ram float64
 }
 
 type PriceTiers struct {
-	OnDemand ComputePrices
-	Spot     ComputePrices
+	OnDemand Prices
+	Spot     Prices
 }
 
 func NewPriceTiers() *PriceTiers {
 	return &PriceTiers{
-		OnDemand: ComputePrices{
+		OnDemand: Prices{
 			Cpu: 0,
 			Ram: 0,
 		},
-		Spot: ComputePrices{
+		Spot: Prices{
 			Cpu: 0,
 			Ram: 0,
 		},
@@ -229,7 +228,7 @@ func getDataFromSku(sku *billingpb.Sku) (*ParsedSkuData, error) {
 
 // getResourceType will return the resource type for a given resource.
 // TODO: Need to ensure GPU's are handled as well, or at the very least we're not mixing GPU's and CPU's up.
-func getResourceType(resource string) ComputeResource {
+func getResourceType(resource string) Resource {
 	if resource == "Ram" {
 		return Ram
 	}

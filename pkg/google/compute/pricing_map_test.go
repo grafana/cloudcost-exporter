@@ -1,4 +1,4 @@
-package billing
+package compute
 
 import (
 	"encoding/json"
@@ -51,7 +51,7 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 					"region": {
 						Family: map[string]*PriceTiers{
 							"family": {
-								OnDemand: ComputePrices{
+								OnDemand: Prices{
 									Cpu: 1,
 									Ram: 2,
 								},
@@ -74,7 +74,7 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 					"region": {
 						Family: map[string]*PriceTiers{
 							"family": {
-								Spot: ComputePrices{
+								Spot: Prices{
 									Cpu: 3,
 									Ram: 4,
 								},
@@ -184,7 +184,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"g2": {
-								OnDemand: ComputePrices{
+								OnDemand: Prices{
 									Cpu: 1,
 								},
 							},
@@ -213,7 +213,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"g2": {
-								OnDemand: ComputePrices{
+								OnDemand: Prices{
 									Ram: 1,
 								},
 							},
@@ -242,7 +242,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"e2": {
-								Spot: ComputePrices{
+								Spot: Prices{
 									Cpu: 1,
 								},
 							},
@@ -271,7 +271,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"c2": {
-								Spot: ComputePrices{
+								Spot: Prices{
 									Ram: 1,
 								},
 							},

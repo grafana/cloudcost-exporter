@@ -17,23 +17,23 @@ import (
 )
 
 const (
-	subsystem = "gke"
+	subsystem = "gcp_gke"
 
 	gkeClusterLabel = "goog-k8s-cluster-name"
 )
 
 var (
 	gkeNodeMemoryHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.ExporterName, subsystem, "node_memory_usd_per_gib_hour"),
+		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "node_memory_usd_per_gib_hour"),
 
 		"The cpu cost a GKE Instance in USD/(core*h)",
-		[]string{"cluster", "instance", "region", "family", "machine_type", "project", "price_tier"},
+		[]string{"exporter_cluster", "instance", "region", "family", "machine_type", "project", "price_tier"},
 		nil,
 	)
 	gkeNodeCPUHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.ExporterName, subsystem, "node_cpu_usd_per_core_hour"),
+		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "node_cpu_usd_per_core_hour"),
 		"The memory cost of a GKE Instance in USD/(GiB*h)",
-		[]string{"cluster", "instance", "region", "family", "machine_type", "project", "price_tier"},
+		[]string{"exporter_cluster", "instance", "region", "family", "machine_type", "project", "price_tier"},
 		nil,
 	)
 )
@@ -48,7 +48,7 @@ type Collector struct {
 	billingService *billingv1.CloudCatalogClient
 	config         *Config
 	Projects       []string
-	PricingMap     *billing.StructuredPricingMap
+	PricingMap     *gcpCompute.StructuredPricingMap
 	NextScrape     time.Time
 }
 
@@ -68,7 +68,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			return err
 		}
 		skus := billing.GetPricing(ctx, c.billingService, serviceName)
-		c.PricingMap, err = billing.GeneratePricingMap(skus)
+		c.PricingMap, err = gcpCompute.GeneratePricingMap(skus)
 		if err != nil {
 			return err
 		}

@@ -24,7 +24,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/grafana/cloudcost-exporter/pkg/google/billing"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
@@ -80,7 +79,7 @@ func Test_GetCostsOfInstances(t *testing.T) {
 		t.Errorf("Error decoding JSON: %s", err)
 		return
 	}
-	pricingMap, err := billing.GeneratePricingMap(pricing)
+	pricingMap, err := GeneratePricingMap(pricing)
 	if err != nil {
 		t.Errorf("Error generating pricing map: %s", err)
 	}
@@ -110,7 +109,7 @@ func TestGetPriceForOneMachine(t *testing.T) {
 		t.Errorf("Error decoding JSON: %s", err)
 		return
 	}
-	pricingMap, err := billing.GeneratePricingMap(pricing)
+	pricingMap, err := GeneratePricingMap(pricing)
 	if err != nil {
 		t.Errorf("Error generating pricing map: %s", err)
 	}
@@ -134,7 +133,7 @@ func TestListInstances(t *testing.T) {
 func TestNewMachineSpec(t *testing.T) {
 	tests := map[string]struct {
 		instance *compute.Instance
-		want     *billing.MachineSpec
+		want     *MachineSpec
 	}{
 		"basic instance": {
 			instance: &compute.Instance{
@@ -145,7 +144,7 @@ func TestNewMachineSpec(t *testing.T) {
 					ProvisioningModel: "test",
 				},
 			},
-			want: &billing.MachineSpec{
+			want: &MachineSpec{
 				Instance:     "test",
 				Zone:         "abc-123",
 				Region:       "abc",
@@ -164,7 +163,7 @@ func TestNewMachineSpec(t *testing.T) {
 					ProvisioningModel: "test",
 				},
 			},
-			want: &billing.MachineSpec{
+			want: &MachineSpec{
 				Instance:     "test",
 				Zone:         "abc-123",
 				Region:       "abc",
@@ -183,7 +182,7 @@ func TestNewMachineSpec(t *testing.T) {
 					ProvisioningModel: "SPOT",
 				},
 			},
-			want: &billing.MachineSpec{
+			want: &MachineSpec{
 				Instance:     "test",
 				Zone:         "abc-123",
 				Region:       "abc",
@@ -196,7 +195,7 @@ func TestNewMachineSpec(t *testing.T) {
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			got := billing.NewMachineSpec(test.instance)
+			got := NewMachineSpec(test.instance)
 			require.Equal(t, got, test.want)
 		})
 	}
@@ -692,7 +691,7 @@ func TestCollector_GetPricing(t *testing.T) {
 		Projects: "testing",
 	}, computeService, nil)
 
-	var pricingMap *billing.StructuredPricingMap
+	var pricingMap *StructuredPricingMap
 	t.Run("Test that the pricing map is cached", func(t *testing.T) {
 		l, err := net.Listen("tcp", "localhost:0")
 		require.NoError(t, err)

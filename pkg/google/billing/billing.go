@@ -10,6 +10,8 @@ import (
 	"google.golang.org/api/iterator"
 )
 
+var ServiceNotFound = errors.New("the service for compute engine wasn't found")
+
 // GetServiceName will return the service name for the compute engine service.
 // TODO: This should be a more generic function that takes in a service name and returns the service name.
 func GetServiceName(ctx context.Context, billingService *billingv1.CloudCatalogClient) (string, error) {
