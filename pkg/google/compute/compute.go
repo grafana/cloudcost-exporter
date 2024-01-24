@@ -129,7 +129,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	ctx := context.TODO()
 	if c.PricingMap == nil || time.Now().After(c.NextScrape) {
 		log.Println("Refreshing pricing map")
-		serviceName, err := billing.GetServiceName(ctx, c.billingService)
+		serviceName, err := billing.GetServiceName(ctx, c.billingService, "Compute Engine")
 		if err != nil {
 			log.Printf("Error getting service name: %s", err)
 			return 0

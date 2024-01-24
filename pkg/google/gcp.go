@@ -80,16 +80,11 @@ func New(config *Config) (*GCP, error) {
 		var collector provider.Collector
 		switch strings.ToUpper(service) {
 		case "GCS":
-			serviceName, err := gcs.GetServiceNameByReadableName(ctx, cloudCatalogClient, "Cloud Storage")
-			if err != nil {
-				return nil, fmt.Errorf("could not get service name for GCS: %v", err)
-			}
 			collector, err = gcs.New(&gcs.Config{
 				ProjectId:       config.ProjectId,
 				Projects:        config.Projects,
 				ScrapeInterval:  config.ScrapeInterval,
 				DefaultDiscount: config.DefaultDiscount,
-				ServiceName:     serviceName,
 			}, cloudCatalogClient, regionsClient, storageClient)
 			if err != nil {
 				log.Printf("Error creating GCS collector: %s", err)

@@ -63,7 +63,7 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	ctx := context.TODO()
 	if c.PricingMap == nil || time.Now().After(c.NextScrape) {
-		serviceName, err := billing.GetServiceName(ctx, c.billingService)
+		serviceName, err := billing.GetServiceName(ctx, c.billingService, "Compute Engine")
 		if err != nil {
 			return err
 		}
