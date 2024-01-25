@@ -2,6 +2,7 @@ package gke
 
 import (
 	"context"
+	"log"
 	"strings"
 	"time"
 
@@ -18,8 +19,6 @@ import (
 
 const (
 	subsystem = "gcp_gke"
-
-	gkeClusterLabel = "goog-k8s-cluster-name"
 )
 
 var (
@@ -27,13 +26,15 @@ var (
 		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "node_memory_usd_per_gib_hour"),
 
 		"The cpu cost a GKE Instance in USD/(core*h)",
-		[]string{"exporter_cluster", "instance", "region", "family", "machine_type", "project", "price_tier"},
+		// Cannot simply do cluster because many metric scrapers will add a label for cluster and would interfere with the label we want to add
+		[]string{"cluster_name", "instance", "region", "family", "machine_type", "project", "price_tier"},
 		nil,
 	)
 	gkeNodeCPUHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "node_cpu_usd_per_core_hour"),
 		"The memory cost of a GKE Instance in USD/(GiB*h)",
-		[]string{"exporter_cluster", "instance", "region", "family", "machine_type", "project", "price_tier"},
+		// Cannot simply do cluster because many metric scrapers will add a label for cluster and would interfere with the label we want to add
+		[]string{"cluster_name", "instance", "region", "family", "machine_type", "project", "price_tier"},
 		nil,
 	)
 )
@@ -56,8 +57,13 @@ func (c *Collector) Register(_ provider.Registry) error {
 	return nil
 }
 
-func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
-	return 0
+func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
+	err := c.Collect(ch)
+	if err != nil {
+		log.Printf("failed to collect metrics: %v", err)
+		return 0
+	}
+	return 1
 }
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
@@ -81,7 +87,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			return err
 		}
 		for _, instance := range instances {
-			clusterName := getClusterName(instance.Labels)
+			clusterName := instance.GetClusterName()
 			if clusterName == "" {
 				continue
 			}
@@ -133,11 +139,4 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- gkeNodeCPUHourlyCostDesc
 	ch <- gkeNodeMemoryHourlyCostDesc
 	return nil
-}
-
-func getClusterName(labels map[string]string) string {
-	if clusterName, ok := labels[gkeClusterLabel]; ok {
-		return clusterName
-	}
-	return ""
 }

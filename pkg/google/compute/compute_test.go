@@ -20,10 +20,10 @@ import (
 	"google.golang.org/api/compute/v1"
 	computev1 "google.golang.org/api/compute/v1"
 	"google.golang.org/api/option"
-	"google.golang.org/genproto/googleapis/type/money"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/grafana/cloudcost-exporter/pkg/google/billing"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
@@ -199,183 +199,6 @@ func TestNewMachineSpec(t *testing.T) {
 			require.Equal(t, got, test.want)
 		})
 	}
-}
-
-type fakeCloudCatalogServer struct {
-	billingpb.UnimplementedCloudCatalogServer
-}
-
-func (s *fakeCloudCatalogServer) ListServices(ctx context.Context, req *billingpb.ListServicesRequest) (*billingpb.ListServicesResponse, error) {
-	return &billingpb.ListServicesResponse{
-		Services: []*billingpb.Service{
-			{
-				DisplayName: "Compute Engine",
-				Name:        "compute-engine",
-			},
-		},
-	}, nil
-}
-
-func (s *fakeCloudCatalogServer) ListSkus(ctx context.Context, req *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
-	return &billingpb.ListSkusResponse{
-		Skus: []*billingpb.Sku{
-			{
-				Name:           "test",
-				Description:    "N1 Predefined Instance Core running in Americas",
-				ServiceRegions: []string{"us-central1"},
-				PricingInfo: []*billingpb.PricingInfo{
-					{
-						PricingExpression: &billingpb.PricingExpression{
-							TieredRates: []*billingpb.PricingExpression_TierRate{
-								{
-									UnitPrice: &money.Money{
-										CurrencyCode: "USD",
-										Nanos:        1e9,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			{
-				Name:           "test2",
-				Description:    "N1 Predefined Instance Ram running in Americas",
-				ServiceRegions: []string{"us-central1"},
-				PricingInfo: []*billingpb.PricingInfo{
-					{
-						PricingExpression: &billingpb.PricingExpression{
-							TieredRates: []*billingpb.PricingExpression_TierRate{
-								{
-									UnitPrice: &money.Money{
-										CurrencyCode: "USD",
-										Nanos:        1e9,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			{
-				Name:           "test-spot",
-				Description:    "Spot Preemptible N1 Instance Core running in Americas",
-				ServiceRegions: []string{"us-central1"},
-				PricingInfo: []*billingpb.PricingInfo{
-					{
-						PricingExpression: &billingpb.PricingExpression{
-							TieredRates: []*billingpb.PricingExpression_TierRate{
-								{
-									UnitPrice: &money.Money{
-										CurrencyCode: "USD",
-										Nanos:        1e9,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			{
-				Name:           "test2-spot",
-				Description:    "Spot Preemptible N1 Instance Ram running in Americas",
-				ServiceRegions: []string{"us-central1"},
-				PricingInfo: []*billingpb.PricingInfo{
-					{
-						PricingExpression: &billingpb.PricingExpression{
-							TieredRates: []*billingpb.PricingExpression_TierRate{
-								{
-									UnitPrice: &money.Money{
-										CurrencyCode: "USD",
-										Nanos:        1e9,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			{
-				Name:           "test",
-				Description:    "N2 Predefined Instance Core running in Americas",
-				ServiceRegions: []string{"us-central1"},
-				PricingInfo: []*billingpb.PricingInfo{
-					{
-						PricingExpression: &billingpb.PricingExpression{
-							TieredRates: []*billingpb.PricingExpression_TierRate{
-								{
-									UnitPrice: &money.Money{
-										CurrencyCode: "USD",
-										Nanos:        1e9,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			{
-				Name:           "test2",
-				Description:    "N2 Predefined Instance Ram running in Americas",
-				ServiceRegions: []string{"us-central1"},
-				PricingInfo: []*billingpb.PricingInfo{
-					{
-						PricingExpression: &billingpb.PricingExpression{
-							TieredRates: []*billingpb.PricingExpression_TierRate{
-								{
-									UnitPrice: &money.Money{
-										CurrencyCode: "USD",
-										Nanos:        1e9,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}, nil
-}
-
-type fakeCloudCatalogServerSlimResults struct {
-	billingpb.UnimplementedCloudCatalogServer
-}
-
-func (s *fakeCloudCatalogServerSlimResults) ListServices(ctx context.Context, req *billingpb.ListServicesRequest) (*billingpb.ListServicesResponse, error) {
-	return &billingpb.ListServicesResponse{
-		Services: []*billingpb.Service{
-			{
-				DisplayName: "Compute Engine",
-				Name:        "compute-engine",
-			},
-		},
-	}, nil
-}
-
-func (s *fakeCloudCatalogServerSlimResults) ListSkus(ctx context.Context, req *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
-	return &billingpb.ListSkusResponse{
-		Skus: []*billingpb.Sku{
-			{
-				Name:           "test",
-				Description:    "N1 Predefined Instance Core running in Americas",
-				ServiceRegions: []string{"us-central1"},
-				PricingInfo: []*billingpb.PricingInfo{
-					{
-						PricingExpression: &billingpb.PricingExpression{
-							TieredRates: []*billingpb.PricingExpression_TierRate{
-								{
-									UnitPrice: &money.Money{
-										CurrencyCode: "USD",
-										Nanos:        1e9,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}, nil
 }
 
 func TestCollector_Collect(t *testing.T) {
@@ -615,7 +438,7 @@ func TestCollector_Collect(t *testing.T) {
 				}
 			}()
 
-			billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudCatalogServer{})
+			billingpb.RegisterCloudCatalogServer(gsrv, &billing.FakeCloudCatalogServer{})
 			cloudCatalogClient, err := billingv1.NewCloudCatalogClient(context.Background(),
 				option.WithEndpoint(l.Addr().String()),
 				option.WithoutAuthentication(),
@@ -703,7 +526,7 @@ func TestCollector_GetPricing(t *testing.T) {
 			}
 		}()
 
-		billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudCatalogServer{})
+		billingpb.RegisterCloudCatalogServer(gsrv, &billing.FakeCloudCatalogServer{})
 		cloudCatalagClient, err := billingv1.NewCloudCatalogClient(context.Background(),
 			option.WithEndpoint(l.Addr().String()),
 			option.WithoutAuthentication(),
@@ -741,7 +564,7 @@ func TestCollector_GetPricing(t *testing.T) {
 				t.Errorf("failed to serve: %v", err)
 			}
 		}()
-		billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudCatalogServerSlimResults{})
+		billingpb.RegisterCloudCatalogServer(gsrv, &billing.FakeCloudCatalogServerSlimResults{})
 		cloudCatalogClient, _ := billingv1.NewCloudCatalogClient(context.Background(),
 			option.WithEndpoint(l.Addr().String()),
 			option.WithoutAuthentication(),

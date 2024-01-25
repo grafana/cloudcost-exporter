@@ -8,7 +8,10 @@ import (
 	"google.golang.org/api/compute/v1"
 )
 
-var re = regexp.MustCompile(`\bin\b`)
+var (
+	re              = regexp.MustCompile(`\bin\b`)
+	GkeClusterLabel = "goog-k8s-cluster-name"
+)
 
 // MachineSpec is a slimmed down representation of a google compute.Instance struct
 type MachineSpec struct {
@@ -100,4 +103,11 @@ func priceTierForInstance(spotInstance bool) string {
 	}
 	// TODO: Handle if it's a commitment
 	return "ondemand"
+}
+
+func (m *MachineSpec) GetClusterName() string {
+	if clusterName, ok := m.Labels[GkeClusterLabel]; ok {
+		return clusterName
+	}
+	return ""
 }
