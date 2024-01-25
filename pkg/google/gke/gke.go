@@ -23,7 +23,7 @@ const (
 
 var (
 	gkeNodeMemoryHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "node_memory_usd_per_gib_hour"),
+		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
 
 		"The cpu cost a GKE Instance in USD/(core*h)",
 		// Cannot simply do cluster because many metric scrapers will add a label for cluster and would interfere with the label we want to add
@@ -31,7 +31,7 @@ var (
 		nil,
 	)
 	gkeNodeCPUHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "node_cpu_usd_per_core_hour"),
+		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
 		"The memory cost of a GKE Instance in USD/(GiB*h)",
 		// Cannot simply do cluster because many metric scrapers will add a label for cluster and would interfere with the label we want to add
 		[]string{"cluster_name", "instance", "region", "family", "machine_type", "project", "price_tier"},
