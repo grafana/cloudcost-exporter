@@ -1,5 +1,5 @@
 # See https://docs.docker.com/build/ci/github-actions/multi-platform/
-name: Docker
+name: Build and Push Image
 
 on:
   push:
@@ -7,9 +7,6 @@ on:
       - main
     tags:
       - v*
-  pull_request:
-    branches:
-      - '*'
 
 permissions:
   contents: read
@@ -18,11 +15,9 @@ permissions:
 env:
   REGISTRY_IMAGE: grafana/cloudcost-exporter
   # Docker image tags. See https://github.com/docker/metadata-action for format
-  #     type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-  #    type=sha,prefix={{branch}}-,format=short,enable=${{ github.ref == 'refs/heads/main' }}
   TAGS_CONFIG: |
-    type=raw,value=latest,enable=true
-    type=sha,prefix=test-,format=short,enable=true
+    type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+    type=sha,prefix={{branch}}-,format=short,enable=${{ github.ref == 'refs/heads/main' }}
     type=semver,pattern={{version}}
 
 jobs:
@@ -59,7 +54,7 @@ jobs:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN }}
 
-      - name: Build and push by digest
+      - name: Build and push
         id: build
         uses: docker/build-push-action@v5
         with:
@@ -68,5 +63,4 @@ jobs:
           platforms: linux/amd64,linux/arm64
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ steps.meta.outputs.tags }}
-          #outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},name-canonical=true,push=true
