@@ -88,6 +88,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		}
 		for _, instance := range instances {
 			clusterName := instance.GetClusterName()
+			// We skip instances that do not have a clusterName because they are not associated with an GKE cluster
 			if clusterName == "" {
 				continue
 			}
