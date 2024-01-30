@@ -18,7 +18,7 @@ env:
   TAGS_CONFIG: |
     type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
     type=sha,prefix={{ branch }}-,format=short,enable=${{ github.ref == 'refs/heads/main' }}
-    type=semver,pattern={{version}}
+    type=semver,pattern={{ version }}
 
 jobs:
   build:
