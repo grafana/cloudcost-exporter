@@ -28,7 +28,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - id: Build and push
+      - name: Build and push
         uses: grafana/shared-workflows/actions/build-push-to-dockerhub@main
         with:
           repository: ${{ env.REGISTRY_IMAGE }}
