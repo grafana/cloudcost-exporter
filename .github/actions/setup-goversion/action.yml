@@ -1,3 +1,4 @@
+# This action extracts the go version from Dockerfile and uses this version setup go
 name: setup-goversion
 runs:
   using: composite
