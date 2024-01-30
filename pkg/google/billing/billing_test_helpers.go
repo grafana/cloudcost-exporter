@@ -139,6 +139,44 @@ func (s *FakeCloudCatalogServer) ListSkus(ctx context.Context, req *billingpb.Li
 					},
 				},
 			},
+			{
+				Name:           "us-east1",
+				Description:    "N2 Predefined Instance Core running in Americas",
+				ServiceRegions: []string{"us-east1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{
+						PricingExpression: &billingpb.PricingExpression{
+							TieredRates: []*billingpb.PricingExpression_TierRate{
+								{
+									UnitPrice: &money.Money{
+										CurrencyCode: "USD",
+										Nanos:        1e9,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				Name:           "us-east1",
+				Description:    "N2 Predefined Instance Ram running in Americas",
+				ServiceRegions: []string{"us-east1"},
+				PricingInfo: []*billingpb.PricingInfo{
+					{
+						PricingExpression: &billingpb.PricingExpression{
+							TieredRates: []*billingpb.PricingExpression_TierRate{
+								{
+									UnitPrice: &money.Money{
+										CurrencyCode: "USD",
+										Nanos:        1e9,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 	}, nil
 }

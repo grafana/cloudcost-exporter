@@ -194,6 +194,44 @@ func TestGeneratePricingMap(t *testing.T) {
 			},
 		},
 		{
+			name: "on-demand cpu - multiple regions",
+			skus: []*billingpb.Sku{{
+				Description:    "G2 Instance Core running in Sao Paulo",
+				ServiceRegions: []string{"us-central1", "us-east1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &StructuredPricingMap{
+				Regions: map[string]*FamilyPricing{
+					"us-central1": {
+						Family: map[string]*PriceTiers{
+							"g2": {
+								OnDemand: Prices{
+									Cpu: 1,
+								},
+							},
+						},
+					},
+					"us-east1": {
+						Family: map[string]*PriceTiers{
+							"g2": {
+								OnDemand: Prices{
+									Cpu: 1,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "on-demand ram",
 			skus: []*billingpb.Sku{{
 				Description:    "G2 Instance Ram running in Belgium",
@@ -306,56 +344,56 @@ func Test_getDataFromSku(t *testing.T) {
 		description       string
 		serviceRegions    []string
 		price             int32
-		wantParsedSkuData *ParsedSkuData
+		wantParsedSkuData []*ParsedSkuData
 		wantError         error
 	}{
 		"Core": {
 			description:       "G2 Instance Core running in Sao Paulo",
 			serviceRegions:    []string{"europe-west1"},
 			price:             12,
-			wantParsedSkuData: NewParsedSkuData("europe-west1", OnDemand, 12, "g2", Cpu),
+			wantParsedSkuData: []*ParsedSkuData{NewParsedSkuData("europe-west1", OnDemand, 12, "g2", Cpu)},
 			wantError:         nil,
 		},
 		"Ram": {
 			description:       "G2 Instance Ram running in Belgium",
 			serviceRegions:    []string{"europe-west1"},
 			price:             12,
-			wantParsedSkuData: NewParsedSkuData("europe-west1", OnDemand, 12, "g2", Ram),
+			wantParsedSkuData: []*ParsedSkuData{NewParsedSkuData("europe-west1", OnDemand, 12, "g2", Ram)},
 			wantError:         nil,
 		},
 		"Ram N1": {
 			description:       "N1 Predefined Instance Ram running in Zurich",
 			serviceRegions:    []string{"europe-west1"},
 			price:             12,
-			wantParsedSkuData: NewParsedSkuData("europe-west1", OnDemand, 12, "n1", Ram),
+			wantParsedSkuData: []*ParsedSkuData{NewParsedSkuData("europe-west1", OnDemand, 12, "n1", Ram)},
 			wantError:         nil,
 		},
 		"Amd": {
 			description:       "N2D AMD Instance Ram running in Israel",
 			serviceRegions:    []string{"europe-west1"},
 			price:             12,
-			wantParsedSkuData: NewParsedSkuData("europe-west1", OnDemand, 12, "n2d", Ram),
+			wantParsedSkuData: []*ParsedSkuData{NewParsedSkuData("europe-west1", OnDemand, 12, "n2d", Ram)},
 			wantError:         nil,
 		},
 		"Compute optimized": {
 			description:       "Compute optimized Instance Core running in Dallas",
 			serviceRegions:    []string{"europe-west1"},
 			price:             12,
-			wantParsedSkuData: NewParsedSkuData("europe-west1", OnDemand, 12, "c2", Cpu),
+			wantParsedSkuData: []*ParsedSkuData{NewParsedSkuData("europe-west1", OnDemand, 12, "c2", Cpu)},
 			wantError:         nil,
 		},
 		"Compute optimized Spot": {
 			description:       "Spot Preemptible Compute optimized Ram running in Montreal",
 			serviceRegions:    []string{"europe-west1"},
 			price:             12,
-			wantParsedSkuData: NewParsedSkuData("europe-west1", Spot, 12, "c2", Ram),
+			wantParsedSkuData: []*ParsedSkuData{NewParsedSkuData("europe-west1", Spot, 12, "c2", Ram)},
 			wantError:         nil,
 		},
 		"3 word region": {
 			description:       "Spot Preemptible E2 Instance Core running in Salt Lake City",
 			serviceRegions:    []string{"europe-west1"},
 			price:             12,
-			wantParsedSkuData: NewParsedSkuData("europe-west1", Spot, 12, "e2", Cpu),
+			wantParsedSkuData: []*ParsedSkuData{NewParsedSkuData("europe-west1", Spot, 12, "e2", Cpu)},
 			wantError:         nil,
 		},
 		"Ignore GPU": {

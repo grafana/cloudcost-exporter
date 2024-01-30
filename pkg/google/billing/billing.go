@@ -3,6 +3,7 @@ package billing
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
@@ -44,6 +45,10 @@ func GetPricing(ctx context.Context, billingService *billingv1.CloudCatalogClien
 			// keep going if we get an error
 		}
 		// We don't include licensing skus in our pricing map
+		if len(sku.ServiceRegions) > 1 {
+			fmt.Printf("Sku: %v\n", sku)
+		}
+
 		if !strings.Contains(strings.ToLower(sku.Description), "licensing") {
 			skus = append(skus, sku)
 		}

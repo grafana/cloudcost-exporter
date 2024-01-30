@@ -216,6 +216,34 @@ func TestCollector_Collect(t *testing.T) {
 					Value:      1,
 					MetricType: prometheus.GaugeValue,
 				},
+				{
+					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
+					Labels: map[string]string{
+						"family":       "n2",
+						"instance":     "test-n2-us-east1",
+						"machine_type": "n2-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing-1",
+						"region":       "us-east1",
+						"cluster_name": "test",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_gcp_gke_instance_memory_usd_per_gib_hour",
+					Labels: map[string]string{
+						"family":       "n2",
+						"instance":     "test-n2-us-east1",
+						"machine_type": "n2-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing-1",
+						"region":       "us-east1",
+						"cluster_name": "test",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
 			},
 			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				buf := &computev1.InstanceAggregatedList{
@@ -250,6 +278,17 @@ func TestCollector_Collect(t *testing.T) {
 									Zone:        "testing/us-central1-a",
 									Scheduling: &computev1.Scheduling{
 										ProvisioningModel: "SPOT",
+									},
+									Labels: map[string]string{
+										compute.GkeClusterLabel: "test",
+									},
+								},
+								{
+									Name:        "test-n1-us-east1",
+									MachineType: "abc/n2-slim",
+									Zone:        "testing/us-east1-a",
+									Scheduling: &computev1.Scheduling{
+										ProvisioningModel: "test",
 									},
 									Labels: map[string]string{
 										compute.GkeClusterLabel: "test",
