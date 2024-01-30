@@ -18,7 +18,7 @@ env:
   # Docker image tags. See https://github.com/docker/metadata-action for format
   TAGS_CONFIG: |
     type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-    type=sha,prefix=test-,format=short,enable=true
+    type=sha,prefix={{ branch }}-,format=short,enable=${{ github.ref == 'refs/heads/main' }}
     type=semver,pattern={{version}}
 
 jobs:
@@ -34,5 +34,5 @@ jobs:
           repository: ${{ env.REGISTRY_IMAGE }}
           context: .
           push: true
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           tags: ${{ env.TAGS_CONFIG }}
