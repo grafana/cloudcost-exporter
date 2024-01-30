@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"log"
 	"strings"
 	"time"
+
+	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
+	"github.com/grafana/cloudcost-exporter/pkg/google/billing"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
@@ -160,7 +162,7 @@ const (
 type Collector struct {
 	ProjectID          string
 	Projects           []string
-	cloudCatalogClient CloudCatalogClient
+	cloudCatalogClient *billingv1.CloudCatalogClient
 	serviceName        string
 	ctx                context.Context
 	interval           time.Duration
@@ -186,19 +188,13 @@ type Config struct {
 	Projects        string
 	DefaultDiscount int
 	ScrapeInterval  time.Duration
-	ServiceName     string
 }
 
 type RegionsClient interface {
 	List(ctx context.Context, req *computepb.ListRegionsRequest, opts ...gax.CallOption) *compute.RegionIterator
 }
 
-type CloudCatalogClient interface {
-	ListServices(ctx context.Context, req *billingpb.ListServicesRequest, opts ...gax.CallOption) *billingv1.ServiceIterator
-	ListSkus(ctx context.Context, req *billingpb.ListSkusRequest, opts ...gax.CallOption) *billingv1.SkuIterator
-}
-
-func New(config *Config, cloudCatalogClient CloudCatalogClient, regionsClient RegionsClient, storageClient StorageClientInterface) (*Collector, error) {
+func New(config *Config, cloudCatalogClient *billingv1.CloudCatalogClient, regionsClient RegionsClient, storageClient StorageClientInterface) (*Collector, error) {
 	if config.ProjectId == "" {
 		return nil, fmt.Errorf("projectID cannot be empty")
 	}
@@ -219,7 +215,6 @@ func New(config *Config, cloudCatalogClient CloudCatalogClient, regionsClient Re
 		bucketClient:       bucketClient,
 		discount:           config.DefaultDiscount,
 		ctx:                ctx,
-		serviceName:        config.ServiceName,
 		interval:           config.ScrapeInterval,
 		// Set nextScrape to the current time minus the scrape interval so that the first scrape will run immediately
 		nextScrape:    time.Now().Add(-config.ScrapeInterval),
@@ -230,25 +225,6 @@ func New(config *Config, cloudCatalogClient CloudCatalogClient, regionsClient Re
 
 func (c *Collector) Name() string {
 	return collectorName
-}
-
-// GetServiceNameByReadableName will list all services available for a given GCP project and find the service name for a given readable name
-// The service name is used to query the billing API to find the associated costs for the service.
-func GetServiceNameByReadableName(ctx context.Context, client CloudCatalogClient, name string) (string, error) {
-	serviceList := client.ListServices(ctx, &billingpb.ListServicesRequest{})
-	for {
-		row, err := serviceList.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return "", err
-		}
-		if row.DisplayName == name {
-			return row.Name, nil
-		}
-	}
-	return "", fmt.Errorf("service \"%s\" not found", name)
 }
 
 // Register is called when the collector is created and is responsible for registering the metrics with the registry
@@ -287,7 +263,13 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	if err != nil {
 		log.Printf("Error exporting bucket info: %v", err)
 	}
-	return ExportGCPCostData(c.ctx, c.cloudCatalogClient, c.serviceName, c.metrics)
+
+	serviceName, err := billing.GetServiceName(c.ctx, c.cloudCatalogClient, "Cloud Storage")
+	if err != nil {
+		log.Printf("Error getting service name: %v", err)
+		return 0
+	}
+	return ExportGCPCostData(c.ctx, c.cloudCatalogClient, serviceName, c.metrics)
 }
 
 // ExportBucketInfo will list all buckets for a given project and export the data as a prometheus metric.
@@ -367,19 +349,10 @@ func ExporterOperationsDiscounts(m *Metrics) {
 	}
 }
 
-func ExportGCPCostData(ctx context.Context, client CloudCatalogClient, serviceName string, m *Metrics) float64 {
-	skuResponse := client.ListSkus(ctx, &billingpb.ListSkusRequest{
-		Parent: serviceName,
-	})
-	for {
-		sku, err := skuResponse.Next()
-		if errors.Is(err, iterator.Done) {
-			break
-		}
-		if err != nil {
-			log.Printf("error getting skus: %v", err)
-			return 0.0
-		}
+// ExportGCPCostData will collect all the pricing information for the passed in serviceName and export cost related metrics for each sku
+func ExportGCPCostData(ctx context.Context, client *billingv1.CloudCatalogClient, serviceName string, m *Metrics) float64 {
+	skus := billing.GetPricing(ctx, client, serviceName)
+	for _, sku := range skus {
 		// Skip Egress and Download costs as we don't count them yet
 		// Check category first as I've had random segfaults locally
 		if sku.Category != nil && sku.Category.ResourceFamily == "Network" {
@@ -398,13 +371,13 @@ func ExportGCPCostData(ctx context.Context, client CloudCatalogClient, serviceNa
 			if strings.Contains(sku.Description, "Early Delete") {
 				continue // to skip "Unknown sku"
 			}
-			if err = parseStorageSku(sku, m); err != nil {
+			if err := parseStorageSku(sku, m); err != nil {
 				log.Printf("error parsing storage sku: %v", err)
 			}
 			continue
 		}
 		if strings.HasSuffix(sku.Category.ResourceGroup, "Ops") {
-			if err = parseOpSku(sku, m); err != nil {
+			if err := parseOpSku(sku, m); err != nil {
 				log.Printf("error parsing op sku: %v", err)
 			}
 			continue

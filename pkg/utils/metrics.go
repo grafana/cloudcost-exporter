@@ -21,6 +21,9 @@ var (
 )
 
 func ReadMetrics(metric prometheus.Metric) *MetricResult {
+	if metric == nil {
+		return nil
+	}
 	m := &io_prometheus_client.Metric{}
 	err := metric.Write(m)
 	if err != nil {

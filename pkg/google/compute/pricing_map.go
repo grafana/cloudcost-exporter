@@ -10,6 +10,7 @@ import (
 )
 
 var (
+	SkuNotFound        = errors.New("no sku was interested in us")
 	SkuIsNil           = errors.New("sku is nil")
 	SkuNotParsable     = errors.New("can't parse sku")
 	SkuNotRelevant     = errors.New("sku isn't relevant for the current use cases")
@@ -34,23 +35,55 @@ var (
 	reOnDemand = regexp.MustCompile(onDemandString)
 )
 
-type ComputePrices struct {
+type PriceTier int64
+
+const (
+	OnDemand PriceTier = iota
+	Spot
+)
+
+type Resource int64
+
+const (
+	Cpu Resource = iota
+	Ram
+)
+
+type ParsedSkuData struct {
+	Region          string
+	PriceTier       PriceTier
+	Price           int32
+	MachineType     string
+	ComputeResource Resource
+}
+
+func NewParsedSkuData(region string, priceTier PriceTier, price int32, machineType string, computeResource Resource) *ParsedSkuData {
+	return &ParsedSkuData{
+		Region:          region,
+		PriceTier:       priceTier,
+		Price:           price,
+		MachineType:     machineType,
+		ComputeResource: computeResource,
+	}
+}
+
+type Prices struct {
 	Cpu float64
 	Ram float64
 }
 
 type PriceTiers struct {
-	OnDemand ComputePrices
-	Spot     ComputePrices
+	OnDemand Prices
+	Spot     Prices
 }
 
 func NewPriceTiers() *PriceTiers {
 	return &PriceTiers{
-		OnDemand: ComputePrices{
+		OnDemand: Prices{
 			Cpu: 0,
 			Ram: 0,
 		},
-		Spot: ComputePrices{
+		Spot: Prices{
 			Cpu: 0,
 			Ram: 0,
 		},
@@ -145,38 +178,6 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 	return pricingMap, nil
 }
 
-type PriceTier int64
-
-const (
-	OnDemand PriceTier = iota
-	Spot
-)
-
-type ComputeResource int64
-
-const (
-	Cpu ComputeResource = iota
-	Ram
-)
-
-type ParsedSkuData struct {
-	Region          string
-	PriceTier       PriceTier
-	Price           int32
-	MachineType     string
-	ComputeResource ComputeResource
-}
-
-func NewParsedSkuData(region string, priceTier PriceTier, price int32, machineType string, computeResource ComputeResource) *ParsedSkuData {
-	return &ParsedSkuData{
-		Region:          region,
-		PriceTier:       priceTier,
-		Price:           price,
-		MachineType:     machineType,
-		ComputeResource: computeResource,
-	}
-}
-
 var ignoreList = []string{
 	"Network",
 	"Nvidia",
@@ -189,23 +190,6 @@ var ignoreList = []string{
 	"Micro Instance",
 	"Small Instance",
 	"Memory-optimized",
-}
-
-func getResourceType(resource string) ComputeResource {
-	if resource == "Ram" {
-		return Ram
-	}
-	return Cpu
-}
-
-func getMatchMap(regex *regexp.Regexp, match []string) map[string]string {
-	result := make(map[string]string)
-	for i, name := range regex.SubexpNames() {
-		if i != 0 && name != "" {
-			result[name] = match[i]
-		}
-	}
-	return result
 }
 
 func getDataFromSku(sku *billingpb.Sku) (*ParsedSkuData, error) {
@@ -240,4 +224,37 @@ func getDataFromSku(sku *billingpb.Sku) (*ParsedSkuData, error) {
 			getResourceType(matchMap["resource"])), nil
 	}
 	return nil, SkuNotParsable
+}
+
+// getResourceType will return the resource type for a given resource.
+// TODO: Need to ensure GPU's are handled as well, or at the very least we're not mixing GPU's and CPU's up.
+func getResourceType(resource string) Resource {
+	if resource == "Ram" {
+		return Ram
+	}
+	return Cpu
+}
+
+// getPricingInfoFromSku will return the pricing for a given sku.
+// Pricing is represented in nanos, so we need to divide by 1e9 to get the price in dollars.
+// If there are multiple pricing options, we'll just take the first one.
+func getPricingInfoFromSku(sku *billingpb.Sku) (int32, error) {
+	if len(sku.PricingInfo) == 0 {
+		return 0, fmt.Errorf("no pricing info found for sku %s", sku.Name)
+	}
+	pricingInfo := sku.PricingInfo[0]
+	if pricingInfo.PricingExpression.TieredRates == nil || len(pricingInfo.PricingExpression.TieredRates) < 1 {
+		return 0, fmt.Errorf("no tiered rates found for sku %s", sku.Name)
+	}
+	return pricingInfo.PricingExpression.TieredRates[0].UnitPrice.Nanos, nil
+}
+
+func getMatchMap(regex *regexp.Regexp, match []string) map[string]string {
+	result := make(map[string]string)
+	for i, name := range regex.SubexpNames() {
+		if i != 0 && name != "" {
+			result[name] = match[i]
+		}
+	}
+	return result
 }

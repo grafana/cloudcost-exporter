@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	billing "cloud.google.com/go/billing/apiv1"
+	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	computeapiv1 "cloud.google.com/go/compute/apiv1"
 	"cloud.google.com/go/storage"
@@ -17,11 +17,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
+
 	"google.golang.org/genproto/googleapis/type/money"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/cloudcost-exporter/mocks/pkg/google/gcs"
+	"github.com/grafana/cloudcost-exporter/pkg/google/billing"
 )
 
 func TestStorageclassFromSkuDescription(t *testing.T) {
@@ -153,14 +155,13 @@ func TestMisformedPricingInfoFromSku(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
-	billingClient := gcs.NewCloudCatalogClient(t)
 	regionsClient := gcs.NewRegionsClient(t)
 	storageClient := gcs.NewStorageClientInterface(t)
 
 	t.Run("should return a non-nil client", func(t *testing.T) {
 		gcsCollector, err := New(&Config{
 			ProjectId: "project-1",
-		}, billingClient, regionsClient, storageClient)
+		}, nil, regionsClient, storageClient)
 		assert.NoError(t, err)
 		assert.NotNil(t, gcsCollector)
 	})
@@ -168,7 +169,7 @@ func TestNew(t *testing.T) {
 	t.Run("collectorName should be GCS", func(t *testing.T) {
 		gcsCollector, _ := New(&Config{
 			ProjectId: "project-1",
-		}, billingClient, regionsClient, storageClient)
+		}, nil, regionsClient, storageClient)
 		assert.Equal(t, "GCS", gcsCollector.Name())
 	})
 }
@@ -498,14 +499,14 @@ func TestGetServiceNameByReadableName(t *testing.T) {
 			}()
 
 			billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudBillingServer{})
-			client, err := billing.NewCloudCatalogClient(context.Background(),
+			client, err := billingv1.NewCloudCatalogClient(context.Background(),
 				option.WithEndpoint(l.Addr().String()),
 				option.WithoutAuthentication(),
 				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 
 			assert.NoError(t, err)
 			ctx := context.Background()
-			got, err := GetServiceNameByReadableName(ctx, client, tt.service)
+			got, err := billing.GetServiceName(ctx, client, tt.service)
 			if !tt.wantErr(t, err, fmt.Sprintf("GetServiceNameByReadableName(%v, %v, %v)", ctx, client, tt.service)) {
 				return
 			}
@@ -547,15 +548,14 @@ func TestCollector_Collect(t *testing.T) {
 		}
 	}()
 	billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudBillingServer{})
-	cloudCatalogClient, err := billing.NewCloudCatalogClient(context.Background(),
+	cloudCatalogClient, err := billingv1.NewCloudCatalogClient(context.Background(),
 		option.WithEndpoint(l.Addr().String()),
 		option.WithoutAuthentication(),
 		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 
 	assert.NoError(t, err)
 	collector, err := New(&Config{
-		ProjectId:   "project-1",
-		ServiceName: "services/6F81-5844-456A",
+		ProjectId: "project-1",
 	}, cloudCatalogClient, regionsClient, storageClient)
 
 	assert.NoError(t, err)

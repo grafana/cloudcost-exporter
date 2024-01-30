@@ -20,10 +20,10 @@ import (
 	"google.golang.org/api/compute/v1"
 	computev1 "google.golang.org/api/compute/v1"
 	"google.golang.org/api/option"
-	"google.golang.org/genproto/googleapis/type/money"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/grafana/cloudcost-exporter/pkg/google/billing"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
@@ -52,113 +52,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func Test_stripOutKeyFromDescription(t *testing.T) {
-	tests := map[string]struct {
-		description string
-		want        string
-	}{
-		"simple": {
-			description: "N1 Predefined Instance Core running in Americas",
-			want:        "N1 Predefined Instance Core",
-		},
-		"commitment v1: empty": {
-			description: "Commitment v1:",
-			want:        "",
-		},
-		"commitment v1": {
-			description: "Commitment v1: N2 Predefined Instance Core in Americas",
-			want:        "N2 Predefined Instance Core",
-		},
-		"commitment v2": {
-			description: "Commitment v1: N2D AMD Ram in Americin for 1 year",
-			want:        "N2D AMD Ram",
-		},
-		"commitment berlin": {
-			description: "Commitment v1: G2 Ram in Berlin for 1 year",
-			want:        "G2 Ram",
-		},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			if got := stripOutKeyFromDescription(tt.description); got != tt.want {
-				t.Errorf("stripOutKeyFromDescription() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_getMachineInfoFromMachineType(t *testing.T) {
-	type result struct {
-		wantCpu         int
-		wantRam         int
-		wantZone        string
-		wantType        string
-		wantMachineType string
-	}
-	tests := map[string]struct {
-		machineType string
-		want        result
-	}{
-		"simple": {
-			machineType: "https://www.googleapis.com/compute/v1/projects/grafanalabs-dev/zones/us-central1-a/machineTypes/n2-standard-8",
-			want: result{
-				wantCpu:         2,
-				wantRam:         8,
-				wantZone:        "us-central1-a",
-				wantMachineType: "n2-standard-8",
-				wantType:        "n2",
-			},
-		},
-	}
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			if got := getMachineTypeFromURL(test.machineType); got != test.want.wantMachineType {
-				t.Errorf("getMachineTypeFromURL() = %v, want %v", got, test.want.wantMachineType)
-			}
-		})
-	}
-}
-
-func Test_GetMachineFamily(t *testing.T) {
-	tests := map[string]struct {
-		machineType string
-		want        string
-	}{
-		"n1": {
-			machineType: "n1-standard-8",
-			want:        "n1",
-		},
-		"n2": {
-			machineType: "n2-standard-8",
-			want:        "n2",
-		},
-		"n2-bad": {
-			machineType: "n2_standard",
-			want:        "",
-		},
-		"n2d": {
-			machineType: "n2d-standard-8",
-			want:        "n2d",
-		},
-		"e1": {
-			machineType: "e2-standard-8",
-			want:        "e2",
-		},
-		"g1": {
-			machineType: "g1-standard-8",
-			want:        "g1",
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			if got := getMachineFamily(test.machineType); got != test.want {
-				t.Errorf("stripOutKeyFromDescription() = %v, want %v", got, test.want)
-			}
-		})
-	}
-}
-
 // development tests: Following tests are meant to be run locally and not suited for CI
 // If you need this tests for debugging purposes please run `TestGenerateTestFiles` first
 // and then you can run the rest of tests as needed.
@@ -166,36 +59,9 @@ func Test_GetMachineFamily(t *testing.T) {
 // enter here the project ID, where you want the collector be run.
 var projectUnderTest = "<put project id here>"
 
-func TestGenerateTestFiles(t *testing.T) {
-	// todo: put this into a go gen step -> https://go.dev/blog/generate
-	t.Skip("Test only to produce local test files. Comment this line to execute test.")
-	serviceName, _ := collector.GetServiceName()
-	skus := collector.GetPricing(serviceName)
-	jsonData, err := json.Marshal(skus)
-	if err != nil {
-		fmt.Println("Error:", err)
-		return
-	}
-	file, err := os.OpenFile("testdata/all-products.json", os.O_WRONLY|os.O_CREATE, 0644)
-	if err != nil {
-		fmt.Println("Error opening file:", err)
-		return
-	}
-	defer file.Close() // defer closing the file until the function exits
-
-	// Write some data to the file
-	_, err = file.Write(jsonData)
-	if err != nil {
-		fmt.Println("Error writing to file:", err)
-		return
-	}
-
-	fmt.Println("Data written to file successfully.")
-}
-
 func Test_GetCostsOfInstances(t *testing.T) {
 	t.Skip("Local only test. Comment this line to execute test.")
-	instances, err := collector.ListInstances(projectUnderTest)
+	instances, err := ListInstances(projectUnderTest, collector.computeService)
 	if err != nil {
 		t.Errorf("Error listing clusters: %s", err)
 	}
@@ -228,7 +94,7 @@ func Test_GetCostsOfInstances(t *testing.T) {
 
 func TestGetPriceForOneMachine(t *testing.T) {
 	t.Skip("Local only test. Comment this line to execute test.")
-	instances, err := collector.ListInstances(projectUnderTest)
+	instances, err := ListInstances(projectUnderTest, collector.computeService)
 	file, err := os.Open("testdata/all-products.json")
 	if err != nil {
 		fmt.Printf("Error opening file: %s", err)
@@ -252,7 +118,7 @@ func TestGetPriceForOneMachine(t *testing.T) {
 
 func TestListInstances(t *testing.T) {
 	t.Skip("Local only test. Comment this line to execute test.")
-	instances, err := collector.ListInstances(projectUnderTest)
+	instances, err := ListInstances(projectUnderTest, collector.computeService)
 	if err != nil {
 		t.Errorf("Error listing clusters: %s", err)
 	}
@@ -285,6 +151,7 @@ func TestNewMachineSpec(t *testing.T) {
 				MachineType:  "abc-def",
 				Family:       "abc",
 				SpotInstance: false,
+				PriceTier:    "ondemand",
 			},
 		},
 		"machine type with no value": {
@@ -303,6 +170,7 @@ func TestNewMachineSpec(t *testing.T) {
 				MachineType:  "",
 				Family:       "",
 				SpotInstance: false,
+				PriceTier:    "ondemand",
 			},
 		},
 		"spot instance": {
@@ -321,6 +189,7 @@ func TestNewMachineSpec(t *testing.T) {
 				MachineType:  "abc-def",
 				Family:       "abc",
 				SpotInstance: true,
+				PriceTier:    "spot",
 			},
 		},
 	}
@@ -330,183 +199,6 @@ func TestNewMachineSpec(t *testing.T) {
 			require.Equal(t, got, test.want)
 		})
 	}
-}
-
-type fakeCloudCatalogServer struct {
-	billingpb.UnimplementedCloudCatalogServer
-}
-
-func (s *fakeCloudCatalogServer) ListServices(ctx context.Context, req *billingpb.ListServicesRequest) (*billingpb.ListServicesResponse, error) {
-	return &billingpb.ListServicesResponse{
-		Services: []*billingpb.Service{
-			{
-				DisplayName: "Compute Engine",
-				Name:        "compute-engine",
-			},
-		},
-	}, nil
-}
-
-func (s *fakeCloudCatalogServer) ListSkus(ctx context.Context, req *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
-	return &billingpb.ListSkusResponse{
-		Skus: []*billingpb.Sku{
-			{
-				Name:           "test",
-				Description:    "N1 Predefined Instance Core running in Americas",
-				ServiceRegions: []string{"us-central1"},
-				PricingInfo: []*billingpb.PricingInfo{
-					{
-						PricingExpression: &billingpb.PricingExpression{
-							TieredRates: []*billingpb.PricingExpression_TierRate{
-								{
-									UnitPrice: &money.Money{
-										CurrencyCode: "USD",
-										Nanos:        1e9,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			{
-				Name:           "test2",
-				Description:    "N1 Predefined Instance Ram running in Americas",
-				ServiceRegions: []string{"us-central1"},
-				PricingInfo: []*billingpb.PricingInfo{
-					{
-						PricingExpression: &billingpb.PricingExpression{
-							TieredRates: []*billingpb.PricingExpression_TierRate{
-								{
-									UnitPrice: &money.Money{
-										CurrencyCode: "USD",
-										Nanos:        1e9,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			{
-				Name:           "test-spot",
-				Description:    "Spot Preemptible N1 Instance Core running in Americas",
-				ServiceRegions: []string{"us-central1"},
-				PricingInfo: []*billingpb.PricingInfo{
-					{
-						PricingExpression: &billingpb.PricingExpression{
-							TieredRates: []*billingpb.PricingExpression_TierRate{
-								{
-									UnitPrice: &money.Money{
-										CurrencyCode: "USD",
-										Nanos:        1e9,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			{
-				Name:           "test2-spot",
-				Description:    "Spot Preemptible N1 Instance Ram running in Americas",
-				ServiceRegions: []string{"us-central1"},
-				PricingInfo: []*billingpb.PricingInfo{
-					{
-						PricingExpression: &billingpb.PricingExpression{
-							TieredRates: []*billingpb.PricingExpression_TierRate{
-								{
-									UnitPrice: &money.Money{
-										CurrencyCode: "USD",
-										Nanos:        1e9,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			{
-				Name:           "test",
-				Description:    "N2 Predefined Instance Core running in Americas",
-				ServiceRegions: []string{"us-central1"},
-				PricingInfo: []*billingpb.PricingInfo{
-					{
-						PricingExpression: &billingpb.PricingExpression{
-							TieredRates: []*billingpb.PricingExpression_TierRate{
-								{
-									UnitPrice: &money.Money{
-										CurrencyCode: "USD",
-										Nanos:        1e9,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			{
-				Name:           "test2",
-				Description:    "N2 Predefined Instance Ram running in Americas",
-				ServiceRegions: []string{"us-central1"},
-				PricingInfo: []*billingpb.PricingInfo{
-					{
-						PricingExpression: &billingpb.PricingExpression{
-							TieredRates: []*billingpb.PricingExpression_TierRate{
-								{
-									UnitPrice: &money.Money{
-										CurrencyCode: "USD",
-										Nanos:        1e9,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}, nil
-}
-
-type fakeCloudCatalogServerSlimResults struct {
-	billingpb.UnimplementedCloudCatalogServer
-}
-
-func (s *fakeCloudCatalogServerSlimResults) ListServices(ctx context.Context, req *billingpb.ListServicesRequest) (*billingpb.ListServicesResponse, error) {
-	return &billingpb.ListServicesResponse{
-		Services: []*billingpb.Service{
-			{
-				DisplayName: "Compute Engine",
-				Name:        "compute-engine",
-			},
-		},
-	}, nil
-}
-
-func (s *fakeCloudCatalogServerSlimResults) ListSkus(ctx context.Context, req *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
-	return &billingpb.ListSkusResponse{
-		Skus: []*billingpb.Sku{
-			{
-				Name:           "test",
-				Description:    "N1 Predefined Instance Core running in Americas",
-				ServiceRegions: []string{"us-central1"},
-				PricingInfo: []*billingpb.PricingInfo{
-					{
-						PricingExpression: &billingpb.PricingExpression{
-							TieredRates: []*billingpb.PricingExpression_TierRate{
-								{
-									UnitPrice: &money.Money{
-										CurrencyCode: "USD",
-										Nanos:        1e9,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}, nil
 }
 
 func TestCollector_Collect(t *testing.T) {
@@ -548,7 +240,7 @@ func TestCollector_Collect(t *testing.T) {
 					MetricType: prometheus.GaugeValue,
 				},
 				{
-					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gibyte_hour",
+					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n1",
 						"instance":     "test-n1",
@@ -574,7 +266,7 @@ func TestCollector_Collect(t *testing.T) {
 					MetricType: prometheus.GaugeValue,
 				},
 				{
-					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gibyte_hour",
+					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n2",
 						"instance":     "test-n2",
@@ -600,7 +292,7 @@ func TestCollector_Collect(t *testing.T) {
 					MetricType: prometheus.GaugeValue,
 				},
 				{
-					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gibyte_hour",
+					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n1",
 						"instance":     "test-n1-spot",
@@ -627,7 +319,7 @@ func TestCollector_Collect(t *testing.T) {
 					MetricType: prometheus.GaugeValue,
 				},
 				{
-					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gibyte_hour",
+					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n1",
 						"instance":     "test-n1",
@@ -653,7 +345,7 @@ func TestCollector_Collect(t *testing.T) {
 					MetricType: prometheus.GaugeValue,
 				},
 				{
-					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gibyte_hour",
+					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n2",
 						"instance":     "test-n2",
@@ -679,7 +371,7 @@ func TestCollector_Collect(t *testing.T) {
 					MetricType: prometheus.GaugeValue,
 				},
 				{
-					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gibyte_hour",
+					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n1",
 						"instance":     "test-n1-spot",
@@ -746,7 +438,7 @@ func TestCollector_Collect(t *testing.T) {
 				}
 			}()
 
-			billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudCatalogServer{})
+			billingpb.RegisterCloudCatalogServer(gsrv, &billing.FakeCloudCatalogServer{})
 			cloudCatalogClient, err := billingv1.NewCloudCatalogClient(context.Background(),
 				option.WithEndpoint(l.Addr().String()),
 				option.WithoutAuthentication(),
@@ -834,7 +526,7 @@ func TestCollector_GetPricing(t *testing.T) {
 			}
 		}()
 
-		billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudCatalogServer{})
+		billingpb.RegisterCloudCatalogServer(gsrv, &billing.FakeCloudCatalogServer{})
 		cloudCatalagClient, err := billingv1.NewCloudCatalogClient(context.Background(),
 			option.WithEndpoint(l.Addr().String()),
 			option.WithoutAuthentication(),
@@ -872,7 +564,7 @@ func TestCollector_GetPricing(t *testing.T) {
 				t.Errorf("failed to serve: %v", err)
 			}
 		}()
-		billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudCatalogServerSlimResults{})
+		billingpb.RegisterCloudCatalogServer(gsrv, &billing.FakeCloudCatalogServerSlimResults{})
 		cloudCatalogClient, _ := billingv1.NewCloudCatalogClient(context.Background(),
 			option.WithEndpoint(l.Addr().String()),
 			option.WithoutAuthentication(),

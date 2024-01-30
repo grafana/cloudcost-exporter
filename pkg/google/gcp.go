@@ -17,6 +17,7 @@ import (
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/google/compute"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
+	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
@@ -79,16 +80,11 @@ func New(config *Config) (*GCP, error) {
 		var collector provider.Collector
 		switch strings.ToUpper(service) {
 		case "GCS":
-			serviceName, err := gcs.GetServiceNameByReadableName(ctx, cloudCatalogClient, "Cloud Storage")
-			if err != nil {
-				return nil, fmt.Errorf("could not get service name for GCS: %v", err)
-			}
 			collector, err = gcs.New(&gcs.Config{
 				ProjectId:       config.ProjectId,
 				Projects:        config.Projects,
 				ScrapeInterval:  config.ScrapeInterval,
 				DefaultDiscount: config.DefaultDiscount,
-				ServiceName:     serviceName,
 			}, cloudCatalogClient, regionsClient, storageClient)
 			if err != nil {
 				log.Printf("Error creating GCS collector: %s", err)
@@ -96,6 +92,11 @@ func New(config *Config) (*GCP, error) {
 			}
 		case "COMPUTE":
 			collector = compute.New(&compute.Config{
+				Projects:       config.Projects,
+				ScrapeInterval: config.ScrapeInterval,
+			}, computeService, cloudCatalogClient)
+		case "GKE":
+			collector = gke.New(&gke.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
 			}, computeService, cloudCatalogClient)
