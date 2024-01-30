@@ -18,9 +18,11 @@ permissions:
 env:
   REGISTRY_IMAGE: grafana/cloudcost-exporter
   # Docker image tags. See https://github.com/docker/metadata-action for format
+  #     type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+  #    type=sha,prefix={{branch}}-,format=short,enable=${{ github.ref == 'refs/heads/main' }}
   TAGS_CONFIG: |
-    type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-    type=sha,prefix={{branch}}-,format=short,enable=${{ github.ref == 'refs/heads/main' }}
+    type=raw,value=latest,enable=true
+    type=sha,prefix={{branch}}-,format=short,enable=true
     type=semver,pattern={{version}}
 
 jobs:
