@@ -22,7 +22,7 @@ env:
   #    type=sha,prefix={{branch}}-,format=short,enable=${{ github.ref == 'refs/heads/main' }}
   TAGS_CONFIG: |
     type=raw,value=latest,enable=true
-    type=sha,prefix={{branch}}-,format=short,enable=true
+    type=sha,prefix=test-,format=short,enable=true
     type=semver,pattern={{version}}
 
 jobs:
