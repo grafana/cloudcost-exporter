@@ -229,9 +229,9 @@ func getDataFromSku(sku *billingpb.Sku) ([]*ParsedSkuData, error) {
 				getResourceType(matchMap["resource"]))
 			parsedSkus = append(parsedSkus, parsedSku)
 		}
-
+		return parsedSkus, nil
 	}
-	return parsedSkus, nil
+	return nil, SkuNotParsable
 }
 
 // getResourceType will return the resource type for a given resource.
