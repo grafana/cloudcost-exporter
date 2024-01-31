@@ -131,7 +131,34 @@ func TestCollector_Collect(t *testing.T) {
 					Value:      1,
 					MetricType: prometheus.GaugeValue,
 				},
-
+				{
+					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
+					Labels: map[string]string{
+						"family":       "n2",
+						"instance":     "test-n2-us-east1",
+						"machine_type": "n2-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing",
+						"region":       "us-east1",
+						"cluster_name": "test",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_gcp_gke_instance_memory_usd_per_gib_hour",
+					Labels: map[string]string{
+						"family":       "n2",
+						"instance":     "test-n2-us-east1",
+						"machine_type": "n2-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing",
+						"region":       "us-east1",
+						"cluster_name": "test",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
 				{
 					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
@@ -181,6 +208,20 @@ func TestCollector_Collect(t *testing.T) {
 						"instance":     "test-n2",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
+						"project":      "testing-1",
+						"region":       "us-central1",
+						"cluster_name": "test",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
+					Labels: map[string]string{
+						"family":       "n1",
+						"instance":     "test-n1-spot",
+						"machine_type": "n1-slim",
+						"price_tier":   "spot",
 						"project":      "testing-1",
 						"region":       "us-central1",
 						"cluster_name": "test",
