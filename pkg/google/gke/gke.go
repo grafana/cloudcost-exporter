@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
@@ -82,41 +83,67 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	}
 
 	for _, project := range c.Projects {
-		instances, err := gcpCompute.ListInstances(project, c.computeService)
+		zones, err := c.computeService.Zones.List(project).Do()
 		if err != nil {
 			return err
 		}
-		for _, instance := range instances {
-			clusterName := instance.GetClusterName()
-			// We skip instances that do not have a clusterName because they are not associated with an GKE cluster
-			if clusterName == "" {
+		wg := sync.WaitGroup{}
+		wg.Add(len(zones.Items))
+		results := make(chan []*gcpCompute.MachineSpec, len(zones.Items))
+		for _, zone := range zones.Items {
+			go func(zone *compute.Zone) {
+				defer wg.Done()
+				instances, err := gcpCompute.ListInstancesInZone(project, zone.Name, c.computeService)
+				if err != nil {
+					log.Printf("error listing instances in zone %s: %v", zone.Name, err)
+					results <- nil
+					return
+				}
+				results <- instances
+			}(zone)
+		}
+
+		go func() {
+			wg.Wait()
+			close(results)
+		}()
+
+		for instances := range results {
+			if instances == nil {
 				continue
 			}
-			labelValues := []string{
-				clusterName,
-				instance.Instance,
-				instance.Region,
-				instance.Family,
-				instance.MachineType,
-				project,
-				instance.PriceTier,
+			for _, instance := range instances {
+				clusterName := instance.GetClusterName()
+				// We skip instances that do not have a clusterName because they are not associated with an GKE cluster
+				if clusterName == "" {
+					continue
+				}
+				labelValues := []string{
+					clusterName,
+					instance.Instance,
+					instance.Region,
+					instance.Family,
+					instance.MachineType,
+					project,
+					instance.PriceTier,
+				}
+				cpuCost, ramCost, err := c.PricingMap.GetCostOfInstance(instance)
+				if err != nil {
+					return err
+				}
+				ch <- prometheus.MustNewConstMetric(
+					gkeNodeCPUHourlyCostDesc,
+					prometheus.GaugeValue,
+					cpuCost,
+					labelValues...,
+				)
+				ch <- prometheus.MustNewConstMetric(
+					gkeNodeMemoryHourlyCostDesc,
+					prometheus.GaugeValue,
+					ramCost,
+					labelValues...,
+				)
 			}
-			cpuCost, ramCost, err := c.PricingMap.GetCostOfInstance(instance)
-			if err != nil {
-				return err
-			}
-			ch <- prometheus.MustNewConstMetric(
-				gkeNodeCPUHourlyCostDesc,
-				prometheus.GaugeValue,
-				cpuCost,
-				labelValues...,
-			)
-			ch <- prometheus.MustNewConstMetric(
-				gkeNodeMemoryHourlyCostDesc,
-				prometheus.GaugeValue,
-				ramCost,
-				labelValues...,
-			)
 		}
 	}
 	return nil

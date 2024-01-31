@@ -118,6 +118,33 @@ func ListInstances(projectID string, c *compute.Service) ([]*MachineSpec, error)
 	return allInstances, nil
 }
 
+func ListInstancesInZone(projectID, zone string, c *compute.Service) ([]*MachineSpec, error) {
+	var allInstances []*MachineSpec
+	var nextPageToken string
+	log.Printf("Listing instances for project %s in zone %s", projectID, zone)
+	now := time.Now()
+
+	for {
+		instances, err := c.Instances.List(projectID, zone).
+			PageToken(nextPageToken).
+			Do()
+		if err != nil {
+			log.Printf("Error listing instances in zone %s: %s", zone, err)
+			return nil, fmt.Errorf("%w: %s", ListInstancesError, err.Error())
+		}
+		for _, instance := range instances.Items {
+			allInstances = append(allInstances, NewMachineSpec(instance))
+		}
+		nextPageToken = instances.NextPageToken
+		if nextPageToken == "" {
+			break
+		}
+	}
+	log.Printf("Finished listing instances in zone %s in %s", zone, time.Since(now))
+
+	return allInstances, nil
+}
+
 func (c *Collector) Register(registry provider.Registry) error {
 	log.Printf("Registering %s", c.Name())
 	return nil
