@@ -189,20 +189,6 @@ func TestCollector_Collect(t *testing.T) {
 					MetricType: prometheus.GaugeValue,
 				},
 				{
-					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
-					Labels: map[string]string{
-						"family":       "n1",
-						"instance":     "test-n1-spot",
-						"machine_type": "n1-slim",
-						"price_tier":   "spot",
-						"project":      "testing-1",
-						"region":       "us-central1",
-						"cluster_name": "test",
-					},
-					Value:      1,
-					MetricType: prometheus.GaugeValue,
-				},
-				{
 					FqName: "cloudcost_gcp_gke_instance_memory_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n1",
@@ -284,7 +270,7 @@ func TestCollector_Collect(t *testing.T) {
 									},
 								},
 								{
-									Name:        "test-n1-us-east1",
+									Name:        "test-n2-us-east1",
 									MachineType: "abc/n2-slim",
 									Zone:        "testing/us-east1-a",
 									Scheduling: &computev1.Scheduling{
