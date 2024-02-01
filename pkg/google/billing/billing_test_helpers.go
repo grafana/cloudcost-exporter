@@ -140,9 +140,9 @@ func (s *FakeCloudCatalogServer) ListSkus(ctx context.Context, req *billingpb.Li
 				},
 			},
 			{
-				Name:           "us-east1",
+				Name:           "us-east1 as part of us-central-1 compute",
 				Description:    "N2 Predefined Instance Core running in Americas",
-				ServiceRegions: []string{"us-east1"},
+				ServiceRegions: []string{"us-central-1", "us-east1"},
 				PricingInfo: []*billingpb.PricingInfo{
 					{
 						PricingExpression: &billingpb.PricingExpression{
@@ -159,9 +159,9 @@ func (s *FakeCloudCatalogServer) ListSkus(ctx context.Context, req *billingpb.Li
 				},
 			},
 			{
-				Name:           "us-east1",
+				Name:           "us-east1 as part of us-central-1 memory",
 				Description:    "N2 Predefined Instance Ram running in Americas",
-				ServiceRegions: []string{"us-east1"},
+				ServiceRegions: []string{"us-central-1", "us-east1"},
 				PricingInfo: []*billingpb.PricingInfo{
 					{
 						PricingExpression: &billingpb.PricingExpression{

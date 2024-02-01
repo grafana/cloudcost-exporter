@@ -43,7 +43,6 @@ func GetPricing(ctx context.Context, billingService *billingv1.CloudCatalogClien
 			}
 			// keep going if we get an error
 		}
-
 		// We don't include licensing skus in our pricing map
 		if !strings.Contains(strings.ToLower(sku.Description), "licensing") {
 			skus = append(skus, sku)

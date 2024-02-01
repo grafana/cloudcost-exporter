@@ -153,7 +153,6 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 			return nil, err
 		}
 		for _, data := range rawData {
-
 			if _, ok := pricingMap.Regions[data.Region]; !ok {
 				pricingMap.Regions[data.Region] = NewMachineTypePricing()
 			}
