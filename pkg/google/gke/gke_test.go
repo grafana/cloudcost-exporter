@@ -3,7 +3,6 @@ package gke
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -274,7 +273,6 @@ func TestCollector_Collect(t *testing.T) {
 				},
 			},
 			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				fmt.Println(r.URL.Path)
 				var buf interface{}
 				switch r.URL.Path {
 				case "/projects/testing/zones/us-central1-a/instances", "/projects/testing-1/zones/us-central1-a/instances":

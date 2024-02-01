@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
@@ -174,35 +175,61 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	}
 	ch <- prometheus.MustNewConstMetric(NextScrapeDesc, prometheus.GaugeValue, float64(c.NextScrape.Unix()))
 	for _, project := range c.Projects {
-		instances, err := ListInstances(project, c.computeService)
+		zones, err := c.computeService.Zones.List(project).Do()
 		if err != nil {
+			log.Printf("Error listing zones: %s", err)
 			return 0
 		}
-		for _, instance := range instances {
-			cpuCost, ramCost, err := c.PricingMap.GetCostOfInstance(instance)
-			if err != nil {
-				log.Printf("Could not get cost of instance(%s): %s", instance.Instance, err)
+		wg := sync.WaitGroup{}
+		wg.Add(len(zones.Items))
+		results := make(chan []*MachineSpec, len(zones.Items))
+		for _, zone := range zones.Items {
+			go func(zone *compute.Zone) {
+				defer wg.Done()
+				instances, err := ListInstancesInZone(project, zone.Name, c.computeService)
+				if err != nil {
+					log.Printf("Error listing instances in zone %s: %s", zone.Name, err)
+					results <- nil
+					return
+				}
+				results <- instances
+			}(zone)
+		}
+		go func() {
+			wg.Wait()
+			close(results)
+		}()
+
+		for instances := range results {
+			if instances == nil {
 				continue
 			}
-			ch <- prometheus.MustNewConstMetric(
-				InstanceCPUHourlyCostDesc,
-				prometheus.GaugeValue,
-				cpuCost,
-				instance.Instance,
-				instance.Region,
-				instance.Family,
-				instance.MachineType,
-				project,
-				instance.PriceTier)
-			ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc,
-				prometheus.GaugeValue,
-				ramCost,
-				instance.Instance,
-				instance.Region,
-				instance.Family,
-				instance.MachineType,
-				project,
-				instance.PriceTier)
+			for _, instance := range instances {
+				cpuCost, ramCost, err := c.PricingMap.GetCostOfInstance(instance)
+				if err != nil {
+					log.Printf("Could not get cost of instance(%s): %s", instance.Instance, err)
+					continue
+				}
+				ch <- prometheus.MustNewConstMetric(
+					InstanceCPUHourlyCostDesc,
+					prometheus.GaugeValue,
+					cpuCost,
+					instance.Instance,
+					instance.Region,
+					instance.Family,
+					instance.MachineType,
+					project,
+					instance.PriceTier)
+				ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc,
+					prometheus.GaugeValue,
+					ramCost,
+					instance.Instance,
+					instance.Region,
+					instance.Family,
+					instance.MachineType,
+					project,
+					instance.PriceTier)
+			}
 		}
 	}
 	log.Printf("Finished collecting Compute metrics in %s", time.Since(start))
