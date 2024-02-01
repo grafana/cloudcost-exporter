@@ -5,7 +5,7 @@ go 1.20
 require (
 	cloud.google.com/go/billing v1.18.1
 	cloud.google.com/go/compute v1.23.3
-	cloud.google.com/go/storage v1.36.0
+	cloud.google.com/go/storage v1.37.0
 	github.com/aws/aws-sdk-go-v2 v1.24.1
 	github.com/aws/aws-sdk-go-v2/config v1.26.6
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.33.6
@@ -22,7 +22,7 @@ require (
 )
 
 require (
-	cloud.google.com/go v0.111.0 // indirect
+	cloud.google.com/go v0.112.0 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	cloud.google.com/go/iam v1.1.5 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.16.16 // indirect
@@ -64,7 +64,6 @@ require (
 	golang.org/x/sys v0.16.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
-	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240122161410-6c6643bf1457 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240116215550-a9fa1716bcac // indirect
