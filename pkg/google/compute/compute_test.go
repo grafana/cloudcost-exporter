@@ -3,7 +3,6 @@ package compute
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -50,84 +49,6 @@ func TestMain(m *testing.M) {
 	}, computeService, billingService)
 	code := m.Run()
 	os.Exit(code)
-}
-
-// development tests: Following tests are meant to be run locally and not suited for CI
-// If you need this tests for debugging purposes please run `TestGenerateTestFiles` first
-// and then you can run the rest of tests as needed.
-
-// enter here the project ID, where you want the collector be run.
-var projectUnderTest = "<put project id here>"
-
-func Test_GetCostsOfInstances(t *testing.T) {
-	t.Skip("Local only test. Comment this line to execute test.")
-	instances, err := ListInstances(projectUnderTest, collector.computeService)
-	if err != nil {
-		t.Errorf("Error listing clusters: %s", err)
-	}
-
-	file, err := os.Open("testdata/all-products.json")
-	if err != nil {
-		fmt.Println("Error opening file:", err)
-		return
-	}
-	defer file.Close() // defer closing the file until the function exits
-
-	var pricing []*billingpb.Sku
-	err = json.NewDecoder(file).Decode(&pricing)
-	if err != nil {
-		t.Errorf("Error decoding JSON: %s", err)
-		return
-	}
-	pricingMap, err := GeneratePricingMap(pricing)
-	if err != nil {
-		t.Errorf("Error generating pricing map: %s", err)
-	}
-	for _, instance := range instances {
-		cpuCost, ramCost, err := pricingMap.GetCostOfInstance(instance)
-		if err != nil {
-			fmt.Printf("%v: No costs found for this instance\n", instance.Instance)
-		}
-		fmt.Printf("%v: cpu hourly cost:%f ram hourly cost:%f \n", instance.Instance, cpuCost, ramCost)
-	}
-}
-
-func TestGetPriceForOneMachine(t *testing.T) {
-	t.Skip("Local only test. Comment this line to execute test.")
-	instances, err := ListInstances(projectUnderTest, collector.computeService)
-	file, err := os.Open("testdata/all-products.json")
-	if err != nil {
-		fmt.Printf("Error opening file: %s", err)
-		return
-	}
-	defer file.Close() // defer closing the file until the function exits
-
-	// Read the file into memory
-	var pricing []*billingpb.Sku
-	err = json.NewDecoder(file).Decode(&pricing)
-	if err != nil {
-		t.Errorf("Error decoding JSON: %s", err)
-		return
-	}
-	pricingMap, err := GeneratePricingMap(pricing)
-	if err != nil {
-		t.Errorf("Error generating pricing map: %s", err)
-	}
-	fmt.Printf("%v,%v", instances, pricingMap)
-}
-
-func TestListInstances(t *testing.T) {
-	t.Skip("Local only test. Comment this line to execute test.")
-	instances, err := ListInstances(projectUnderTest, collector.computeService)
-	if err != nil {
-		t.Errorf("Error listing clusters: %s", err)
-	}
-	if len(instances) == 0 {
-		t.Errorf("Expected at least one cluster, but got none")
-	}
-	for _, instance := range instances {
-		fmt.Printf("%v:%s\n", instance.Instance, instance.Family)
-	}
 }
 
 func TestNewMachineSpec(t *testing.T) {

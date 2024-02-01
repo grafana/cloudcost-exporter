@@ -93,32 +93,7 @@ func (c *Collector) Name() string {
 	return "Compute Collector"
 }
 
-// ListInstances will collect all the node instances that are running within a GCP project.
-func ListInstances(projectID string, c *compute.Service) ([]*MachineSpec, error) {
-	var allInstances []*MachineSpec
-	var nextPageToken string
-	log.Printf("Listing instances for project %s", projectID)
-	for {
-		instances, err := c.Instances.AggregatedList(projectID).
-			PageToken(nextPageToken).
-			Do()
-		if err != nil {
-			log.Printf("Error listing instance templates: %s", err)
-			return nil, fmt.Errorf("%w: %s", ListInstancesError, err.Error())
-		}
-		for _, instanceList := range instances.Items {
-			for _, instance := range instanceList.Instances {
-				allInstances = append(allInstances, NewMachineSpec(instance))
-			}
-		}
-		nextPageToken = instances.NextPageToken
-		if nextPageToken == "" {
-			break
-		}
-	}
-	return allInstances, nil
-}
-
+// ListInstancesInZone will list all instances in a given zone and return a slice of MachineSpecs
 func ListInstancesInZone(projectID, zone string, c *compute.Service) ([]*MachineSpec, error) {
 	var allInstances []*MachineSpec
 	var nextPageToken string
