@@ -3,7 +3,6 @@ package compute
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -50,84 +49,6 @@ func TestMain(m *testing.M) {
 	}, computeService, billingService)
 	code := m.Run()
 	os.Exit(code)
-}
-
-// development tests: Following tests are meant to be run locally and not suited for CI
-// If you need this tests for debugging purposes please run `TestGenerateTestFiles` first
-// and then you can run the rest of tests as needed.
-
-// enter here the project ID, where you want the collector be run.
-var projectUnderTest = "<put project id here>"
-
-func Test_GetCostsOfInstances(t *testing.T) {
-	t.Skip("Local only test. Comment this line to execute test.")
-	instances, err := ListInstances(projectUnderTest, collector.computeService)
-	if err != nil {
-		t.Errorf("Error listing clusters: %s", err)
-	}
-
-	file, err := os.Open("testdata/all-products.json")
-	if err != nil {
-		fmt.Println("Error opening file:", err)
-		return
-	}
-	defer file.Close() // defer closing the file until the function exits
-
-	var pricing []*billingpb.Sku
-	err = json.NewDecoder(file).Decode(&pricing)
-	if err != nil {
-		t.Errorf("Error decoding JSON: %s", err)
-		return
-	}
-	pricingMap, err := GeneratePricingMap(pricing)
-	if err != nil {
-		t.Errorf("Error generating pricing map: %s", err)
-	}
-	for _, instance := range instances {
-		cpuCost, ramCost, err := pricingMap.GetCostOfInstance(instance)
-		if err != nil {
-			fmt.Printf("%v: No costs found for this instance\n", instance.Instance)
-		}
-		fmt.Printf("%v: cpu hourly cost:%f ram hourly cost:%f \n", instance.Instance, cpuCost, ramCost)
-	}
-}
-
-func TestGetPriceForOneMachine(t *testing.T) {
-	t.Skip("Local only test. Comment this line to execute test.")
-	instances, err := ListInstances(projectUnderTest, collector.computeService)
-	file, err := os.Open("testdata/all-products.json")
-	if err != nil {
-		fmt.Printf("Error opening file: %s", err)
-		return
-	}
-	defer file.Close() // defer closing the file until the function exits
-
-	// Read the file into memory
-	var pricing []*billingpb.Sku
-	err = json.NewDecoder(file).Decode(&pricing)
-	if err != nil {
-		t.Errorf("Error decoding JSON: %s", err)
-		return
-	}
-	pricingMap, err := GeneratePricingMap(pricing)
-	if err != nil {
-		t.Errorf("Error generating pricing map: %s", err)
-	}
-	fmt.Printf("%v,%v", instances, pricingMap)
-}
-
-func TestListInstances(t *testing.T) {
-	t.Skip("Local only test. Comment this line to execute test.")
-	instances, err := ListInstances(projectUnderTest, collector.computeService)
-	if err != nil {
-		t.Errorf("Error listing clusters: %s", err)
-	}
-	if len(instances) == 0 {
-		t.Errorf("Expected at least one cluster, but got none")
-	}
-	for _, instance := range instances {
-		fmt.Printf("%v:%s\n", instance.Instance, instance.Family)
-	}
 }
 
 func TestNewMachineSpec(t *testing.T) {
@@ -304,7 +225,32 @@ func TestCollector_Collect(t *testing.T) {
 					Value:      1,
 					MetricType: prometheus.GaugeValue,
 				},
-
+				{
+					FqName: "cloudcost_gcp_compute_instance_cpu_usd_per_core_hour",
+					Labels: map[string]string{
+						"family":       "n2",
+						"instance":     "test-n2-us-east1",
+						"machine_type": "n2-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing",
+						"region":       "us-east1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
+					Labels: map[string]string{
+						"family":       "n2",
+						"instance":     "test-n2-us-east1",
+						"machine_type": "n2-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing",
+						"region":       "us-east1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
 				{
 					FqName: "cloudcost_gcp_compute_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
@@ -379,43 +325,84 @@ func TestCollector_Collect(t *testing.T) {
 						"price_tier":   "spot",
 						"project":      "testing-1",
 						"region":       "us-central1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_gcp_compute_instance_cpu_usd_per_core_hour",
+					Labels: map[string]string{
+						"family":       "n2",
+						"instance":     "test-n2-us-east1",
+						"machine_type": "n2-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing-1",
+						"region":       "us-east1",
+					},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
+					Labels: map[string]string{
+						"family":       "n2",
+						"instance":     "test-n2-us-east1",
+						"machine_type": "n2-slim",
+						"price_tier":   "ondemand",
+						"project":      "testing-1",
+						"region":       "us-east1",
 					},
 					Value:      1,
 					MetricType: prometheus.GaugeValue,
 				},
 			},
 			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				buf := &compute.InstanceAggregatedList{
-					Items: map[string]compute.InstancesScopedList{
-						"projects/testing/zones/us-central1-a": {
-							Instances: []*compute.Instance{
-								{
-									Name:        "test-n1",
-									MachineType: "abc/n1-slim",
-									Zone:        "testing/us-central1-a",
-									Scheduling: &compute.Scheduling{
-										ProvisioningModel: "test",
-									},
+				var buf interface{}
+				switch r.URL.Path {
+				case "/projects/testing/zones/us-central1-a/instances", "/projects/testing-1/zones/us-central1-a/instances":
+					buf = &computev1.InstanceList{
+						Items: []*computev1.Instance{
+							{
+								Name:        "test-n1",
+								MachineType: "abc/n1-slim",
+								Zone:        "testing/us-central1-a",
+								Scheduling: &computev1.Scheduling{
+									ProvisioningModel: "test",
 								},
-								{
-									Name:        "test-n2",
-									MachineType: "abc/n2-slim",
-									Zone:        "testing/us-central1-a",
-									Scheduling: &compute.Scheduling{
-										ProvisioningModel: "test",
-									},
+							},
+							{
+								Name:        "test-n2",
+								MachineType: "abc/n2-slim",
+								Zone:        "testing/us-central1-a",
+								Scheduling: &computev1.Scheduling{
+									ProvisioningModel: "test",
 								},
-								{
-									Name:        "test-n1-spot",
-									MachineType: "abc/n1-slim",
-									Zone:        "testing/us-central1-a",
-									Scheduling: &compute.Scheduling{
-										ProvisioningModel: "SPOT",
-									},
+							},
+							{
+								Name:        "test-n1-spot",
+								MachineType: "abc/n1-slim",
+								Zone:        "testing/us-central1-a",
+								Scheduling: &computev1.Scheduling{
+									ProvisioningModel: "SPOT",
+								},
+							},
+							{
+								Name:        "test-n2-us-east1",
+								MachineType: "abc/n2-slim",
+								Zone:        "testing/us-east1-a",
+								Scheduling: &computev1.Scheduling{
+									ProvisioningModel: "test",
 								},
 							},
 						},
-					},
+					}
+				case "/projects/testing/zones", "/projects/testing-1/zones":
+					buf = &computev1.ZoneList{
+						Items: []*computev1.Zone{
+							{
+								Name: "us-central1-a",
+							}},
+					}
 				}
 				w.WriteHeader(http.StatusOK)
 				_ = json.NewEncoder(w).Encode(buf)
@@ -471,37 +458,52 @@ func TestCollector_Collect(t *testing.T) {
 
 func TestCollector_GetPricing(t *testing.T) {
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		buf := &compute.InstanceAggregatedList{
-			Items: map[string]compute.InstancesScopedList{
-				"projects/testing/zones/us-central1-a": {
-					Instances: []*compute.Instance{
-						{
-							Name:        "test-n1",
-							MachineType: "abc/n1-slim",
-							Zone:        "testing/us-central1-a",
-							Scheduling: &compute.Scheduling{
-								ProvisioningModel: "test",
-							},
+		var buf interface{}
+		switch r.URL.Path {
+		case "/projects/testing/zones/us-central1-a/instances", "/projects/testing-1/zones/us-central1-a/instances":
+			buf = &computev1.InstanceList{
+				Items: []*computev1.Instance{
+					{
+						Name:        "test-n1",
+						MachineType: "abc/n1-slim",
+						Zone:        "testing/us-central1-a",
+						Scheduling: &computev1.Scheduling{
+							ProvisioningModel: "test",
 						},
-						{
-							Name:        "test-n2",
-							MachineType: "abc/n2-slim",
-							Zone:        "testing/us-central1-a",
-							Scheduling: &compute.Scheduling{
-								ProvisioningModel: "test",
-							},
+					},
+					{
+						Name:        "test-n2",
+						MachineType: "abc/n2-slim",
+						Zone:        "testing/us-central1-a",
+						Scheduling: &computev1.Scheduling{
+							ProvisioningModel: "test",
 						},
-						{
-							Name:        "test-n1-spot",
-							MachineType: "abc/n1-slim",
-							Zone:        "testing/us-central1-a",
-							Scheduling: &compute.Scheduling{
-								ProvisioningModel: "SPOT",
-							},
+					},
+					{
+						Name:        "test-n1-spot",
+						MachineType: "abc/n1-slim",
+						Zone:        "testing/us-central1-a",
+						Scheduling: &computev1.Scheduling{
+							ProvisioningModel: "SPOT",
+						},
+					},
+					{
+						Name:        "test-n2-us-east1",
+						MachineType: "abc/n2-slim",
+						Zone:        "testing/us-east1-a",
+						Scheduling: &computev1.Scheduling{
+							ProvisioningModel: "test",
 						},
 					},
 				},
-			},
+			}
+		case "/projects/testing/zones", "/projects/testing-1/zones":
+			buf = &computev1.ZoneList{
+				Items: []*computev1.Zone{
+					{
+						Name: "us-central1-a",
+					}},
+			}
 		}
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(buf)

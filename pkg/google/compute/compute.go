@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
@@ -92,29 +93,31 @@ func (c *Collector) Name() string {
 	return "Compute Collector"
 }
 
-// ListInstances will collect all the node instances that are running within a GCP project.
-func ListInstances(projectID string, c *compute.Service) ([]*MachineSpec, error) {
+// ListInstancesInZone will list all instances in a given zone and return a slice of MachineSpecs
+func ListInstancesInZone(projectID, zone string, c *compute.Service) ([]*MachineSpec, error) {
 	var allInstances []*MachineSpec
 	var nextPageToken string
-	log.Printf("Listing instances for project %s", projectID)
+	log.Printf("Listing instances for project %s in zone %s", projectID, zone)
+	now := time.Now()
+
 	for {
-		instances, err := c.Instances.AggregatedList(projectID).
+		instances, err := c.Instances.List(projectID, zone).
 			PageToken(nextPageToken).
 			Do()
 		if err != nil {
-			log.Printf("Error listing instance templates: %s", err)
+			log.Printf("Error listing instances in zone %s: %s", zone, err)
 			return nil, fmt.Errorf("%w: %s", ListInstancesError, err.Error())
 		}
-		for _, instanceList := range instances.Items {
-			for _, instance := range instanceList.Instances {
-				allInstances = append(allInstances, NewMachineSpec(instance))
-			}
+		for _, instance := range instances.Items {
+			allInstances = append(allInstances, NewMachineSpec(instance))
 		}
 		nextPageToken = instances.NextPageToken
 		if nextPageToken == "" {
 			break
 		}
 	}
+	log.Printf("Finished listing instances in zone %s in %s", zone, time.Since(now))
+
 	return allInstances, nil
 }
 
@@ -147,35 +150,61 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	}
 	ch <- prometheus.MustNewConstMetric(NextScrapeDesc, prometheus.GaugeValue, float64(c.NextScrape.Unix()))
 	for _, project := range c.Projects {
-		instances, err := ListInstances(project, c.computeService)
+		zones, err := c.computeService.Zones.List(project).Do()
 		if err != nil {
+			log.Printf("Error listing zones: %s", err)
 			return 0
 		}
-		for _, instance := range instances {
-			cpuCost, ramCost, err := c.PricingMap.GetCostOfInstance(instance)
-			if err != nil {
-				log.Printf("Could not get cost of instance(%s): %s", instance.Instance, err)
+		wg := sync.WaitGroup{}
+		wg.Add(len(zones.Items))
+		results := make(chan []*MachineSpec, len(zones.Items))
+		for _, zone := range zones.Items {
+			go func(zone *compute.Zone) {
+				defer wg.Done()
+				instances, err := ListInstancesInZone(project, zone.Name, c.computeService)
+				if err != nil {
+					log.Printf("Error listing instances in zone %s: %s", zone.Name, err)
+					results <- nil
+					return
+				}
+				results <- instances
+			}(zone)
+		}
+		go func() {
+			wg.Wait()
+			close(results)
+		}()
+
+		for instances := range results {
+			if instances == nil {
 				continue
 			}
-			ch <- prometheus.MustNewConstMetric(
-				InstanceCPUHourlyCostDesc,
-				prometheus.GaugeValue,
-				cpuCost,
-				instance.Instance,
-				instance.Region,
-				instance.Family,
-				instance.MachineType,
-				project,
-				instance.PriceTier)
-			ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc,
-				prometheus.GaugeValue,
-				ramCost,
-				instance.Instance,
-				instance.Region,
-				instance.Family,
-				instance.MachineType,
-				project,
-				instance.PriceTier)
+			for _, instance := range instances {
+				cpuCost, ramCost, err := c.PricingMap.GetCostOfInstance(instance)
+				if err != nil {
+					log.Printf("Could not get cost of instance(%s): %s", instance.Instance, err)
+					continue
+				}
+				ch <- prometheus.MustNewConstMetric(
+					InstanceCPUHourlyCostDesc,
+					prometheus.GaugeValue,
+					cpuCost,
+					instance.Instance,
+					instance.Region,
+					instance.Family,
+					instance.MachineType,
+					project,
+					instance.PriceTier)
+				ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc,
+					prometheus.GaugeValue,
+					ramCost,
+					instance.Instance,
+					instance.Region,
+					instance.Family,
+					instance.MachineType,
+					project,
+					instance.PriceTier)
+			}
 		}
 	}
 	log.Printf("Finished collecting Compute metrics in %s", time.Since(start))
