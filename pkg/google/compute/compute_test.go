@@ -537,37 +537,52 @@ func TestCollector_Collect(t *testing.T) {
 
 func TestCollector_GetPricing(t *testing.T) {
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		buf := &compute.InstanceAggregatedList{
-			Items: map[string]compute.InstancesScopedList{
-				"projects/testing/zones/us-central1-a": {
-					Instances: []*compute.Instance{
-						{
-							Name:        "test-n1",
-							MachineType: "abc/n1-slim",
-							Zone:        "testing/us-central1-a",
-							Scheduling: &compute.Scheduling{
-								ProvisioningModel: "test",
-							},
+		var buf interface{}
+		switch r.URL.Path {
+		case "/projects/testing/zones/us-central1-a/instances", "/projects/testing-1/zones/us-central1-a/instances":
+			buf = &computev1.InstanceList{
+				Items: []*computev1.Instance{
+					{
+						Name:        "test-n1",
+						MachineType: "abc/n1-slim",
+						Zone:        "testing/us-central1-a",
+						Scheduling: &computev1.Scheduling{
+							ProvisioningModel: "test",
 						},
-						{
-							Name:        "test-n2",
-							MachineType: "abc/n2-slim",
-							Zone:        "testing/us-central1-a",
-							Scheduling: &compute.Scheduling{
-								ProvisioningModel: "test",
-							},
+					},
+					{
+						Name:        "test-n2",
+						MachineType: "abc/n2-slim",
+						Zone:        "testing/us-central1-a",
+						Scheduling: &computev1.Scheduling{
+							ProvisioningModel: "test",
 						},
-						{
-							Name:        "test-n1-spot",
-							MachineType: "abc/n1-slim",
-							Zone:        "testing/us-central1-a",
-							Scheduling: &compute.Scheduling{
-								ProvisioningModel: "SPOT",
-							},
+					},
+					{
+						Name:        "test-n1-spot",
+						MachineType: "abc/n1-slim",
+						Zone:        "testing/us-central1-a",
+						Scheduling: &computev1.Scheduling{
+							ProvisioningModel: "SPOT",
+						},
+					},
+					{
+						Name:        "test-n2-us-east1",
+						MachineType: "abc/n2-slim",
+						Zone:        "testing/us-east1-a",
+						Scheduling: &computev1.Scheduling{
+							ProvisioningModel: "test",
 						},
 					},
 				},
-			},
+			}
+		case "/projects/testing/zones", "/projects/testing-1/zones":
+			buf = &computev1.ZoneList{
+				Items: []*computev1.Zone{
+					{
+						Name: "us-central1-a",
+					}},
+			}
 		}
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(buf)

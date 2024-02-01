@@ -375,17 +375,6 @@ func TestCollector_Collect(t *testing.T) {
 				return
 			}
 
-			//sortFunc := func(i, j int) bool {
-			//	if metrics[i].FqName != metrics[j].FqName {
-			//		return metrics[i].FqName < metrics[j].FqName
-			//	}
-			//	return metrics[i].Labels["instance"] < metrics[j].Labels["instance"]
-			//}
-			//expectedMetrics := test.expectedMetrics
-			//
-			//sort.Slice(metrics, sortFunc)
-			//sort.Slice(expectedMetrics, sortFunc)
-
 			for i, expectedMetric := range test.expectedMetrics {
 				require.Equal(t, expectedMetric, metrics[i])
 			}
