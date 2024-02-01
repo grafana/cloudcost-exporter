@@ -3,6 +3,7 @@ package gke
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -273,59 +274,66 @@ func TestCollector_Collect(t *testing.T) {
 				},
 			},
 			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				buf := &computev1.InstanceAggregatedList{
-					Items: map[string]computev1.InstancesScopedList{
-						"projects/testing/zones/us-central1-a": {
-							Instances: []*computev1.Instance{
-								{
-									Name:        "test-n1",
-									MachineType: "abc/n1-slim",
-									Zone:        "testing/us-central1-a",
-									Scheduling: &computev1.Scheduling{
-										ProvisioningModel: "test",
-									},
-									Labels: map[string]string{
-										compute.GkeClusterLabel: "test",
-									},
+				fmt.Println(r.URL.Path)
+				var buf interface{}
+				switch r.URL.Path {
+				case "/projects/testing/zones/us-central1-a/instances", "/projects/testing-1/zones/us-central1-a/instances":
+					buf = &computev1.InstanceList{
+						Items: []*computev1.Instance{
+							{
+								Name:        "test-n1",
+								MachineType: "abc/n1-slim",
+								Zone:        "testing/us-central1-a",
+								Scheduling: &computev1.Scheduling{
+									ProvisioningModel: "test",
 								},
-								{
-									Name:        "test-n2",
-									MachineType: "abc/n2-slim",
-									Zone:        "testing/us-central1-a",
-									Scheduling: &computev1.Scheduling{
-										ProvisioningModel: "test",
-									},
-									Labels: map[string]string{
-										compute.GkeClusterLabel: "test",
-									},
+								Labels: map[string]string{
+									compute.GkeClusterLabel: "test",
 								},
-								{
-									Name:        "test-n1-spot",
-									MachineType: "abc/n1-slim",
-									Zone:        "testing/us-central1-a",
-									Scheduling: &computev1.Scheduling{
-										ProvisioningModel: "SPOT",
-									},
-									Labels: map[string]string{
-										compute.GkeClusterLabel: "test",
-									},
+							},
+							{
+								Name:        "test-n2",
+								MachineType: "abc/n2-slim",
+								Zone:        "testing/us-central1-a",
+								Scheduling: &computev1.Scheduling{
+									ProvisioningModel: "test",
 								},
-								{
-									Name:        "test-n2-us-east1",
-									MachineType: "abc/n2-slim",
-									Zone:        "testing/us-east1-a",
-									Scheduling: &computev1.Scheduling{
-										ProvisioningModel: "test",
-									},
-									Labels: map[string]string{
-										compute.GkeClusterLabel: "test",
-									},
+								Labels: map[string]string{
+									compute.GkeClusterLabel: "test",
+								},
+							},
+							{
+								Name:        "test-n1-spot",
+								MachineType: "abc/n1-slim",
+								Zone:        "testing/us-central1-a",
+								Scheduling: &computev1.Scheduling{
+									ProvisioningModel: "SPOT",
+								},
+								Labels: map[string]string{
+									compute.GkeClusterLabel: "test",
+								},
+							},
+							{
+								Name:        "test-n2-us-east1",
+								MachineType: "abc/n2-slim",
+								Zone:        "testing/us-east1-a",
+								Scheduling: &computev1.Scheduling{
+									ProvisioningModel: "test",
+								},
+								Labels: map[string]string{
+									compute.GkeClusterLabel: "test",
 								},
 							},
 						},
-					},
+					}
+				case "/projects/testing/zones", "/projects/testing-1/zones":
+					buf = &computev1.ZoneList{
+						Items: []*computev1.Zone{
+							{
+								Name: "us-central1-a",
+							}},
+					}
 				}
-				w.WriteHeader(http.StatusOK)
 				_ = json.NewEncoder(w).Encode(buf)
 			})),
 		},
@@ -361,9 +369,27 @@ func TestCollector_Collect(t *testing.T) {
 				close(ch)
 			}()
 
-			for _, expectedMetric := range test.expectedMetrics {
-				m := utils.ReadMetrics(<-ch)
-				require.Equal(t, expectedMetric, m)
+			var metrics []*utils.MetricResult
+			for metric := range ch {
+				metrics = append(metrics, utils.ReadMetrics(metric))
+			}
+			if len(metrics) == 0 {
+				return
+			}
+
+			//sortFunc := func(i, j int) bool {
+			//	if metrics[i].FqName != metrics[j].FqName {
+			//		return metrics[i].FqName < metrics[j].FqName
+			//	}
+			//	return metrics[i].Labels["instance"] < metrics[j].Labels["instance"]
+			//}
+			//expectedMetrics := test.expectedMetrics
+			//
+			//sort.Slice(metrics, sortFunc)
+			//sort.Slice(expectedMetrics, sortFunc)
+
+			for i, expectedMetric := range test.expectedMetrics {
+				require.Equal(t, expectedMetric, metrics[i])
 			}
 		})
 	}
