@@ -152,28 +152,30 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 		if err != nil {
 			return nil, err
 		}
-		if _, ok := pricingMap.Regions[rawData.Region]; !ok {
-			pricingMap.Regions[rawData.Region] = NewMachineTypePricing()
-		}
-		if _, ok := pricingMap.Regions[rawData.Region].Family[rawData.MachineType]; !ok {
-			pricingMap.Regions[rawData.Region].Family[rawData.MachineType] = NewPriceTiers()
-		}
-		floatPrice := float64(rawData.Price) * 1e-9
-		priceTier := pricingMap.Regions[rawData.Region].Family[rawData.MachineType]
-		if rawData.PriceTier == Spot {
-			if rawData.ComputeResource == Ram {
-				priceTier.Spot.Ram = floatPrice
+		for _, data := range rawData {
+			if _, ok := pricingMap.Regions[data.Region]; !ok {
+				pricingMap.Regions[data.Region] = NewMachineTypePricing()
+			}
+			if _, ok := pricingMap.Regions[data.Region].Family[data.MachineType]; !ok {
+				pricingMap.Regions[data.Region].Family[data.MachineType] = NewPriceTiers()
+			}
+			floatPrice := float64(data.Price) * 1e-9
+			priceTier := pricingMap.Regions[data.Region].Family[data.MachineType]
+			if data.PriceTier == Spot {
+				if data.ComputeResource == Ram {
+					priceTier.Spot.Ram = floatPrice
+					continue
+				}
+				priceTier.Spot.Cpu = floatPrice
 				continue
 			}
-			priceTier.Spot.Cpu = floatPrice
+			if data.ComputeResource == Ram {
+				priceTier.OnDemand.Ram = floatPrice
+				continue
+			}
+			priceTier.OnDemand.Cpu = floatPrice
 			continue
 		}
-		if rawData.ComputeResource == Ram {
-			priceTier.OnDemand.Ram = floatPrice
-			continue
-		}
-		priceTier.OnDemand.Cpu = floatPrice
-		continue
 	}
 	return pricingMap, nil
 }
@@ -192,7 +194,8 @@ var ignoreList = []string{
 	"Memory-optimized",
 }
 
-func getDataFromSku(sku *billingpb.Sku) (*ParsedSkuData, error) {
+func getDataFromSku(sku *billingpb.Sku) ([]*ParsedSkuData, error) {
+	var parsedSkus []*ParsedSkuData
 	if sku == nil {
 		return nil, SkuIsNil
 	}
@@ -216,12 +219,16 @@ func getDataFromSku(sku *billingpb.Sku) (*ParsedSkuData, error) {
 		if matchMap["spot"] != "" {
 			priceTier = Spot
 		}
-		return NewParsedSkuData(
-			sku.ServiceRegions[0],
-			priceTier,
-			price,
-			machineType,
-			getResourceType(matchMap["resource"])), nil
+		for _, region := range sku.ServiceRegions {
+			parsedSku := NewParsedSkuData(
+				region,
+				priceTier,
+				price,
+				machineType,
+				getResourceType(matchMap["resource"]))
+			parsedSkus = append(parsedSkus, parsedSku)
+		}
+		return parsedSkus, nil
 	}
 	return nil, SkuNotParsable
 }
