@@ -2,6 +2,7 @@ package google
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -37,6 +38,8 @@ func Test_RegisterCollectors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			r := mock_provider.NewMockRegistry(ctrl)
+			r.EXPECT().MustRegister(gomock.Any()).AnyTimes()
+
 			c := mock_provider.NewMockCollector(ctrl)
 			if tt.register != nil {
 				c.EXPECT().Register(r).DoAndReturn(tt.register).Times(tt.numCollectors)
@@ -74,21 +77,70 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			},
 			expectedMetrics: []*utils.MetricResult{
 				{
-					FqName:     "cloudcost_exporter_gcp_collector_success",
-					Labels:     utils.LabelMap{"collector": "test"},
+					FqName:     "cloudcost_exporter_collector_last_scrape_error",
+					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName:     "cloudcost_exporter_collector_last_scrape_duration_seconds",
+					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
 					Value:      0,
 					MetricType: prometheus.GaugeValue,
-				}},
+				},
+				{
+					FqName:     "cloudcost_exporter_last_scrape_error",
+					Labels:     utils.LabelMap{"provider": "gcp"},
+					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName:     "cloudcost_exporter_last_scrape_duration_seconds",
+					Labels:     utils.LabelMap{"provider": "gcp"},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+			},
 		},
 		"two collectors with no errors": {
 			numCollectors: 2,
 			collect:       func(chan<- prometheus.Metric) error { return nil },
-			expectedMetrics: []*utils.MetricResult{{
-				FqName:     "cloudcost_exporter_gcp_collector_success",
-				Labels:     utils.LabelMap{"collector": "test"},
-				Value:      1,
-				MetricType: prometheus.GaugeValue,
-			}},
+			expectedMetrics: []*utils.MetricResult{
+				{
+					FqName:     "cloudcost_exporter_collector_last_scrape_error",
+					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
+					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				}, {
+					FqName:     "cloudcost_exporter_collector_last_scrape_duration_seconds",
+					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
+					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				}, {
+					FqName:     "cloudcost_exporter_collector_last_scrape_error",
+					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
+					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName:     "cloudcost_exporter_collector_last_scrape_duration_seconds",
+					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
+					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName:     "cloudcost_exporter_last_scrape_error",
+					Labels:     utils.LabelMap{"provider": "gcp"},
+					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName:     "cloudcost_exporter_last_scrape_duration_seconds",
+					Labels:     utils.LabelMap{"provider": "gcp"},
+					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				},
+			},
 		},
 	}
 	for name, tt := range tests {
@@ -97,10 +149,13 @@ func TestGCP_CollectMetrics(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 			c := mock_provider.NewMockCollector(ctrl)
+			registry := mock_provider.NewMockRegistry(ctrl)
+			registry.EXPECT().MustRegister(gomock.Any()).AnyTimes()
 			if tt.collect != nil {
 				c.EXPECT().Name().Return("test").AnyTimes()
 				// TODO: @pokom need to figure out why _sometimes_ this fails if we set it to *.Times(tt.numCollectors)
 				c.EXPECT().Collect(ch).DoAndReturn(tt.collect).AnyTimes()
+				c.EXPECT().Register(registry).Return(nil).AnyTimes()
 			}
 			gcp := &GCP{
 				config:     &Config{},
@@ -122,6 +177,11 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			wg.Wait()
 			for _, expectedMetric := range tt.expectedMetrics {
 				metric := utils.ReadMetrics(<-ch)
+				// We don't care about the value for the scrape durations, just that it exists and is returned in the order we expect.
+				if strings.Contains(metric.FqName, "duration_seconds") {
+					require.Equal(t, expectedMetric.FqName, metric.FqName)
+					continue
+				}
 				require.Equal(t, expectedMetric, metric)
 			}
 
