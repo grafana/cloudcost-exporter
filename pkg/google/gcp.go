@@ -26,43 +26,43 @@ const (
 )
 
 var (
-	collectorLastScrapeErrorDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "collector_last_scrape_error"),
-		"Was the last scrape for the collector an error. 0 is an error, 1 is a successful scrape.",
-		[]string{"collector"},
-		nil,
-	)
-	collectorDurationDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "collector_last_scrape_duration_seconds"),
-		"How long the last scrape took.",
-		[]string{"collector"},
-		nil,
-	)
 	providerLastScrapeErrorDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "last_scrape_error"),
-		"Was the last scrape an error. 0 is an error, 1 is a successful scrape.",
-		nil,
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "last_scrape_error"),
+		"Was the last scrape an error. 1 indicates an error.",
+		[]string{"provider"},
 		nil,
 	)
 	providerLastScrapeDurationDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "last_scrape_duration_seconds"),
-		"How long the last scrape took.",
-		nil,
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "last_scrape_duration_seconds"),
+		"Duration of the last scrape in seconds.",
+		[]string{"provider"},
 		nil,
 	)
 	providerScrapesTotalCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "scrapes_total"),
+			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "scrapes_total"),
 			Help: "Total number of scrapes.",
 		},
-		[]string{},
+		[]string{"provider"},
+	)
+	collectorLastScrapeErrorDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "last_scrape_error"),
+		"Was the last scrape an error. 1 indicates an error.",
+		[]string{"provider", "collector"},
+		nil,
+	)
+	collectorDurationDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "last_scrape_duration_seconds"),
+		"Duration of the last scrape in seconds.",
+		[]string{"provider", "collector"},
+		nil,
 	)
 	collectorScrapesTotalCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "collector_scrapes_total"),
+			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "scrapes_total"),
 			Help: "Total number of scrapes for a collector.",
 		},
-		[]string{"collector"},
+		[]string{"provider", "collector"},
 	)
 )
 
@@ -179,20 +179,20 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 		go func(c provider.Collector) {
 			now := time.Now()
 			defer wg.Done()
-			collectorSuccess := 1.0
+			collectorSuccess := 0.0
 			if err := c.Collect(ch); err != nil {
 				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
-				collectorSuccess = 0.0
+				collectorSuccess = 1.0
 			}
 			log.Printf("Collector(%s) collect respose=%.2f", c.Name(), collectorSuccess)
-			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorSuccess, c.Name())
-			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), c.Name())
-			collectorScrapesTotalCounter.WithLabelValues(c.Name()).Inc()
+			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorSuccess, subsystem, c.Name())
+			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), subsystem, c.Name())
+			collectorScrapesTotalCounter.WithLabelValues(subsystem, c.Name()).Inc()
 		}(c)
 	}
 	wg.Wait()
 	// When can the error actually happen? Potentially if all the collectors fail?
-	ch <- prometheus.MustNewConstMetric(providerLastScrapeErrorDesc, prometheus.GaugeValue, 1.0)
-	ch <- prometheus.MustNewConstMetric(providerLastScrapeDurationDesc, prometheus.GaugeValue, time.Since(start).Seconds())
-	providerScrapesTotalCounter.WithLabelValues().Inc()
+	ch <- prometheus.MustNewConstMetric(providerLastScrapeErrorDesc, prometheus.GaugeValue, 0.0, subsystem)
+	ch <- prometheus.MustNewConstMetric(providerLastScrapeDurationDesc, prometheus.GaugeValue, time.Since(start).Seconds(), subsystem)
+	providerScrapesTotalCounter.WithLabelValues(subsystem).Inc()
 }
