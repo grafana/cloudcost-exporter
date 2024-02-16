@@ -19,7 +19,6 @@ import (
 	"go.uber.org/mock/gomock"
 
 	mockcostexplorer "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/costexplorer"
-	"github.com/grafana/cloudcost-exporter/pkg/aws/costexplorer"
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 )
 
@@ -163,7 +162,6 @@ func TestS3BillingData_AddRegion(t *testing.T) {
 func TestNewCollector(t *testing.T) {
 	type args struct {
 		interval time.Duration
-		client   costexplorer.CostExplorer
 	}
 	tests := map[string]struct {
 		args  args

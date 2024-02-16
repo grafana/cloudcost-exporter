@@ -163,7 +163,6 @@ type Collector struct {
 	ProjectID          string
 	Projects           []string
 	cloudCatalogClient *billingv1.CloudCatalogClient
-	serviceName        string
 	ctx                context.Context
 	interval           time.Duration
 	nextScrape         time.Time
@@ -316,7 +315,7 @@ func ExportRegionalDiscounts(ctx context.Context, client RegionsClient, projectI
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("error getting regions: %v", err)
+			return fmt.Errorf("error getting regions: %w", err)
 		}
 		regions = append(regions, *resp.Name)
 	}
@@ -488,7 +487,7 @@ func OpClassFromSkuDescription(s string) string {
 }
 
 // RegionNameSameAsStackdriver will normalize region collectorName to be the same as what Stackdriver uses.
-// Google Cost API returns region names exactly the same how they are refered in StackDriver metrics except one case:
+// Google Cost API returns region names exactly the same how they are referred in StackDriver metrics except one case:
 // For Europe multi-region:
 // API returns "europe", while Stackdriver uses "eu" label value.
 func RegionNameSameAsStackdriver(s string) string {
