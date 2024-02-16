@@ -167,12 +167,13 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			}
 
 			wg := sync.WaitGroup{}
+
+			wg.Add(1)
 			go func() {
-				wg.Add(1)
 				gcp.Collect(ch)
-				wg.Done()
 				close(ch)
 			}()
+			wg.Done()
 
 			wg.Wait()
 			for _, expectedMetric := range tt.expectedMetrics {
