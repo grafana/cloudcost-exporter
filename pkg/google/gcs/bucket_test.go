@@ -32,6 +32,7 @@ func TestNewBucketClient(t *testing.T) {
 	}
 }
 
+//nolint:errcheck
 func TestBucketClient_List(t *testing.T) {
 	tests := map[string]struct {
 		server   *httptest.Server

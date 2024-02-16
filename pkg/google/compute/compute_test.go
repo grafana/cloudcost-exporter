@@ -410,9 +410,11 @@ func TestCollector_Collect(t *testing.T) {
 		},
 	}
 	for name, test := range tests {
+		testServerUrl := test.testServer.URL
+		testConfig := test.config
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(test.testServer.URL))
+			computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(testServerUrl))
 			require.NoError(t, err)
 
 			l, err := net.Listen("tcp", "localhost:0")
@@ -432,7 +434,7 @@ func TestCollector_Collect(t *testing.T) {
 				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
 			)
 
-			collector := New(test.config, computeService, cloudCatalogClient)
+			collector := New(testConfig, computeService, cloudCatalogClient)
 
 			require.NotNil(t, collector)
 
