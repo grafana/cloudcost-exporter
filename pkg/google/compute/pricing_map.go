@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 
+	"log"
+
 	"cloud.google.com/go/billing/apiv1/billingpb"
 )
 
@@ -138,15 +140,15 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 		rawData, err := getDataFromSku(sku)
 
 		if errors.Is(err, SkuNotRelevant) {
-			fmt.Errorf("%w: %s\n", SkuNotRelevant, sku.Description)
+			log.Printf("%v: %s", SkuNotRelevant, sku.Description)
 			continue
 		}
 		if errors.Is(err, PricingDataIsOff) {
-			fmt.Errorf("%w: %s\n", PricingDataIsOff, sku.Description)
+			log.Printf("%v: %s", PricingDataIsOff, sku.Description)
 			continue
 		}
 		if errors.Is(err, SkuNotParsable) {
-			fmt.Errorf("%w: %s\n", SkuNotParsable, sku.Description)
+			log.Printf("%v: %s", SkuNotParsable, sku.Description)
 			continue
 		}
 		if err != nil {

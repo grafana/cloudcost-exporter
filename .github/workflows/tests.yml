@@ -10,7 +10,7 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
+  build-lint-test:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -20,5 +20,11 @@ jobs:
     - name: Build
       run: go build -v ./...
 
+    - name: Lint
+      uses: golangci/golangci-lint-action@v4
+      with:
+        version: v1.55
+
     - name: Test
       run: go test -v ./...
+    

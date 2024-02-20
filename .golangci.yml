@@ -1,0 +1,9 @@
+output:
+  format: line-number
+
+linters:
+  enable:
+    - goimports
+    - gofmt
+    - misspell
+    - errorlint

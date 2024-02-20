@@ -11,7 +11,7 @@ type FakeCloudCatalogServer struct {
 	billingpb.UnimplementedCloudCatalogServer
 }
 
-func (s *FakeCloudCatalogServer) ListServices(ctx context.Context, req *billingpb.ListServicesRequest) (*billingpb.ListServicesResponse, error) {
+func (s *FakeCloudCatalogServer) ListServices(_ context.Context, req *billingpb.ListServicesRequest) (*billingpb.ListServicesResponse, error) {
 	return &billingpb.ListServicesResponse{
 		Services: []*billingpb.Service{
 			{
@@ -22,7 +22,7 @@ func (s *FakeCloudCatalogServer) ListServices(ctx context.Context, req *billingp
 	}, nil
 }
 
-func (s *FakeCloudCatalogServer) ListSkus(ctx context.Context, req *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
+func (s *FakeCloudCatalogServer) ListSkus(_ context.Context, req *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
 	return &billingpb.ListSkusResponse{
 		Skus: []*billingpb.Sku{
 			{
@@ -185,7 +185,7 @@ type FakeCloudCatalogServerSlimResults struct {
 	billingpb.UnimplementedCloudCatalogServer
 }
 
-func (s *FakeCloudCatalogServerSlimResults) ListServices(ctx context.Context, req *billingpb.ListServicesRequest) (*billingpb.ListServicesResponse, error) {
+func (s *FakeCloudCatalogServerSlimResults) ListServices(_ context.Context, req *billingpb.ListServicesRequest) (*billingpb.ListServicesResponse, error) {
 	return &billingpb.ListServicesResponse{
 		Services: []*billingpb.Service{
 			{
@@ -196,7 +196,7 @@ func (s *FakeCloudCatalogServerSlimResults) ListServices(ctx context.Context, re
 	}, nil
 }
 
-func (s *FakeCloudCatalogServerSlimResults) ListSkus(ctx context.Context, req *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
+func (s *FakeCloudCatalogServerSlimResults) ListSkus(_ context.Context, req *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
 	return &billingpb.ListSkusResponse{
 		Skus: []*billingpb.Sku{
 			{

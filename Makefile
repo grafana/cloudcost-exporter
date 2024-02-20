@@ -26,6 +26,9 @@ build: build-binary build-image
 test: build
 	go test -v ./...
 
+lint:
+	golangci-lint run ./...
+
 push-dev: build test
 	docker push $(IMAGE_NAME_VERSION)
 

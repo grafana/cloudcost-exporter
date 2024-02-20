@@ -98,12 +98,12 @@ func New(config *Config) (*GCP, error) {
 
 	regionsClient, err := computeapiv1.NewRegionsRESTClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("could not create regions client: %v", err)
+		return nil, fmt.Errorf("could not create regions client: %w", err)
 	}
 
 	storageClient, err := storage.NewClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("could not create bucket client: %v", err)
+		return nil, fmt.Errorf("could not create bucket client: %w", err)
 	}
 
 	var collectors []provider.Collector
