@@ -115,10 +115,9 @@ func TestNewMachineSpec(t *testing.T) {
 		},
 	}
 	for name, test := range tests {
-		testVal := test
 		t.Run(name, func(t *testing.T) {
-			got := NewMachineSpec(testVal.instance)
-			require.Equal(t, got, testVal.want)
+			got := NewMachineSpec(test.instance)
+			require.Equal(t, got, test.want)
 		})
 	}
 }
@@ -411,10 +410,9 @@ func TestCollector_Collect(t *testing.T) {
 		},
 	}
 	for name, test := range tests {
-		testVal := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(testVal.testServer.URL))
+			computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(test.testServer.URL))
 			require.NoError(t, err)
 
 			l, err := net.Listen("tcp", "localhost:0")
@@ -434,19 +432,19 @@ func TestCollector_Collect(t *testing.T) {
 				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
 			)
 
-			collector := New(testVal.config, computeService, cloudCatalogClient)
+			collector := New(test.config, computeService, cloudCatalogClient)
 
 			require.NotNil(t, collector)
 
 			ch := make(chan prometheus.Metric)
 			go func() {
-				if up := collector.CollectMetrics(ch); up != testVal.collectResponse {
-					t.Errorf("Expected up to be %f, but got %f", testVal.collectResponse, up)
+				if up := collector.CollectMetrics(ch); up != test.collectResponse {
+					t.Errorf("Expected up to be %f, but got %f", test.collectResponse, up)
 				}
 				close(ch)
 			}()
 
-			for _, expectedMetric := range testVal.expectedMetrics {
+			for _, expectedMetric := range test.expectedMetrics {
 				m := utils.ReadMetrics(<-ch)
 				if strings.Contains(m.FqName, "next_scrape") {
 					// We don't have a great way right now of mocking out the time, so we just skip this metric and read the next available metric

@@ -337,10 +337,9 @@ func TestCollector_Collect(t *testing.T) {
 		},
 	}
 	for name, test := range tests {
-		testLoopValue := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(testLoopValue.testServer.URL))
+			computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(test.testServer.URL))
 			require.NoError(t, err)
 			l, err := net.Listen("tcp", "localhost:0")
 			require.NoError(t, err)
@@ -358,11 +357,11 @@ func TestCollector_Collect(t *testing.T) {
 				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
 			)
 			require.NoError(t, err)
-			collector := New(testLoopValue.config, computeService, cloudCatalogClient)
+			collector := New(test.config, computeService, cloudCatalogClient)
 			require.NotNil(t, collector)
 			ch := make(chan prometheus.Metric)
 			go func() {
-				if up := collector.CollectMetrics(ch); up != testLoopValue.collectResponse {
+				if up := collector.CollectMetrics(ch); up != test.collectResponse {
 					t.Errorf("expected 1, got %v", up)
 				}
 				close(ch)
@@ -376,7 +375,7 @@ func TestCollector_Collect(t *testing.T) {
 				return
 			}
 
-			for i, expectedMetric := range testLoopValue.expectedMetrics {
+			for i, expectedMetric := range test.expectedMetrics {
 				require.Equal(t, expectedMetric, metrics[i])
 			}
 		})
