@@ -1,5 +1,7 @@
+ARG GOVERSION=1.22.0
+
 # Build Go Binary
-FROM golang:1.22.0-alpine AS build
+FROM golang:${GOVERSION}-alpine AS build
 ARG GO_LDFLAGS
 
 WORKDIR /app

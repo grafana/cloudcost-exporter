@@ -6,7 +6,7 @@ runs:
   steps:
     - id: goversion
       run: |
-        cat Dockerfile | awk 'BEGIN{IGNORECASE=1} /^FROM golang:.* AS build$/ {v=$2;split(v,a,":|-")}; END {printf("version=%s", a[2])}' >> $GITHUB_OUTPUT
+        cat Dockerfile | sed -n 's/^ARG GOVERSION=\(.*\)$/version=\1/p' >> $GITHUB_OUTPUT
       shell: bash
     - uses: actions/setup-go@v5
       with:
