@@ -1,11 +1,14 @@
 # This action extracts the go version from Dockerfile and uses this version setup go
 name: setup-goversion
+description: Extracts the go version from Dockerfile and uses this version setup go
 runs:
   using: composite
   steps:
     - id: goversion
       run: |
-        cat Dockerfile | awk '/^FROM golang:.* as build$/ {v=$2;split(v,a,":")}; END {printf("version=%s", a[2])}' >> $GITHUB_OUTPUT
+        # We need to extract the go version from the Dockerfile
+        # First pass splits on the FROM line and the second pass splits on the version
+        cat Dockerfile | awk 'BEGIN{IGNORECASE=1} /^FROM golang:.* AS build$/ {v=$2;split(v,a,":"); split(a[2],b,"-")}; END {printf("version=%s", b[1])}' >> $GITHUB_OUTPUT
       shell: bash
     - uses: actions/setup-go@v5
       with:
