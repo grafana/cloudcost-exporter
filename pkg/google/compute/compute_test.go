@@ -122,9 +122,6 @@ func TestNewMachineSpec(t *testing.T) {
 	}
 }
 
-// note: this has been fixed in go 1.22, golangci-lint needs to catch up :)
-//
-//nolint:govet
 func TestCollector_Collect(t *testing.T) {
 	tests := map[string]struct {
 		config          *Config
