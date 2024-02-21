@@ -10,14 +10,14 @@ const homepageTemplate = `<!doctype html>
   <head><title>Cloudcost Exporter</title></head>
   <body>
     <h1>Cloudcost Exporter</h1>
-    <p><a href=%q'>Metrics</a></p>
+    <p><a href=%q>Metrics</a></p>
   </body>
 </html>`
 
-func HomePageHandler(path string) func(w http.ResponseWriter, r *http.Request) {
+func HomePageHandler(metricsPath string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
-			fmt.Fprintf(w, homepageTemplate, path)
+			fmt.Fprintf(w, homepageTemplate, metricsPath)
 		} else {
 			http.NotFound(w, r)
 		}

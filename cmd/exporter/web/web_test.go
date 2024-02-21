@@ -10,16 +10,16 @@ import (
 
 func TestLandingPage(t *testing.T) {
 	tests := map[string]struct {
-		reqMethod       string
-		reqPath         string
-		expectedResCode int
-		expectedResText string
+		reqMethod        string
+		reqPath          string
+		expectedResCode  int
+		expectedResTexts []string
 	}{
-		"simple get":   {reqMethod: "GET", reqPath: "/", expectedResCode: 200, expectedResText: "Cloudcost Exporter"},
-		"get bad path": {reqMethod: "GET", reqPath: "/asdf", expectedResCode: 404, expectedResText: "not found"},
+		"simple get":   {reqMethod: "GET", reqPath: "/", expectedResCode: 200, expectedResTexts: []string{"<html>", "<head><title>Cloudcost Exporter</title></head>", "href=\"/metrics\"", "</html>"}},
+		"get bad path": {reqMethod: "GET", reqPath: "/asdf", expectedResCode: 404, expectedResTexts: []string{"not found"}},
 	}
 
-	handler := http.HandlerFunc(HomePageHandler("/"))
+	handler := http.HandlerFunc(HomePageHandler("/metrics"))
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -30,7 +30,9 @@ func TestLandingPage(t *testing.T) {
 			gotStatus := resRecorder.Code
 
 			assert.Equalf(t, test.expectedResCode, gotStatus, "Wrong status code!  Expected: %v, got: %v", test.expectedResCode, gotStatus)
-			assert.Containsf(t, resRecorder.Body.String(), test.expectedResText, "Response body does not contain expected text: %v", test.expectedResText)
+			for _, expected := range test.expectedResTexts {
+				assert.Containsf(t, resRecorder.Body.String(), expected, "Response body does not contain expected text: %v", expected)
+			}
 		})
 	}
 }
