@@ -16,6 +16,7 @@ import (
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
+	"github.com/grafana/cloudcost-exporter/cmd/exporter/web"
 	"github.com/grafana/cloudcost-exporter/pkg/aws"
 	"github.com/grafana/cloudcost-exporter/pkg/google"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -90,10 +91,12 @@ func main() {
 		EnableOpenMetrics: true,
 	})
 
+	http.HandleFunc("/", web.HomePageHandler(cfg.Server.Path))
+
 	// CollectMetrics http server for prometheus
 	http.Handle(cfg.Server.Path, handler)
 
-	log.Printf("Listening on %s:%s", cfg.Server.Address, cfg.Server.Path)
+	log.Printf("Listening on %s%s", cfg.Server.Address, cfg.Server.Path)
 	if err = http.ListenAndServe(cfg.Server.Address, nil); err != nil {
 		log.Printf("Error listening and serving: %s", err)
 		os.Exit(1)
