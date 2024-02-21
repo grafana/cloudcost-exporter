@@ -74,6 +74,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Landing Page
+	http.HandleFunc("/", web.HomePageHandler(cfg.Server.Path))
+
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
 		collectors.NewBuildInfoCollector(),
@@ -90,8 +93,6 @@ func main() {
 	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	})
-
-	http.HandleFunc("/", web.HomePageHandler(cfg.Server.Path))
 
 	// CollectMetrics http server for prometheus
 	http.Handle(cfg.Server.Path, handler)
