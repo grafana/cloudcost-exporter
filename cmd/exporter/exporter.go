@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,6 +26,12 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
+var (
+	csp     provider.Provider
+	cfg     config.Config
+	timeout time.Duration = 30 * time.Second
+)
+
 func ProviderFlags(fs *flag.FlagSet, awsProfiles, gcpProjects, awsServices, gcpServices *config.StringSliceFlag) {
 	fs.Var(awsProfiles, "aws.profile", "AWS profile(s).")
 	// TODO: RENAME THIS TO JUST PROJECTS
@@ -30,8 +40,7 @@ func ProviderFlags(fs *flag.FlagSet, awsProfiles, gcpProjects, awsServices, gcpS
 	fs.Var(gcpServices, "gcp.services", "GCP service(s).")
 }
 
-func main() {
-	var cfg config.Config
+func init() {
 	ProviderFlags(flag.CommandLine, &cfg.Providers.AWS.Profiles, &cfg.Providers.GCP.Projects, &cfg.Providers.AWS.Services, &cfg.Providers.GCP.Services)
 	targetProvider := flag.String("provider", "aws", "aws or gcp")
 	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
@@ -45,7 +54,6 @@ func main() {
 	log.Print("Version ", version.Info())
 	log.Print("Build Context ", version.BuildContext())
 
-	var csp provider.Provider
 	var err error
 	switch *targetProvider {
 	case "aws":
@@ -73,9 +81,12 @@ func main() {
 		log.Printf("Error setting up provider %s: %s", *targetProvider, err)
 		os.Exit(1)
 	}
+}
 
-	// Landing Page
-	http.HandleFunc("/", web.HomePageHandler(cfg.Server.Path))
+func main() {
+	mux := http.NewServeMux()
+	ctx, cancel := signal.NotifyContext(context.TODO(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+	defer cancel()
 
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
@@ -86,20 +97,41 @@ func main() {
 		csp,
 	)
 	if err := csp.RegisterCollectors(registry); err != nil {
-		log.Printf("Error registering collectors: %s", err)
-		os.Exit(1)
+		log.Fatalf("Error registering collectors: %s", err)
 	}
 
 	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	})
 
-	// CollectMetrics http server for prometheus
-	http.Handle(cfg.Server.Path, handler)
+	// landing page
+	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path))
 
-	log.Printf("Listening on %s%s", cfg.Server.Address, cfg.Server.Path)
-	if err = http.ListenAndServe(cfg.Server.Address, nil); err != nil {
-		log.Printf("Error listening and serving: %s", err)
-		os.Exit(1)
+	// CollectMetrics http server for prometheus
+	mux.Handle(cfg.Server.Path, handler)
+
+	server := &http.Server{Addr: cfg.Server.Address, Handler: mux}
+
+	errorChannel := make(chan error)
+
+	go func() {
+		log.Printf("Listening on %s%s", cfg.Server.Address, cfg.Server.Path)
+		errorChannel <- server.ListenAndServe()
+	}()
+
+	select {
+	case <-ctx.Done():
+		log.Print("shutting down server")
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		if err := server.Shutdown(ctx); err != nil {
+			log.Fatalf("error shutting down server: %v", err)
+		}
+
+	case err := <-errorChannel:
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("error running server: %v", err)
+		}
 	}
 }
