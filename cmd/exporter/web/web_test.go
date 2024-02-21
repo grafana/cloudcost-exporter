@@ -28,10 +28,11 @@ func TestLandingPage(t *testing.T) {
 
 			handler.ServeHTTP(resRecorder, req)
 			gotStatus := resRecorder.Code
+			resBody := resRecorder.Body.String()
 
 			assert.Equalf(t, test.expectedResCode, gotStatus, "Wrong status code!  Expected: %v, got: %v", test.expectedResCode, gotStatus)
 			for _, expected := range test.expectedResTexts {
-				assert.Containsf(t, resRecorder.Body.String(), expected, "Response body does not contain expected text: %v", expected)
+				assert.Containsf(t, resBody, expected, "Response body does not contain expected text: %v", expected)
 			}
 		})
 	}
