@@ -105,33 +105,29 @@ func createPromRegistryHandler() http.Handler {
 
 func main() {
 	mux := http.NewServeMux()
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path)) // landing page
 	mux.Handle(cfg.Server.Path, createPromRegistryHandler())  // prom metrics handler
 
 	server := &http.Server{Addr: cfg.Server.Address, Handler: mux}
-	errorChan := make(chan error)
 
 	go func() {
 		log.Printf("Listening on %s%s", cfg.Server.Address, cfg.Server.Path)
-		errorChan <- server.ListenAndServe()
-	}()
-
-	select {
-	case <-ctx.Done():
-		log.Print("shutting down server")
-		ctx, cancel := context.WithTimeout(context.Background(), serverTimeout)
-		defer cancel()
-
-		err := server.Shutdown(ctx)
-		if err != nil {
-			log.Fatalf("error shutting down server: %v", err)
-		}
-	case err := <-errorChan:
+		err := server.ListenAndServe()
 		if !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("error running server: %v", err)
 		}
+	}()
+
+	<-ctx.Done()
+	log.Print("shutting down server")
+	ctx, cancel = context.WithTimeout(context.Background(), serverTimeout)
+	defer cancel()
+
+	err := server.Shutdown(ctx)
+	if err != nil {
+		log.Fatalf("error shutting down server: %v", err)
 	}
 }
