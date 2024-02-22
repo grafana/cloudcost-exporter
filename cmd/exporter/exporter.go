@@ -26,9 +26,9 @@ import (
 )
 
 var (
-	csp     provider.Provider
-	cfg     config.Config
-	timeout time.Duration
+	csp           provider.Provider
+	cfg           config.Config
+	serverTimeout time.Duration
 )
 
 func ProviderFlags(fs *flag.FlagSet, cfg *config.Config) {
@@ -38,24 +38,26 @@ func ProviderFlags(fs *flag.FlagSet, cfg *config.Config) {
 	fs.Var(&cfg.Providers.AWS.Services, "aws.services", "AWS service(s).")
 	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s).")
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
+	// TODO - PUT PROJECT-ID UNDER GCP
 	flag.StringVar(&cfg.ProjectID, "project-id", "ops-tools-1203", "Project ID to target.")
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
 }
 
 func init() {
-	targetProvider := *flag.String("provider", "aws", "aws or gcp")
+	targetProvider := flag.String("provider", "aws", "aws or gcp")
 	ProviderFlags(flag.CommandLine, &cfg)
 	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
-	flag.DurationVar(&timeout, "server-timeout", 30*time.Second, "Server timeout")
+	flag.DurationVar(&serverTimeout, "server-timeout", 30*time.Second, "Server timeout")
 	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
 	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
 	flag.Parse()
 
 	log.Printf("Version %s", version.Info())
 	log.Printf("Build Context %s", version.BuildContext())
+	log.Printf("Provider %s", *targetProvider)
 
 	var err error
-	switch targetProvider {
+	switch *targetProvider {
 	case "aws":
 		csp, err = aws.New(&aws.Config{
 			Region:         cfg.Providers.AWS.Region,
@@ -78,7 +80,7 @@ func init() {
 	}
 
 	if err != nil {
-		log.Fatalf("Error setting up provider %s: %s", targetProvider, err)
+		log.Fatalf("Error setting up provider %s: %s", *targetProvider, err)
 	}
 }
 
@@ -120,7 +122,7 @@ func main() {
 	select {
 	case <-ctx.Done():
 		log.Print("shutting down server")
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		ctx, cancel := context.WithTimeout(context.Background(), serverTimeout)
 		defer cancel()
 
 		err := server.Shutdown(ctx)
@@ -131,7 +133,5 @@ func main() {
 		if !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("error running server: %v", err)
 		}
-	default:
-		log.Fatalf("unknown error occurred while running server")
 	}
 }
