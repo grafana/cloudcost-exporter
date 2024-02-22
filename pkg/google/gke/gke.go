@@ -38,6 +38,12 @@ var (
 		[]string{"cluster_name", "instance", "region", "family", "machine_type", "project", "price_tier"},
 		nil,
 	)
+	persistentVolumeHourlyCostDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "persistent_volume_usd_per_gib_hour"),
+		"The cost of a GKE Persistent Volume in USD/(GiB*h)",
+		[]string{"cluster_name", "persistentvolume", "region", "project", "storage_class"},
+		nil,
+	)
 )
 
 type Config struct {
@@ -88,31 +94,43 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			return err
 		}
 		wg := sync.WaitGroup{}
-		wg.Add(len(zones.Items))
-		results := make(chan []*gcpCompute.MachineSpec, len(zones.Items))
+		// Multiply by 2 because we are making two requests per zone
+		wg.Add(len(zones.Items) * 2)
+		instances := make(chan []*gcpCompute.MachineSpec, len(zones.Items))
+		disks := make(chan []*compute.Disk, len(zones.Items))
 		for _, zone := range zones.Items {
 			go func(zone *compute.Zone) {
 				defer wg.Done()
-				instances, err := gcpCompute.ListInstancesInZone(project, zone.Name, c.computeService)
+				results, err := gcpCompute.ListInstancesInZone(project, zone.Name, c.computeService)
 				if err != nil {
 					log.Printf("error listing instances in zone %s: %v", zone.Name, err)
-					results <- nil
+					instances <- nil
 					return
 				}
-				results <- instances
+				instances <- results
+			}(zone)
+			go func(zone *compute.Zone) {
+				defer wg.Done()
+				results, err := ListDisks(project, zone.Name, c.computeService)
+				if err != nil {
+					log.Printf("error listing disks in zone %s: %v", zone.Name, err)
+					return
+				}
+				disks <- results
 			}(zone)
 		}
 
 		go func() {
 			wg.Wait()
-			close(results)
+			close(instances)
+			close(disks)
 		}()
 
-		for instances := range results {
+		for group := range instances {
 			if instances == nil {
 				continue
 			}
-			for _, instance := range instances {
+			for _, instance := range group {
 				clusterName := instance.GetClusterName()
 				// We skip instances that do not have a clusterName because they are not associated with an GKE cluster
 				if clusterName == "" {
@@ -145,6 +163,27 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				)
 			}
 		}
+		for group := range disks {
+			for _, disk := range group {
+				clusterName := disk.Labels[gcpCompute.GkeClusterLabel]
+				region := disk.Labels["google-k8s-cluster-location"]
+				diskType := strings.Split(disk.Type, "/")
+				storageClass := diskType[len(diskType)-1]
+				labelValues := []string{
+					clusterName,
+					disk.Name,
+					region,
+					project,
+					storageClass,
+				}
+				ch <- prometheus.MustNewConstMetric(
+					persistentVolumeHourlyCostDesc,
+					prometheus.GaugeValue,
+					float64(disk.SizeGb)*0.05/720,
+					labelValues...,
+				)
+			}
+		}
 	}
 	return nil
 }
@@ -167,4 +206,27 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- gkeNodeCPUHourlyCostDesc
 	ch <- gkeNodeMemoryHourlyCostDesc
 	return nil
+}
+
+// ListDisks will list all disks in a given zone and return a slice of compute.Disk
+func ListDisks(project string, zone string, service *compute.Service) ([]*compute.Disk, error) {
+	disks := []*compute.Disk{}
+	err := service.Disks.List(project, zone).Pages(context.Background(), func(page *compute.DiskList) error {
+		for _, disk := range page.Items {
+			// We only care about in use disks
+			if len(disk.Users) == 0 {
+				continue
+			}
+			// Filter out disks that are not associated with a GKE cluster
+			if disk.Labels[gcpCompute.GkeClusterLabel] == "" {
+				continue
+			}
+			disks = append(disks, disk)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return disks, nil
 }
