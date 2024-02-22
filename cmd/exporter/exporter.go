@@ -123,10 +123,10 @@ func main() {
 
 	<-ctx.Done()
 	log.Print("shutting down server")
-	ctx, cancel = context.WithTimeout(context.Background(), serverTimeout)
-	defer cancel()
+	newCtx, newCancel := context.WithTimeout(context.Background(), serverTimeout)
+	defer newCancel()
 
-	err := server.Shutdown(ctx)
+	err := server.Shutdown(newCtx)
 	if err != nil {
 		log.Fatalf("error shutting down server: %v", err)
 	}
