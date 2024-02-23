@@ -45,6 +45,31 @@ func operationalFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
 }
 
+func selectProvider(cfg *config.Config) (provider.Provider, error) {
+	switch cfg.Provider {
+	case "aws":
+		return aws.New(&aws.Config{
+			Region:         cfg.Providers.AWS.Region,
+			Profile:        cfg.Providers.AWS.Profiles.String(),
+			ScrapeInterval: cfg.Collector.ScrapeInterval,
+			Services:       strings.Split(cfg.Providers.AWS.Services.String(), ","),
+		})
+
+	case "gcp":
+		return google.New(&google.Config{
+			ProjectId:       cfg.ProjectID,
+			Region:          cfg.Providers.GCP.Region,
+			Projects:        cfg.Providers.GCP.Projects.String(),
+			DefaultDiscount: cfg.Providers.GCP.DefaultGCSDiscount,
+			ScrapeInterval:  cfg.Collector.ScrapeInterval,
+			Services:        strings.Split(cfg.Providers.GCP.Services.String(), ","),
+		})
+
+	default:
+		return nil, fmt.Errorf("unknown provider")
+	}
+}
+
 func createPromRegistryHandler(csp provider.Provider) http.Handler {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
@@ -95,31 +120,6 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider) e
 	}
 
 	return nil
-}
-
-func selectProvider(cfg *config.Config) (provider.Provider, error) {
-	switch cfg.Provider {
-	case "aws":
-		return aws.New(&aws.Config{
-			Region:         cfg.Providers.AWS.Region,
-			Profile:        cfg.Providers.AWS.Profiles.String(),
-			ScrapeInterval: cfg.Collector.ScrapeInterval,
-			Services:       strings.Split(cfg.Providers.AWS.Services.String(), ","),
-		})
-
-	case "gcp":
-		return google.New(&google.Config{
-			ProjectId:       cfg.ProjectID,
-			Region:          cfg.Providers.GCP.Region,
-			Projects:        cfg.Providers.GCP.Projects.String(),
-			DefaultDiscount: cfg.Providers.GCP.DefaultGCSDiscount,
-			ScrapeInterval:  cfg.Collector.ScrapeInterval,
-			Services:        strings.Split(cfg.Providers.GCP.Services.String(), ","),
-		})
-
-	default:
-		return nil, fmt.Errorf("unknown provider")
-	}
 }
 
 func main() {
