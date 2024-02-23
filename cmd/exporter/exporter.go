@@ -43,7 +43,61 @@ func ProviderFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
 }
 
-func init() {
+func createPromRegistryHandler() http.Handler {
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(
+		collectors.NewBuildInfoCollector(),
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		version.NewCollector(cloudcost_exporter.ExporterName),
+		csp,
+	)
+	err := csp.RegisterCollectors(registry)
+	if err != nil {
+		log.Fatalf("Error registering collectors: %s", err)
+	}
+	// CollectMetrics http server for prometheus
+	return promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+		EnableOpenMetrics: true,
+	})
+}
+
+func runServer() error {
+	mux := http.NewServeMux()
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path)) // landing page
+	mux.Handle(cfg.Server.Path, createPromRegistryHandler())  // prom metrics handler
+
+	server := &http.Server{Addr: cfg.Server.Address, Handler: mux}
+	errChan := make(chan error)
+
+	go func() {
+		log.Printf("Listening on %s%s", cfg.Server.Address, cfg.Server.Path)
+		errChan <- server.ListenAndServe()
+	}()
+
+	select {
+	case <-ctx.Done():
+		log.Print("shutting down server")
+		ctx, cancel := context.WithTimeout(context.Background(), serverTimeout)
+		defer cancel()
+
+		err := server.Shutdown(ctx)
+		if err != nil {
+			return fmt.Errorf("error shutting down server: %w", err)
+		}
+	case err := <-errChan:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("error running server: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func main() {
 	targetProvider := flag.String("provider", "aws", "aws or gcp")
 	ProviderFlags(flag.CommandLine, &cfg)
 	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
@@ -82,52 +136,9 @@ func init() {
 	if err != nil {
 		log.Fatalf("Error setting up provider %s: %s", *targetProvider, err)
 	}
-}
 
-func createPromRegistryHandler() http.Handler {
-	registry := prometheus.NewRegistry()
-	registry.MustRegister(
-		collectors.NewBuildInfoCollector(),
-		collectors.NewGoCollector(),
-		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		version.NewCollector(cloudcost_exporter.ExporterName),
-		csp,
-	)
-	err := csp.RegisterCollectors(registry)
+	err = runServer()
 	if err != nil {
-		log.Fatalf("Error registering collectors: %s", err)
-	}
-	// CollectMetrics http server for prometheus
-	return promhttp.HandlerFor(registry, promhttp.HandlerOpts{
-		EnableOpenMetrics: true,
-	})
-}
-
-func main() {
-	mux := http.NewServeMux()
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
-	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path)) // landing page
-	mux.Handle(cfg.Server.Path, createPromRegistryHandler())  // prom metrics handler
-
-	server := &http.Server{Addr: cfg.Server.Address, Handler: mux}
-
-	go func() {
-		log.Printf("Listening on %s%s", cfg.Server.Address, cfg.Server.Path)
-		err := server.ListenAndServe()
-		if !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("error running server: %v", err)
-		}
-	}()
-
-	<-ctx.Done()
-	log.Print("shutting down server")
-	newCtx, newCancel := context.WithTimeout(context.Background(), serverTimeout)
-	defer newCancel()
-
-	err := server.Shutdown(newCtx)
-	if err != nil {
-		log.Fatalf("error shutting down server: %v", err)
+		log.Fatal(err)
 	}
 }
