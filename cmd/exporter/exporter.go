@@ -25,13 +25,8 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
-var (
-	csp           provider.Provider
-	cfg           config.Config
-	serverTimeout time.Duration
-)
-
-func ProviderFlags(fs *flag.FlagSet, cfg *config.Config) {
+func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
+	flag.StringVar(&cfg.Provider, "provider", "aws", "aws or gcp")
 	fs.Var(&cfg.Providers.AWS.Profiles, "aws.profile", "AWS profile(s).")
 	// TODO: RENAME THIS TO JUST PROJECTS
 	fs.Var(&cfg.Providers.GCP.Projects, "gcp.bucket-projects", "GCP project(s).")
@@ -43,7 +38,14 @@ func ProviderFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
 }
 
-func createPromRegistryHandler() http.Handler {
+func operationalFlags(fs *flag.FlagSet, cfg *config.Config) {
+	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
+	flag.DurationVar(&cfg.Server.Timeout, "server-timeout", 30*time.Second, "Server timeout")
+	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
+	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
+}
+
+func createPromRegistryHandler(csp provider.Provider) http.Handler {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
 		collectors.NewBuildInfoCollector(),
@@ -62,13 +64,11 @@ func createPromRegistryHandler() http.Handler {
 	})
 }
 
-func runServer() error {
+func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider) error {
 	mux := http.NewServeMux()
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
 
-	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path)) // landing page
-	mux.Handle(cfg.Server.Path, createPromRegistryHandler())  // prom metrics handler
+	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path))   // landing page
+	mux.Handle(cfg.Server.Path, createPromRegistryHandler(csp)) // prom metrics handler
 
 	server := &http.Server{Addr: cfg.Server.Address, Handler: mux}
 	errChan := make(chan error)
@@ -81,7 +81,7 @@ func runServer() error {
 	select {
 	case <-ctx.Done():
 		log.Print("shutting down server")
-		ctx, cancel := context.WithTimeout(context.Background(), serverTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.Timeout)
 		defer cancel()
 
 		err := server.Shutdown(ctx)
@@ -97,23 +97,10 @@ func runServer() error {
 	return nil
 }
 
-func main() {
-	targetProvider := flag.String("provider", "aws", "aws or gcp")
-	ProviderFlags(flag.CommandLine, &cfg)
-	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
-	flag.DurationVar(&serverTimeout, "server-timeout", 30*time.Second, "Server timeout")
-	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
-	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
-	flag.Parse()
-
-	log.Printf("Version %s", version.Info())
-	log.Printf("Build Context %s", version.BuildContext())
-	log.Printf("Provider %s", *targetProvider)
-
-	var err error
-	switch *targetProvider {
+func selectProvider(cfg *config.Config) (provider.Provider, error) {
+	switch cfg.Provider {
 	case "aws":
-		csp, err = aws.New(&aws.Config{
+		return aws.New(&aws.Config{
 			Region:         cfg.Providers.AWS.Region,
 			Profile:        cfg.Providers.AWS.Profiles.String(),
 			ScrapeInterval: cfg.Collector.ScrapeInterval,
@@ -121,7 +108,7 @@ func main() {
 		})
 
 	case "gcp":
-		csp, err = google.New(&google.Config{
+		return google.New(&google.Config{
 			ProjectId:       cfg.ProjectID,
 			Region:          cfg.Providers.GCP.Region,
 			Projects:        cfg.Providers.GCP.Projects.String(),
@@ -129,15 +116,30 @@ func main() {
 			ScrapeInterval:  cfg.Collector.ScrapeInterval,
 			Services:        strings.Split(cfg.Providers.GCP.Services.String(), ","),
 		})
+
 	default:
-		err = fmt.Errorf("unknown provider")
+		return nil, fmt.Errorf("unknown provider")
 	}
+}
 
+func main() {
+	var cfg config.Config
+	providerFlags(flag.CommandLine, &cfg)
+	operationalFlags(flag.CommandLine, &cfg)
+	flag.Parse()
+
+	log.Printf("Version %s", version.Info())
+	log.Printf("Build Context %s", version.BuildContext())
+
+	csp, err := selectProvider(&cfg)
 	if err != nil {
-		log.Fatalf("Error setting up provider %s: %s", *targetProvider, err)
+		log.Fatalf("Error setting up provider %s: %s", cfg.Provider, err)
 	}
 
-	err = runServer()
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	err = runServer(ctx, &cfg, csp)
 	if err != nil {
 		log.Fatal(err)
 	}
