@@ -290,6 +290,35 @@ func TestGeneratePricingMap(t *testing.T) {
 			},
 		},
 		{
+			name: "Standard PD",
+			skus: []*billingpb.Sku{{
+				Description:    "Standard PD Capacity in Seoul",
+				ServiceRegions: []string{"europe-west1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &StructuredPricingMap{
+				Regions: map[string]*FamilyPricing{
+					"europe-west1": {
+						Family: map[string]*PriceTiers{
+							"pd-standard": {
+								OnDemand: Prices{
+									Storage: 1,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "spot ram",
 			skus: []*billingpb.Sku{{
 				Description:    "Spot Preemptible Compute optimized Ram running in Montreal",
@@ -412,20 +441,6 @@ func Test_getDataFromSku(t *testing.T) {
 		},
 		"Ignore Sole Tenancy": {
 			description:       "C3 Sole Tenancy Instance Ram running in Turin",
-			serviceRegions:    []string{"europe-west1"},
-			price:             12,
-			wantParsedSkuData: nil,
-			wantError:         SkuNotRelevant,
-		},
-		"Ignore Extreme PD Capacity": {
-			description:       "Extreme PD Capacity in Las Vegas",
-			serviceRegions:    []string{"europe-west1"},
-			price:             12,
-			wantParsedSkuData: nil,
-			wantError:         SkuNotRelevant,
-		},
-		"Ignore Storage PD": {
-			description:       "Storage PD Capacity in Seoul",
 			serviceRegions:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,

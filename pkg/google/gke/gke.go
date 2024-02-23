@@ -8,6 +8,7 @@ import (
 	"time"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
+	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/compute/v1"
 
@@ -51,13 +52,18 @@ type Config struct {
 	ScrapeInterval time.Duration
 }
 
+type StoragePricingMap struct {
+	Region map[string]map[string]float64
+}
+
 type Collector struct {
-	computeService *compute.Service
-	billingService *billingv1.CloudCatalogClient
-	config         *Config
-	Projects       []string
-	PricingMap     *gcpCompute.StructuredPricingMap
-	NextScrape     time.Time
+	computeService    *compute.Service
+	billingService    *billingv1.CloudCatalogClient
+	config            *Config
+	Projects          []string
+	ComputePricingMap *gcpCompute.StructuredPricingMap
+	StoragePricingMap *StoragePricingMap
+	NextScrape        time.Time
 }
 
 func (c *Collector) Register(_ provider.Registry) error {
@@ -75,13 +81,13 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	ctx := context.TODO()
-	if c.PricingMap == nil || time.Now().After(c.NextScrape) {
+	if c.ComputePricingMap == nil || time.Now().After(c.NextScrape) {
 		serviceName, err := billing.GetServiceName(ctx, c.billingService, "Compute Engine")
 		if err != nil {
 			return err
 		}
 		skus := billing.GetPricing(ctx, c.billingService, serviceName)
-		c.PricingMap, err = gcpCompute.GeneratePricingMap(skus)
+		c.ComputePricingMap, err = gcpCompute.GeneratePricingMap(skus)
 		if err != nil {
 			return err
 		}
@@ -145,7 +151,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					project,
 					instance.PriceTier,
 				}
-				cpuCost, ramCost, err := c.PricingMap.GetCostOfInstance(instance)
+				cpuCost, ramCost, err := c.ComputePricingMap.GetCostOfInstance(instance)
 				if err != nil {
 					return err
 				}
@@ -186,6 +192,10 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		}
 	}
 	return nil
+}
+
+func GenerateStoragePricingMap(skus []*billingpb.Sku) (*StoragePricingMap, error) {
+	return nil, nil
 }
 
 func New(config *Config, computeService *compute.Service, billingService *billingv1.CloudCatalogClient) *Collector {

@@ -6,8 +6,6 @@ import (
 	"regexp"
 	"strings"
 
-	"log"
-
 	"cloud.google.com/go/billing/apiv1/billingpb"
 )
 
@@ -70,8 +68,9 @@ func NewParsedSkuData(region string, priceTier PriceTier, price int32, machineTy
 }
 
 type Prices struct {
-	Cpu float64
-	Ram float64
+	Cpu     float64
+	Ram     float64
+	Storage float64
 }
 
 type PriceTiers struct {
@@ -140,15 +139,15 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 		rawData, err := getDataFromSku(sku)
 
 		if errors.Is(err, SkuNotRelevant) {
-			log.Printf("%v: %s", SkuNotRelevant, sku.Description)
+			//log.Printf("%v: %s", SkuNotRelevant, sku.Description)
 			continue
 		}
 		if errors.Is(err, PricingDataIsOff) {
-			log.Printf("%v: %s", PricingDataIsOff, sku.Description)
+			//log.Printf("%v: %s", PricingDataIsOff, sku.Description)
 			continue
 		}
 		if errors.Is(err, SkuNotParsable) {
-			log.Printf("%v: %s", SkuNotParsable, sku.Description)
+			//log.Printf("%v: %s", SkuNotParsable, sku.Description)
 			continue
 		}
 		if err != nil {
@@ -186,8 +185,6 @@ var ignoreList = []string{
 	"Network",
 	"Nvidia",
 	"Sole Tenancy",
-	"Extreme PD Capacity",
-	"Storage PD Capacity",
 	"Cloud Interconnect - ",
 	"Commitment v1: ",
 	"Custom",
@@ -197,11 +194,19 @@ var ignoreList = []string{
 }
 
 func getDataFromSku(sku *billingpb.Sku) ([]*ParsedSkuData, error) {
+
 	var parsedSkus []*ParsedSkuData
 	if sku == nil {
 		return nil, SkuIsNil
 	}
+	if sku.Category.ResourceFamily == "Storage" {
+		for _, region := range sku.ServiceRegions {
+			fmt.Printf("%s:%s:%s:%0.4f\n", sku.Description, sku.Category.ResourceGroup, region, float64(sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos)*1e-9)
+		}
+		// TODO: Get the storage type(IE, Hyperdisk, Extreme, Regional, Balannced, SSD, Standard)
+	}
 	price, err := getPricingInfoFromSku(sku)
+
 	if err != nil {
 		return nil, PricingDataIsOff
 	}
@@ -232,6 +237,7 @@ func getDataFromSku(sku *billingpb.Sku) ([]*ParsedSkuData, error) {
 		}
 		return parsedSkus, nil
 	}
+
 	return nil, SkuNotParsable
 }
 
