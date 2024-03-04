@@ -11,9 +11,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.33.6
 	github.com/google/go-cmp v0.6.0
 	github.com/googleapis/gax-go/v2 v2.12.1
-	github.com/prometheus/client_golang v1.18.0
-	github.com/prometheus/client_model v0.5.0
-	github.com/prometheus/common v0.47.0
+	github.com/prometheus/client_golang v1.19.0
+	github.com/prometheus/client_model v0.6.0
+	github.com/prometheus/common v0.49.0
 	github.com/stretchr/testify v1.8.4
 	go.uber.org/mock v0.4.0
 	google.golang.org/api v0.166.0
