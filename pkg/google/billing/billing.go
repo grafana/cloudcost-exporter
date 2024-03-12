@@ -3,8 +3,7 @@ package billing
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
+	"log"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
@@ -42,19 +41,10 @@ func GetPricing(ctx context.Context, billingService *billingv1.CloudCatalogClien
 			if errors.Is(err, iterator.Done) {
 				break
 			}
+			log.Println(err) // keep going if we get an error
 			// keep going if we get an error
 		}
-
-		// We don't include licensing skus in our pricing map
-		if !strings.Contains(strings.ToLower(sku.Description), "licensing") {
-
-			skus = append(skus, sku)
-		} else {
-			if sku.Category.ResourceFamily == "Storage" {
-				fmt.Printf("%s:%s:%s:%0.4f\n", sku.Description, sku.Category.ResourceGroup, sku.ServiceRegions[0], float64(sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos)*1e-9)
-				skus = append(skus, sku)
-			}
-		}
+		skus = append(skus, sku)
 	}
 	return skus
 }
