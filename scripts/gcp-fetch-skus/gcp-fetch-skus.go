@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/csv"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -31,12 +32,21 @@ func main() {
 	defer file.Close()
 	writer := csv.NewWriter(file)
 	writer.Write([]string{"sku_id", "description", "category", "region", "pricing_info"})
+	skusWithMultipleRates := map[string]int{}
 	for _, sku := range skus {
 		for _, region := range sku.ServiceRegions {
 			price := ""
 			if len(sku.PricingInfo) != 0 {
 				if len(sku.PricingInfo[0].PricingExpression.TieredRates) != 0 {
-					price = strconv.FormatInt(int64(sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos)/1e9, 10)
+					rates := len(sku.PricingInfo[0].PricingExpression.TieredRates)
+					price = strconv.FormatFloat(float64(sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos)*1e-9, 'f', -1, 64)
+					if rates > 1 {
+						if sku.Category.ResourceFamily == "Storage" {
+							fmt.Printf("Family %s has %d rates\n", sku.Description, rates)
+						}
+						skusWithMultipleRates[sku.Category.ResourceFamily] = skusWithMultipleRates[sku.Category.ResourceFamily] + 1
+						price = strconv.FormatFloat(float64(sku.PricingInfo[0].PricingExpression.TieredRates[rates-1].UnitPrice.Nanos)*1e-9, 'f', -1, 64)
+					}
 				}
 			}
 			writer.Write([]string{sku.SkuId, sku.Description, sku.Category.ResourceFamily, region, price})

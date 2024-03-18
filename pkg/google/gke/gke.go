@@ -2,6 +2,7 @@ package gke
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -172,7 +173,11 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		for group := range disks {
 			for _, disk := range group {
 				clusterName := disk.Labels[gcpCompute.GkeClusterLabel]
-				region := disk.Labels["google-k8s-cluster-location"]
+				region := disk.Labels["goog-k8s-cluster-location"]
+				if region == "" {
+					zone := disk.Zone[strings.LastIndex(disk.Zone, "/")+1:]
+					region = zone[:strings.LastIndex(zone, "-")]
+				}
 				diskType := strings.Split(disk.Type, "/")
 				storageClass := diskType[len(diskType)-1]
 				labelValues := []string{
@@ -182,10 +187,15 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					project,
 					storageClass,
 				}
+				price, err := c.ComputePricingMap.GetCostOfStorage(region, storageClass)
+				if err != nil {
+					fmt.Printf("error getting cost of storage: %v\n", err)
+					continue
+				}
 				ch <- prometheus.MustNewConstMetric(
 					persistentVolumeHourlyCostDesc,
 					prometheus.GaugeValue,
-					float64(disk.SizeGb)*0.05/720,
+					float64(disk.SizeGb)*price,
 					labelValues...,
 				)
 			}
@@ -220,17 +230,10 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 
 // ListDisks will list all disks in a given zone and return a slice of compute.Disk
 func ListDisks(project string, zone string, service *compute.Service) ([]*compute.Disk, error) {
-	disks := []*compute.Disk{}
+	var disks []*compute.Disk
+	// TODO: How do we get this to work for multi regional disks?
 	err := service.Disks.List(project, zone).Pages(context.Background(), func(page *compute.DiskList) error {
 		for _, disk := range page.Items {
-			// We only care about in use disks
-			if len(disk.Users) == 0 {
-				continue
-			}
-			// Filter out disks that are not associated with a GKE cluster
-			if disk.Labels[gcpCompute.GkeClusterLabel] == "" {
-				continue
-			}
 			disks = append(disks, disk)
 		}
 		return nil
