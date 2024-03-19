@@ -54,7 +54,6 @@ func run(config *Config) error {
 	if err != nil {
 		return fmt.Errorf("error writing record to csv: %v", err)
 	}
-	skusWithMultipleRates := map[string]int{}
 	for _, sku := range skus {
 		for _, region := range sku.ServiceRegions {
 			price := ""
@@ -63,10 +62,6 @@ func run(config *Config) error {
 					rates := len(sku.PricingInfo[0].PricingExpression.TieredRates)
 					price = strconv.FormatFloat(float64(sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos)*1e-9, 'f', -1, 64)
 					if rates > 1 {
-						if sku.Category.ResourceFamily == "Storage" {
-							fmt.Printf("Family %s has %d rates\n", sku.Description, rates)
-						}
-						skusWithMultipleRates[sku.Category.ResourceFamily] = skusWithMultipleRates[sku.Category.ResourceFamily] + 1
 						price = strconv.FormatFloat(float64(sku.PricingInfo[0].PricingExpression.TieredRates[rates-1].UnitPrice.Nanos)*1e-9, 'f', -1, 64)
 					}
 				}
