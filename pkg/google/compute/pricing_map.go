@@ -207,6 +207,11 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 				}
 				priceTier.OnDemand.Cpu = floatPrice
 			case Storage:
+				// Right now this is somewhat tightly coupled to GKE persistent volumes.
+				// In GKE you can only provision the following classes: https://cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/gce-pd-csi-driver#create_a_storageclass
+				// For extreme disks, we are ignoring the cost of IOPs, which would be a significant cost(could double cost of disk)
+				// TODO(pokom): Add support for other storage classes
+				// TODO(pokom): Add support for IOps operations
 				if _, ok := pricingMap.Storage[data.Region]; !ok {
 					pricingMap.Storage[data.Region] = NewStoragePricing()
 				}

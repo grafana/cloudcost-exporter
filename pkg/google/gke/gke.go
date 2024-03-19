@@ -9,7 +9,6 @@ import (
 	"time"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
-	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/compute/v1"
 
@@ -63,7 +62,6 @@ type Collector struct {
 	config            *Config
 	Projects          []string
 	ComputePricingMap *gcpCompute.StructuredPricingMap
-	StoragePricingMap *StoragePricingMap
 	NextScrape        time.Time
 }
 
@@ -173,8 +171,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		for group := range disks {
 			for _, disk := range group {
 				clusterName := disk.Labels[gcpCompute.GkeClusterLabel]
-				region := disk.Labels["goog-k8s-cluster-location"]
+				region := disk.Labels[gcpCompute.GkeRegionLabel]
 				if region == "" {
+					// This would be a case where the disk is no longer mounted _or_ the disk is associated with a Compute instance
 					zone := disk.Zone[strings.LastIndex(disk.Zone, "/")+1:]
 					region = zone[:strings.LastIndex(zone, "-")]
 				}
@@ -202,10 +201,6 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		}
 	}
 	return nil
-}
-
-func GenerateStoragePricingMap(skus []*billingpb.Sku) (*StoragePricingMap, error) {
-	return nil, nil
 }
 
 func New(config *Config, computeService *compute.Service, billingService *billingv1.CloudCatalogClient) *Collector {
