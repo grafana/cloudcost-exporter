@@ -456,7 +456,7 @@ func Test_getDataFromSku_sadPaths(t *testing.T) {
 	require.ErrorIs(t, err, SkuIsNil)
 
 	_, err = getDataFromSku(&billingpb.Sku{})
-	require.ErrorIs(t, err, PricingDataIsOff)
+	require.ErrorIs(t, err, SkuNotParsable)
 }
 
 func Test_getDataFromSku(t *testing.T) {

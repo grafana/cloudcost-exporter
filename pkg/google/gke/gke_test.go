@@ -3,6 +3,7 @@ package gke
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -47,6 +48,7 @@ func TestCollector_Collect(t *testing.T) {
 			},
 			collectResponse: 1.0,
 			expectedMetrics: []*utils.MetricResult{
+
 				{
 					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
@@ -157,6 +159,18 @@ func TestCollector_Collect(t *testing.T) {
 						"cluster_name": "test",
 					},
 					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_gcp_gke_persistent_volume_usd_per_gib_hour",
+					Labels: map[string]string{
+						"cluster_name":     "test",
+						"persistentvolume": "test-disk",
+						"region":           "us-central1",
+						"project":          "testing",
+						"storage_class":    "pd-standard",
+					},
+					Value:      0,
 					MetricType: prometheus.GaugeValue,
 				},
 				{
@@ -331,6 +345,21 @@ func TestCollector_Collect(t *testing.T) {
 								Name: "us-central1-a",
 							}},
 					}
+				case "/projects/testing/zones/us-central1-a/disks", "/projects/testing-1/zones/us-central1-a/disks":
+					buf = &computev1.DiskList{
+						Items: []*computev1.Disk{
+							{
+								Name: "test-disk",
+								Zone: "testing/us-central1-a",
+								Labels: map[string]string{
+									compute.GkeClusterLabel: "test",
+								},
+								Type: "pd-standard",
+							},
+						},
+					}
+				default:
+					fmt.Println(r.URL.Path)
 				}
 				_ = json.NewEncoder(w).Encode(buf)
 			})),

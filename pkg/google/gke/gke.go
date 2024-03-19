@@ -233,6 +233,9 @@ func ListDisks(project string, zone string, service *compute.Service) ([]*comput
 	var disks []*compute.Disk
 	// TODO: How do we get this to work for multi regional disks?
 	err := service.Disks.List(project, zone).Pages(context.Background(), func(page *compute.DiskList) error {
+		if page == nil {
+			return nil
+		}
 		for _, disk := range page.Items {
 			disks = append(disks, disk)
 		}
