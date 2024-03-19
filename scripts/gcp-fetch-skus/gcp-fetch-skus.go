@@ -31,7 +31,11 @@ func main() {
 	}
 	defer file.Close()
 	writer := csv.NewWriter(file)
-	writer.Write([]string{"sku_id", "description", "category", "region", "pricing_info"})
+	err = writer.Write([]string{"sku_id", "description", "category", "region", "pricing_info"})
+	if err != nil {
+		log.Printf("error writing record to csv: %v", err)
+		os.Exit(1)
+	}
 	skusWithMultipleRates := map[string]int{}
 	for _, sku := range skus {
 		for _, region := range sku.ServiceRegions {
@@ -49,7 +53,11 @@ func main() {
 					}
 				}
 			}
-			writer.Write([]string{sku.SkuId, sku.Description, sku.Category.ResourceFamily, region, price})
+			err = writer.Write([]string{sku.SkuId, sku.Description, sku.Category.ResourceFamily, region, price})
+			if err != nil {
+				log.Printf("error writing record to csv: %v", err)
+				os.Exit(1)
+			}
 		}
 	}
 	writer.Flush()

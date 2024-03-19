@@ -1,10 +1,10 @@
 # Persistent Volumes
 
 There's two sources of data for persistent volumes:
-- Skus from the Billing API. A
-- Disk metadata from compute API. Analogous to the `gcloud compute disk-types list` command.
+- Skus from the Billing API
+- Disk metadata from compute API
 
-Unfortunately there's a bit of a disconnect between the two.
+There's a bit of a disconnect between the two.
 Sku's descriptions have the following format:
 ```
 Balanced PD Capacity in <Region>
@@ -37,10 +37,9 @@ Disk metadata has the following format:
 projects/<project>/zones/<zone>/disks/<disk-type>
 ```
 
-Within Grafana Labs we only are using the following disk types:
-- pd-ssd
-- pd-standard
+To map the sku to the disk type, we can use the following mapping:
 
-## Questions:
-- [ ] How do we map the sku descriptions to the disk metadata?
-- [ ] What is the difference between the sku descriptions and the disk metadata?
+- Storage PD Capacity -> pd-standard
+- SSD backed PD Capacity -> pd-ssd
+- Balanced PD Capacity -> pd-balanced
+- Extreme PD Capacity -> pd-extreme

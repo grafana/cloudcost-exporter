@@ -236,9 +236,7 @@ func ListDisks(project string, zone string, service *compute.Service) ([]*comput
 		if page == nil {
 			return nil
 		}
-		for _, disk := range page.Items {
-			disks = append(disks, disk)
-		}
+		disks = append(disks, page.Items...)
 		return nil
 	})
 	if err != nil {
