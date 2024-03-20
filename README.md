@@ -47,8 +47,7 @@ go run cmd/exporter/exporter.go -provider aws -aws.profile workloads-prod
 ```
 
 > [!Note]
-> GCP Only: you can specify the services to collect cost metrics on. 
-> `gcs` is collected by default.
+> GCP Only: you can specify the services to collect cost metrics on.
 > To collect GKE, append any of the gcp commands with `-gcp.services=gke -gcp.services=gcs`
 
 ## Architecture

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -16,39 +19,36 @@ import (
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
+	"github.com/grafana/cloudcost-exporter/cmd/exporter/web"
 	"github.com/grafana/cloudcost-exporter/pkg/aws"
 	"github.com/grafana/cloudcost-exporter/pkg/google"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
-func ProviderFlags(fs *flag.FlagSet, awsProfiles, gcpProjects, awsServices, gcpServices *config.StringSliceFlag) {
-	fs.Var(awsProfiles, "aws.profile", "AWS profile(s).")
+func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
+	flag.StringVar(&cfg.Provider, "provider", "aws", "aws or gcp")
+	fs.Var(&cfg.Providers.AWS.Profiles, "aws.profile", "AWS profile(s).")
 	// TODO: RENAME THIS TO JUST PROJECTS
-	fs.Var(gcpProjects, "gcp.bucket-projects", "GCP project(s).")
-	fs.Var(awsServices, "aws.services", "AWS service(s).")
-	fs.Var(gcpServices, "gcp.services", "GCP service(s).")
+	fs.Var(&cfg.Providers.GCP.Projects, "gcp.bucket-projects", "GCP project(s).")
+	fs.Var(&cfg.Providers.AWS.Services, "aws.services", "AWS service(s).")
+	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s).")
+	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
+	// TODO - PUT PROJECT-ID UNDER GCP
+	flag.StringVar(&cfg.ProjectID, "project-id", "ops-tools-1203", "Project ID to target.")
+	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
 }
 
-func main() {
-	var cfg config.Config
-	ProviderFlags(flag.CommandLine, &cfg.Providers.AWS.Profiles, &cfg.Providers.GCP.Projects, &cfg.Providers.AWS.Services, &cfg.Providers.GCP.Services)
-	targetProvider := flag.String("provider", "aws", "aws or gcp")
+func operationalFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
-	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
-	flag.StringVar(&cfg.ProjectID, "project-id", "ops-tools-1203", "Project ID to target.")
+	flag.DurationVar(&cfg.Server.Timeout, "server-timeout", 30*time.Second, "Server timeout")
 	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
 	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
-	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
-	flag.Parse()
+}
 
-	log.Print("Version ", version.Info())
-	log.Print("Build Context ", version.BuildContext())
-
-	var csp provider.Provider
-	var err error
-	switch *targetProvider {
+func selectProvider(cfg *config.Config) (provider.Provider, error) {
+	switch cfg.Provider {
 	case "aws":
-		csp, err = aws.New(&aws.Config{
+		return aws.New(&aws.Config{
 			Region:         cfg.Providers.AWS.Region,
 			Profile:        cfg.Providers.AWS.Profiles.String(),
 			ScrapeInterval: cfg.Collector.ScrapeInterval,
@@ -56,7 +56,7 @@ func main() {
 		})
 
 	case "gcp":
-		csp, err = google.New(&google.Config{
+		return google.New(&google.Config{
 			ProjectId:       cfg.ProjectID,
 			Region:          cfg.Providers.GCP.Region,
 			Projects:        cfg.Providers.GCP.Projects.String(),
@@ -64,15 +64,13 @@ func main() {
 			ScrapeInterval:  cfg.Collector.ScrapeInterval,
 			Services:        strings.Split(cfg.Providers.GCP.Services.String(), ","),
 		})
+
 	default:
-		err = fmt.Errorf("unknown provider")
+		return nil, fmt.Errorf("unknown provider")
 	}
+}
 
-	if err != nil {
-		log.Printf("Error setting up provider %s: %s", *targetProvider, err)
-		os.Exit(1)
-	}
-
+func createPromRegistryHandler(csp provider.Provider) http.Handler {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
 		collectors.NewBuildInfoCollector(),
@@ -81,21 +79,68 @@ func main() {
 		version.NewCollector(cloudcost_exporter.ExporterName),
 		csp,
 	)
-	if err := csp.RegisterCollectors(registry); err != nil {
-		log.Printf("Error registering collectors: %s", err)
-		os.Exit(1)
+	err := csp.RegisterCollectors(registry)
+	if err != nil {
+		log.Fatalf("Error registering collectors: %s", err)
 	}
-
-	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+	// CollectMetrics http server for prometheus
+	return promhttp.HandlerFor(registry, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	})
+}
 
-	// CollectMetrics http server for prometheus
-	http.Handle(cfg.Server.Path, handler)
+func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider) error {
+	mux := http.NewServeMux()
 
-	log.Printf("Listening on %s:%s", cfg.Server.Address, cfg.Server.Path)
-	if err = http.ListenAndServe(cfg.Server.Address, nil); err != nil {
-		log.Printf("Error listening and serving: %s", err)
-		os.Exit(1)
+	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path))   // landing page
+	mux.Handle(cfg.Server.Path, createPromRegistryHandler(csp)) // prom metrics handler
+
+	server := &http.Server{Addr: cfg.Server.Address, Handler: mux}
+	errChan := make(chan error)
+
+	go func() {
+		log.Printf("Listening on %s%s", cfg.Server.Address, cfg.Server.Path)
+		errChan <- server.ListenAndServe()
+	}()
+
+	select {
+	case <-ctx.Done():
+		log.Print("shutting down server")
+		ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.Timeout)
+		defer cancel()
+
+		err := server.Shutdown(ctx)
+		if err != nil {
+			return fmt.Errorf("error shutting down server: %w", err)
+		}
+	case err := <-errChan:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("error running server: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func main() {
+	var cfg config.Config
+	providerFlags(flag.CommandLine, &cfg)
+	operationalFlags(flag.CommandLine, &cfg)
+	flag.Parse()
+
+	log.Printf("Version %s", version.Info())
+	log.Printf("Build Context %s", version.BuildContext())
+
+	csp, err := selectProvider(&cfg)
+	if err != nil {
+		log.Fatalf("Error setting up provider %s: %s", cfg.Provider, err)
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	err = runServer(ctx, &cfg, csp)
+	if err != nil {
+		log.Fatal(err)
 	}
 }

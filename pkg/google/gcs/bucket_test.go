@@ -32,6 +32,9 @@ func TestNewBucketClient(t *testing.T) {
 	}
 }
 
+// note: not checking this error because we don't care if w.Write() fails,
+// that's not our code to fix :)
+//
 //nolint:errcheck
 func TestBucketClient_List(t *testing.T) {
 	tests := map[string]struct {
