@@ -320,7 +320,7 @@ func TestGeneratePricingMap(t *testing.T) {
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]float64{
-							"pd-standard": 1.0 / 720,
+							"pd-standard": 1.0 / hoursInMonth,
 						},
 					},
 				},
@@ -347,7 +347,7 @@ func TestGeneratePricingMap(t *testing.T) {
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]float64{
-							"pd-ssd": 1.0 / 720,
+							"pd-ssd": 1.0 / hoursInMonth,
 						},
 					},
 				},
@@ -374,7 +374,7 @@ func TestGeneratePricingMap(t *testing.T) {
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]float64{
-							"pd-balanced": 1.0 / 720,
+							"pd-balanced": 1.0 / hoursInMonth,
 						},
 					},
 				},
@@ -401,7 +401,7 @@ func TestGeneratePricingMap(t *testing.T) {
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]float64{
-							"pd-balanced": 1.0 / 720,
+							"pd-balanced": 1.0 / hoursInMonth,
 						},
 					},
 				},

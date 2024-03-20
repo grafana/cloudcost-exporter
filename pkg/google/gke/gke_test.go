@@ -165,6 +165,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_persistent_volume_usd_per_gib_hour",
 					Labels: map[string]string{
 						"cluster_name":     "test",
+						"namespace":        "cloudcost-exporter",
 						"persistentvolume": "test-disk",
 						"region":           "us-central1",
 						"project":          "testing",
@@ -354,7 +355,8 @@ func TestCollector_Collect(t *testing.T) {
 								Labels: map[string]string{
 									compute.GkeClusterLabel: "test",
 								},
-								Type: "pd-standard",
+								Description: "{\"kubernetes.io/created-for/pvc/namespace\":\"cloudcost-exporter\"}",
+								Type:        "pd-standard",
 							},
 						},
 					}
