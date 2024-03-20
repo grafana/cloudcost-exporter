@@ -52,7 +52,7 @@ func run(config *Config) error {
 	writer := csv.NewWriter(file)
 	err = writer.Write([]string{"sku_id", "description", "category", "region", "pricing_info"})
 	if err != nil {
-		return fmt.Errorf("error writing record to csv: %v", err)
+		return fmt.Errorf("error writing record to csv: %w", err)
 	}
 	for _, sku := range skus {
 		for _, region := range sku.ServiceRegions {
@@ -68,7 +68,7 @@ func run(config *Config) error {
 			}
 			err = writer.Write([]string{sku.SkuId, sku.Description, sku.Category.ResourceFamily, region, price})
 			if err != nil {
-				return fmt.Errorf("error writing record to csv: %v", err)
+				return fmt.Errorf("error writing record to csv: %w", err)
 			}
 		}
 	}
