@@ -410,3 +410,83 @@ func TestCollector_Collect(t *testing.T) {
 		})
 	}
 }
+
+func Test_extractLabelsFromDesc(t *testing.T) {
+	tests := map[string]struct {
+		description    string
+		labels         map[string]string
+		expectedLabels map[string]string
+		wantErr        bool
+	}{
+		"Empty description should return an empty map": {
+			description:    "",
+			labels:         map[string]string{},
+			expectedLabels: map[string]string{},
+			wantErr:        false,
+		},
+		"Description not formatted as json should return an error": {
+			description:    "test",
+			labels:         map[string]string{},
+			expectedLabels: map[string]string{},
+			wantErr:        true,
+		},
+		"Description formatted as json should return a map": {
+			description:    `{"test": "test"}`,
+			labels:         map[string]string{},
+			expectedLabels: map[string]string{"test": "test"},
+			wantErr:        false,
+		},
+		"Description formatted as json with multiple keys should return a map": {
+			description: "{\"kubernetes.io/created-for/pv/name\":\"pvc-32613356-4cee-481d-902f-daa7223d14ab\",\"kubernetes.io/created-for/pvc/name\":\"redis-server-data-redis-cluster-0\",\"kubernetes.io/created-for/pvc/namespace\":\"hosted-grafana\"}",
+			labels:      map[string]string{},
+			expectedLabels: map[string]string{
+				"kubernetes.io/created-for/pv/name":       "pvc-32613356-4cee-481d-902f-daa7223d14ab",
+				"kubernetes.io/created-for/pvc/name":      "redis-server-data-redis-cluster-0",
+				"kubernetes.io/created-for/pvc/namespace": "hosted-grafana",
+			},
+			wantErr: false,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := extractLabelsFromDesc(tt.description, tt.labels); (err != nil) != tt.wantErr {
+				t.Errorf("extractLabelsFromDesc() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			require.Equal(t, tt.expectedLabels, tt.labels)
+		})
+	}
+}
+
+func Test_getNamespaceFromDisk(t *testing.T) {
+	tests := map[string]struct {
+		disk *computev1.Disk
+		want string
+	}{
+		"Empty description should return an empty string": {
+			disk: &computev1.Disk{
+				Description: "",
+			},
+			want: "",
+		},
+		"Description not formatted as json should return an empty string": {
+			disk: &computev1.Disk{
+				Description: "test",
+			},
+			want: "",
+		},
+		"Description formatted as json with multiple keys should return a namespace": {
+			disk: &computev1.Disk{
+				Description: "{\"kubernetes.io/created-for/pv/name\":\"pvc-32613356-4cee-481d-902f-daa7223d14ab\",\"kubernetes.io/created-for/pvc/name\":\"redis-server-data-redis-cluster-0\",\"kubernetes.io/created-for/pvc/namespace\":\"hosted-grafana\"}",
+			},
+			want: "hosted-grafana",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := getNamespaceFromDisk(tt.disk); got != tt.want {
+				t.Errorf("getNamespaceFromDisk() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

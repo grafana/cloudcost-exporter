@@ -50,6 +50,10 @@ const (
 	Storage
 )
 
+const (
+	hoursInMonth = 730.5
+)
+
 type ParsedSkuData struct {
 	Region          string
 	PriceTier       PriceTier
@@ -228,7 +232,7 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 				if strings.Contains(data.Description, "Extreme PD Capacity") {
 					storageClass = "pd-extreme"
 				}
-				pricingMap.Storage[data.Region].Storage[storageClass] = float64(data.Price) * 1e-9 / 720
+				pricingMap.Storage[data.Region].Storage[storageClass] = float64(data.Price) * 1e-9 / hoursInMonth
 			}
 		}
 	}

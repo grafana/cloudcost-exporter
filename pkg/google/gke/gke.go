@@ -2,6 +2,7 @@ package gke
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -42,9 +43,13 @@ var (
 	persistentVolumeHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "persistent_volume_usd_per_gib_hour"),
 		"The cost of a GKE Persistent Volume in USD/(GiB*h)",
-		[]string{"cluster_name", "persistentvolume", "region", "project", "storage_class"},
+		[]string{"cluster_name", "namespace", "persistentvolume", "region", "project", "storage_class"},
 		nil,
 	)
+)
+
+var (
+	keys = []string{"kubernetes.io/created-for/pvc/namespace", "kubernetes.io-created-for/pvc-namespace"}
 )
 
 type Config struct {
@@ -172,6 +177,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			for _, disk := range group {
 				clusterName := disk.Labels[gcpCompute.GkeClusterLabel]
 				region := disk.Labels[gcpCompute.GkeRegionLabel]
+				namespace := getNamespaceFromDisk(disk)
 				if region == "" {
 					// This would be a case where the disk is no longer mounted _or_ the disk is associated with a Compute instance
 					zone := disk.Zone[strings.LastIndex(disk.Zone, "/")+1:]
@@ -181,6 +187,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				storageClass := diskType[len(diskType)-1]
 				labelValues := []string{
 					clusterName,
+					namespace,
 					disk.Name,
 					region,
 					project,
@@ -238,4 +245,28 @@ func ListDisks(project string, zone string, service *compute.Service) ([]*comput
 		return nil, err
 	}
 	return disks, nil
+}
+
+func getNamespaceFromDisk(disk *compute.Disk) string {
+	desc := make(map[string]string)
+	err := extractLabelsFromDesc(disk.Description, desc)
+	if err != nil {
+		return ""
+	}
+	for _, key := range keys {
+		if val, ok := desc[key]; ok {
+			return val
+		}
+	}
+	return ""
+}
+
+func extractLabelsFromDesc(description string, labels map[string]string) error {
+	if description == "" {
+		return nil
+	}
+	if err := json.Unmarshal([]byte(description), &labels); err != nil {
+		return err
+	}
+	return nil
 }
