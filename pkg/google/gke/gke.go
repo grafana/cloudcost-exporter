@@ -57,10 +57,6 @@ type Config struct {
 	ScrapeInterval time.Duration
 }
 
-type StoragePricingMap struct {
-	Region map[string]map[string]float64
-}
-
 type Collector struct {
 	computeService    *compute.Service
 	billingService    *billingv1.CloudCatalogClient

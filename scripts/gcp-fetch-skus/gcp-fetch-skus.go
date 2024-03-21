@@ -60,10 +60,11 @@ func run(config *Config) error {
 			if len(sku.PricingInfo) != 0 {
 				if len(sku.PricingInfo[0].PricingExpression.TieredRates) != 0 {
 					rates := len(sku.PricingInfo[0].PricingExpression.TieredRates)
-					price = strconv.FormatFloat(float64(sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos)*1e-9, 'f', -1, 64)
+					rateIdx := 0
 					if rates > 1 {
-						price = strconv.FormatFloat(float64(sku.PricingInfo[0].PricingExpression.TieredRates[rates-1].UnitPrice.Nanos)*1e-9, 'f', -1, 64)
+						rateIdx = rates - 1
 					}
+					price = strconv.FormatFloat(float64(sku.PricingInfo[0].PricingExpression.TieredRates[rateIdx].UnitPrice.Nanos)*1e-9, 'f', -1, 64)
 				}
 			}
 			err = writer.Write([]string{sku.SkuId, sku.Description, sku.Category.ResourceFamily, region, price})

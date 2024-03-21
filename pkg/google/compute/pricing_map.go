@@ -51,7 +51,7 @@ const (
 )
 
 const (
-	hoursInMonth = 730.5
+	hoursInMonth = 24.35 * 30 // 24.35 is the average amount of hours in a day over a year
 )
 
 type ParsedSkuData struct {
@@ -163,6 +163,15 @@ func (m StructuredPricingMap) GetCostOfStorage(region, storageClass string) (flo
 	return m.Storage[region].Storage[storageClass], nil
 }
 
+var (
+	storageClasses = map[string]string{
+		"Storage PD Capacity":    "pd-standard",
+		"SSD backed PD Capacity": "pd-ssd",
+		"Balanced PD Capacity":   "pd-balanced",
+		"Extreme PD Capacity":    "pd-extreme",
+	}
+)
+
 func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 	if len(skus) == 0 {
 		return &StructuredPricingMap{}, SkuNotFound
@@ -172,15 +181,12 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 		rawData, err := getDataFromSku(sku)
 
 		if errors.Is(err, SkuNotRelevant) {
-			//log.Printf("%v: %s", SkuNotRelevant, sku.Description)
 			continue
 		}
 		if errors.Is(err, PricingDataIsOff) {
-			//log.Printf("%v: %s", PricingDataIsOff, sku.Description)
 			continue
 		}
 		if errors.Is(err, SkuNotParsable) {
-			//log.Printf("%v: %s", SkuNotParsable, sku.Description)
 			continue
 		}
 		if err != nil {
@@ -220,17 +226,12 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 					pricingMap.Storage[data.Region] = NewStoragePricing()
 				}
 				storageClass := ""
-				if strings.Contains(data.Description, "Storage PD Capacity") {
-					storageClass = "pd-standard"
-				}
-				if strings.Contains(data.Description, "SSD backed PD Capacity") {
-					storageClass = "pd-ssd"
-				}
-				if strings.Contains(data.Description, "Balanced PD Capacity") {
-					storageClass = "pd-balanced"
-				}
-				if strings.Contains(data.Description, "Extreme PD Capacity") {
-					storageClass = "pd-extreme"
+				for _, sc := range storageClasses {
+					if strings.Contains(data.Description, sc) {
+						storageClass = sc
+						// Break to prevent overwritting the storage class
+						break
+					}
 				}
 				pricingMap.Storage[data.Region].Storage[storageClass] = float64(data.Price) * 1e-9 / hoursInMonth
 			}
@@ -266,9 +267,8 @@ func getDataFromSku(sku *billingpb.Sku) ([]*ParsedSkuData, error) {
 
 	if matches := reOnDemand.FindStringSubmatch(sku.Description); len(matches) > 0 {
 		price, err := getPricingInfoFromSku(sku)
-
 		if err != nil {
-			return nil, PricingDataIsOff
+			return nil, fmt.Errorf("%w: %w", PricingDataIsOff, err)
 		}
 		matchMap := getMatchMap(reOnDemand, matches)
 		machineType := strings.ToLower(matchMap["machineType"])
