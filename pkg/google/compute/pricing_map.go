@@ -226,8 +226,8 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 					pricingMap.Storage[data.Region] = NewStoragePricing()
 				}
 				storageClass := ""
-				for _, sc := range storageClasses {
-					if strings.Contains(data.Description, sc) {
+				for description, sc := range storageClasses {
+					if strings.Contains(data.Description, description) {
 						storageClass = sc
 						// Break to prevent overwritting the storage class
 						break

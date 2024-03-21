@@ -382,9 +382,9 @@ func TestGeneratePricingMap(t *testing.T) {
 			},
 		},
 		{
-			name: "Balanced Disk Pricing",
+			name: "Extreme Disk Pricing",
 			skus: []*billingpb.Sku{{
-				Description:    "Balanced PD Capacity",
+				Description:    "Extreme PD Capacity",
 				Category:       &billingpb.Category{ResourceFamily: "Storage"},
 				ServiceRegions: []string{"europe-west1"},
 				PricingInfo: []*billingpb.PricingInfo{{
@@ -401,7 +401,7 @@ func TestGeneratePricingMap(t *testing.T) {
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]float64{
-							"pd-balanced": 1.0 / hoursInMonth,
+							"pd-extreme": 1.0 / hoursInMonth,
 						},
 					},
 				},

@@ -42,7 +42,6 @@ func GetPricing(ctx context.Context, billingService *billingv1.CloudCatalogClien
 				break
 			}
 			log.Println(err) // keep going if we get an error
-			// keep going if we get an error
 		}
 		skus = append(skus, sku)
 	}
