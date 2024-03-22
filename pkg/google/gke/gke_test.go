@@ -439,12 +439,12 @@ func Test_extractLabelsFromDesc(t *testing.T) {
 			wantErr:        false,
 		},
 		"Description formatted as json with multiple keys should return a map": {
-			description: "{\"kubernetes.io/created-for/pv/name\":\"pvc-32613356-4cee-481d-902f-daa7223d14ab\",\"kubernetes.io/created-for/pvc/name\":\"redis-server-data-redis-cluster-0\",\"kubernetes.io/created-for/pvc/namespace\":\"hosted-grafana\"}",
+			description: "{\"kubernetes.io/created-for/pv/name\":\"pvc-32613356-4cee-481d-902f-daa7223d14ab\",\"kubernetes.io/created-for/pvc/name\":\"prometheus-server-data-prometheus-0\",\"kubernetes.io/created-for/pvc/namespace\":\"prometheus\"}",
 			labels:      map[string]string{},
 			expectedLabels: map[string]string{
 				"kubernetes.io/created-for/pv/name":       "pvc-32613356-4cee-481d-902f-daa7223d14ab",
-				"kubernetes.io/created-for/pvc/name":      "redis-server-data-redis-cluster-0",
-				"kubernetes.io/created-for/pvc/namespace": "hosted-grafana",
+				"kubernetes.io/created-for/pvc/name":      "prometheus-server-data-prometheus-0",
+				"kubernetes.io/created-for/pvc/namespace": "prometheus",
 			},
 			wantErr: false,
 		},
@@ -479,15 +479,58 @@ func Test_getNamespaceFromDisk(t *testing.T) {
 		},
 		"Description formatted as json with multiple keys should return a namespace": {
 			disk: &computev1.Disk{
-				Description: "{\"kubernetes.io/created-for/pv/name\":\"pvc-32613356-4cee-481d-902f-daa7223d14ab\",\"kubernetes.io/created-for/pvc/name\":\"redis-server-data-redis-cluster-0\",\"kubernetes.io/created-for/pvc/namespace\":\"hosted-grafana\"}",
+				Description: "{\"kubernetes.io/created-for/pv/name\":\"pvc-32613356-4cee-481d-902f-daa7223d14ab\",\"kubernetes.io/created-for/pvc/name\":\"prometheus\",\"kubernetes.io/created-for/pvc/namespace\":\"prometheus\"}",
 			},
-			want: "hosted-grafana",
+			want: "prometheus",
 		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			if got := getNamespaceFromDisk(tt.disk); got != tt.want {
 				t.Errorf("getNamespaceFromDisk() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getRegionFromDisk(t *testing.T) {
+	tests := map[string]struct {
+		disk *computev1.Disk
+		want string
+	}{
+		"Empty zone should return an empty string": {
+			disk: &computev1.Disk{
+				Zone: "",
+			},
+			want: "",
+		},
+		"Zone formatted as a path should return the region": {
+			disk: &computev1.Disk{
+				Zone: "projects/123/zones/us-central1-a",
+			},
+			want: "us-central1",
+		},
+		"DIsk with zone as label should return the region parsed properly": {
+			disk: &computev1.Disk{
+				Labels: map[string]string{
+					compute.GkeRegionLabel: "us-central1-f",
+				},
+			},
+			want: "us-central1",
+		},
+		"Disk with a label doesn't belong to a specific zone should return the full label": {
+			disk: &computev1.Disk{
+				Labels: map[string]string{
+					compute.GkeRegionLabel: "us-central1",
+				},
+			},
+			want: "us-central1",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := getRegionFromDisk(tt.disk); got != tt.want {
+				t.Errorf("getRegionFromDisk() = %v, want %v", got, tt.want)
 			}
 		})
 	}

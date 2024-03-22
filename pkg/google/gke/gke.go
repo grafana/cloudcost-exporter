@@ -172,13 +172,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		for group := range disks {
 			for _, disk := range group {
 				clusterName := disk.Labels[gcpCompute.GkeClusterLabel]
-				region := disk.Labels[gcpCompute.GkeRegionLabel]
+				region := getRegionFromDisk(disk)
+
 				namespace := getNamespaceFromDisk(disk)
-				if region == "" {
-					// This would be a case where the disk is no longer mounted _or_ the disk is associated with a Compute instance
-					zone := disk.Zone[strings.LastIndex(disk.Zone, "/")+1:]
-					region = zone[:strings.LastIndex(zone, "-")]
-				}
 				diskType := strings.Split(disk.Type, "/")
 				storageClass := diskType[len(diskType)-1]
 				labelValues := []string{
@@ -191,7 +187,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				}
 				price, err := c.ComputePricingMap.GetCostOfStorage(region, storageClass)
 				if err != nil {
-					fmt.Printf("error getting cost of storage: %v\n", err)
+					fmt.Printf("%s error getting cost of storage: %v\n", disk.Name, err)
 					continue
 				}
 				ch <- prometheus.MustNewConstMetric(
@@ -265,4 +261,21 @@ func extractLabelsFromDesc(description string, labels map[string]string) error {
 		return err
 	}
 	return nil
+}
+
+func getRegionFromDisk(disk *compute.Disk) string {
+	zone := disk.Labels[gcpCompute.GkeRegionLabel]
+	if zone == "" {
+		// This would be a case where the disk is no longer mounted _or_ the disk is associated with a Compute instance
+		zone = disk.Zone[strings.LastIndex(disk.Zone, "/")+1:]
+	}
+	// If zone _still_ is empty we can't determine the region, so we return an empty string
+	// This prevents an index out of bounds error
+	if zone == "" {
+		return ""
+	}
+	if strings.Count(zone, "-") < 2 {
+		return zone
+	}
+	return zone[:strings.LastIndex(zone, "-")]
 }

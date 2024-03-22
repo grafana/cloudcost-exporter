@@ -457,6 +457,11 @@ func Test_getDataFromSku_sadPaths(t *testing.T) {
 
 	_, err = getDataFromSku(&billingpb.Sku{})
 	require.ErrorIs(t, err, SkuNotParsable)
+
+	_, err = getDataFromSku(&billingpb.Sku{
+		Description: "Nvidia L4 GPU attached to Spot Preemptible VMs running in Hong Kong",
+	})
+	require.ErrorIs(t, err, SkuNotRelevant)
 }
 
 func Test_getDataFromSku(t *testing.T) {
