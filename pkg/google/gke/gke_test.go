@@ -355,7 +355,7 @@ func TestCollector_Collect(t *testing.T) {
 								Labels: map[string]string{
 									compute.GkeClusterLabel: "test",
 								},
-								Description: "{\"kubernetes.io/created-for/pvc/namespace\":\"cloudcost-exporter\"}",
+								Description: `{"kubernetes.io/created-for/pvc/namespace":"cloudcost-exporter"}`,
 								Type:        "pd-standard",
 							},
 						},
@@ -439,7 +439,7 @@ func Test_extractLabelsFromDesc(t *testing.T) {
 			wantErr:        false,
 		},
 		"Description formatted as json with multiple keys should return a map": {
-			description: "{\"kubernetes.io/created-for/pv/name\":\"pvc-32613356-4cee-481d-902f-daa7223d14ab\",\"kubernetes.io/created-for/pvc/name\":\"prometheus-server-data-prometheus-0\",\"kubernetes.io/created-for/pvc/namespace\":\"prometheus\"}",
+			description: `{"kubernetes.io/created-for/pv/name":"pvc-32613356-4cee-481d-902f-daa7223d14ab","kubernetes.io/created-for/pvc/name":"prometheus-server-data-prometheus-0","kubernetes.io/created-for/pvc/namespace":"prometheus"}`,
 			labels:      map[string]string{},
 			expectedLabels: map[string]string{
 				"kubernetes.io/created-for/pv/name":       "pvc-32613356-4cee-481d-902f-daa7223d14ab",
@@ -479,7 +479,7 @@ func Test_getNamespaceFromDisk(t *testing.T) {
 		},
 		"Description formatted as json with multiple keys should return a namespace": {
 			disk: &computev1.Disk{
-				Description: "{\"kubernetes.io/created-for/pv/name\":\"pvc-32613356-4cee-481d-902f-daa7223d14ab\",\"kubernetes.io/created-for/pvc/name\":\"prometheus\",\"kubernetes.io/created-for/pvc/namespace\":\"prometheus\"}",
+				Description: `{"kubernetes.io/created-for/pv/name":"pvc-32613356-4cee-481d-902f-daa7223d14ab","kubernetes.io/created-for/pvc/name":"prometheus","kubernetes.io/created-for/pvc/namespace":"prometheus"}`,
 			},
 			want: "prometheus",
 		},
