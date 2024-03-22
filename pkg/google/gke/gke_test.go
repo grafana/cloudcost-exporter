@@ -510,7 +510,7 @@ func Test_getRegionFromDisk(t *testing.T) {
 			},
 			want: "us-central1",
 		},
-		"DIsk with zone as label should return the region parsed properly": {
+		"Disk with zone as label should return the region parsed properly": {
 			disk: &computev1.Disk{
 				Labels: map[string]string{
 					compute.GkeRegionLabel: "us-central1-f",
