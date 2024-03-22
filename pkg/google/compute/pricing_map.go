@@ -6,9 +6,9 @@ import (
 	"regexp"
 	"strings"
 
-	"log"
-
 	"cloud.google.com/go/billing/apiv1/billingpb"
+
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 var (
@@ -49,22 +49,23 @@ type Resource int64
 const (
 	Cpu Resource = iota
 	Ram
+	Storage
 )
 
 type ParsedSkuData struct {
 	Region          string
 	PriceTier       PriceTier
 	Price           int32
-	MachineType     string
+	Description     string
 	ComputeResource Resource
 }
 
-func NewParsedSkuData(region string, priceTier PriceTier, price int32, machineType string, computeResource Resource) *ParsedSkuData {
+func NewParsedSkuData(region string, priceTier PriceTier, price int32, description string, computeResource Resource) *ParsedSkuData {
 	return &ParsedSkuData{
 		Region:          region,
 		PriceTier:       priceTier,
 		Price:           price,
-		MachineType:     machineType,
+		Description:     description,
 		ComputeResource: computeResource,
 	}
 }
@@ -92,6 +93,21 @@ func NewPriceTiers() *PriceTiers {
 	}
 }
 
+// StructuredPricingMap is a map of regions to a map of family to price tiers
+type StructuredPricingMap struct {
+	Compute map[string]*FamilyPricing
+	Storage map[string]*StoragePricing
+}
+
+// NewStructuredPricingMap returns a new StructuredPricingMap in a way that can be used afterwards.
+func NewStructuredPricingMap() *StructuredPricingMap {
+	return &StructuredPricingMap{
+		Compute: map[string]*FamilyPricing{},
+		Storage: map[string]*StoragePricing{},
+	}
+}
+
+// FamilyPricing is a map where the key is the family and the value is the price tiers
 type FamilyPricing struct {
 	Family map[string]*PriceTiers
 }
@@ -102,27 +118,28 @@ func NewMachineTypePricing() *FamilyPricing {
 	}
 }
 
-type StructuredPricingMap struct {
-	Regions map[string]*FamilyPricing
+// StoragePricing is a map where the key is the storage type and the value is the price
+type StoragePricing struct {
+	Storage map[string]float64
 }
 
-func NewStructuredPricingMap() *StructuredPricingMap {
-	return &StructuredPricingMap{
-		Regions: map[string]*FamilyPricing{},
+func NewStoragePricing() *StoragePricing {
+	return &StoragePricing{
+		Storage: map[string]float64{},
 	}
 }
 
 func (m StructuredPricingMap) GetCostOfInstance(instance *MachineSpec) (float64, float64, error) {
-	if len(m.Regions) == 0 || instance == nil {
+	if len(m.Compute) == 0 || instance == nil {
 		return 0, 0, RegionNotFound
 	}
-	if _, ok := m.Regions[instance.Region]; !ok {
+	if _, ok := m.Compute[instance.Region]; !ok {
 		return 0, 0, fmt.Errorf("%w: %s", RegionNotFound, instance.Region)
 	}
-	if _, ok := m.Regions[instance.Region].Family[instance.Family]; !ok {
+	if _, ok := m.Compute[instance.Region].Family[instance.Family]; !ok {
 		return 0, 0, fmt.Errorf("%w: %s", FamilyTypeNotFound, instance.Family)
 	}
-	priceTiers := m.Regions[instance.Region].Family[instance.Family]
+	priceTiers := m.Compute[instance.Region].Family[instance.Family]
 	computePrices := priceTiers.OnDemand
 	if instance.SpotInstance {
 		computePrices = priceTiers.Spot
@@ -130,6 +147,28 @@ func (m StructuredPricingMap) GetCostOfInstance(instance *MachineSpec) (float64,
 
 	return computePrices.Cpu, computePrices.Ram, nil
 }
+
+func (m StructuredPricingMap) GetCostOfStorage(region, storageClass string) (float64, error) {
+	if len(m.Storage) == 0 {
+		return 0, RegionNotFound
+	}
+	if _, ok := m.Storage[region]; !ok {
+		return 0, fmt.Errorf("%w: %s", RegionNotFound, region)
+	}
+	if _, ok := m.Storage[region].Storage[storageClass]; !ok {
+		return 0, fmt.Errorf("%w: %s", FamilyTypeNotFound, storageClass)
+	}
+	return m.Storage[region].Storage[storageClass], nil
+}
+
+var (
+	storageClasses = map[string]string{
+		"Storage PD Capacity":    "pd-standard",
+		"SSD backed PD Capacity": "pd-ssd",
+		"Balanced PD Capacity":   "pd-balanced",
+		"Extreme PD Capacity":    "pd-extreme",
+	}
+)
 
 func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 	if len(skus) == 0 {
@@ -140,43 +179,60 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 		rawData, err := getDataFromSku(sku)
 
 		if errors.Is(err, SkuNotRelevant) {
-			log.Printf("%v: %s", SkuNotRelevant, sku.Description)
 			continue
 		}
 		if errors.Is(err, PricingDataIsOff) {
-			log.Printf("%v: %s", PricingDataIsOff, sku.Description)
 			continue
 		}
 		if errors.Is(err, SkuNotParsable) {
-			log.Printf("%v: %s", SkuNotParsable, sku.Description)
 			continue
 		}
 		if err != nil {
 			return nil, err
 		}
 		for _, data := range rawData {
-			if _, ok := pricingMap.Regions[data.Region]; !ok {
-				pricingMap.Regions[data.Region] = NewMachineTypePricing()
-			}
-			if _, ok := pricingMap.Regions[data.Region].Family[data.MachineType]; !ok {
-				pricingMap.Regions[data.Region].Family[data.MachineType] = NewPriceTiers()
-			}
-			floatPrice := float64(data.Price) * 1e-9
-			priceTier := pricingMap.Regions[data.Region].Family[data.MachineType]
-			if data.PriceTier == Spot {
-				if data.ComputeResource == Ram {
-					priceTier.Spot.Ram = floatPrice
+			switch data.ComputeResource {
+			case Ram, Cpu:
+				if _, ok := pricingMap.Compute[data.Region]; !ok {
+					pricingMap.Compute[data.Region] = NewMachineTypePricing()
+				}
+				if _, ok := pricingMap.Compute[data.Region].Family[data.Description]; !ok {
+					pricingMap.Compute[data.Region].Family[data.Description] = NewPriceTiers()
+				}
+				floatPrice := float64(data.Price) * 1e-9
+				priceTier := pricingMap.Compute[data.Region].Family[data.Description]
+				if data.PriceTier == Spot {
+					if data.ComputeResource == Ram {
+						priceTier.Spot.Ram = floatPrice
+						continue
+					}
+					priceTier.Spot.Cpu = floatPrice
 					continue
 				}
-				priceTier.Spot.Cpu = floatPrice
-				continue
+				if data.ComputeResource == Ram {
+					priceTier.OnDemand.Ram = floatPrice
+					continue
+				}
+				priceTier.OnDemand.Cpu = floatPrice
+			case Storage:
+				// Right now this is somewhat tightly coupled to GKE persistent volumes.
+				// In GKE you can only provision the following classes: https://cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/gce-pd-csi-driver#create_a_storageclass
+				// For extreme disks, we are ignoring the cost of IOPs, which would be a significant cost(could double cost of disk)
+				// TODO(pokom): Add support for other storage classes
+				// TODO(pokom): Add support for IOps operations
+				if _, ok := pricingMap.Storage[data.Region]; !ok {
+					pricingMap.Storage[data.Region] = NewStoragePricing()
+				}
+				storageClass := ""
+				for description, sc := range storageClasses {
+					if strings.Contains(data.Description, description) {
+						storageClass = sc
+						// Break to prevent overwritting the storage class
+						break
+					}
+				}
+				pricingMap.Storage[data.Region].Storage[storageClass] = float64(data.Price) * 1e-9 / utils.HoursInMonth
 			}
-			if data.ComputeResource == Ram {
-				priceTier.OnDemand.Ram = floatPrice
-				continue
-			}
-			priceTier.OnDemand.Cpu = floatPrice
-			continue
 		}
 	}
 	return pricingMap, nil
@@ -186,8 +242,6 @@ var ignoreList = []string{
 	"Network",
 	"Nvidia",
 	"Sole Tenancy",
-	"Extreme PD Capacity",
-	"Storage PD Capacity",
 	"Cloud Interconnect - ",
 	"Commitment v1: ",
 	"Custom",
@@ -197,14 +251,12 @@ var ignoreList = []string{
 }
 
 func getDataFromSku(sku *billingpb.Sku) ([]*ParsedSkuData, error) {
+
 	var parsedSkus []*ParsedSkuData
 	if sku == nil {
 		return nil, SkuIsNil
 	}
-	price, err := getPricingInfoFromSku(sku)
-	if err != nil {
-		return nil, PricingDataIsOff
-	}
+
 	for _, ignoreString := range ignoreList {
 		if strings.Contains(sku.Description, ignoreString) {
 			return nil, SkuNotRelevant
@@ -212,6 +264,10 @@ func getDataFromSku(sku *billingpb.Sku) ([]*ParsedSkuData, error) {
 	}
 
 	if matches := reOnDemand.FindStringSubmatch(sku.Description); len(matches) > 0 {
+		price, err := getPricingInfoFromSku(sku)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", PricingDataIsOff, err)
+		}
 		matchMap := getMatchMap(reOnDemand, matches)
 		machineType := strings.ToLower(matchMap["machineType"])
 		if matchMap["optimized"] != "" {
@@ -232,6 +288,20 @@ func getDataFromSku(sku *billingpb.Sku) ([]*ParsedSkuData, error) {
 		}
 		return parsedSkus, nil
 	}
+	if sku.Category != nil && sku.Category.ResourceFamily == "Storage" {
+		price := sku.PricingInfo[0].PricingExpression.TieredRates[len(sku.PricingInfo[0].PricingExpression.TieredRates)-1].UnitPrice.Nanos
+		for _, region := range sku.ServiceRegions {
+			parsedSku := NewParsedSkuData(
+				region,
+				OnDemand,
+				price,
+				sku.Description,
+				Storage)
+			parsedSkus = append(parsedSkus, parsedSku)
+		}
+		return parsedSkus, nil
+	}
+
 	return nil, SkuNotParsable
 }
 
@@ -255,6 +325,7 @@ func getPricingInfoFromSku(sku *billingpb.Sku) (int32, error) {
 	if pricingInfo.PricingExpression.TieredRates == nil || len(pricingInfo.PricingExpression.TieredRates) < 1 {
 		return 0, fmt.Errorf("no tiered rates found for sku %s", sku.Name)
 	}
+	// TODO: We need to consider if there are many teired rates here. For instance, Storage will have a standard disk that has two rates. The first one is zero for the first GiB, then $/GiB after.
 	return pricingInfo.PricingExpression.TieredRates[0].UnitPrice.Nanos, nil
 }
 

@@ -2,6 +2,8 @@ package gke
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -38,6 +40,16 @@ var (
 		[]string{"cluster_name", "instance", "region", "family", "machine_type", "project", "price_tier"},
 		nil,
 	)
+	persistentVolumeHourlyCostDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "persistent_volume_usd_per_gib_hour"),
+		"The cost of a GKE Persistent Volume in USD/(GiB*h)",
+		[]string{"cluster_name", "namespace", "persistentvolume", "region", "project", "storage_class"},
+		nil,
+	)
+)
+
+var (
+	keys = []string{"kubernetes.io/created-for/pvc/namespace", "kubernetes.io-created-for/pvc-namespace"}
 )
 
 type Config struct {
@@ -46,12 +58,12 @@ type Config struct {
 }
 
 type Collector struct {
-	computeService *compute.Service
-	billingService *billingv1.CloudCatalogClient
-	config         *Config
-	Projects       []string
-	PricingMap     *gcpCompute.StructuredPricingMap
-	NextScrape     time.Time
+	computeService    *compute.Service
+	billingService    *billingv1.CloudCatalogClient
+	config            *Config
+	Projects          []string
+	ComputePricingMap *gcpCompute.StructuredPricingMap
+	NextScrape        time.Time
 }
 
 func (c *Collector) Register(_ provider.Registry) error {
@@ -69,13 +81,13 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	ctx := context.TODO()
-	if c.PricingMap == nil || time.Now().After(c.NextScrape) {
+	if c.ComputePricingMap == nil || time.Now().After(c.NextScrape) {
 		serviceName, err := billing.GetServiceName(ctx, c.billingService, "Compute Engine")
 		if err != nil {
 			return err
 		}
 		skus := billing.GetPricing(ctx, c.billingService, serviceName)
-		c.PricingMap, err = gcpCompute.GeneratePricingMap(skus)
+		c.ComputePricingMap, err = gcpCompute.GeneratePricingMap(skus)
 		if err != nil {
 			return err
 		}
@@ -88,31 +100,43 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			return err
 		}
 		wg := sync.WaitGroup{}
-		wg.Add(len(zones.Items))
-		results := make(chan []*gcpCompute.MachineSpec, len(zones.Items))
+		// Multiply by 2 because we are making two requests per zone
+		wg.Add(len(zones.Items) * 2)
+		instances := make(chan []*gcpCompute.MachineSpec, len(zones.Items))
+		disks := make(chan []*compute.Disk, len(zones.Items))
 		for _, zone := range zones.Items {
 			go func(zone *compute.Zone) {
 				defer wg.Done()
-				instances, err := gcpCompute.ListInstancesInZone(project, zone.Name, c.computeService)
+				results, err := gcpCompute.ListInstancesInZone(project, zone.Name, c.computeService)
 				if err != nil {
 					log.Printf("error listing instances in zone %s: %v", zone.Name, err)
-					results <- nil
+					instances <- nil
 					return
 				}
-				results <- instances
+				instances <- results
+			}(zone)
+			go func(zone *compute.Zone) {
+				defer wg.Done()
+				results, err := ListDisks(project, zone.Name, c.computeService)
+				if err != nil {
+					log.Printf("error listing disks in zone %s: %v", zone.Name, err)
+					return
+				}
+				disks <- results
 			}(zone)
 		}
 
 		go func() {
 			wg.Wait()
-			close(results)
+			close(instances)
+			close(disks)
 		}()
 
-		for instances := range results {
+		for group := range instances {
 			if instances == nil {
 				continue
 			}
-			for _, instance := range instances {
+			for _, instance := range group {
 				clusterName := instance.GetClusterName()
 				// We skip instances that do not have a clusterName because they are not associated with an GKE cluster
 				if clusterName == "" {
@@ -127,7 +151,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					project,
 					instance.PriceTier,
 				}
-				cpuCost, ramCost, err := c.PricingMap.GetCostOfInstance(instance)
+				cpuCost, ramCost, err := c.ComputePricingMap.GetCostOfInstance(instance)
 				if err != nil {
 					return err
 				}
@@ -141,6 +165,35 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					gkeNodeMemoryHourlyCostDesc,
 					prometheus.GaugeValue,
 					ramCost,
+					labelValues...,
+				)
+			}
+		}
+		for group := range disks {
+			for _, disk := range group {
+				clusterName := disk.Labels[gcpCompute.GkeClusterLabel]
+				region := getRegionFromDisk(disk)
+
+				namespace := getNamespaceFromDisk(disk)
+				diskType := strings.Split(disk.Type, "/")
+				storageClass := diskType[len(diskType)-1]
+				labelValues := []string{
+					clusterName,
+					namespace,
+					disk.Name,
+					region,
+					project,
+					storageClass,
+				}
+				price, err := c.ComputePricingMap.GetCostOfStorage(region, storageClass)
+				if err != nil {
+					fmt.Printf("%s error getting cost of storage: %v\n", disk.Name, err)
+					continue
+				}
+				ch <- prometheus.MustNewConstMetric(
+					persistentVolumeHourlyCostDesc,
+					prometheus.GaugeValue,
+					float64(disk.SizeGb)*price,
 					labelValues...,
 				)
 			}
@@ -167,4 +220,62 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- gkeNodeCPUHourlyCostDesc
 	ch <- gkeNodeMemoryHourlyCostDesc
 	return nil
+}
+
+// ListDisks will list all disks in a given zone and return a slice of compute.Disk
+func ListDisks(project string, zone string, service *compute.Service) ([]*compute.Disk, error) {
+	var disks []*compute.Disk
+	// TODO: How do we get this to work for multi regional disks?
+	err := service.Disks.List(project, zone).Pages(context.Background(), func(page *compute.DiskList) error {
+		if page == nil {
+			return nil
+		}
+		disks = append(disks, page.Items...)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return disks, nil
+}
+
+func getNamespaceFromDisk(disk *compute.Disk) string {
+	desc := make(map[string]string)
+	err := extractLabelsFromDesc(disk.Description, desc)
+	if err != nil {
+		return ""
+	}
+	for _, key := range keys {
+		if val, ok := desc[key]; ok {
+			return val
+		}
+	}
+	return ""
+}
+
+func extractLabelsFromDesc(description string, labels map[string]string) error {
+	if description == "" {
+		return nil
+	}
+	if err := json.Unmarshal([]byte(description), &labels); err != nil {
+		return err
+	}
+	return nil
+}
+
+func getRegionFromDisk(disk *compute.Disk) string {
+	zone := disk.Labels[gcpCompute.GkeRegionLabel]
+	if zone == "" {
+		// This would be a case where the disk is no longer mounted _or_ the disk is associated with a Compute instance
+		zone = disk.Zone[strings.LastIndex(disk.Zone, "/")+1:]
+	}
+	// If zone _still_ is empty we can't determine the region, so we return an empty string
+	// This prevents an index out of bounds error
+	if zone == "" {
+		return ""
+	}
+	if strings.Count(zone, "-") < 2 {
+		return zone
+	}
+	return zone[:strings.LastIndex(zone, "-")]
 }

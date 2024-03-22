@@ -3,6 +3,7 @@ package gke
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -47,6 +48,7 @@ func TestCollector_Collect(t *testing.T) {
 			},
 			collectResponse: 1.0,
 			expectedMetrics: []*utils.MetricResult{
+
 				{
 					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
@@ -157,6 +159,19 @@ func TestCollector_Collect(t *testing.T) {
 						"cluster_name": "test",
 					},
 					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_gcp_gke_persistent_volume_usd_per_gib_hour",
+					Labels: map[string]string{
+						"cluster_name":     "test",
+						"namespace":        "cloudcost-exporter",
+						"persistentvolume": "test-disk",
+						"region":           "us-central1",
+						"project":          "testing",
+						"storage_class":    "pd-standard",
+					},
+					Value:      0,
 					MetricType: prometheus.GaugeValue,
 				},
 				{
@@ -331,6 +346,22 @@ func TestCollector_Collect(t *testing.T) {
 								Name: "us-central1-a",
 							}},
 					}
+				case "/projects/testing/zones/us-central1-a/disks", "/projects/testing-1/zones/us-central1-a/disks":
+					buf = &computev1.DiskList{
+						Items: []*computev1.Disk{
+							{
+								Name: "test-disk",
+								Zone: "testing/us-central1-a",
+								Labels: map[string]string{
+									compute.GkeClusterLabel: "test",
+								},
+								Description: `{"kubernetes.io/created-for/pvc/namespace":"cloudcost-exporter"}`,
+								Type:        "pd-standard",
+							},
+						},
+					}
+				default:
+					fmt.Println(r.URL.Path)
 				}
 				_ = json.NewEncoder(w).Encode(buf)
 			})),
@@ -377,6 +408,129 @@ func TestCollector_Collect(t *testing.T) {
 
 			for i, expectedMetric := range test.expectedMetrics {
 				require.Equal(t, expectedMetric, metrics[i])
+			}
+		})
+	}
+}
+
+func Test_extractLabelsFromDesc(t *testing.T) {
+	tests := map[string]struct {
+		description    string
+		labels         map[string]string
+		expectedLabels map[string]string
+		wantErr        bool
+	}{
+		"Empty description should return an empty map": {
+			description:    "",
+			labels:         map[string]string{},
+			expectedLabels: map[string]string{},
+			wantErr:        false,
+		},
+		"Description not formatted as json should return an error": {
+			description:    "test",
+			labels:         map[string]string{},
+			expectedLabels: map[string]string{},
+			wantErr:        true,
+		},
+		"Description formatted as json should return a map": {
+			description:    `{"test": "test"}`,
+			labels:         map[string]string{},
+			expectedLabels: map[string]string{"test": "test"},
+			wantErr:        false,
+		},
+		"Description formatted as json with multiple keys should return a map": {
+			description: `{"kubernetes.io/created-for/pv/name":"pvc-32613356-4cee-481d-902f-daa7223d14ab","kubernetes.io/created-for/pvc/name":"prometheus-server-data-prometheus-0","kubernetes.io/created-for/pvc/namespace":"prometheus"}`,
+			labels:      map[string]string{},
+			expectedLabels: map[string]string{
+				"kubernetes.io/created-for/pv/name":       "pvc-32613356-4cee-481d-902f-daa7223d14ab",
+				"kubernetes.io/created-for/pvc/name":      "prometheus-server-data-prometheus-0",
+				"kubernetes.io/created-for/pvc/namespace": "prometheus",
+			},
+			wantErr: false,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := extractLabelsFromDesc(tt.description, tt.labels); (err != nil) != tt.wantErr {
+				t.Errorf("extractLabelsFromDesc() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			require.Equal(t, tt.expectedLabels, tt.labels)
+		})
+	}
+}
+
+func Test_getNamespaceFromDisk(t *testing.T) {
+	tests := map[string]struct {
+		disk *computev1.Disk
+		want string
+	}{
+		"Empty description should return an empty string": {
+			disk: &computev1.Disk{
+				Description: "",
+			},
+			want: "",
+		},
+		"Description not formatted as json should return an empty string": {
+			disk: &computev1.Disk{
+				Description: "test",
+			},
+			want: "",
+		},
+		"Description formatted as json with multiple keys should return a namespace": {
+			disk: &computev1.Disk{
+				Description: `{"kubernetes.io/created-for/pv/name":"pvc-32613356-4cee-481d-902f-daa7223d14ab","kubernetes.io/created-for/pvc/name":"prometheus","kubernetes.io/created-for/pvc/namespace":"prometheus"}`,
+			},
+			want: "prometheus",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := getNamespaceFromDisk(tt.disk); got != tt.want {
+				t.Errorf("getNamespaceFromDisk() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getRegionFromDisk(t *testing.T) {
+	tests := map[string]struct {
+		disk *computev1.Disk
+		want string
+	}{
+		"Empty zone should return an empty string": {
+			disk: &computev1.Disk{
+				Zone: "",
+			},
+			want: "",
+		},
+		"Zone formatted as a path should return the region": {
+			disk: &computev1.Disk{
+				Zone: "projects/123/zones/us-central1-a",
+			},
+			want: "us-central1",
+		},
+		"Disk with zone as label should return the region parsed properly": {
+			disk: &computev1.Disk{
+				Labels: map[string]string{
+					compute.GkeRegionLabel: "us-central1-f",
+				},
+			},
+			want: "us-central1",
+		},
+		"Disk with a label doesn't belong to a specific zone should return the full label": {
+			disk: &computev1.Disk{
+				Labels: map[string]string{
+					compute.GkeRegionLabel: "us-central1",
+				},
+			},
+			want: "us-central1",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := getRegionFromDisk(tt.disk); got != tt.want {
+				t.Errorf("getRegionFromDisk() = %v, want %v", got, tt.want)
 			}
 		})
 	}

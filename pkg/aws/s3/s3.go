@@ -17,13 +17,13 @@ import (
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/costexplorer"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 // HoursInMonth is the average hours in a month, used to calculate the cost of storage
 // If we wanted to be clever, we can get the number of hours in the current month
 // 365.25 * 24 / 12 ~= 730.5
 const (
-	HoursInMonth = 730.5
 	// This needs to line up with yace so we can properly join the data in PromQL
 	StandardLabel = "StandardStorage"
 	subsystem     = "aws_s3"
@@ -421,7 +421,7 @@ func unitCostForComponent(component string, pricing *Pricing) float64 {
 	case "Requests-Tier1", "Requests-Tier2":
 		return pricing.Cost / (pricing.Usage / 1000)
 	case "TimedStorage":
-		return (pricing.Cost / HoursInMonth) / pricing.Usage
+		return (pricing.Cost / utils.HoursInMonth) / pricing.Usage
 	default:
 		return pricing.Cost / pricing.Usage
 	}

@@ -177,6 +177,27 @@ func (s *FakeCloudCatalogServer) ListSkus(_ context.Context, req *billingpb.List
 					},
 				},
 			},
+			{
+				Name:           "standard-storage",
+				Description:    "Storage PD Capacity",
+				ServiceRegions: []string{"us-central1"},
+				Category: &billingpb.Category{
+					ResourceFamily: "Storage",
+				},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 0.0,
+							},
+						}, {
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			},
 		},
 	}, nil
 }
@@ -217,6 +238,27 @@ func (s *FakeCloudCatalogServerSlimResults) ListSkus(_ context.Context, req *bil
 						},
 					},
 				},
+			},
+			{
+				Name:           "standard-storage",
+				Description:    "Storage PD Capacity",
+				ServiceRegions: []string{"us-central1"},
+				Category: &billingpb.Category{
+					ResourceFamily: "Storage",
+				},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 0.0,
+							},
+						}, {
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
 			},
 		},
 	}, nil

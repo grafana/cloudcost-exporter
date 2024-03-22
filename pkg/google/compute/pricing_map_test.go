@@ -12,6 +12,8 @@ import (
 	"google.golang.org/genproto/googleapis/type/money"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
+
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
@@ -29,25 +31,25 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 		},
 		{
 			name:          "nil machine spec",
-			pm:            StructuredPricingMap{Regions: map[string]*FamilyPricing{"": {}}},
+			pm:            StructuredPricingMap{Compute: map[string]*FamilyPricing{"": {}}},
 			expectedError: RegionNotFound,
 		},
 		{
 			name:          "region not found",
-			pm:            StructuredPricingMap{Regions: map[string]*FamilyPricing{"": {}}},
+			pm:            StructuredPricingMap{Compute: map[string]*FamilyPricing{"": {}}},
 			ms:            &MachineSpec{Region: "missing region"},
 			expectedError: RegionNotFound,
 		},
 		{
 			name:          "family type not found",
-			pm:            StructuredPricingMap{Regions: map[string]*FamilyPricing{"region": {}}},
+			pm:            StructuredPricingMap{Compute: map[string]*FamilyPricing{"region": {}}},
 			ms:            &MachineSpec{Region: "region"},
 			expectedError: FamilyTypeNotFound,
 		},
 		{
 			name: "on-demand",
 			pm: StructuredPricingMap{
-				Regions: map[string]*FamilyPricing{
+				Compute: map[string]*FamilyPricing{
 					"region": {
 						Family: map[string]*PriceTiers{
 							"family": {
@@ -70,7 +72,7 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 		{
 			name: "spot",
 			pm: StructuredPricingMap{
-				Regions: map[string]*FamilyPricing{
+				Compute: map[string]*FamilyPricing{
 					"region": {
 						Family: map[string]*PriceTiers{
 							"family": {
@@ -120,7 +122,8 @@ func TestGeneratePricingMap(t *testing.T) {
 			name: "empty sku, empty pricing map",
 			skus: []*billingpb.Sku{{}},
 			expectedPricingMap: &StructuredPricingMap{
-				Regions: map[string]*FamilyPricing{},
+				Compute: map[string]*FamilyPricing{},
+				Storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -143,7 +146,8 @@ func TestGeneratePricingMap(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &StructuredPricingMap{
-				Regions: map[string]*FamilyPricing{},
+				Compute: map[string]*FamilyPricing{},
+				Storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -161,7 +165,8 @@ func TestGeneratePricingMap(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &StructuredPricingMap{
-				Regions: map[string]*FamilyPricing{},
+				Compute: map[string]*FamilyPricing{},
+				Storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -180,7 +185,7 @@ func TestGeneratePricingMap(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &StructuredPricingMap{
-				Regions: map[string]*FamilyPricing{
+				Compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"g2": {
@@ -191,6 +196,7 @@ func TestGeneratePricingMap(t *testing.T) {
 						},
 					},
 				},
+				Storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -209,7 +215,7 @@ func TestGeneratePricingMap(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &StructuredPricingMap{
-				Regions: map[string]*FamilyPricing{
+				Compute: map[string]*FamilyPricing{
 					"us-central1": {
 						Family: map[string]*PriceTiers{
 							"g2": {
@@ -229,6 +235,7 @@ func TestGeneratePricingMap(t *testing.T) {
 						},
 					},
 				},
+				Storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -247,7 +254,7 @@ func TestGeneratePricingMap(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &StructuredPricingMap{
-				Regions: map[string]*FamilyPricing{
+				Compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"g2": {
@@ -258,6 +265,7 @@ func TestGeneratePricingMap(t *testing.T) {
 						},
 					},
 				},
+				Storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -276,7 +284,7 @@ func TestGeneratePricingMap(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &StructuredPricingMap{
-				Regions: map[string]*FamilyPricing{
+				Compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"e2": {
@@ -287,6 +295,119 @@ func TestGeneratePricingMap(t *testing.T) {
 						},
 					},
 				},
+				Storage: map[string]*StoragePricing{},
+			},
+		},
+		{
+			name: "Standard PD",
+			skus: []*billingpb.Sku{{
+				Description:    "Storage PD Capacity",
+				Category:       &billingpb.Category{ResourceFamily: "Storage"},
+				ServiceRegions: []string{"europe-west1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 0.0,
+							},
+						}, {
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &StructuredPricingMap{
+				Storage: map[string]*StoragePricing{
+					"europe-west1": {
+						Storage: map[string]float64{
+							"pd-standard": 1.0 / utils.HoursInMonth,
+						},
+					},
+				},
+				Compute: map[string]*FamilyPricing{},
+			},
+		},
+		{
+			name: "SSD Pricing",
+			skus: []*billingpb.Sku{{
+				Description:    "SSD backed PD Capacity",
+				Category:       &billingpb.Category{ResourceFamily: "Storage"},
+				ServiceRegions: []string{"europe-west1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &StructuredPricingMap{
+				Storage: map[string]*StoragePricing{
+					"europe-west1": {
+						Storage: map[string]float64{
+							"pd-ssd": 1.0 / utils.HoursInMonth,
+						},
+					},
+				},
+				Compute: map[string]*FamilyPricing{},
+			},
+		},
+		{
+			name: "Balanced Disk Pricing",
+			skus: []*billingpb.Sku{{
+				Description:    "Balanced PD Capacity",
+				Category:       &billingpb.Category{ResourceFamily: "Storage"},
+				ServiceRegions: []string{"europe-west1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &StructuredPricingMap{
+				Storage: map[string]*StoragePricing{
+					"europe-west1": {
+						Storage: map[string]float64{
+							"pd-balanced": 1.0 / utils.HoursInMonth,
+						},
+					},
+				},
+				Compute: map[string]*FamilyPricing{},
+			},
+		},
+		{
+			name: "Extreme Disk Pricing",
+			skus: []*billingpb.Sku{{
+				Description:    "Extreme PD Capacity",
+				Category:       &billingpb.Category{ResourceFamily: "Storage"},
+				ServiceRegions: []string{"europe-west1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &StructuredPricingMap{
+				Storage: map[string]*StoragePricing{
+					"europe-west1": {
+						Storage: map[string]float64{
+							"pd-extreme": 1.0 / utils.HoursInMonth,
+						},
+					},
+				},
+				Compute: map[string]*FamilyPricing{},
 			},
 		},
 		{
@@ -305,7 +426,7 @@ func TestGeneratePricingMap(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &StructuredPricingMap{
-				Regions: map[string]*FamilyPricing{
+				Compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"c2": {
@@ -316,6 +437,7 @@ func TestGeneratePricingMap(t *testing.T) {
 						},
 					},
 				},
+				Storage: map[string]*StoragePricing{},
 			},
 		},
 	} {
@@ -336,139 +458,130 @@ func Test_getDataFromSku_sadPaths(t *testing.T) {
 	require.ErrorIs(t, err, SkuIsNil)
 
 	_, err = getDataFromSku(&billingpb.Sku{})
-	require.ErrorIs(t, err, PricingDataIsOff)
+	require.ErrorIs(t, err, SkuNotParsable)
+
+	_, err = getDataFromSku(&billingpb.Sku{
+		Description: "Nvidia L4 GPU attached to Spot Preemptible VMs running in Hong Kong",
+	})
+	require.ErrorIs(t, err, SkuNotRelevant)
 }
 
 func Test_getDataFromSku(t *testing.T) {
 	tests := map[string]struct {
 		description       string
-		serviceRegions    []string
+		serviceCompute    []string
 		price             int32
 		wantParsedSkuData []*ParsedSkuData
 		wantError         error
 	}{
 		"Core": {
 			description:       "G2 Instance Core running in Sao Paulo",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: []*ParsedSkuData{NewParsedSkuData("europe-west1", OnDemand, 12, "g2", Cpu)},
 			wantError:         nil,
 		},
 		"Ram": {
 			description:       "G2 Instance Ram running in Belgium",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: []*ParsedSkuData{NewParsedSkuData("europe-west1", OnDemand, 12, "g2", Ram)},
 			wantError:         nil,
 		},
 		"Ram N1": {
 			description:       "N1 Predefined Instance Ram running in Zurich",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: []*ParsedSkuData{NewParsedSkuData("europe-west1", OnDemand, 12, "n1", Ram)},
 			wantError:         nil,
 		},
 		"Amd": {
 			description:       "N2D AMD Instance Ram running in Israel",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: []*ParsedSkuData{NewParsedSkuData("europe-west1", OnDemand, 12, "n2d", Ram)},
 			wantError:         nil,
 		},
 		"Compute optimized": {
 			description:       "Compute optimized Instance Core running in Dallas",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: []*ParsedSkuData{NewParsedSkuData("europe-west1", OnDemand, 12, "c2", Cpu)},
 			wantError:         nil,
 		},
 		"Compute optimized Spot": {
 			description:       "Spot Preemptible Compute optimized Ram running in Montreal",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: []*ParsedSkuData{NewParsedSkuData("europe-west1", Spot, 12, "c2", Ram)},
 			wantError:         nil,
 		},
 		"3 word region": {
 			description:       "Spot Preemptible E2 Instance Core running in Salt Lake City",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: []*ParsedSkuData{NewParsedSkuData("europe-west1", Spot, 12, "e2", Cpu)},
 			wantError:         nil,
 		},
 		"Ignore GPU": {
 			description:       "Nvidia L4 GPU attached to Spot Preemptible VMs running in Hong Kong",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
 			wantError:         SkuNotRelevant,
 		},
 		"Ignore Network": {
 			description:       "Network Internet Egress from Israel to South America",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
 			wantError:         SkuNotRelevant,
 		},
 		"Ignore Sole Tenancy": {
 			description:       "C3 Sole Tenancy Instance Ram running in Turin",
-			serviceRegions:    []string{"europe-west1"},
-			price:             12,
-			wantParsedSkuData: nil,
-			wantError:         SkuNotRelevant,
-		},
-		"Ignore Extreme PD Capacity": {
-			description:       "Extreme PD Capacity in Las Vegas",
-			serviceRegions:    []string{"europe-west1"},
-			price:             12,
-			wantParsedSkuData: nil,
-			wantError:         SkuNotRelevant,
-		},
-		"Ignore Storage PD": {
-			description:       "Storage PD Capacity in Seoul",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
 			wantError:         SkuNotRelevant,
 		},
 		"Ignore Cloud Interconnect": {
 			description:       "Cloud Interconnect - Egress traffic Asia Pacific",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
 			wantError:         SkuNotRelevant,
 		},
 		"Ignore Commitment": {
 			description:       "Commitment v1: Cpu in Montreal for 1 Year",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
 			wantError:         SkuNotRelevant,
 		},
 		"Ignore Custom": {
 			description:       "Spot Preemptible Custom Instance Core running in Dammam",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
 			wantError:         SkuNotRelevant,
 		},
 		"Ignore Micro": {
 			description:       "Spot Preemptible Micro Instance with burstable CPU running in EMEA",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
 			wantError:         SkuNotRelevant,
 		},
 		"Ignore Small": {
 			description:       "Spot Preemptible Small Instance with 1 VCPU running in Paris",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
 			wantError:         SkuNotRelevant,
 		},
 		"Memory Optimized": {
 			description:       "Memory-optimized Instance Core running in Zurich",
-			serviceRegions:    []string{"europe-west1"},
+			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
 			wantError:         SkuNotRelevant,
@@ -481,7 +594,7 @@ func Test_getDataFromSku(t *testing.T) {
 	for name, tt := range tests {
 		sku := &billingpb.Sku{
 			Description:    tt.description,
-			ServiceRegions: tt.serviceRegions,
+			ServiceRegions: tt.serviceCompute,
 			PricingInfo: []*billingpb.PricingInfo{{
 				PricingExpression: &billingpb.PricingExpression{
 					TieredRates: []*billingpb.PricingExpression_TierRate{{

@@ -11,6 +11,7 @@ import (
 var (
 	re              = regexp.MustCompile(`\bin\b`)
 	GkeClusterLabel = "goog-k8s-cluster-name"
+	GkeRegionLabel  = "goog-k8s-cluster-location"
 )
 
 // MachineSpec is a slimmed down representation of a google compute.Instance struct
