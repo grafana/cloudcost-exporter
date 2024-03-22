@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
+
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 var (
@@ -48,10 +50,6 @@ const (
 	Cpu Resource = iota
 	Ram
 	Storage
-)
-
-const (
-	hoursInMonth = 24.35 * 30 // 24.35 is the average amount of hours in a day over a year
 )
 
 type ParsedSkuData struct {
@@ -233,7 +231,7 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 						break
 					}
 				}
-				pricingMap.Storage[data.Region].Storage[storageClass] = float64(data.Price) * 1e-9 / hoursInMonth
+				pricingMap.Storage[data.Region].Storage[storageClass] = float64(data.Price) * 1e-9 / utils.HoursInMonth
 			}
 		}
 	}

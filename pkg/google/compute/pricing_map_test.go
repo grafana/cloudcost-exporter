@@ -12,6 +12,8 @@ import (
 	"google.golang.org/genproto/googleapis/type/money"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
+
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
@@ -320,7 +322,7 @@ func TestGeneratePricingMap(t *testing.T) {
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]float64{
-							"pd-standard": 1.0 / hoursInMonth,
+							"pd-standard": 1.0 / utils.HoursInMonth,
 						},
 					},
 				},
@@ -347,7 +349,7 @@ func TestGeneratePricingMap(t *testing.T) {
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]float64{
-							"pd-ssd": 1.0 / hoursInMonth,
+							"pd-ssd": 1.0 / utils.HoursInMonth,
 						},
 					},
 				},
@@ -374,7 +376,7 @@ func TestGeneratePricingMap(t *testing.T) {
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]float64{
-							"pd-balanced": 1.0 / hoursInMonth,
+							"pd-balanced": 1.0 / utils.HoursInMonth,
 						},
 					},
 				},
@@ -401,7 +403,7 @@ func TestGeneratePricingMap(t *testing.T) {
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]float64{
-							"pd-extreme": 1.0 / hoursInMonth,
+							"pd-extreme": 1.0 / utils.HoursInMonth,
 						},
 					},
 				},
