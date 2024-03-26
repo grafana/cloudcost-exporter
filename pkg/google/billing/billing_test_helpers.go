@@ -198,6 +198,23 @@ func (s *FakeCloudCatalogServer) ListSkus(_ context.Context, req *billingpb.List
 					},
 				}},
 			},
+			{
+				Name:           "SSD Storage",
+				Description:    "SSD backed PD Capacity",
+				ServiceRegions: []string{"us-east4"},
+				Category: &billingpb.Category{
+					ResourceFamily: "Storage",
+				},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 187000000,
+							},
+						}},
+					},
+				}},
+			},
 		},
 	}, nil
 }

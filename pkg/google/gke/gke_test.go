@@ -175,6 +175,20 @@ func TestCollector_Collect(t *testing.T) {
 					MetricType: prometheus.GaugeValue,
 				},
 				{
+					FqName: "cloudcost_gcp_gke_persistent_volume_usd_per_gib_hour",
+					Labels: map[string]string{
+						"cluster_name":     "test",
+						"namespace":        "cloudcost-exporter",
+						"persistentvolume": "test-ssd-disk",
+						"region":           "us-east4",
+						"project":          "testing",
+						"storage_class":    "pd-ssd",
+					},
+					Value:      0.15359342915811086,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+
 					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n1",
@@ -357,6 +371,16 @@ func TestCollector_Collect(t *testing.T) {
 								},
 								Description: `{"kubernetes.io/created-for/pvc/namespace":"cloudcost-exporter"}`,
 								Type:        "pd-standard",
+							},
+							{
+								Name: "test-ssd-disk",
+								Zone: "testing/us-east4",
+								Labels: map[string]string{
+									compute.GkeClusterLabel: "test",
+								},
+								Description: `{"kubernetes.io/created-for/pvc/namespace":"cloudcost-exporter"}`,
+								Type:        "pd-ssd",
+								SizeGb:      600,
 							},
 						},
 					}

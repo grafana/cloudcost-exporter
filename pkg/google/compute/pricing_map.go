@@ -3,6 +3,7 @@ package compute
 import (
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 
@@ -225,11 +226,22 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
 				}
 				storageClass := ""
 				for description, sc := range storageClasses {
-					if strings.Contains(data.Description, description) {
+					// We check to see if the description starts with the storage class name
+					// This is primarily because this could return a false positive in cases of Regional storage which
+					// has a similar description.
+					if strings.Index(data.Description, description) == 0 {
 						storageClass = sc
 						// Break to prevent overwritting the storage class
 						break
 					}
+				}
+				if storageClass == "" {
+					log.Printf("Storage class not found for %s. Skipping", data.Description)
+					continue
+				}
+				if pricingMap.Storage[data.Region].Storage[storageClass] != 0 {
+					log.Printf("Storage class %s already exists in region %s", storageClass, data.Region)
+					continue
 				}
 				pricingMap.Storage[data.Region].Storage[storageClass] = float64(data.Price) * 1e-9 / utils.HoursInMonth
 			}
