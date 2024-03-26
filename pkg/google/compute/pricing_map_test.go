@@ -371,6 +371,19 @@ func TestGeneratePricingMap(t *testing.T) {
 						}},
 					},
 				}},
+			}, {
+				Description:    "Regional Balanced PD Capacity",
+				Category:       &billingpb.Category{ResourceFamily: "Storage"},
+				ServiceRegions: []string{"europe-west1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9 * 2,
+							},
+						}},
+					},
+				}},
 			}},
 			expectedPricingMap: &StructuredPricingMap{
 				Storage: map[string]*StoragePricing{
@@ -404,6 +417,48 @@ func TestGeneratePricingMap(t *testing.T) {
 					"europe-west1": {
 						Storage: map[string]float64{
 							"pd-extreme": 1.0 / utils.HoursInMonth,
+						},
+					},
+				},
+				Compute: map[string]*FamilyPricing{},
+			},
+		},
+		{
+			name: "us-east-4 region with many skus",
+			skus: []*billingpb.Sku{{
+				Description:    "SSD backed PD Capacity",
+				Category:       &billingpb.Category{ResourceFamily: "Storage"},
+				ServiceRegions: []string{"us-east4"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 187000000,
+							},
+						}},
+					},
+				}},
+			},
+				{
+					Description:    "Regional SSD backed PD Capacity",
+					Category:       &billingpb.Category{ResourceFamily: "Storage"},
+					ServiceRegions: []string{"us-east4"},
+					PricingInfo: []*billingpb.PricingInfo{{
+						PricingExpression: &billingpb.PricingExpression{
+							TieredRates: []*billingpb.PricingExpression_TierRate{{
+								UnitPrice: &money.Money{
+									Nanos: 187000000 * 2,
+								},
+							}},
+						},
+					}},
+				},
+			},
+			expectedPricingMap: &StructuredPricingMap{
+				Storage: map[string]*StoragePricing{
+					"us-east4": {
+						Storage: map[string]float64{
+							"pd-ssd": 187000000 * 1e-9 / utils.HoursInMonth,
 						},
 					},
 				},

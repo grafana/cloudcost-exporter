@@ -185,8 +185,10 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					project,
 					storageClass,
 				}
+
 				price, err := c.ComputePricingMap.GetCostOfStorage(region, storageClass)
 				if err != nil {
+
 					fmt.Printf("%s error getting cost of storage: %v\n", disk.Name, err)
 					continue
 				}
