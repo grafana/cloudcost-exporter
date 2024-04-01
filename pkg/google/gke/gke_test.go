@@ -580,14 +580,27 @@ func Test_getNameFromDisk(t *testing.T) {
 		"Description not formatted as json should return the disks name": {
 			disk: &computev1.Disk{
 				Description: "test",
+				Name:        "testing123",
 			},
-			want: "",
+			want: "testing123",
 		},
 		"Description formatted as json with multiple keys should return the name": {
 			disk: &computev1.Disk{
 				Description: `{"kubernetes.io/created-for/pv/name":"pvc-32613356-4cee-481d-902f-daa7223d14ab","kubernetes.io/created-for/pvc/name":"prometheus","kubernetes.io/created-for/pvc/namespace":"prometheus"}`,
 			},
 			want: "pvc-32613356-4cee-481d-902f-daa7223d14ab",
+		},
+		"Description formatted as json with one key should return the name": {
+			disk: &computev1.Disk{
+				Description: `{"kubernetes.io-created-for/pv-name":"pvc-32613356-4cee-481d-902f-daa7223d14ab"}`,
+			},
+			want: "pvc-32613356-4cee-481d-902f-daa7223d14ab",
+		},
+		"Description formatted as json with multiple wrong keys should return empty string": {
+			disk: &computev1.Disk{
+				Description: `{"kubernetes.io/created-for/pvc/name":"prometheus","kubernetes.io/created-for/pvc/namespace":"prometheus"}`,
+			},
+			want: "",
 		},
 	}
 	for name, tt := range tests {
