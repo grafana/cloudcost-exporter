@@ -1,5 +1,5 @@
 # Build Go Binary
-FROM golang:1.22.0-alpine AS build
+FROM golang:1.22.1-alpine AS build
 ARG GO_LDFLAGS
 
 WORKDIR /app
