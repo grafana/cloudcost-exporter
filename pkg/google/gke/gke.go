@@ -175,12 +175,13 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				region := getRegionFromDisk(disk)
 
 				namespace := getNamespaceFromDisk(disk)
+				name := getNameFromDisk(disk)
 				diskType := strings.Split(disk.Type, "/")
 				storageClass := diskType[len(diskType)-1]
 				labelValues := []string{
 					clusterName,
 					namespace,
-					disk.Name,
+					name,
 					region,
 					project,
 					storageClass,
@@ -247,22 +248,7 @@ func getNamespaceFromDisk(disk *compute.Disk) string {
 	if err != nil {
 		return ""
 	}
-	for _, key := range keys {
-		if val, ok := desc[key]; ok {
-			return val
-		}
-	}
-	return ""
-}
-
-func extractLabelsFromDesc(description string, labels map[string]string) error {
-	if description == "" {
-		return nil
-	}
-	if err := json.Unmarshal([]byte(description), &labels); err != nil {
-		return err
-	}
-	return nil
+	return coalesce(desc, keys...)
 }
 
 func getRegionFromDisk(disk *compute.Disk) string {
@@ -280,4 +266,43 @@ func getRegionFromDisk(disk *compute.Disk) string {
 		return zone
 	}
 	return zone[:strings.LastIndex(zone, "-")]
+}
+
+// getNameFromDisk will return the name of the disk. If the disk has a label "kubernetes.io/created-for/pv/name" it will return the value stored in that key.
+// otherwise it will return the disk name that is directly associated with the disk.
+func getNameFromDisk(disk *compute.Disk) string {
+	desc := make(map[string]string)
+	err := extractLabelsFromDesc(disk.Description, desc)
+	if err != nil {
+		return disk.Name
+	}
+	// first check that the key exists in the map, if it does return the value
+	name := coalesce(desc, "kubernetes.io/created-for/pv/name", "kubernetes.io-created-for/pv-name")
+	if name != "" {
+		return name
+	}
+	return disk.Name
+}
+
+// coalesce will take a map and a list of keys and return the first value that is found in the map. If no value is found it will return an empty string
+func coalesce(desc map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if val, ok := desc[key]; ok {
+			return val
+		}
+	}
+	return ""
+}
+
+// extractLabelsFromDesc will take a description string and extract the labels from it. GKE disks store their description as
+// a json blob in the description field. This function will extract the labels from that json blob and return them as a map
+// Some useful information about the json blob are name, cluster, namespace, and pvc's that the disk is associated with
+func extractLabelsFromDesc(description string, labels map[string]string) error {
+	if description == "" {
+		return nil
+	}
+	if err := json.Unmarshal([]byte(description), &labels); err != nil {
+		return err
+	}
+	return nil
 }
