@@ -14,8 +14,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/collectors/version"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/prometheus/common/version"
+	cversion "github.com/prometheus/common/version"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
@@ -128,8 +129,8 @@ func main() {
 	operationalFlags(flag.CommandLine, &cfg)
 	flag.Parse()
 
-	log.Printf("Version %s", version.Info())
-	log.Printf("Build Context %s", version.BuildContext())
+	log.Printf("Version %s", cversion.Info())
+	log.Printf("Build Context %s", cversion.BuildContext())
 
 	csp, err := selectProvider(&cfg)
 	if err != nil {
