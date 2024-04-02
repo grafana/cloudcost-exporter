@@ -169,6 +169,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				)
 			}
 		}
+		seenDisks := make(map[string]bool)
 		for group := range disks {
 			for _, disk := range group {
 				clusterName := disk.Labels[gcpCompute.GkeClusterLabel]
@@ -176,6 +177,10 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 
 				namespace := getNamespaceFromDisk(disk)
 				name := getNameFromDisk(disk)
+				if _, ok := seenDisks[name]; ok {
+					continue
+				}
+				seenDisks[name] = true
 				diskType := strings.Split(disk.Type, "/")
 				storageClass := diskType[len(diskType)-1]
 				labelValues := []string{

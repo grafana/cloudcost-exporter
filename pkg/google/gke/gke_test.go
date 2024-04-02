@@ -382,6 +382,17 @@ func TestCollector_Collect(t *testing.T) {
 								Type:        "pd-ssd",
 								SizeGb:      600,
 							},
+							{
+								// Introduce a duplicated disk to ensure the duplicate doesn't cause an issue emitting metrics
+								Name: "test-ssd-disk",
+								Zone: "testing/us-east4",
+								Labels: map[string]string{
+									compute.GkeClusterLabel: "test",
+								},
+								Description: `{"kubernetes.io/created-for/pvc/namespace":"cloudcost-exporter"}`,
+								Type:        "pd-ssd",
+								SizeGb:      600,
+							},
 						},
 					}
 				default:
