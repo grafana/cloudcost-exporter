@@ -17,23 +17,13 @@ Prior to running the exporter, you will need to ensure you have the appropriate 
 # Usage
 go run cmd/exporter/exporter.go --help
 
-# GCP - prod
-go run cmd/exporter/exporter.go -provider gcp -project-id=ops-tools-1203
+# GCP 
+go run cmd/exporter/exporter.go -provider gcp -project-id=$GCP_PROJECT_ID
 
-# GCP - prod - with custom bucket projects
+# GCP - with custom bucket projects
 
-go run cmd/exporter/exporter.go -provider gcp -project-id=ops-tools-1203 -gcp.bucket-projects=grafanalabs-global -gcp.bucket-projects=ops-tools-1203
-
-# GCP - dev
-go run cmd/exporter/exporter.go -provider gcp -project-id=grafanalabs-dev
-
-# AWS - dev
-go run cmd/exporter/exporter.go -provider aws -aws.region=us-east-1 -aws.profile workloads-dev
+go run cmd/exporter/exporter.go -provider gcp -project-id=$GCP_PROJECT_ID -gcp.bucket-projects=$GPC_PROJECT_ID -gcp.bucket-projects=$GPC_PROJECT_ID
 
 # AWS - Prod
-go run cmd/exporter/exporter.go -provider aws -aws.profile workloads-prod
+go run cmd/exporter/exporter.go -provider aws -aws.profile $AWS_PROFILE
 ```
-
-> [!Note]
-> GCP Only: you can specify the services to collect cost metrics on.
-> To collect GKE, append any of the gcp commands with `-gcp.services=gke -gcp.services=gcs`
