@@ -15,6 +15,13 @@ IMAGE_NAME_VERSION=$(IMAGE_PREFIX)/$(IMAGE_NAME):$(VERSION)
 WORKFLOW_TEMPLATE=cloudcost-exporter
 WORKFLOW_NAMESPACE=capacity-cd
 
+PROM_VERSION_PKG ?= github.com/prometheus/common/version
+BUILD_USER   ?= $(shell whoami)@$(shell hostname)
+BUILD_DATE   ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+GIT_BRANCH   ?= $(shell git rev-parse --abbrev-ref HEAD)
+GIT_REVISION ?= $(shell git rev-parse --short HEAD)
+GO_LDFLAGS = -X $(PROM_VERSION_PKG).Branch=$(GIT_BRANCH) -X $(PROM_VERSION_PKG).Version=$(VERSION) -X $(PROM_VERSION_PKG).Revision=$(GIT_REVISION) -X ${PROM_VERSION_PKG}.BuildUser=${BUILD_USER} -X ${PROM_VERSION_PKG}.BuildDate=${BUILD_DATE}
+
 build-image:
 	docker build --build-arg GO_LDFLAGS="$(GO_LDFLAGS)" -t $(IMAGE_PREFIX)/$(IMAGE_NAME) -t $(IMAGE_NAME_VERSION) .
 
