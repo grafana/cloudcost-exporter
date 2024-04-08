@@ -172,29 +172,25 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		seenDisks := make(map[string]bool)
 		for group := range disks {
 			for _, disk := range group {
-				clusterName := disk.Labels[gcpCompute.GkeClusterLabel]
-				region := getRegionFromDisk(disk)
-
-				namespace := getNamespaceFromDisk(disk)
-				name := getNameFromDisk(disk)
-				if _, ok := seenDisks[name]; ok {
+				d := NewDisk(disk, project)
+				// This an effort to deduplicate disks that have duplicate names
+				// See https://github.com/grafana/cloudcost-exporter/issues/143
+				if _, ok := seenDisks[d.Name]; ok {
 					continue
 				}
-				seenDisks[name] = true
-				diskType := strings.Split(disk.Type, "/")
-				storageClass := diskType[len(diskType)-1]
+				seenDisks[d.Name] = true
+
 				labelValues := []string{
-					clusterName,
-					namespace,
-					name,
-					region,
-					project,
-					storageClass,
+					d.Cluster,
+					d.Namespace,
+					d.Name,
+					d.Region,
+					d.Project,
+					d.StorageClass,
 				}
 
-				price, err := c.ComputePricingMap.GetCostOfStorage(region, storageClass)
+				price, err := c.ComputePricingMap.GetCostOfStorage(d.Region, d.StorageClass)
 				if err != nil {
-
 					fmt.Printf("%s error getting cost of storage: %v\n", disk.Name, err)
 					continue
 				}
