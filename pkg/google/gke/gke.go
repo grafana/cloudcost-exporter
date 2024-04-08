@@ -2,7 +2,6 @@ package gke
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -46,10 +45,6 @@ var (
 		[]string{"cluster_name", "namespace", "persistentvolume", "region", "project", "storage_class"},
 		nil,
 	)
-)
-
-var (
-	keys = []string{"kubernetes.io/created-for/pvc/namespace", "kubernetes.io-created-for/pvc-namespace"}
 )
 
 type Config struct {
@@ -175,21 +170,21 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				d := NewDisk(disk, project)
 				// This an effort to deduplicate disks that have duplicate names
 				// See https://github.com/grafana/cloudcost-exporter/issues/143
-				if _, ok := seenDisks[d.Name]; ok {
+				if _, ok := seenDisks[d.Name()]; ok {
 					continue
 				}
-				seenDisks[d.Name] = true
+				seenDisks[d.Name()] = true
 
 				labelValues := []string{
 					d.Cluster,
-					d.Namespace,
-					d.Name,
-					d.Region,
+					d.Namespace(),
+					d.Name(),
+					d.Region(),
 					d.Project,
-					d.StorageClass,
+					d.StorageClass(),
 				}
 
-				price, err := c.ComputePricingMap.GetCostOfStorage(d.Region, d.StorageClass)
+				price, err := c.ComputePricingMap.GetCostOfStorage(d.Region(), d.StorageClass())
 				if err != nil {
 					fmt.Printf("%s error getting cost of storage: %v\n", disk.Name, err)
 					continue
@@ -241,69 +236,4 @@ func ListDisks(project string, zone string, service *compute.Service) ([]*comput
 		return nil, err
 	}
 	return disks, nil
-}
-
-func getNamespaceFromDisk(disk *compute.Disk) string {
-	desc := make(map[string]string)
-	err := extractLabelsFromDesc(disk.Description, desc)
-	if err != nil {
-		return ""
-	}
-	return coalesce(desc, keys...)
-}
-
-func getRegionFromDisk(disk *compute.Disk) string {
-	zone := disk.Labels[gcpCompute.GkeRegionLabel]
-	if zone == "" {
-		// This would be a case where the disk is no longer mounted _or_ the disk is associated with a Compute instance
-		zone = disk.Zone[strings.LastIndex(disk.Zone, "/")+1:]
-	}
-	// If zone _still_ is empty we can't determine the region, so we return an empty string
-	// This prevents an index out of bounds error
-	if zone == "" {
-		return ""
-	}
-	if strings.Count(zone, "-") < 2 {
-		return zone
-	}
-	return zone[:strings.LastIndex(zone, "-")]
-}
-
-// getNameFromDisk will return the name of the disk. If the disk has a label "kubernetes.io/created-for/pv/name" it will return the value stored in that key.
-// otherwise it will return the disk name that is directly associated with the disk.
-func getNameFromDisk(disk *compute.Disk) string {
-	desc := make(map[string]string)
-	err := extractLabelsFromDesc(disk.Description, desc)
-	if err != nil {
-		return disk.Name
-	}
-	// first check that the key exists in the map, if it does return the value
-	name := coalesce(desc, "kubernetes.io/created-for/pv/name", "kubernetes.io-created-for/pv-name")
-	if name != "" {
-		return name
-	}
-	return disk.Name
-}
-
-// coalesce will take a map and a list of keys and return the first value that is found in the map. If no value is found it will return an empty string
-func coalesce(desc map[string]string, keys ...string) string {
-	for _, key := range keys {
-		if val, ok := desc[key]; ok {
-			return val
-		}
-	}
-	return ""
-}
-
-// extractLabelsFromDesc will take a description string and extract the labels from it. GKE disks store their description as
-// a json blob in the description field. This function will extract the labels from that json blob and return them as a map
-// Some useful information about the json blob are name, cluster, namespace, and pvc's that the disk is associated with
-func extractLabelsFromDesc(description string, labels map[string]string) error {
-	if description == "" {
-		return nil
-	}
-	if err := json.Unmarshal([]byte(description), &labels); err != nil {
-		return err
-	}
-	return nil
 }
