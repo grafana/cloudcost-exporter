@@ -211,3 +211,30 @@ func Test_getStorageClassFromDisk(t *testing.T) {
 		})
 	}
 }
+
+func Test_DiskType(t *testing.T) {
+	tests := map[string]struct {
+		disk *Disk
+		want string
+	}{
+		"Disk with no disk type returns default value": {
+			disk: NewDisk(&computev1.Disk{}, ""),
+			want: "persistent_volume",
+		},
+		"Disk with a boot disk label returns boot_disk": {
+			disk: NewDisk(&computev1.Disk{
+				Labels: map[string]string{
+					BootDiskLabel: "true",
+				},
+			}, ""),
+			want: "boot_disk",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := test.disk.DiskType(); got != test.want {
+				t.Errorf("DiskType() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}

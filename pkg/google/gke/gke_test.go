@@ -170,6 +170,7 @@ func TestCollector_Collect(t *testing.T) {
 						"region":           "us-central1",
 						"project":          "testing",
 						"storage_class":    "pd-standard",
+						"disk_type":        "boot_disk",
 					},
 					Value:      0,
 					MetricType: prometheus.GaugeValue,
@@ -183,6 +184,7 @@ func TestCollector_Collect(t *testing.T) {
 						"region":           "us-east4",
 						"project":          "testing",
 						"storage_class":    "pd-ssd",
+						"disk_type":        "persistent_volume",
 					},
 					Value:      0.15359342915811086,
 					MetricType: prometheus.GaugeValue,
@@ -368,6 +370,7 @@ func TestCollector_Collect(t *testing.T) {
 								Zone: "testing/us-central1-a",
 								Labels: map[string]string{
 									compute.GkeClusterLabel: "test",
+									BootDiskLabel:           "",
 								},
 								Description: `{"kubernetes.io/created-for/pvc/namespace":"cloudcost-exporter"}`,
 								Type:        "pd-standard",
@@ -388,6 +391,7 @@ func TestCollector_Collect(t *testing.T) {
 								Zone: "testing/us-east4",
 								Labels: map[string]string{
 									compute.GkeClusterLabel: "test",
+									BootDiskLabel:           "",
 								},
 								Description: `{"kubernetes.io/created-for/pvc/namespace":"cloudcost-exporter"}`,
 								Type:        "pd-ssd",

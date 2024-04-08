@@ -115,10 +115,11 @@ func (d *Disk) StorageClass() string {
 	return diskType[len(diskType)-1]
 }
 
-// BootDisk will search through the labels for the existing of the BootDiskLabel and return true if it exists, otherwise false.
-func (d *Disk) BootDisk() bool {
+// DiskType will search through the labels to determine the type of disk. If the disk has a label "goog-gke-node" it will return "boot_disk"
+// Otherwise it returns persistent_volume
+func (d *Disk) DiskType() string {
 	if _, ok := d.Labels[BootDiskLabel]; ok {
-		return true
+		return "boot_disk"
 	}
-	return false
+	return "persistent_volume"
 }
