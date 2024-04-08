@@ -17,8 +17,8 @@ require (
 	github.com/stretchr/testify v1.8.4
 	go.uber.org/mock v0.4.0
 	google.golang.org/api v0.170.0
-	google.golang.org/genproto v0.0.0-20240213162025-012b6fc9bca9
-	google.golang.org/grpc v1.62.1
+	google.golang.org/genproto v0.0.0-20240227224415-6ceb2ff114de
+	google.golang.org/grpc v1.63.0
 )
 
 require (
