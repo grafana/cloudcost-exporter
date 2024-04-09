@@ -49,13 +49,13 @@ func NewDisk(disk *compute.Disk, project string) *Disk {
 
 // Namespace will search through the description fields for the namespace of the disk. If the namespace can't be determined
 // An empty string is return.
-func (d *Disk) Namespace() string {
+func (d Disk) Namespace() string {
 	return coalesce(d.description, pvcNamespaceKey, pvcNamespaceShortKey)
 }
 
 // Region will return the region of the disk by search through the zone field and returning the region. If the region can't be determined
 // It will return an empty string
-func (d *Disk) Region() string {
+func (d Disk) Region() string {
 	zone := d.labels[gcpCompute.GkeRegionLabel]
 	if zone == "" {
 		// This would be a case where the disk is no longer mounted _or_ the disk is associated with a Compute instance
@@ -74,7 +74,7 @@ func (d *Disk) Region() string {
 
 // Name will return the name of the disk. If the disk has a label "kubernetes.io/created-for/pv/name" it will return the value stored in that key.
 // otherwise it will return the disk name that is directly associated with the disk.
-func (d *Disk) Name() string {
+func (d Disk) Name() string {
 	if d.description == nil {
 		return d.name
 	}
@@ -111,14 +111,14 @@ func extractLabelsFromDesc(description string, labels map[string]string) error {
 
 // StorageClass will return the storage class of the disk by looking at the type. Type in GCP is represented as a URL and as such
 // we're looking for the last part of the URL to determine the storage class
-func (d *Disk) StorageClass() string {
+func (d Disk) StorageClass() string {
 	diskType := strings.Split(d.diskType, "/")
 	return diskType[len(diskType)-1]
 }
 
 // DiskType will search through the labels to determine the type of disk. If the disk has a label "goog-gke-node" it will return "boot_disk"
 // Otherwise it returns persistent_volume
-func (d *Disk) DiskType() string {
+func (d Disk) DiskType() string {
 	if _, ok := d.labels[BootDiskLabel]; ok {
 		return "boot_disk"
 	}
