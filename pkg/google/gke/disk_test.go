@@ -18,13 +18,11 @@ func Test_extractLabelsFromDesc(t *testing.T) {
 	}{
 		"Empty description should return an empty map": {
 			description:    "",
-			labels:         map[string]string{},
 			expectedLabels: map[string]string{},
 			wantErr:        false,
 		},
 		"Description not formatted as json should return an error": {
 			description:    "test",
-			labels:         map[string]string{},
 			expectedLabels: map[string]string{},
 			wantErr:        true,
 		},
