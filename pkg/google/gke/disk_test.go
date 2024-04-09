@@ -17,24 +17,30 @@ func Test_extractLabelsFromDesc(t *testing.T) {
 		wantErr        bool
 	}{
 		"Empty description should return an empty map": {
-			description:    "",
+			description: "",
+			// Label needs to be initialized to an empty map, otherwise the underlying method to write data to it will fail
+			labels:         map[string]string{},
 			expectedLabels: map[string]string{},
 			wantErr:        false,
 		},
 		"Description not formatted as json should return an error": {
-			description:    "test",
+			description: "test",
+			// Label needs to be initialized to an empty map, otherwise the underlying method to write data to it will fail
+			labels:         map[string]string{},
 			expectedLabels: map[string]string{},
 			wantErr:        true,
 		},
 		"Description formatted as json should return a map": {
-			description:    `{"test": "test"}`,
+			description: `{"test": "test"}`,
+			// Label needs to be initialized to an empty map, otherwise the underlying method to write data to it will fail
 			labels:         map[string]string{},
 			expectedLabels: map[string]string{"test": "test"},
 			wantErr:        false,
 		},
 		"Description formatted as json with multiple keys should return a map": {
 			description: `{"kubernetes.io/created-for/pv/name":"pvc-32613356-4cee-481d-902f-daa7223d14ab","kubernetes.io/created-for/pvc/name":"prometheus-server-data-prometheus-0","kubernetes.io/created-for/pvc/namespace":"prometheus"}`,
-			labels:      map[string]string{},
+			// Label needs to be initialized to an empty map, otherwise the underlying method to write data to it will fail
+			labels: map[string]string{},
 			expectedLabels: map[string]string{
 				"kubernetes.io/created-for/pv/name":       "pvc-32613356-4cee-481d-902f-daa7223d14ab",
 				"kubernetes.io/created-for/pvc/name":      "prometheus-server-data-prometheus-0",

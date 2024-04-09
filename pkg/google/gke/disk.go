@@ -10,12 +10,17 @@ import (
 	gcpCompute "github.com/grafana/cloudcost-exporter/pkg/google/compute"
 )
 
-var (
-	keys = []string{"kubernetes.io/created-for/pvc/namespace", "kubernetes.io-created-for/pvc-namespace"}
+const (
+	BootDiskLabel        = "goog-gke-node"
+	pvcNamespaceKey      = "kubernetes.io/created-for/pvc/namespace"
+	pvcNamespaceShortKey = "kubernetes.io-created-for/pvc-namespace"
+	pvNameKey            = "kubernetes.io/created-for/pv/name"
+	pvNameShortKey       = "kubernetes.io-created-for/pv-name"
 )
 
-const (
-	BootDiskLabel = "goog-gke-node"
+var (
+	pvcNamespaceKeys = []string{pvcNamespaceKey, pvcNamespaceShortKey}
+	pvNameKeys       = []string{pvNameKey, pvNameShortKey}
 )
 
 type Disk struct {
@@ -49,7 +54,7 @@ func NewDisk(disk *compute.Disk, project string) *Disk {
 // Namespace will search through the description fields for the namespace of the disk. If the namespace can't be determined
 // An empty string is return.
 func (d *Disk) Namespace() string {
-	return coalesce(d.Description, keys...)
+	return coalesce(d.Description, pvcNamespaceKeys...)
 }
 
 // Region will return the region of the disk by search through the zone field and returning the region. If the region can't be determined
@@ -78,7 +83,7 @@ func (d *Disk) Name() string {
 		return d.DiskName
 	}
 	// first check that the key exists in the map, if it does return the value
-	name := coalesce(d.Description, "kubernetes.io/created-for/pv/name", "kubernetes.io-created-for/pv-name")
+	name := coalesce(d.Description, pvNameKeys...)
 	if name != "" {
 		return name
 	}
