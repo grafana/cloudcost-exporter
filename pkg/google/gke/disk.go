@@ -127,7 +127,7 @@ func (d Disk) DiskType() string {
 	return "persistent_volume"
 }
 
-// GiBPerGB GiBInGB is a helper const to convert from GB to GiB
+// GBPerGIB is a helper const to convert from GB to GiB
 // 1 << 30 is the number of bytes in a GiB
 // 1e9 is the number of bytes in a GB
 const GBPerGIB = 1e9 / (1 << 30)
