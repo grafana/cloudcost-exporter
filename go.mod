@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	cloud.google.com/go/billing v1.18.4
-	cloud.google.com/go/compute v1.24.0
+	cloud.google.com/go/compute v1.25.1
 	cloud.google.com/go/storage v1.40.0
 	github.com/aws/aws-sdk-go-v2 v1.26.1
 	github.com/aws/aws-sdk-go-v2/config v1.27.0
