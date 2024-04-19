@@ -27,6 +27,7 @@ type Disk struct {
 	labels      map[string]string
 	description map[string]string
 	diskType    string // type is a reserved word, which is why we're using diskType
+	Size        int64
 }
 
 func NewDisk(disk *compute.Disk, project string) *Disk {
@@ -39,6 +40,7 @@ func NewDisk(disk *compute.Disk, project string) *Disk {
 		diskType:    disk.Type,
 		labels:      disk.Labels,
 		description: make(map[string]string),
+		Size:        disk.SizeGb,
 	}
 	err := extractLabelsFromDesc(disk.Description, d.description)
 	if err != nil {
@@ -123,4 +125,15 @@ func (d Disk) DiskType() string {
 		return "boot_disk"
 	}
 	return "persistent_volume"
+}
+
+// GBPerGIB is a helper const to convert from GB to GiB
+// 1 << 30 is the number of bytes in a GiB
+// 1e9 is the number of bytes in a GB
+const GBPerGIB = 1e9 / (1 << 30)
+
+// SizeInGib is used to convert the size of the disk from GigaBytes to GibiBytes. This is particularly important when
+// calculating the cost of the disk since the pricing is in GiB.
+func (d Disk) SizeInGib() float64 {
+	return float64(d.Size) * GBPerGIB
 }

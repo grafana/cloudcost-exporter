@@ -40,8 +40,8 @@ var (
 		nil,
 	)
 	persistentVolumeHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "persistent_volume_usd_per_gib_hour"),
-		"The cost of a GKE Persistent Volume in USD/(GiB*h)",
+		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "persistent_volume_usd_per_hour"),
+		"The cost of a GKE Persistent Volume in USD.",
 		[]string{"cluster_name", "namespace", "persistentvolume", "region", "project", "storage_class", "disk_type"},
 		nil,
 	)
@@ -193,7 +193,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				ch <- prometheus.MustNewConstMetric(
 					persistentVolumeHourlyCostDesc,
 					prometheus.GaugeValue,
-					float64(disk.SizeGb)*price,
+					d.SizeInGib()*price,
 					labelValues...,
 				)
 			}

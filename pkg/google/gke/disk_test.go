@@ -242,3 +242,30 @@ func Test_DiskType(t *testing.T) {
 		})
 	}
 }
+
+func TestDisk_SizeInGib(t *testing.T) {
+	tests := map[string]struct {
+		disk *Disk
+		want float64
+	}{
+		"Disk with size 0 should return 0": {
+			disk: NewDisk(&computev1.Disk{
+				SizeGb: 0,
+			}, ""),
+			want: 0,
+		},
+		"Disk with size 1GB should return 1GiB": {
+			disk: NewDisk(&computev1.Disk{
+				SizeGb: 1,
+			}, ""),
+			want: 0.9313225746154785,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := tt.disk.SizeInGib(); got != tt.want {
+				t.Errorf("SizeInGib() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

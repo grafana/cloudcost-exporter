@@ -162,7 +162,7 @@ func TestCollector_Collect(t *testing.T) {
 					MetricType: prometheus.GaugeValue,
 				},
 				{
-					FqName: "cloudcost_gcp_gke_persistent_volume_usd_per_gib_hour",
+					FqName: "cloudcost_gcp_gke_persistent_volume_usd_per_hour",
 					Labels: map[string]string{
 						"cluster_name":     "test",
 						"namespace":        "cloudcost-exporter",
@@ -176,7 +176,7 @@ func TestCollector_Collect(t *testing.T) {
 					MetricType: prometheus.GaugeValue,
 				},
 				{
-					FqName: "cloudcost_gcp_gke_persistent_volume_usd_per_gib_hour",
+					FqName: "cloudcost_gcp_gke_persistent_volume_usd_per_hour",
 					Labels: map[string]string{
 						"cluster_name":     "test",
 						"namespace":        "cloudcost-exporter",
@@ -186,7 +186,7 @@ func TestCollector_Collect(t *testing.T) {
 						"storage_class":    "pd-ssd",
 						"disk_type":        "persistent_volume",
 					},
-					Value:      0.15359342915811086,
+					Value:      0.14304502788755194,
 					MetricType: prometheus.GaugeValue,
 				},
 				{
