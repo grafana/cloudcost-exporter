@@ -135,6 +135,9 @@ func New(config *Config) (*AWS, error) {
 
 func (a *AWS) RegisterCollectors(registry provider.Registry) error {
 	log.Printf("Registering %d collectors for AWS", len(a.collectors))
+	registry.MustRegister(
+		collectorScrapesTotalCounter,
+	)
 	for _, c := range a.collectors {
 		if err := c.Register(registry); err != nil {
 			return err
@@ -150,6 +153,7 @@ func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
 	ch <- providerLastScrapeDurationDesc
 	ch <- collectorLastScrapeTime
 	ch <- providerLastScrapeTime
+	ch <- collectorSuccessDesc
 	for _, c := range a.collectors {
 		if err := c.Describe(ch); err != nil {
 			log.Printf("Error describing collector %s: %s", c.Name(), err)
@@ -174,6 +178,7 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, collectorSuccess, c.Name())
+			collectorScrapesTotalCounter.WithLabelValues(subsystem, c.Name()).Inc()
 		}(c)
 	}
 	wg.Wait()
