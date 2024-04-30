@@ -64,6 +64,18 @@ var (
 		},
 		[]string{"provider", "collector"},
 	)
+	collectorLastScrapeTime = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "last_scrape_time"),
+		"Time of the last scrape.W",
+		[]string{"provider", "collector"},
+		nil,
+	)
+	providerLastScrapeTime = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "last_scrape_time"),
+		"Time of the last scrape.",
+		[]string{"provider"},
+		nil,
+	)
 )
 
 type GCP struct {
@@ -163,6 +175,8 @@ func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collectorDurationDesc
 	ch <- providerLastScrapeErrorDesc
 	ch <- providerLastScrapeDurationDesc
+	ch <- collectorLastScrapeTime
+	ch <- providerLastScrapeTime
 	for _, c := range g.collectors {
 		if err := c.Describe(ch); err != nil {
 			log.Printf("Error describing collector %s: %s", c.Name(), err)
@@ -187,6 +201,7 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 			log.Printf("Collector(%s) collect respose=%.2f", c.Name(), collectorSuccess)
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorSuccess, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), subsystem, c.Name())
+			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
 			collectorScrapesTotalCounter.WithLabelValues(subsystem, c.Name()).Inc()
 		}(c)
 	}
@@ -194,5 +209,6 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 	// When can the error actually happen? Potentially if all the collectors fail?
 	ch <- prometheus.MustNewConstMetric(providerLastScrapeErrorDesc, prometheus.GaugeValue, 0.0, subsystem)
 	ch <- prometheus.MustNewConstMetric(providerLastScrapeDurationDesc, prometheus.GaugeValue, time.Since(start).Seconds(), subsystem)
+	ch <- prometheus.MustNewConstMetric(providerLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem)
 	providerScrapesTotalCounter.WithLabelValues(subsystem).Inc()
 }

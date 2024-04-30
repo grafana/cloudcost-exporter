@@ -29,11 +29,61 @@ type AWS struct {
 }
 
 var (
+	providerLastScrapeErrorDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "last_scrape_error"),
+		"Was the last scrape an error. 1 indicates an error.",
+		[]string{"provider"},
+		nil,
+	)
 	collectorSuccessDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "collector_success"),
 		"Was the last scrape of the AWS metrics successful.",
 		[]string{"collector"},
 		nil,
+	)
+	collectorLastScrapeErrorDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "last_scrape_error"),
+		"Was the last scrape an error. 1 indicates an error.",
+		[]string{"provider", "collector"},
+		nil,
+	)
+	collectorDurationDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "last_scrape_duration_seconds"),
+		"Duration of the last scrape in seconds.",
+		[]string{"provider", "collector"},
+		nil,
+	)
+	collectorScrapesTotalCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "scrapes_total"),
+			Help: "Total number of scrapes for a collector.",
+		},
+		[]string{"provider", "collector"},
+	)
+	collectorLastScrapeTime = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "last_scrape_time"),
+		"Time of the last scrape.W",
+		[]string{"provider", "collector"},
+		nil,
+	)
+	providerLastScrapeTime = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "last_scrape_time"),
+		"Time of the last scrape.",
+		[]string{"provider"},
+		nil,
+	)
+	providerLastScrapeDurationDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "last_scrape_duration_seconds"),
+		"Duration of the last scrape in seconds.",
+		[]string{"provider"},
+		nil,
+	)
+	providerScrapesTotalCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "scrapes_total"),
+			Help: "Total number of scrapes.",
+		},
+		[]string{"provider"},
 	)
 )
 
@@ -94,6 +144,12 @@ func (a *AWS) RegisterCollectors(registry provider.Registry) error {
 }
 
 func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
+	ch <- collectorLastScrapeErrorDesc
+	ch <- collectorDurationDesc
+	ch <- providerLastScrapeErrorDesc
+	ch <- providerLastScrapeDurationDesc
+	ch <- collectorLastScrapeTime
+	ch <- providerLastScrapeTime
 	for _, c := range a.collectors {
 		if err := c.Describe(ch); err != nil {
 			log.Printf("Error describing collector %s: %s", c.Name(), err)
@@ -102,18 +158,27 @@ func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (a *AWS) Collect(ch chan<- prometheus.Metric) {
+	start := time.Now()
 	wg := &sync.WaitGroup{}
 	wg.Add(len(a.collectors))
 	for _, c := range a.collectors {
 		go func(c provider.Collector) {
+			now := time.Now()
 			defer wg.Done()
-			collectorSuccess := 1.0
+			collectorSuccess := 0.0
 			if err := c.Collect(ch); err != nil {
-				collectorSuccess = 0.0
+				collectorSuccess = 1.0
 				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
 			}
+			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorSuccess, subsystem, c.Name())
+			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), subsystem, c.Name())
+			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, collectorSuccess, c.Name())
 		}(c)
 	}
 	wg.Wait()
+	ch <- prometheus.MustNewConstMetric(providerLastScrapeErrorDesc, prometheus.GaugeValue, 0.0, subsystem)
+	ch <- prometheus.MustNewConstMetric(providerLastScrapeDurationDesc, prometheus.GaugeValue, time.Since(start).Seconds(), subsystem)
+	ch <- prometheus.MustNewConstMetric(providerLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem)
+	providerScrapesTotalCounter.WithLabelValues(subsystem).Inc()
 }
