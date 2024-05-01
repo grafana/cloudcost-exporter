@@ -1,13 +1,12 @@
 # Build Go Binary
-FROM golang:1.22.1-alpine AS build
-ARG GO_LDFLAGS
+FROM golang:1.22.1 AS build
 
 WORKDIR /app
 COPY ["go.mod", "go.sum", "./"]
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags "${GO_LDFLAGS} -extldflags '-static'" -o cloudcost-exporter ./cmd/exporter
+RUN make build-binary
 
 # Build Image
 FROM scratch

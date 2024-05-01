@@ -1,19 +1,14 @@
 .PHONY: build-image build-binary build test push push-dev
 
-current_makefile_dir := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+VERSION=dev-$(shell git describe --tags --dirty --always)
 
-# deployment_tools/docker/image-tag.sh
-VERSION=dev-$(shell date +%Y-%m-%d)-$(shell git rev-parse --short HEAD)
-
-# deployment_tools/docker/common.inc
-IMAGE_PREFIX=us.gcr.io/kubernetes-dev
+IMAGE_PREFIX=grafana
 
 IMAGE_NAME=cloudcost-exporter
 IMAGE_NAME_LATEST=${IMAGE_PREFIX}/${IMAGE_NAME}:latest
 IMAGE_NAME_VERSION=$(IMAGE_PREFIX)/$(IMAGE_NAME):$(VERSION)
 
 WORKFLOW_TEMPLATE=cloudcost-exporter
-WORKFLOW_NAMESPACE=capacity-cd
 
 PROM_VERSION_PKG ?= github.com/prometheus/common/version
 BUILD_USER   ?= $(shell whoami)@$(shell hostname)
@@ -26,7 +21,7 @@ build-image:
 	docker build --build-arg GO_LDFLAGS="$(GO_LDFLAGS)" -t $(IMAGE_PREFIX)/$(IMAGE_NAME) -t $(IMAGE_NAME_VERSION) .
 
 build-binary:
-	go build -v -ldflags "$(GO_LDFLAGS)" -o cloudcost-exporter ./cmd/exporter
+	CGO_ENABLED=0 go build -v -ldflags "$(GO_LDFLAGS)" -o cloudcost-exporter ./cmd/exporter
 
 build: build-binary build-image
 
