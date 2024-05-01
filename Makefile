@@ -1,6 +1,6 @@
 .PHONY: build-image build-binary build test push push-dev
 
-VERSION=dev-$(shell git describe --tags --dirty --always)
+VERSION=$(shell git describe --tags --dirty --always)
 
 IMAGE_PREFIX=grafana
 
