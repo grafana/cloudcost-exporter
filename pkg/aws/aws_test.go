@@ -63,6 +63,7 @@ func Test_RegisterCollectors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			r := mock_provider.NewMockRegistry(ctrl)
+			r.EXPECT().MustRegister(gomock.Any()).AnyTimes()
 			c := mock_provider.NewMockCollector(ctrl)
 			if tc.register != nil {
 				c.EXPECT().Register(r).DoAndReturn(tc.register).Times(tc.numCollectors)

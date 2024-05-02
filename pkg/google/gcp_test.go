@@ -89,6 +89,12 @@ func TestGCP_CollectMetrics(t *testing.T) {
 					MetricType: prometheus.GaugeValue,
 				},
 				{
+					FqName:     "cloudcost_exporter_collector_last_scrape_time",
+					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
+					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
 					FqName:     "cloudcost_exporter_last_scrape_error",
 					Labels:     utils.LabelMap{"provider": "gcp"},
 					Value:      0,
@@ -117,6 +123,12 @@ func TestGCP_CollectMetrics(t *testing.T) {
 					Value:      0,
 					MetricType: prometheus.GaugeValue,
 				}, {
+					FqName:     "cloudcost_exporter_collector_last_scrape_time",
+					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
+					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
 					FqName:     "cloudcost_exporter_collector_last_scrape_error",
 					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
 					Value:      0,
@@ -128,14 +140,16 @@ func TestGCP_CollectMetrics(t *testing.T) {
 					Value:      0,
 					MetricType: prometheus.GaugeValue,
 				},
+
 				{
-					FqName:     "cloudcost_exporter_last_scrape_error",
-					Labels:     utils.LabelMap{"provider": "gcp"},
+					FqName:     "cloudcost_exporter_collector_last_scrape_time",
+					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
 					Value:      0,
 					MetricType: prometheus.GaugeValue,
 				},
+
 				{
-					FqName:     "cloudcost_exporter_last_scrape_duration_seconds",
+					FqName:     "cloudcost_exporter_last_scrape_error",
 					Labels:     utils.LabelMap{"provider": "gcp"},
 					Value:      0,
 					MetricType: prometheus.GaugeValue,
@@ -176,13 +190,19 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			wg.Done()
 
 			wg.Wait()
+			ignoredMetricSuffix := []string{"duration_seconds", "last_scrape_time"}
+			// I don't love using a named loop, but this allows the inner loop to properly continue if the condition has been met.
+		metricsLoop:
 			for _, expectedMetric := range tt.expectedMetrics {
 				metric := utils.ReadMetrics(<-ch)
 				// We don't care about the value for the scrape durations, just that it exists and is returned in the order we expect.
-				if strings.Contains(metric.FqName, "duration_seconds") {
-					require.Equal(t, expectedMetric.FqName, metric.FqName)
-					continue
+				for _, suffix := range ignoredMetricSuffix {
+					if strings.Contains(metric.FqName, suffix) {
+						require.Equal(t, expectedMetric.FqName, metric.FqName)
+						continue metricsLoop
+					}
 				}
+
 				require.Equal(t, expectedMetric, metric)
 			}
 
