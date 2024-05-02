@@ -1,49 +1,64 @@
 # Cloud Cost Exporter
 
-Cloud Cost exporter is a metrics exporter designed to collect cost data from cloud providers and export the data in Prometheus format.
-This data can then be combined with usage data from tools such as stackdriver, yace, and promitor to provide a better picture of cloud costs.
+Cloud Cost exporter is a designed to collect cost data from cloud providers and export the data in Prometheus format.
+The cost data can then be combined with usage data from tools such as stackdriver, yace, and promitor to measure the spend of resources at a granular level.
 
-## Roadmap
+> [!WARNING]
+> This project is in the early stages of development and is subject to change.
+> Grafana Labs builds and maintains this project as part of our commitment to the open-source community, but we do not provide support for it.
+> In its current state, the exporter exports rates for resources and not the total spend.
+> We intend to opensource recording rules we use internally to measure the spend of resources.
+> For a better understanding of how we view measuring costs, view a talk given at [KubeCon NA 2023](https://youtu.be/8eiLXtL3oLk?si=wm-43ZQ9Fr51wS4a&t=1)
 
-The roadmap is as follows:
-- [x] GCP Cloud Storage
-- [x] AWS S3
-- [ ] Azure Blob Storage
-- [ ] GCP Cloud SQL
-- [ ] AWS RDS
+## Goals
 
-* We don't take into account currencies for now and assume all costs are in USD.
+The goal of this project is to provide a consistent interface for collecting the rate of cost data from multiple cloud providers and exporting the data in Prometheus format.
+There was a need to track the costs of both kubernetes and non-kubernetes resources across multiple cloud providers at a per minute interval.
+Billing data for each cloud provider takes hours to days for it to be fully accurate, and we needed a way of having a more real-time view of costs.
+
+Primary goals:
+- Track the rate(IE, $/cpu/hr) for resources across
+- Export the rate in Prometheus format
+- Support the major cloud providers(AWS, GCP, Azure)
+
+Non Goals:
+- Billing level accuracy
+- Measure the spend of resources
+- Take into account CUDs/Discounts/Reservations pricing information
+
+## Supported Cloud Providers
+
+- AWS
+- GCP
+
+Azure support is planned but not yet implemented.
+
+## Usage
+
+Each tagged version will publish a docker image to https://hub.docker.com/r/grafana/cloudcost-exporter with the version tag.
+The image can be run locally or deployed to a kubernetes cluster.
+Cloud Cost Exporter has an opinionated way of authenticating against each cloud provider.
+
+| Provider | Notes |
+|-|-|
+| GCP | Depends on [default credentials](https://cloud.google.com/docs/authentication/application-default-credentials) |
+| AWS | Uses profile names from your [credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) or `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` env variables |
+
+When running in a kubernetes cluster, it is recommended to use a service account with the necessary permissions for the cloud provider.
+- [ ] TODO: Document the necessary permissions for each cloud provider.
+
+There is no helm chart available at this time, but one is planned.
+
+Check out the follow docs for metrics:
+- [provider level](docs/metrics/providers.md)
+- gcp
+  - [compute](docs/metrics/gcp/compute.md)
+  - [gke](docs/metrics/gcp/gke.md)
+  - [gcs](docs/metrics/gcp/gcs.md)
+- aws
+  - [s3](docs/metrics/aws/s3.md)
 
 ## Contributing
 
 Grafana Labs is always looking to support new contributors!
 Please take a look at our [contributing guide](CONTRIBUTING.md) for more information on how to get started.
-
-## Architecture
-
-### AWS
-
-AWS will export four metrics:
-- `aws_s3_operations_cost`
-- `aws_s3_storage_hourly_cost`
-- `aws_cost_exporter_requests_total`
-- `aws_cost_exporter_next_scrape`
-
-The AWS exporter is built upon [aws-sdk-go-v2](https://github.com/aws/aws-sdk-go-v2).
-aws-sdk exposes pricing information in two ways:
-- [costexplore api](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/costexplorer#Client)
-- [pricing api](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/pricing#Client)
-
-We opted to use the costexplore api because AWS has a tiered pricing structure for storage costs.
-The majority of our buckets are _over_ a size threshold that makes it cost less $/GiB.
-Using the blended costs for cost explorer provides a more accurate $/GiB then if we were to use the pricing api.
-The shortcoming for this is that we only export metrics for regions we operate in _and_ we need to maintain a [mapping](https://github.com/grafana/deployment_tools/blob/f94b56492b0b4e3bd0c8641200629e2480c49f24/docker/cloudcost-exporter/pkg/aws/aws.go#L27-L54) of the way `costexplore` represents regions.
-
-We craft a [cost explore](https://us-east-1.console.aws.amazon.com/cost-management/home#/cost-explorer?chartStyle=STACK&costAggregate=unBlendedCost&endDate=2023-06-30&excludeForecasting=false&filter=%5B%5D&futureRelativeRange=CUSTOM&granularity=Monthly&groupBy=%5B%22Service%22%5D&historicalRelativeRange=LAST_6_MONTHS&isDefault=true&reportName=New%20cost%20and%20usage%20report&showOnlyUncategorized=false&showOnlyUntagged=false&startDate=2023-01-01&usageAggregate=undefined&useNormalizedUnits=false) query to fetch the previous months worth of billing data.
-See https://github.com/grafana/deployment_tools/blob/f94b56492b0b4e3bd0c8641200629e2480c49f24/docker/cloudcost-exporter/pkg/aws/aws.go#L219-L240 for the specific section of code that crafts the query.
-Here is a cost explore query that we generate in code: [cost explore](https://us-east-1.console.aws.amazon.com/cost-management/home#/cost-explorer?chartStyle=STACK&costAggregate=unBlendedCost&endDate=2023-07-16&excludeForecasting=false&filter=%5B%7B%22dimension%22:%7B%22id%22:%22Service%22,%22displayValue%22:%22Service%22%7D,%22operator%22:%22INCLUDES%22,%22values%22:%5B%7B%22value%22:%22Amazon%20Simple%20Storage%20Service%22,%22displayValue%22:%22S3%20(Simple%20Storage%20Service)%22%7D%5D%7D%5D&futureRelativeRange=CUSTOM&granularity=Daily&groupBy=%5B%22UsageType%22%5D&historicalRelativeRange=LAST_6_MONTHS&isDefault=true&reportName=New%20cost%20and%20usage%20report&showOnlyUncategorized=false&showOnlyUntagged=false&startDate=2023-06-16&usageAggregate=undefined&useNormalizedUnits=false)
-
-
-### GCP
-
-- TODO
