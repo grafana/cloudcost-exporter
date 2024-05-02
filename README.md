@@ -3,7 +3,7 @@
 Cloud Cost exporter is a designed to collect cost data from cloud providers and export the data in Prometheus format.
 The cost data can then be combined with usage data from tools such as stackdriver, yace, and promitor to measure the spend of resources at a granular level.
 
-> [!INFO]
+> [!WARNING]
 > This project is in the early stages of development and is subject to change.
 > Grafana Labs builds and maintains this project as part of our commitment to support the open-source community, but we do not provide support for it.
 > In its current state, the exporter exports rates for resources and not the actual cost.
