@@ -27,3 +27,11 @@ go run cmd/exporter/exporter.go -provider gcp -project-id=$GCP_PROJECT_ID -gcp.b
 # AWS - Prod
 go run cmd/exporter/exporter.go -provider aws -aws.profile $AWS_PROFILE
 ```
+
+## Project Structure
+
+The main entrypoint for the exporter is `cmd/exporter/exporter.go`. This file is responsible for setting up the exporter and starting the server.
+When running the application, there is a `--provider` flag that is used to determine which cloud provider to use. 
+Within `pkg/collector`, there are subdirectories for each cloud provider that contain the logic for collecting cost data from that provider.
+Each provider is composed of a set of _collectors_.
+Each collector represents a cloud resource such as `GKE` or `GCS`, and is responsible for collecting cost data for that resource.
