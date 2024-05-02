@@ -12,7 +12,7 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/googleapis/gax-go/v2 v2.12.3
 	github.com/prometheus/client_golang v1.19.0
-	github.com/prometheus/client_model v0.6.0
+	github.com/prometheus/client_model v0.6.1
 	github.com/prometheus/common v0.53.0
 	github.com/stretchr/testify v1.8.4
 	go.uber.org/mock v0.4.0
