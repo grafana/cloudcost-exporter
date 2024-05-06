@@ -8,7 +8,7 @@ require (
 	cloud.google.com/go/storage v1.40.0
 	github.com/aws/aws-sdk-go-v2 v1.26.1
 	github.com/aws/aws-sdk-go-v2/config v1.27.11
-	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.37.1
+	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.38.0
 	github.com/google/go-cmp v0.6.0
 	github.com/googleapis/gax-go/v2 v2.12.3
 	github.com/prometheus/client_golang v1.19.0
