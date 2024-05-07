@@ -20,6 +20,7 @@ type Config struct {
 	Services       []string
 	Region         string
 	Profile        string
+	Profiles       []string
 	ScrapeInterval time.Duration
 }
 
