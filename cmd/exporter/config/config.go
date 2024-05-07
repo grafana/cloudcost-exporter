@@ -9,6 +9,7 @@ type Config struct {
 	ProjectID string
 	Providers struct {
 		AWS struct {
+			Profile  string
 			Profiles StringSliceFlag
 			Region   string
 			Services StringSliceFlag

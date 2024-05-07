@@ -166,6 +166,7 @@ func weightedPriceForInstance(price float64, product productTerm) (*ComputePrice
 type Collector struct {
 	Region         string
 	Profile        string
+	Profiles       []string
 	ScrapeInterval time.Duration
 	pricingMap     *StructuredPricingMap
 	pricingService *pricing.Client
@@ -202,8 +203,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		}
 	}
 	var instances []ec2Types.Instance
-	profiles := []string{c.Profile}
-	for _, profile := range profiles {
+	for _, profile := range c.Profiles {
 		for _, region := range resp.Regions {
 			reservations, err := ListComputeInstances(context.Background(), c.ec2Client, *region.RegionName, profile)
 			if err != nil {
@@ -288,10 +288,11 @@ func (c *Collector) Name() string {
 	return "eks"
 }
 
-func NewCollector(region string, profile string, scrapeInternal time.Duration, ps *pricing.Client, ec2s *ec2.Client) (*Collector, error) {
+func NewCollector(region string, profile string, scrapeInternal time.Duration, ps *pricing.Client, ec2s *ec2.Client, profiles []string) (*Collector, error) {
 	return &Collector{
 		Region:         region,
 		Profile:        profile,
+		Profiles:       profiles,
 		ScrapeInterval: scrapeInternal,
 		pricingService: ps,
 		ec2Client:      ec2s,

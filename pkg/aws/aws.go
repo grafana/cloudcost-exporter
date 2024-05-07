@@ -24,6 +24,7 @@ type Config struct {
 	Services       []string
 	Region         string
 	Profile        string
+	Profiles       []string
 	ScrapeInterval time.Duration
 }
 
@@ -127,7 +128,7 @@ func New(config *Config) (*AWS, error) {
 		case "EKS":
 			pricingService := pricing.NewFromConfig(ac)
 			computeService := ec2.NewFromConfig(ac)
-			collector, err := eks.NewCollector(config.Region, config.Profile, config.ScrapeInterval, pricingService, computeService)
+			collector, err := eks.NewCollector(config.Region, config.Profile, config.ScrapeInterval, pricingService, computeService, config.Profiles)
 			if err != nil {
 				return nil, fmt.Errorf("error creating eks collector: %w", err)
 			}

@@ -28,7 +28,8 @@ import (
 
 func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.StringVar(&cfg.Provider, "provider", "aws", "aws or gcp")
-	fs.Var(&cfg.Providers.AWS.Profiles, "aws.profile", "AWS profile(s).")
+	fs.StringVar(&cfg.Providers.AWS.Profile, "aws.profile", "", "AWS Profile to authenticate with.")
+	fs.Var(&cfg.Providers.AWS.Profiles, "aws.profiles", "AWS Profiles to collect resources from.")
 	// TODO: RENAME THIS TO JUST PROJECTS
 	fs.Var(&cfg.Providers.GCP.Projects, "gcp.bucket-projects", "GCP project(s).")
 	fs.Var(&cfg.Providers.AWS.Services, "aws.services", "AWS service(s).")
@@ -51,7 +52,8 @@ func selectProvider(cfg *config.Config) (provider.Provider, error) {
 	case "aws":
 		return aws.New(&aws.Config{
 			Region:         cfg.Providers.AWS.Region,
-			Profile:        cfg.Providers.AWS.Profiles.String(),
+			Profile:        cfg.Providers.AWS.Profile,
+			Profiles:       strings.Split(cfg.Providers.AWS.Profiles.String(), ","),
 			ScrapeInterval: cfg.Collector.ScrapeInterval,
 			Services:       strings.Split(cfg.Providers.AWS.Services.String(), ","),
 		})
