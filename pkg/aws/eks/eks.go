@@ -129,30 +129,22 @@ func (spm *StructuredPricingMap) GeneratePricingMap(prices []string, spotPrices 
 	for _, spotPrice := range spotPrices {
 		region := *spotPrice.AvailabilityZone
 		instanceType := string(spotPrice.InstanceType)
-		if _, ok := spm.Regions[region]; !ok {
-			spm.Regions[region] = &FamilyPricing{}
-			spm.Regions[region].Family = make(map[string]*ComputePrices)
-		}
-
 		if _, ok := spm.InstanceDetails[instanceType]; !ok {
 			log.Printf("no instance details found for instance type %s", instanceType)
 			continue
 		}
 		spotProductTerm := spm.InstanceDetails[instanceType]
+		// Override the region with the availability zone
+		spotProductTerm.Region = region
 		price, err := strconv.ParseFloat(*spotPrice.SpotPrice, 64)
 		if err != nil {
-			log.Printf("error parsing price: %s, skipping", err)
+			log.Printf("error parsing spot price: %s, skipping", err)
 			continue
 		}
-
-		weightedPrice, err := weightedPriceForInstance(price, spotProductTerm)
+		err = spm.AddToPricingMap(price, spotProductTerm)
 		if err != nil {
-			log.Printf("error calculating weighted price: %s, skipping", err)
+			log.Printf("error adding to pricing map: %s", err)
 			continue
-		}
-		spm.Regions[region].Family[instanceType] = &ComputePrices{
-			Cpu: weightedPrice.Cpu,
-			Ram: weightedPrice.Ram,
 		}
 	}
 	return nil
@@ -170,7 +162,7 @@ func (spm *StructuredPricingMap) AddToPricingMap(price float64, attribute Attrib
 
 	weightedPrice, err := weightedPriceForInstance(price, attribute)
 	if err != nil {
-		return fmt.Errorf("error calculating weighted price: %s, skipping", err)
+		return fmt.Errorf("error calculating weighted price: %s, skipping: %w", attribute.InstanceType, err)
 	}
 	spm.Regions[attribute.Region].Family[attribute.InstanceType] = &ComputePrices{
 		Cpu: weightedPrice.Cpu,
