@@ -3,6 +3,7 @@ package eks
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -114,26 +115,12 @@ func (spm *StructuredPricingMap) GeneratePricingMap(prices []string, spotPrices 
 				price, err := strconv.ParseFloat(priceDimension.PricePerUnit["USD"], 64)
 				if err != nil {
 					log.Printf("error parsing price: %s, skipping", err)
-				}
-
-				if spm.Regions[productInfo.Product.Attributes.Region] == nil {
-					spm.Regions[productInfo.Product.Attributes.Region] = &FamilyPricing{}
-					spm.Regions[productInfo.Product.Attributes.Region].Family = make(map[string]*ComputePrices)
-				}
-
-				if spm.Regions[productInfo.Product.Attributes.Region].Family[productInfo.Product.Attributes.InstanceType] != nil {
-					log.Printf("instance type %s already exists in the map, skipping", productInfo.Product.Attributes.InstanceType)
 					continue
 				}
-
-				weightedPrice, err := weightedPriceForInstance(price, productInfo.Product.Attributes)
+				err = spm.AddToPricingMap(price, productInfo.Product.Attributes)
 				if err != nil {
-					log.Printf("error calculating weighted price: %s, skipping", err)
+					log.Printf("error adding to pricing map: %s", err)
 					continue
-				}
-				spm.Regions[productInfo.Product.Attributes.Region].Family[productInfo.Product.Attributes.InstanceType] = &ComputePrices{
-					Cpu: weightedPrice.Cpu,
-					Ram: weightedPrice.Ram,
 				}
 				spm.AddInstanceDetails(productInfo.Product.Attributes)
 			}
@@ -167,6 +154,27 @@ func (spm *StructuredPricingMap) GeneratePricingMap(prices []string, spotPrices 
 			Cpu: weightedPrice.Cpu,
 			Ram: weightedPrice.Ram,
 		}
+	}
+	return nil
+}
+
+func (spm *StructuredPricingMap) AddToPricingMap(price float64, attribute Attributes) error {
+	if spm.Regions[attribute.Region] == nil {
+		spm.Regions[attribute.Region] = &FamilyPricing{}
+		spm.Regions[attribute.Region].Family = make(map[string]*ComputePrices)
+	}
+
+	if spm.Regions[attribute.Region].Family[attribute.InstanceType] != nil {
+		return fmt.Errorf("instance type %s already exists in the map, skipping", attribute.InstanceType)
+	}
+
+	weightedPrice, err := weightedPriceForInstance(price, attribute)
+	if err != nil {
+		return fmt.Errorf("error calculating weighted price: %s, skipping", err)
+	}
+	spm.Regions[attribute.Region].Family[attribute.InstanceType] = &ComputePrices{
+		Cpu: weightedPrice.Cpu,
+		Ram: weightedPrice.Ram,
 	}
 	return nil
 }
@@ -224,7 +232,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		var prices []string
 		var spotPrices []ec2Types.SpotPrice
 		for _, region := range resp.Regions {
-			priceList, err := c.ListOnDemandPrices(context.Background(), *region.RegionName)
+			priceList, err := c.ListOnDemandPrices(context.Background(), *region.RegionName, c.pricingService)
 			if err != nil {
 				log.Printf("error listing prices: %s", err)
 				return err
@@ -344,7 +352,7 @@ func (c *Collector) Register(_ provider.Registry) error {
 	return nil
 }
 
-func (c *Collector) ListOnDemandPrices(ctx context.Context, region string) ([]string, error) {
+func (c *Collector) ListOnDemandPrices(ctx context.Context, region string, client *pricing.Client) ([]string, error) {
 	var productOutputs []string
 	input := &pricing.GetProductsInput{
 		ServiceCode: aws.String("AmazonEC2"),
@@ -395,7 +403,7 @@ func (c *Collector) ListOnDemandPrices(ctx context.Context, region string) ([]st
 	}
 
 	for {
-		products, err := c.pricingService.GetProducts(ctx, input)
+		products, err := client.GetProducts(ctx, input)
 		if err != nil {
 			return productOutputs, err
 		}
