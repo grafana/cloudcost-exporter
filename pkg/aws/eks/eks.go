@@ -72,12 +72,13 @@ type StructuredPricingMap struct {
 	// Regions is a map of region code to FamilyPricing
 	// key is the region
 	// value is a map of instance type to PriceTiers
-	Regions map[string]*FamilyPricing
+	Regions         map[string]*FamilyPricing
+	InstanceDetails map[string]Attributes
 }
 
 // FamilyPricing is a map of instance type to a list of PriceTiers where the key is the ec2 compute instance type
 type FamilyPricing struct {
-	Family map[string]*PriceTiers // Each Family can have many PriceTiers
+	Family map[string]*ComputePrices // Each Family can have many PriceTiers
 }
 
 // ComputePrices holds the price of a compute instances CPU and RAM. The price is in USD
@@ -86,20 +87,18 @@ type ComputePrices struct {
 	Ram float64
 }
 
-// PriceTiers holds the on demand and spot prices for a compute instance
-type PriceTiers struct {
-	OnDemand    *ComputePrices
-	Spot        *ComputePrices
-	productTerm productTerm
-}
-
 func NewStructuredPricingMap() *StructuredPricingMap {
 	return &StructuredPricingMap{
-		Regions: make(map[string]*FamilyPricing),
+		Regions:         make(map[string]*FamilyPricing),
+		InstanceDetails: make(map[string]Attributes),
 	}
 }
 
-func (spm *StructuredPricingMap) GeneratePricingMap(prices []string) error {
+// GeneratePricingMap accepts a list of ondemand prices and a list of spot prices.
+// The method needs to
+// 1. Parse out the ondemand prices and generate a productTerm map for each instance type
+// 2. Parse out spot prices and use the productTerm map to generate a spot price map
+func (spm *StructuredPricingMap) GeneratePricingMap(prices []string, spotPrices []ec2Types.SpotPrice) error {
 	for _, product := range prices {
 		var productInfo productTerm
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
@@ -119,7 +118,7 @@ func (spm *StructuredPricingMap) GeneratePricingMap(prices []string) error {
 
 				if spm.Regions[productInfo.Product.Attributes.Region] == nil {
 					spm.Regions[productInfo.Product.Attributes.Region] = &FamilyPricing{}
-					spm.Regions[productInfo.Product.Attributes.Region].Family = make(map[string]*PriceTiers)
+					spm.Regions[productInfo.Product.Attributes.Region].Family = make(map[string]*ComputePrices)
 				}
 
 				if spm.Regions[productInfo.Product.Attributes.Region].Family[productInfo.Product.Attributes.InstanceType] != nil {
@@ -127,32 +126,67 @@ func (spm *StructuredPricingMap) GeneratePricingMap(prices []string) error {
 					continue
 				}
 
-				weightedPrice, err := weightedPriceForInstance(price, productInfo)
+				weightedPrice, err := weightedPriceForInstance(price, productInfo.Product.Attributes)
 				if err != nil {
 					log.Printf("error calculating weighted price: %s, skipping", err)
 					continue
 				}
-				spm.Regions[productInfo.Product.Attributes.Region].Family[productInfo.Product.Attributes.InstanceType] = &PriceTiers{
-					OnDemand:    weightedPrice,
-					productTerm: productInfo,
-					Spot:        &ComputePrices{}, // TODO: Implement spot pricing
+				spm.Regions[productInfo.Product.Attributes.Region].Family[productInfo.Product.Attributes.InstanceType] = &ComputePrices{
+					Cpu: weightedPrice.Cpu,
+					Ram: weightedPrice.Ram,
 				}
+				spm.AddInstanceDetails(productInfo.Product.Attributes)
 			}
+		}
+	}
+	for _, spotPrice := range spotPrices {
+		region := *spotPrice.AvailabilityZone
+		instanceType := string(spotPrice.InstanceType)
+		if _, ok := spm.Regions[region]; !ok {
+			spm.Regions[region] = &FamilyPricing{}
+			spm.Regions[region].Family = make(map[string]*ComputePrices)
+		}
+
+		if _, ok := spm.InstanceDetails[instanceType]; !ok {
+			log.Printf("no instance details found for instance type %s", instanceType)
+			continue
+		}
+		spotProductTerm := spm.InstanceDetails[instanceType]
+		price, err := strconv.ParseFloat(*spotPrice.SpotPrice, 64)
+		if err != nil {
+			log.Printf("error parsing price: %s, skipping", err)
+			continue
+		}
+
+		weightedPrice, err := weightedPriceForInstance(price, spotProductTerm)
+		if err != nil {
+			log.Printf("error calculating weighted price: %s, skipping", err)
+			continue
+		}
+		spm.Regions[region].Family[instanceType] = &ComputePrices{
+			Cpu: weightedPrice.Cpu,
+			Ram: weightedPrice.Ram,
 		}
 	}
 	return nil
 }
 
-func weightedPriceForInstance(price float64, product productTerm) (*ComputePrices, error) {
-	cpus, err := strconv.ParseFloat(product.Product.Attributes.VCPU, 64)
+func (spm *StructuredPricingMap) AddInstanceDetails(attributes Attributes) {
+	if _, ok := spm.InstanceDetails[attributes.InstanceType]; !ok {
+		spm.InstanceDetails[attributes.InstanceType] = attributes
+	}
+}
+
+func weightedPriceForInstance(price float64, attributes Attributes) (*ComputePrices, error) {
+	cpus, err := strconv.ParseFloat(attributes.VCPU, 64)
 	if err != nil {
 		log.Printf("error parsing cpu count: %s, skipping", err)
 		return nil, nil
 	}
-	if strings.Contains(product.Product.Attributes.Memory, " GiB") {
-		product.Product.Attributes.Memory = strings.TrimSuffix(product.Product.Attributes.Memory, " GiB")
+	if strings.Contains(attributes.Memory, " GiB") {
+		attributes.Memory = strings.TrimSuffix(attributes.Memory, " GiB")
 	}
-	ram, err := strconv.ParseFloat(product.Product.Attributes.Memory, 64)
+	ram, err := strconv.ParseFloat(attributes.Memory, 64)
 	if err != nil {
 		log.Printf("error parsing ram count: %s, skipping", err)
 		return nil, nil
@@ -188,16 +222,23 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 
 	if c.pricingMap == nil {
 		var prices []string
+		var spotPrices []ec2Types.SpotPrice
 		for _, region := range resp.Regions {
-			priceList, err := c.ListPrices(context.Background(), *region.RegionName)
+			priceList, err := c.ListOnDemandPrices(context.Background(), *region.RegionName)
 			if err != nil {
 				log.Printf("error listing prices: %s", err)
 				return err
 			}
 			prices = append(prices, priceList...)
+			spotPriceList, err := ListSpotPrices(context.Background(), *region.RegionName, c.Profile)
+			if err != nil {
+				log.Printf("error listing spot prices: %s", err)
+				return err
+			}
+			spotPrices = append(spotPrices, spotPriceList...)
 		}
 		c.pricingMap = NewStructuredPricingMap()
-		if err = c.pricingMap.GeneratePricingMap(prices); err != nil {
+		if err = c.pricingMap.GeneratePricingMap(prices, spotPrices); err != nil {
 			log.Printf("error generating pricing map: %s", err)
 			return err
 		}
@@ -205,21 +246,26 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	var instances []ec2Types.Instance
 	for _, profile := range c.Profiles {
 		for _, region := range resp.Regions {
-			reservations, err := ListComputeInstances(context.Background(), c.ec2Client, *region.RegionName, profile)
+			reservations, err := ListComputeInstances(context.Background(), *region.RegionName, profile)
 			if err != nil {
 				log.Printf("error listing instances: %s", err)
 				continue
 			}
-			for _, reservation := range reservations.Reservations {
-				for _, instance := range reservation.Instances {
-					instances = append(instances, instance)
-				}
+			for _, reservation := range reservations {
+				instances = append(instances, reservation.Instances...)
 			}
 		}
 	}
 	for _, instance := range instances {
 		region := *instance.Placement.AvailabilityZone
+		// Remove the last character from the region to get the region code
 		region = region[:len(region)-1]
+		pricetier := "ondemand"
+		if instance.InstanceLifecycle == "spot" {
+			pricetier = "spot"
+			// Spot instances price map is keyed be availability zone
+			region = *instance.Placement.AvailabilityZone
+		}
 		if _, ok := c.pricingMap.Regions[region]; !ok {
 			log.Printf("no pricing map found for region %s", region)
 			continue
@@ -239,23 +285,18 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			continue
 		}
 
-		pricetier := "ondemand"
-		if instance.InstanceLifecycle == "spot" {
-			pricetier = "spot"
-		}
-
 		labelValues := []string{
 			*instance.PrivateDnsName,
 			region,
 			// TODO: Instance Family has a very different connotation in GKE than it does in AWS. Should we align the two?
-			price.productTerm.Product.Attributes.InstanceFamily,
-			price.productTerm.Product.Attributes.InstanceType,
+			"",
+			string(instance.InstanceType),
 			clusterName,
 			pricetier,
 			"eks",
 		}
-		ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.OnDemand.Cpu, labelValues...)
-		ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.OnDemand.Ram, labelValues...)
+		ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.Cpu, labelValues...)
+		ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.Ram, labelValues...)
 	}
 	return nil
 }
@@ -303,7 +344,7 @@ func (c *Collector) Register(_ provider.Registry) error {
 	return nil
 }
 
-func (c *Collector) ListPrices(ctx context.Context, region string) ([]string, error) {
+func (c *Collector) ListOnDemandPrices(ctx context.Context, region string) ([]string, error) {
 	var productOutputs []string
 	input := &pricing.GetProductsInput{
 		ServiceCode: aws.String("AmazonEC2"),
@@ -342,7 +383,7 @@ func (c *Collector) ListPrices(ctx context.Context, region string) ([]string, er
 				// This effectively filters only for ondemand pricing
 				Field: aws.String("capacitystatus"),
 				Type:  "TERM_MATCH",
-				Value: aws.String("Used"),
+				Value: aws.String("UnusedCapacityReservation"),
 			},
 			{
 				// Only care about Linux. If there's a request for windows, remove this flag and expand the pricing map to include a key for operating system
@@ -352,35 +393,88 @@ func (c *Collector) ListPrices(ctx context.Context, region string) ([]string, er
 			},
 		},
 	}
-	products, err := c.pricingService.GetProducts(ctx, input)
-	if err != nil {
-		return productOutputs, err
-	}
+
 	for {
+		products, err := c.pricingService.GetProducts(ctx, input)
+		if err != nil {
+			return productOutputs, err
+		}
+
 		if products == nil {
 			break
 		}
+
 		productOutputs = append(productOutputs, products.PriceList...)
 		if products.NextToken == nil {
 			break
 		}
 		input.NextToken = products.NextToken
-		products, err = c.pricingService.GetProducts(ctx, input)
 	}
 	return productOutputs, nil
 }
 
-func ListComputeInstances(ctx context.Context, c *ec2.Client, region string, profile string) (*ec2.DescribeInstancesOutput, error) {
+func ListComputeInstances(ctx context.Context, region string, profile string) ([]ec2Types.Reservation, error) {
 	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
 	options = append(options, awsconfig.WithRegion(region))
 	options = append(options, awsconfig.WithSharedConfigProfile(profile))
 	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
-	client := ec2.NewFromConfig(ac)
-	instances, err := client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{})
 	if err != nil {
 		return nil, err
 	}
+	client := ec2.NewFromConfig(ac)
+	dii := &ec2.DescribeInstancesInput{
+		// TODO: Is 1000 appropriate?
+		MaxResults: aws.Int32(1000),
+	}
+	var instances []ec2Types.Reservation
+	for {
+		resp, err := client.DescribeInstances(ctx, dii)
+		if err != nil {
+			return nil, err
+		}
+		instances = append(instances, resp.Reservations...)
+		if resp.NextToken == nil || *resp.NextToken == "" {
+			break
+		}
+		dii.NextToken = resp.NextToken
+	}
+
 	return instances, nil
+}
+
+func ListSpotPrices(ctx context.Context, region string, profile string) ([]ec2Types.SpotPrice, error) {
+	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
+	options = append(options, awsconfig.WithRegion(region))
+	options = append(options, awsconfig.WithSharedConfigProfile(profile))
+	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
+	if err != nil {
+		return nil, err
+	}
+	client := ec2.NewFromConfig(ac)
+	spotPrices := []ec2Types.SpotPrice{}
+	// TODO: What's the most accurate way to get just the last spot price? We're not trying to get a history
+	starTime := time.Now().Add(-time.Hour)
+	endTime := time.Now()
+	sphi := &ec2.DescribeSpotPriceHistoryInput{
+		ProductDescriptions: []string{
+			"Linux/UNIX (Amazon VPC)",
+		},
+
+		StartTime: &starTime,
+		EndTime:   &endTime,
+	}
+	for {
+		resp, err := client.DescribeSpotPriceHistory(ctx, sphi)
+		if err != nil {
+			break
+		}
+		spotPrices = append(spotPrices, resp.SpotPriceHistory...)
+		if resp.NextToken == nil || *resp.NextToken == "" {
+			break
+		}
+		sphi.NextToken = resp.NextToken
+	}
+	return spotPrices, nil
 }
 
 type AMIMap struct {
