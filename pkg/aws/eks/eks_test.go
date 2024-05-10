@@ -24,10 +24,11 @@ func TestStructuredPricingMap_AddToPricingMap(t *testing.T) {
 			spm: NewStructuredPricingMap(),
 			Attributes: []Attributes{
 				{
-					Region:       "us-east-1a",
-					InstanceType: "m5.large",
-					VCPU:         "1",
-					Memory:       "1 GiB",
+					Region:         "us-east-1a",
+					InstanceType:   "m5.large",
+					VCPU:           "1",
+					Memory:         "1 GiB",
+					InstanceFamily: "General purpose",
 				},
 			},
 			Prices: []float64{1},
@@ -36,8 +37,8 @@ func TestStructuredPricingMap_AddToPricingMap(t *testing.T) {
 					"us-east-1a": {
 						Family: map[string]*ComputePrices{
 							"m5.large": {
-								Cpu: 0.80,
-								Ram: 0.20,
+								Cpu: 0.65,
+								Ram: 0.35,
 							},
 						},
 					},
@@ -81,8 +82,8 @@ func TestStructuredPricingMap_GeneratePricingMap(t *testing.T) {
 					"af-south-1": {
 						Family: map[string]*ComputePrices{
 							"c5ad.2xlarge": {
-								Cpu: 0.04680000000000001,
-								Ram: 0.005850000000000001,
+								Cpu: 0.051480000000000005,
+								Ram: 0.00351,
 							},
 						},
 					},
@@ -121,16 +122,16 @@ func TestStructuredPricingMap_GeneratePricingMap(t *testing.T) {
 					"af-south-1": {
 						Family: map[string]*ComputePrices{
 							"c5ad.2xlarge": {
-								Cpu: 0.04680000000000001,
-								Ram: 0.005850000000000001,
+								Cpu: 0.051480000000000005,
+								Ram: 0.00351,
 							},
 						},
 					},
 					"af-south-1a": {
 						Family: map[string]*ComputePrices{
 							"c5ad.2xlarge": {
-								Cpu: 0.04680000000000001,
-								Ram: 0.005850000000000001,
+								Cpu: 0.051480000000000005,
+								Ram: 0.00351,
 							},
 						},
 					},

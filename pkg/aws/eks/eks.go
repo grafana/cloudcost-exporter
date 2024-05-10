@@ -7,6 +7,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -22,9 +23,14 @@ import (
 )
 
 const (
-	subsystem            = "eks"
-	cpuToMemoryCostRatio = .80
+	subsystem = "eks"
 )
+
+var cpuToCostRation = map[string]float64{
+	"Compute optimized": 0.88,
+	"Memory optimized":  0.48,
+	"General purpose":   0.65,
+}
 
 var (
 	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
@@ -75,6 +81,7 @@ type StructuredPricingMap struct {
 	// value is a map of instance type to PriceTiers
 	Regions         map[string]*FamilyPricing
 	InstanceDetails map[string]Attributes
+	m               sync.RWMutex
 }
 
 // FamilyPricing is a map of instance type to a list of PriceTiers where the key is the ec2 compute instance type
@@ -150,7 +157,10 @@ func (spm *StructuredPricingMap) GeneratePricingMap(prices []string, spotPrices 
 	return nil
 }
 
+// AddToPricingMap adds a price to the pricing map. The price is weighted based upon the instance type's CPU and RAM.
 func (spm *StructuredPricingMap) AddToPricingMap(price float64, attribute Attributes) error {
+	spm.m.Lock()
+	defer spm.m.Unlock()
 	if spm.Regions[attribute.Region] == nil {
 		spm.Regions[attribute.Region] = &FamilyPricing{}
 		spm.Regions[attribute.Region].Family = make(map[string]*ComputePrices)
@@ -172,6 +182,8 @@ func (spm *StructuredPricingMap) AddToPricingMap(price float64, attribute Attrib
 }
 
 func (spm *StructuredPricingMap) AddInstanceDetails(attributes Attributes) {
+	spm.m.Lock()
+	defer spm.m.Unlock()
 	if _, ok := spm.InstanceDetails[attributes.InstanceType]; !ok {
 		spm.InstanceDetails[attributes.InstanceType] = attributes
 	}
@@ -191,9 +203,10 @@ func weightedPriceForInstance(price float64, attributes Attributes) (*ComputePri
 		log.Printf("error parsing ram count: %s, skipping", err)
 		return nil, nil
 	}
+	ratio := cpuToCostRation[attributes.InstanceFamily]
 	return &ComputePrices{
-		Cpu: price * cpuToMemoryCostRatio / cpus,
-		Ram: price * (1 - cpuToMemoryCostRatio) / ram,
+		Cpu: price * ratio / cpus,
+		Ram: price * (1 - ratio) / ram,
 	}, nil
 }
 
@@ -243,65 +256,90 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			return err
 		}
 	}
-	var instances []ec2Types.Instance
+
 	for _, profile := range c.Profiles {
+		wg := sync.WaitGroup{}
+		wg.Add(len(resp.Regions))
+		instanceCh := make(chan []ec2Types.Reservation, len(resp.Regions))
 		for _, region := range resp.Regions {
-			reservations, err := ListComputeInstances(context.Background(), *region.RegionName, profile)
-			if err != nil {
-				log.Printf("error listing instances: %s", err)
-				continue
-			}
-			for _, reservation := range reservations {
-				instances = append(instances, reservation.Instances...)
-			}
-		}
-	}
-	for _, instance := range instances {
-		region := *instance.Placement.AvailabilityZone
-		// Remove the last character from the region to get the region code
-		region = region[:len(region)-1]
-		pricetier := "ondemand"
-		if instance.InstanceLifecycle == "spot" {
-			pricetier = "spot"
-			// Spot instances price map is keyed be availability zone
-			region = *instance.Placement.AvailabilityZone
-		}
-		if _, ok := c.pricingMap.Regions[region]; !ok {
-			log.Printf("no pricing map found for region %s", region)
-			continue
-		}
-		price := c.pricingMap.Regions[region].Family[string(instance.InstanceType)]
-		if price == nil {
-			log.Printf("no price found for instance type %s", instance.InstanceType)
-			continue
-		}
-		clusterName := clusterNameFromInstance(instance)
-		if clusterName == "" {
-			log.Printf("no cluster name found for instance %s", *instance.PrivateDnsName)
-			continue
-		}
-		if *instance.PrivateDnsName == "" {
-			log.Printf("no private dns name found for instance %s", *instance.InstanceId)
-			continue
+			go func(region ec2Types.Region, profile string) {
+				defer wg.Done()
+				reservations, err := ListComputeInstances(context.Background(), *region.RegionName, profile)
+				if err != nil {
+					log.Printf("error listing instances: %s", err)
+					return
+				}
+				log.Printf("found %d instances in profile:region %s:%s", len(reservations), profile, *region.RegionName)
+				instanceCh <- reservations
+			}(region, profile)
 		}
 
-		labelValues := []string{
-			*instance.PrivateDnsName,
-			region,
-			// TODO: Instance Family has a very different connotation in GKE than it does in AWS. Should we align the two?
-			"",
-			string(instance.InstanceType),
-			clusterName,
-			pricetier,
-			"eks",
-		}
-		ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.Cpu, labelValues...)
-		ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.Ram, labelValues...)
+		go func() {
+			wg.Wait()
+			close(instanceCh)
+		}()
+		c.emitMetricsFromChannel(instanceCh, ch)
 	}
 	return nil
 }
 
 var clusterTags = []string{"cluster", "eks:cluster-name", "aws:eks:cluster-name"}
+
+func (spm *StructuredPricingMap) GetPriceForInstanceType(region string, instanceType string) *ComputePrices {
+	spm.m.RLock()
+	defer spm.m.RUnlock()
+	if _, ok := spm.Regions[region]; !ok {
+		log.Printf("no pricing map found for region %s", region)
+		return nil
+	}
+	price := spm.Regions[region].Family[string(instanceType)]
+	if price == nil {
+		log.Printf("no price found for instance type %s", instanceType)
+		return nil
+	}
+	return spm.Regions[region].Family[instanceType]
+}
+
+func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reservation, ch chan<- prometheus.Metric) {
+	for reservations := range reservationsCh {
+		for _, reservation := range reservations {
+			for _, instance := range reservation.Instances {
+				clusterName := clusterNameFromInstance(instance)
+				if clusterName == "" {
+					log.Printf("no cluster name found for instance %s", *instance.PrivateDnsName)
+					continue
+				}
+				if *instance.PrivateDnsName == "" {
+					log.Printf("no private dns name found for instance %s", *instance.InstanceId)
+					continue
+				}
+
+				region := *instance.Placement.AvailabilityZone
+
+				pricetier := "spot"
+				if instance.InstanceLifecycle != "spot" {
+					pricetier = "ondemand"
+					// Ondemand instances are keyed based upon their region, so we need to remove the availability zone
+					region = region[:len(region)-1]
+				}
+				price := c.pricingMap.GetPriceForInstanceType(region, string(instance.InstanceType))
+
+				labelValues := []string{
+					*instance.PrivateDnsName,
+					region,
+					// TODO: Instance Family has a very different connotation in GKE than it does in AWS. Should we align the two?
+					"",
+					string(instance.InstanceType),
+					clusterName,
+					pricetier,
+					"eks",
+				}
+				ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.Cpu, labelValues...)
+				ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.Ram, labelValues...)
+			}
+		}
+	}
+}
 
 func clusterNameFromInstance(instance ec2Types.Instance) string {
 	for _, tag := range instance.Tags {
