@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
-	"github.com/grafana/cloudcost-exporter/pkg/aws/costexplorer"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/services/costexplorer"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )

@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	mockcostexplorer "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/costexplorer"
+	mockcostexplorer "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/costexplorer"
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 )
 

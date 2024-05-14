@@ -98,6 +98,12 @@ const (
 
 func New(config *Config) (*AWS, error) {
 	var collectors []provider.Collector
+	// There are two scenarios:
+	// 1. Running locally, the user must pass in a region and profile to use
+	// 2. Running within an EC2 instance and the region and profile can be derived
+	// I'm going to use the AWS SDK to handle this for me. If the user has provided a region and profile, it will use that.
+	// If not, it will use the EC2 instance metadata service to determine the region and credentials.
+	// This is the same logic that the AWS CLI uses, so it should be fine.
 	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
 	if config.Region != "" {
 		options = append(options, awsconfig.WithRegion(config.Region))
@@ -110,13 +116,6 @@ func New(config *Config) (*AWS, error) {
 		return nil, err
 	}
 	for _, service := range config.Services {
-		// There are two scenarios:
-		// 1. Running locally, the user must pass in a region and profile to use
-		// 2. Running within an EC2 instance and the region and profile can be derived
-		// I'm going to use the AWS SDK to handle this for me. If the user has provided a region and profile, it will use that.
-		// If not, it will use the EC2 instance metadata service to determine the region and credentials.
-		// This is the same logic that the AWS CLI uses, so it should be fine.
-
 		switch strings.ToUpper(service) {
 		case "S3":
 			client := costexplorer.NewFromConfig(ac)
@@ -128,10 +127,7 @@ func New(config *Config) (*AWS, error) {
 		case "EKS":
 			pricingService := pricing.NewFromConfig(ac)
 			computeService := ec2.NewFromConfig(ac)
-			collector, err := eks.NewCollector(config.Region, config.Profile, config.ScrapeInterval, pricingService, computeService, config.Profiles)
-			if err != nil {
-				return nil, fmt.Errorf("error creating eks collector: %w", err)
-			}
+			collector := eks.NewCollector(config.Region, config.Profile, config.ScrapeInterval, pricingService, computeService, config.Profiles)
 			collectors = append(collectors, collector)
 		default:
 			log.Printf("Unknown service %s", service)

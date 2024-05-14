@@ -18,6 +18,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	"github.com/prometheus/client_golang/prometheus"
 
+	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
+
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
@@ -217,7 +219,8 @@ type Collector struct {
 	ScrapeInterval time.Duration
 	pricingMap     *StructuredPricingMap
 	pricingService *pricing.Client
-	ec2Client      *ec2.Client
+	ec2Client      ec2client.EC2
+	NextScrape     time.Time
 }
 
 func (c *Collector) CollectMetrics(metrics chan<- prometheus.Metric) float64 {
@@ -226,14 +229,18 @@ func (c *Collector) CollectMetrics(metrics chan<- prometheus.Metric) float64 {
 }
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	//1. Generate a pricing map
-	resp, err := c.ec2Client.DescribeRegions(context.Background(), &ec2.DescribeRegionsInput{})
+	resp, err := c.ec2Client.DescribeRegions(context.Background(), &ec2.DescribeRegionsInput{
+		// Explicitly set this to false, so we don't get all regions.
+		// False is the default, but protects against changes in the API
+		AllRegions: aws.Bool(false),
+	})
+
 	if err != nil {
 		log.Printf("error listing regions: %s", err)
 		return err
 	}
 
-	if c.pricingMap == nil {
+	if c.pricingMap == nil && time.Now().After(c.NextScrape) {
 		var prices []string
 		var spotPrices []ec2Types.SpotPrice
 		for _, region := range resp.Regions {
@@ -243,12 +250,18 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				return err
 			}
 			prices = append(prices, priceList...)
-			spotPriceList, err := ListSpotPrices(context.Background(), *region.RegionName, c.Profile)
+			client, err := newEc2Client(*region.RegionName, c.Profile)
+			if err != nil {
+				log.Printf("error creating ec2 client: %s", err)
+				return err
+			}
+			spotPriceList, err := ListSpotPrices(context.Background(), client)
 			if err != nil {
 				log.Printf("error listing spot prices: %s", err)
 				return err
 			}
 			spotPrices = append(spotPrices, spotPriceList...)
+			c.NextScrape = time.Now().Add(c.ScrapeInterval)
 		}
 		c.pricingMap = NewStructuredPricingMap()
 		if err = c.pricingMap.GeneratePricingMap(prices, spotPrices); err != nil {
@@ -326,9 +339,9 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 
 				labelValues := []string{
 					*instance.PrivateDnsName,
-					region,
 					// TODO: Instance Family has a very different connotation in GKE than it does in AWS. Should we align the two?
-					"",
+					c.pricingMap.InstanceDetails[string(instance.InstanceType)].InstanceFamily,
+					region,
 					string(instance.InstanceType),
 					clusterName,
 					pricetier,
@@ -367,7 +380,7 @@ func (c *Collector) Name() string {
 	return "eks"
 }
 
-func NewCollector(region string, profile string, scrapeInternal time.Duration, ps *pricing.Client, ec2s *ec2.Client, profiles []string) (*Collector, error) {
+func NewCollector(region string, profile string, scrapeInternal time.Duration, ps *pricing.Client, ec2s ec2client.EC2, profiles []string) *Collector {
 	return &Collector{
 		Region:         region,
 		Profile:        profile,
@@ -375,7 +388,7 @@ func NewCollector(region string, profile string, scrapeInternal time.Duration, p
 		ScrapeInterval: scrapeInternal,
 		pricingService: ps,
 		ec2Client:      ec2s,
-	}, nil
+	}
 }
 
 func (c *Collector) Register(_ provider.Registry) error {
@@ -480,16 +493,8 @@ func ListComputeInstances(ctx context.Context, region string, profile string) ([
 	return instances, nil
 }
 
-func ListSpotPrices(ctx context.Context, region string, profile string) ([]ec2Types.SpotPrice, error) {
-	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
-	options = append(options, awsconfig.WithRegion(region))
-	options = append(options, awsconfig.WithSharedConfigProfile(profile))
-	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
-	if err != nil {
-		return nil, err
-	}
-	client := ec2.NewFromConfig(ac)
-	spotPrices := []ec2Types.SpotPrice{}
+func ListSpotPrices(ctx context.Context, client ec2client.EC2) ([]ec2Types.SpotPrice, error) {
+	var spotPrices []ec2Types.SpotPrice
 	// TODO: What's the most accurate way to get just the last spot price? We're not trying to get a history
 	starTime := time.Now().Add(-time.Hour)
 	endTime := time.Now()
@@ -504,7 +509,8 @@ func ListSpotPrices(ctx context.Context, region string, profile string) ([]ec2Ty
 	for {
 		resp, err := client.DescribeSpotPriceHistory(ctx, sphi)
 		if err != nil {
-			break
+			// If there's an error, return the set of processed spotPrices and the error.
+			return spotPrices, err
 		}
 		spotPrices = append(spotPrices, resp.SpotPriceHistory...)
 		if resp.NextToken == nil || *resp.NextToken == "" {
@@ -515,10 +521,14 @@ func ListSpotPrices(ctx context.Context, region string, profile string) ([]ec2Ty
 	return spotPrices, nil
 }
 
-type AMIMap struct {
-	// Key is ami group id and value is a list of ec2 instance ids
-	Map map[string][]string
+func newEc2Client(region, profile string) (*ec2.Client, error) {
+	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
+	options = append(options, awsconfig.WithRegion("us-east1"))
+	options = append(options, awsconfig.WithSharedConfigProfile("us-east1"))
+	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
+	if err != nil {
+		return nil, err
+	}
+	client := ec2.NewFromConfig(ac)
+	return client, nil
 }
-
-// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/billing-info-fields.html
-// TODO: Convert this into a const map so that we can lookup the value from list instance output
