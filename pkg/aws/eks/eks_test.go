@@ -7,10 +7,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
 	mockec2 "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/ec2"
+	mockpricing "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/pricing"
 )
 
 func TestStructuredPricingMap_AddToPricingMap(t *testing.T) {
@@ -393,6 +395,92 @@ func TestListComputeInstances(t *testing.T) {
 			got, err := ListComputeInstances(tt.ctx, client)
 			assert.Equal(t, tt.err, err)
 			assert.Equalf(t, tt.want, got, "ListComputeInstances(%v, %v)", tt.ctx, client)
+		})
+	}
+}
+
+func TestCollector_ListOnDemandPrices(t *testing.T) {
+	tests := map[string]struct {
+		ctx           context.Context
+		region        string
+		err           error
+		GetProducts   func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error)
+		want          []string
+		expectedCalls int
+	}{
+		"No products should return nothing": {
+			ctx:    context.Background(),
+			region: "us-east-1",
+			err:    nil,
+			want:   nil,
+			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
+				return &pricing.GetProductsOutput{
+					PriceList: []string{},
+				}, nil
+			},
+		},
+		"Single product should return a single product": {
+			ctx:    context.Background(),
+			region: "us-east-1",
+			err:    nil,
+			want: []string{
+				"This is definitely an accurate test",
+			},
+			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
+				return &pricing.GetProductsOutput{
+					PriceList: []string{
+						"This is definitely an accurate test",
+					},
+				}, nil
+			},
+		},
+		"Ensure errors propagate": {
+			ctx:    context.Background(),
+			region: "us-east-1",
+			err:    assert.AnError,
+			want:   nil,
+			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
+				return nil, assert.AnError
+			},
+		},
+		"NextToken should return multiple products": {
+			ctx:    context.Background(),
+			region: "us-east-1",
+			err:    nil,
+			want: []string{
+				"This is definitely an accurate test",
+				"This is definitely an accurate test",
+			},
+			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
+				if input.NextToken == nil {
+					return &pricing.GetProductsOutput{
+						NextToken: aws.String("token"),
+						PriceList: []string{
+							"This is definitely an accurate test",
+						},
+					}, nil
+				}
+				return &pricing.GetProductsOutput{
+					PriceList: []string{
+						"This is definitely an accurate test",
+					},
+				}, nil
+			},
+			expectedCalls: 2,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			client := mockpricing.NewPricing(t)
+			client.EXPECT().
+				GetProducts(mock.Anything, mock.Anything, mock.Anything).
+				RunAndReturn(tt.GetProducts).
+				Times(tt.expectedCalls)
+			got, err := ListOnDemandPrices(tt.ctx, tt.region, client)
+			if tt.err != nil {
+				assert.Equal(t, tt.err, err)
+			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

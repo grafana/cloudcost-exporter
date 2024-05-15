@@ -18,9 +18,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	"github.com/prometheus/client_golang/prometheus"
 
-	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
-
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
+	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
+	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
@@ -218,7 +218,7 @@ type Collector struct {
 	Profiles       []string
 	ScrapeInterval time.Duration
 	pricingMap     *StructuredPricingMap
-	pricingService *pricing.Client
+	pricingService pricingClient.Pricing
 	ec2Client      ec2client.EC2
 	NextScrape     time.Time
 }
@@ -244,7 +244,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		var prices []string
 		var spotPrices []ec2Types.SpotPrice
 		for _, region := range resp.Regions {
-			priceList, err := c.ListOnDemandPrices(context.Background(), *region.RegionName, c.pricingService)
+			priceList, err := ListOnDemandPrices(context.Background(), *region.RegionName, c.pricingService)
 			if err != nil {
 				log.Printf("error listing prices: %s", err)
 				return err
@@ -400,7 +400,7 @@ func (c *Collector) Register(_ provider.Registry) error {
 	return nil
 }
 
-func (c *Collector) ListOnDemandPrices(ctx context.Context, region string, client *pricing.Client) ([]string, error) {
+func ListOnDemandPrices(ctx context.Context, region string, client pricingClient.Pricing) ([]string, error) {
 	var productOutputs []string
 	input := &pricing.GetProductsInput{
 		ServiceCode: aws.String("AmazonEC2"),
