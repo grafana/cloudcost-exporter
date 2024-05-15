@@ -277,7 +277,12 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		for _, region := range resp.Regions {
 			go func(region ec2Types.Region, profile string) {
 				defer wg.Done()
-				reservations, err := ListComputeInstances(context.Background(), *region.RegionName, profile)
+				client, err := newEc2Client(*region.RegionName, profile)
+				if err != nil {
+					log.Printf("error creating ec2 client: %s", err)
+					return
+				}
+				reservations, err := ListComputeInstances(context.Background(), client)
 				if err != nil {
 					log.Printf("error listing instances: %s", err)
 					return
@@ -464,15 +469,7 @@ func (c *Collector) ListOnDemandPrices(ctx context.Context, region string, clien
 	return productOutputs, nil
 }
 
-func ListComputeInstances(ctx context.Context, region string, profile string) ([]ec2Types.Reservation, error) {
-	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
-	options = append(options, awsconfig.WithRegion(region))
-	options = append(options, awsconfig.WithSharedConfigProfile(profile))
-	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
-	if err != nil {
-		return nil, err
-	}
-	client := ec2.NewFromConfig(ac)
+func ListComputeInstances(ctx context.Context, client ec2client.EC2) ([]ec2Types.Reservation, error) {
 	dii := &ec2.DescribeInstancesInput{
 		// TODO: Is 1000 appropriate?
 		MaxResults: aws.Int32(1000),
@@ -523,8 +520,8 @@ func ListSpotPrices(ctx context.Context, client ec2client.EC2) ([]ec2Types.SpotP
 
 func newEc2Client(region, profile string) (*ec2.Client, error) {
 	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
-	options = append(options, awsconfig.WithRegion("us-east1"))
-	options = append(options, awsconfig.WithSharedConfigProfile("us-east1"))
+	options = append(options, awsconfig.WithRegion(region))
+	options = append(options, awsconfig.WithSharedConfigProfile(profile))
 	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
 	if err != nil {
 		return nil, err

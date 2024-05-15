@@ -22,6 +22,80 @@ func (_m *EC2) EXPECT() *EC2_Expecter {
 	return &EC2_Expecter{mock: &_m.Mock}
 }
 
+// DescribeInstances provides a mock function with given fields: ctx, e, optFns
+func (_m *EC2) DescribeInstances(ctx context.Context, e *serviceec2.DescribeInstancesInput, optFns ...func(*serviceec2.Options)) (*serviceec2.DescribeInstancesOutput, error) {
+	_va := make([]interface{}, len(optFns))
+	for _i := range optFns {
+		_va[_i] = optFns[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, e)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DescribeInstances")
+	}
+
+	var r0 *serviceec2.DescribeInstancesOutput
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, *serviceec2.DescribeInstancesInput, ...func(*serviceec2.Options)) (*serviceec2.DescribeInstancesOutput, error)); ok {
+		return rf(ctx, e, optFns...)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, *serviceec2.DescribeInstancesInput, ...func(*serviceec2.Options)) *serviceec2.DescribeInstancesOutput); ok {
+		r0 = rf(ctx, e, optFns...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*serviceec2.DescribeInstancesOutput)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, *serviceec2.DescribeInstancesInput, ...func(*serviceec2.Options)) error); ok {
+		r1 = rf(ctx, e, optFns...)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// EC2_DescribeInstances_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DescribeInstances'
+type EC2_DescribeInstances_Call struct {
+	*mock.Call
+}
+
+// DescribeInstances is a helper method to define mock.On call
+//   - ctx context.Context
+//   - e *serviceec2.DescribeInstancesInput
+//   - optFns ...func(*serviceec2.Options)
+func (_e *EC2_Expecter) DescribeInstances(ctx interface{}, e interface{}, optFns ...interface{}) *EC2_DescribeInstances_Call {
+	return &EC2_DescribeInstances_Call{Call: _e.mock.On("DescribeInstances",
+		append([]interface{}{ctx, e}, optFns...)...)}
+}
+
+func (_c *EC2_DescribeInstances_Call) Run(run func(ctx context.Context, e *serviceec2.DescribeInstancesInput, optFns ...func(*serviceec2.Options))) *EC2_DescribeInstances_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		variadicArgs := make([]func(*serviceec2.Options), len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(func(*serviceec2.Options))
+			}
+		}
+		run(args[0].(context.Context), args[1].(*serviceec2.DescribeInstancesInput), variadicArgs...)
+	})
+	return _c
+}
+
+func (_c *EC2_DescribeInstances_Call) Return(_a0 *serviceec2.DescribeInstancesOutput, _a1 error) *EC2_DescribeInstances_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *EC2_DescribeInstances_Call) RunAndReturn(run func(context.Context, *serviceec2.DescribeInstancesInput, ...func(*serviceec2.Options)) (*serviceec2.DescribeInstancesOutput, error)) *EC2_DescribeInstances_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DescribeRegions provides a mock function with given fields: ctx, e, optFns
 func (_m *EC2) DescribeRegions(ctx context.Context, e *serviceec2.DescribeRegionsInput, optFns ...func(*serviceec2.Options)) (*serviceec2.DescribeRegionsOutput, error) {
 	_va := make([]interface{}, len(optFns))

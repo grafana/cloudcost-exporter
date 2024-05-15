@@ -274,3 +274,125 @@ func TestListSpotPrices(t *testing.T) {
 		})
 	}
 }
+
+func TestListComputeInstances(t *testing.T) {
+	tests := map[string]struct {
+		ctx               context.Context
+		DescribeInstances func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+		err               error
+		want              []ec2Types.Reservation
+		expectedCalls     int
+	}{
+		"No instance should return nothing": {
+			ctx: context.Background(),
+			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+				return &ec2.DescribeInstancesOutput{}, nil
+			},
+			err:           nil,
+			want:          nil,
+			expectedCalls: 1,
+		},
+		"Single instance should return a single instance": {
+			ctx: context.Background(),
+			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+				return &ec2.DescribeInstancesOutput{
+					Reservations: []ec2Types.Reservation{
+						{
+							Instances: []ec2Types.Instance{
+								{
+									InstanceId:   aws.String("i-1234567890abcdef0"),
+									InstanceType: ec2Types.InstanceTypeA1Xlarge,
+								},
+							},
+						},
+					},
+				}, nil
+			},
+			err: nil,
+			want: []ec2Types.Reservation{
+				{
+					Instances: []ec2Types.Instance{
+						{
+							InstanceId:   aws.String("i-1234567890abcdef0"),
+							InstanceType: ec2Types.InstanceTypeA1Xlarge,
+						},
+					},
+				},
+			},
+		},
+		"Ensure errors propagate": {
+			ctx: context.Background(),
+			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+				return nil, assert.AnError
+			},
+			err:  assert.AnError,
+			want: nil,
+		},
+		"NextToken should return multiple instances": {
+			ctx: context.Background(),
+			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+				if e.NextToken == nil {
+					return &ec2.DescribeInstancesOutput{
+						NextToken: aws.String("token"),
+						Reservations: []ec2Types.Reservation{
+							{
+								Instances: []ec2Types.Instance{
+									{
+										InstanceId:   aws.String("i-1234567890abcdef0"),
+										InstanceType: ec2Types.InstanceTypeA1Xlarge,
+									},
+								},
+							},
+						},
+					}, nil
+				}
+				return &ec2.DescribeInstancesOutput{
+					Reservations: []ec2Types.Reservation{
+						{
+							Instances: []ec2Types.Instance{
+								{
+									InstanceId:   aws.String("i-1234567890abcdef0"),
+									InstanceType: ec2Types.InstanceTypeA1Xlarge,
+								},
+							},
+						},
+					},
+				}, nil
+			},
+
+			err: nil,
+			want: []ec2Types.Reservation{
+				{
+					Instances: []ec2Types.Instance{
+						{
+							InstanceId:   aws.String("i-1234567890abcdef0"),
+							InstanceType: ec2Types.InstanceTypeA1Xlarge,
+						},
+					},
+				},
+				{
+					Instances: []ec2Types.Instance{
+						{
+							InstanceId:   aws.String("i-1234567890abcdef0"),
+							InstanceType: ec2Types.InstanceTypeA1Xlarge,
+						},
+					},
+				},
+			},
+			expectedCalls: 2,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			client := mockec2.NewEC2(t)
+			client.EXPECT().
+				DescribeInstances(mock.Anything, mock.Anything, mock.Anything).
+				RunAndReturn(tt.DescribeInstances).
+				Times(tt.expectedCalls)
+
+			got, err := ListComputeInstances(tt.ctx, client)
+			assert.Equal(t, tt.err, err)
+			assert.Equalf(t, tt.want, got, "ListComputeInstances(%v, %v)", tt.ctx, client)
+		})
+	}
+}
