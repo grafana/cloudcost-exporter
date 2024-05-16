@@ -118,7 +118,7 @@ func New(config *Config) (*AWS, error) {
 			}
 
 			client := costexplorer.NewFromConfig(ac)
-			collector, err := s3.New(config.ScrapeInterval, client)
+			collector, err := s3.New(config.ScrapeInterval, client, config.Profiles, config.Region)
 			if err != nil {
 				return nil, fmt.Errorf("error creating s3 collector: %w", err)
 			}

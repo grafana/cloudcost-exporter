@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	awscostexplorer "github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -128,6 +129,8 @@ type Collector struct {
 	metrics     Metrics
 	billingData *BillingData
 	m           sync.Mutex
+	profiles    []string
+	region      string
 }
 
 // Describe is used to register the metrics with the Prometheus client
@@ -145,7 +148,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 }
 
 // New creates a new Collector with a client and scrape interval defined.
-func New(scrapeInterval time.Duration, client costexplorer.CostExplorer) (*Collector, error) {
+func New(scrapeInterval time.Duration, client costexplorer.CostExplorer, profiles []string, region string) (*Collector, error) {
 	return &Collector{
 		client:   client,
 		interval: scrapeInterval,
@@ -153,6 +156,8 @@ func New(scrapeInterval time.Duration, client costexplorer.CostExplorer) (*Colle
 		nextScrape: time.Now().Add(-scrapeInterval),
 		metrics:    NewMetrics(),
 		m:          sync.Mutex{},
+		profiles:   profiles,
+		region:     region,
 	}, nil
 }
 
@@ -177,18 +182,31 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	defer c.m.Unlock()
 	now := time.Now()
 	// :fire: Checking scrape interval is to _mitigate_ expensive API calls to the cost explorer API
+
 	if c.billingData == nil || now.After(c.nextScrape) {
-		endDate := time.Now().AddDate(0, 0, -1)
-		// Current assumption is that we're going to pull 30 days worth of billing data
-		startDate := endDate.AddDate(0, 0, -30)
-		billingData, err := getBillingData(c.client, startDate, endDate, c.metrics)
-		if err != nil {
-			log.Printf("Error getting billing data: %v\n", err)
-			return 0
+		var billingOutputs []*awscostexplorer.GetCostAndUsageOutput
+		for _, profile := range c.profiles {
+			options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
+			options = append(options, awsconfig.WithRegion(c.region))
+			options = append(options, awsconfig.WithSharedConfigProfile(profile))
+			ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
+			if err != nil {
+				continue
+			}
+			client := awscostexplorer.NewFromConfig(ac)
+			endDate := time.Now().AddDate(0, 0, -1)
+			// Current assumption is that we're going to pull 30 days worth of billing data
+			startDate := endDate.AddDate(0, 0, -30)
+			billingData, err := getBillingData(client, startDate, endDate, c.metrics)
+			if err != nil {
+				log.Printf("Error getting billing data: %v\n", err)
+				return 0
+			}
+			billingOutputs = append(billingOutputs, billingData...)
+			c.nextScrape = time.Now().Add(c.interval)
+			c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
 		}
-		c.billingData = billingData
-		c.nextScrape = time.Now().Add(c.interval)
-		c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
+		c.billingData = parseBillingData(billingOutputs)
 	}
 
 	exportMetrics(c.billingData, c.metrics)
@@ -278,7 +296,7 @@ func (s *BillingData) AddMetricGroup(region string, component string, group type
 
 // getBillingData is responsible for making the API call to the AWS Cost Explorer API and parsing the response
 // into a S3BillingData struct
-func getBillingData(client costexplorer.CostExplorer, startDate time.Time, endDate time.Time, m Metrics) (*BillingData, error) {
+func getBillingData(client costexplorer.CostExplorer, startDate time.Time, endDate time.Time, m Metrics) ([]*awscostexplorer.GetCostAndUsageOutput, error) {
 	log.Printf("Getting billing data for %s to %s\n", startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
 	input := &awscostexplorer.GetCostAndUsageInput{
 		TimePeriod: &types.DateInterval{
@@ -309,7 +327,7 @@ func getBillingData(client costexplorer.CostExplorer, startDate time.Time, endDa
 		if err != nil {
 			log.Printf("Error getting cost and usage: %v\n", err)
 			m.RequestErrorsCount.Inc()
-			return &BillingData{}, err
+			return nil, err
 		}
 		outputs = append(outputs, output)
 		if output.NextPageToken == nil {
@@ -318,7 +336,7 @@ func getBillingData(client costexplorer.CostExplorer, startDate time.Time, endDa
 		input.NextPageToken = output.NextPageToken
 	}
 
-	return parseBillingData(outputs), nil
+	return outputs, nil
 }
 
 // parseBillingData takes the output from the AWS Cost Explorer API and parses it into a S3BillingData struct
