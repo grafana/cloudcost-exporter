@@ -223,3 +223,36 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 		})
 	}
 }
+
+func Test_weightedPriceForInstance(t *testing.T) {
+	tests := map[string]struct {
+		price      float64
+		attributes Attributes
+		err        error
+		want       *ComputePrices
+	}{
+		"No attributes should return a parse error": {
+			price:      0.65,
+			attributes: Attributes{},
+			err:        parseError,
+		},
+		"No memory should return a parse error": {
+			price: 0.65,
+			attributes: Attributes{
+				VCPU: "1",
+			},
+			err: parseError,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := weightedPriceForInstance(tt.price, tt.attributes)
+			if tt.err != nil {
+				assert.ErrorIs(t, err, tt.err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

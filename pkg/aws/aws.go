@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -17,6 +18,7 @@ import (
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/eks"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
+	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
@@ -24,7 +26,6 @@ type Config struct {
 	Services       []string
 	Region         string
 	Profile        string
-	Profiles       []string
 	ScrapeInterval time.Duration
 }
 
@@ -127,7 +128,19 @@ func New(config *Config) (*AWS, error) {
 		case "EKS":
 			pricingService := pricing.NewFromConfig(ac)
 			computeService := ec2.NewFromConfig(ac)
-			collector := eks.NewCollector(config.Region, config.Profile, config.ScrapeInterval, pricingService, computeService, config.Profiles)
+			regions, err := computeService.DescribeRegions(context.TODO(), &ec2.DescribeRegionsInput{AllRegions: aws.Bool(false)})
+			if err != nil {
+				return nil, fmt.Errorf("error getting regions: %w", err)
+			}
+			regionClientMap := make(map[string]ec2client.EC2)
+			for _, r := range regions.Regions {
+				client, err := newEc2Client(*r.RegionName, config.Profile)
+				if err != nil {
+					return nil, fmt.Errorf("error creating ec2 client: %w", err)
+				}
+				regionClientMap[*r.RegionName] = client
+			}
+			collector := eks.NewCollector(config.Region, config.Profile, config.ScrapeInterval, pricingService, computeService, regions.Regions, regionClientMap)
 			collectors = append(collectors, collector)
 		default:
 			log.Printf("Unknown service %s", service)
@@ -193,4 +206,16 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(providerLastScrapeDurationDesc, prometheus.GaugeValue, time.Since(start).Seconds(), subsystem)
 	ch <- prometheus.MustNewConstMetric(providerLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem)
 	providerScrapesTotalCounter.WithLabelValues(subsystem).Inc()
+}
+
+func newEc2Client(region, profile string) (*ec2.Client, error) {
+	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
+	options = append(options, awsconfig.WithRegion(region))
+	options = append(options, awsconfig.WithSharedConfigProfile(profile))
+	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
+	if err != nil {
+		return nil, err
+	}
+	client := ec2.NewFromConfig(ac)
+	return client, nil
 }

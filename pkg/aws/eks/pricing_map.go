@@ -2,6 +2,7 @@ package eks
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -9,6 +10,11 @@ import (
 	"sync"
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+)
+
+var (
+	ErrInstanceTypeAlreadyExists = errors.New("instance type already exists in the map")
+	ErrCalculatedWeightedCost    = errors.New("could not calculate the weighted cost")
 )
 
 // StructuredPricingMap collects a map of FamilyPricing structs where the key is the region
@@ -36,6 +42,7 @@ func NewStructuredPricingMap() *StructuredPricingMap {
 	return &StructuredPricingMap{
 		Regions:         make(map[string]*FamilyPricing),
 		InstanceDetails: make(map[string]Attributes),
+		m:               sync.RWMutex{},
 	}
 }
 
@@ -43,11 +50,10 @@ func NewStructuredPricingMap() *StructuredPricingMap {
 // The method needs to
 // 1. Parse out the ondemand prices and generate a productTerm map for each instance type
 // 2. Parse out spot prices and use the productTerm map to generate a spot price map
-func (spm *StructuredPricingMap) GeneratePricingMap(prices []string, spotPrices []ec2Types.SpotPrice) error {
-	for _, product := range prices {
+func (spm *StructuredPricingMap) GeneratePricingMap(ondemandPrices []string, spotPrices []ec2Types.SpotPrice) error {
+	for _, product := range ondemandPrices {
 		var productInfo productTerm
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
-			log.Printf("error decoding product info: %s", err)
 			return err
 		}
 		if productInfo.Product.Attributes.InstanceType == "" {
@@ -104,12 +110,12 @@ func (spm *StructuredPricingMap) AddToPricingMap(price float64, attribute Attrib
 	}
 
 	if spm.Regions[attribute.Region].Family[attribute.InstanceType] != nil {
-		return fmt.Errorf("instance type %s already exists in the map, skipping", attribute.InstanceType)
+		return ErrInstanceTypeAlreadyExists
 	}
 
 	weightedPrice, err := weightedPriceForInstance(price, attribute)
 	if err != nil {
-		return fmt.Errorf("error calculating weighted price: %s, skipping: %w", attribute.InstanceType, err)
+		return fmt.Errorf("%w:%w", ErrCalculatedWeightedCost, err)
 	}
 	spm.Regions[attribute.Region].Family[attribute.InstanceType] = &ComputePrices{
 		Cpu: weightedPrice.Cpu,
@@ -126,19 +132,19 @@ func (spm *StructuredPricingMap) AddInstanceDetails(attributes Attributes) {
 	}
 }
 
+var parseError = errors.New("error parsing attribute")
+
 func weightedPriceForInstance(price float64, attributes Attributes) (*ComputePrices, error) {
 	cpus, err := strconv.ParseFloat(attributes.VCPU, 64)
 	if err != nil {
-		log.Printf("error parsing cpu count: %s, skipping", err)
-		return nil, nil
+		return nil, fmt.Errorf("%w %s", parseError, err)
 	}
 	if strings.Contains(attributes.Memory, " GiB") {
 		attributes.Memory = strings.TrimSuffix(attributes.Memory, " GiB")
 	}
 	ram, err := strconv.ParseFloat(attributes.Memory, 64)
 	if err != nil {
-		log.Printf("error parsing ram count: %s, skipping", err)
-		return nil, nil
+		return nil, fmt.Errorf("%w: %s", parseError, err)
 	}
 	ratio := cpuToCostRation[attributes.InstanceFamily]
 	return &ComputePrices{
@@ -153,7 +159,7 @@ func (spm *StructuredPricingMap) GetPriceForInstanceType(region string, instance
 	if _, ok := spm.Regions[region]; !ok {
 		return nil, ErrRegionNotFound
 	}
-	price := spm.Regions[region].Family[string(instanceType)]
+	price := spm.Regions[region].Family[instanceType]
 	if price == nil {
 		return nil, ErrInstanceTypeNotFound
 	}

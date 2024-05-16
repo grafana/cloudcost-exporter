@@ -10,7 +10,6 @@ type Config struct {
 	Providers struct {
 		AWS struct {
 			Profile  string
-			Profiles StringSliceFlag
 			Region   string
 			Services StringSliceFlag
 		}
