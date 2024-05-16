@@ -128,8 +128,6 @@ type Collector struct {
 	metrics     Metrics
 	billingData *BillingData
 	m           sync.Mutex
-	profiles    []string
-	region      string
 }
 
 // Describe is used to register the metrics with the Prometheus client
