@@ -52,7 +52,6 @@ func selectProvider(cfg *config.Config) (provider.Provider, error) {
 	case "aws":
 		return aws.New(&aws.Config{
 			Region:         cfg.Providers.AWS.Region,
-			Profile:        cfg.Providers.AWS.Profile,
 			Profiles:       strings.Split(cfg.Providers.AWS.Profiles.String(), ","),
 			ScrapeInterval: cfg.Collector.ScrapeInterval,
 			Services:       strings.Split(cfg.Providers.AWS.Services.String(), ","),

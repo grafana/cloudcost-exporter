@@ -22,7 +22,6 @@ import (
 type Config struct {
 	Services       []string
 	Region         string
-	Profile        string
 	Profiles       []string
 	ScrapeInterval time.Duration
 }
@@ -114,9 +113,7 @@ func New(config *Config) (*AWS, error) {
 				if config.Region != "" {
 					options = append(options, awsconfig.WithRegion(config.Region))
 				}
-				if config.Profile != "" {
-					options = append(options, awsconfig.WithSharedConfigProfile(profile))
-				}
+				options = append(options, awsconfig.WithSharedConfigProfile(profile))
 				ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
 				if err != nil {
 					return nil, err
