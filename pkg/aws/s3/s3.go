@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	awscostexplorer "github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -123,7 +122,7 @@ func NewMetrics() Metrics {
 // Collector is the AWS implementation of the Collector interface
 // It is responsible for registering and collecting metrics
 type Collector struct {
-	client      costexplorer.CostExplorer
+	clients     []costexplorer.CostExplorer
 	interval    time.Duration
 	nextScrape  time.Time
 	metrics     Metrics
@@ -148,16 +147,14 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 }
 
 // New creates a new Collector with a client and scrape interval defined.
-func New(scrapeInterval time.Duration, client costexplorer.CostExplorer, profiles []string, region string) (*Collector, error) {
+func New(scrapeInterval time.Duration, clients []costexplorer.CostExplorer) (*Collector, error) {
 	return &Collector{
-		client:   client,
+		clients:  clients,
 		interval: scrapeInterval,
 		// Initially Set nextScrape to the current time minus the scrape interval so that the first scrape will run immediately
 		nextScrape: time.Now().Add(-scrapeInterval),
 		metrics:    NewMetrics(),
 		m:          sync.Mutex{},
-		profiles:   profiles,
-		region:     region,
 	}, nil
 }
 
@@ -176,7 +173,7 @@ func (c *Collector) Register(registry provider.Registry) error {
 	return nil
 }
 
-// Collect is the function that will be called by the Prometheus client anytime a scrape is performed.
+// CollectMetrics Collect is the function that will be called by the Prometheus client anytime a scrape is performed.
 func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	c.m.Lock()
 	defer c.m.Unlock()
@@ -185,15 +182,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 
 	if c.billingData == nil || now.After(c.nextScrape) {
 		var billingOutputs []*awscostexplorer.GetCostAndUsageOutput
-		for _, profile := range c.profiles {
-			options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
-			options = append(options, awsconfig.WithRegion(c.region))
-			options = append(options, awsconfig.WithSharedConfigProfile(profile))
-			ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
-			if err != nil {
-				continue
-			}
-			client := awscostexplorer.NewFromConfig(ac)
+		for _, client := range c.clients {
 			endDate := time.Now().AddDate(0, 0, -1)
 			// Current assumption is that we're going to pull 30 days worth of billing data
 			startDate := endDate.AddDate(0, 0, -30)

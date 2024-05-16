@@ -19,6 +19,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	mockcostexplorer "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/costexplorer"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/costexplorer"
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 )
 
@@ -180,7 +181,7 @@ func TestNewCollector(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			c := mockcostexplorer.NewCostExplorer(t)
 
-			got, err := New(tt.args.interval, c)
+			got, err := New(tt.args.interval, []costexplorer.CostExplorer{c})
 			if tt.error {
 				require.Error(t, err)
 				return
@@ -600,9 +601,10 @@ cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage"
 			}
 
 			c := &Collector{
-				client:     ce,
+				clients:    []costexplorer.CostExplorer{ce},
 				nextScrape: tc.nextScrape,
 				metrics:    NewMetrics(),
+				//profiles:   []string{"testing"},
 			}
 			up := c.CollectMetrics(nil)
 			require.Equal(t, tc.expectedResponse, up)
@@ -674,7 +676,7 @@ func TestCollector_MultipleCalls(t *testing.T) {
 			Return(&awscostexplorer.GetCostAndUsageOutput{}, nil)
 
 		c := &Collector{
-			client:   ce,
+			clients:  []costexplorer.CostExplorer{ce},
 			metrics:  NewMetrics(),
 			interval: 1 * time.Hour,
 		}
@@ -739,7 +741,7 @@ func TestCollector_MultipleCalls(t *testing.T) {
 			Times(goroutines * collectCalls)
 
 		c := &Collector{
-			client:  ce,
+			clients: []costexplorer.CostExplorer{ce},
 			metrics: NewMetrics(),
 		}
 

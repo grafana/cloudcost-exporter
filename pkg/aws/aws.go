@@ -8,7 +8,10 @@ import (
 	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
+	awscostexplorer "github.com/aws/aws-sdk-go-v2/service/costexplorer"
+
+	"github.com/grafana/cloudcost-exporter/pkg/aws/costexplorer"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
@@ -99,26 +102,30 @@ func New(config *Config) (*AWS, error) {
 	for _, service := range services {
 		switch service {
 		case "S3":
-			// There are two scenarios:
-			// 1. Running locally, the user must pass in a region and profile to use
-			// 2. Running within an EC2 instance and the region and profile can be derived
-			// I'm going to use the AWS SDK to handle this for me. If the user has provided a region and profile, it will use that.
-			// If not, it will use the EC2 instance metadata service to determine the region and credentials.
-			// This is the same logic that the AWS CLI uses, so it should be fine.
-			options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
-			if config.Region != "" {
-				options = append(options, awsconfig.WithRegion(config.Region))
-			}
-			if config.Profile != "" {
-				options = append(options, awsconfig.WithSharedConfigProfile(config.Profile))
-			}
-			ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
-			if err != nil {
-				return nil, err
+			var clients []costexplorer.CostExplorer
+			for _, profile := range config.Profiles {
+				// There are two scenarios:
+				// 1. Running locally, the user must pass in a region and profile to use
+				// 2. Running within an EC2 instance and the region and profile can be derived
+				// I'm going to use the AWS SDK to handle this for me. If the user has provided a region and profile, it will use that.
+				// If not, it will use the EC2 instance metadata service to determine the region and credentials.
+				// This is the same logic that the AWS CLI uses, so it should be fine.
+				options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
+				if config.Region != "" {
+					options = append(options, awsconfig.WithRegion(config.Region))
+				}
+				if config.Profile != "" {
+					options = append(options, awsconfig.WithSharedConfigProfile(profile))
+				}
+				ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
+				if err != nil {
+					return nil, err
+				}
+				client := awscostexplorer.NewFromConfig(ac)
+				clients = append(clients, client)
 			}
 
-			client := costexplorer.NewFromConfig(ac)
-			collector, err := s3.New(config.ScrapeInterval, client, config.Profiles, config.Region)
+			collector, err := s3.New(config.ScrapeInterval, clients)
 			if err != nil {
 				return nil, fmt.Errorf("error creating s3 collector: %w", err)
 			}
