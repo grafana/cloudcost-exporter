@@ -102,6 +102,9 @@ func New(config *Config) (*AWS, error) {
 		switch service {
 		case "S3":
 			var clients []costexplorer.CostExplorer
+			if len(config.Profiles) == 0 {
+				return nil, fmt.Errorf("no profiles provided")
+			}
 			for _, profile := range config.Profiles {
 				// There are two scenarios:
 				// 1. Running locally, the user must pass in a region and profile to use
