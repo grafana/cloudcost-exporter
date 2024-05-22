@@ -137,14 +137,14 @@ var parseError = errors.New("error parsing attribute")
 func weightedPriceForInstance(price float64, attributes Attributes) (*ComputePrices, error) {
 	cpus, err := strconv.ParseFloat(attributes.VCPU, 64)
 	if err != nil {
-		return nil, fmt.Errorf("%w %s", parseError, err)
+		return nil, fmt.Errorf("%w %w", parseError, err)
 	}
 	if strings.Contains(attributes.Memory, " GiB") {
 		attributes.Memory = strings.TrimSuffix(attributes.Memory, " GiB")
 	}
 	ram, err := strconv.ParseFloat(attributes.Memory, 64)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", parseError, err)
+		return nil, fmt.Errorf("%w: %w", parseError, err)
 	}
 	ratio := cpuToCostRation[attributes.InstanceFamily]
 	return &ComputePrices{

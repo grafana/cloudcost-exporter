@@ -118,14 +118,14 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			client := c.ec2RegionClient[*region.RegionName]
 			spotPriceList, err := ListSpotPrices(context.Background(), client)
 			if err != nil {
-				return fmt.Errorf("%w: %s", ListSpotPricesErr, err)
+				return fmt.Errorf("%w: %w", ListSpotPricesErr, err)
 			}
 			spotPrices = append(spotPrices, spotPriceList...)
 			c.NextScrape = time.Now().Add(c.ScrapeInterval)
 		}
 		c.pricingMap = NewStructuredPricingMap()
 		if err := c.pricingMap.GeneratePricingMap(prices, spotPrices); err != nil {
-			return fmt.Errorf("%w: %s", GeneratePricingMapErr, err)
+			return fmt.Errorf("%w: %w", GeneratePricingMapErr, err)
 		}
 	}
 
