@@ -193,7 +193,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				ch <- prometheus.MustNewConstMetric(
 					persistentVolumeHourlyCostDesc,
 					prometheus.GaugeValue,
-					d.SizeInGib()*price,
+					float64(d.Size)*price,
 					labelValues...,
 				)
 			}

@@ -126,14 +126,3 @@ func (d Disk) DiskType() string {
 	}
 	return "persistent_volume"
 }
-
-// GBPerGIB is a helper const to convert from GB to GiB
-// 1 << 30 is the number of bytes in a GiB
-// 1e9 is the number of bytes in a GB
-const GBPerGIB = 1e9 / (1 << 30)
-
-// SizeInGib is used to convert the size of the disk from GigaBytes to GibiBytes. This is particularly important when
-// calculating the cost of the disk since the pricing is in GiB.
-func (d Disk) SizeInGib() float64 {
-	return float64(d.Size) * GBPerGIB
-}

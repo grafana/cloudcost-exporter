@@ -186,7 +186,7 @@ func TestCollector_Collect(t *testing.T) {
 						"storage_class":    "pd-ssd",
 						"disk_type":        "persistent_volume",
 					},
-					Value:      0.14304502788755194,
+					Value:      0.15359342915811086,
 					MetricType: prometheus.GaugeValue,
 				},
 				{
