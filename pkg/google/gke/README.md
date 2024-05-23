@@ -34,7 +34,7 @@ For simplicity, `cloudcost-exporter` has implemented the following disk types:
 - Local SSD
 
 According to the [documentation](https://cloud.google.com/compute/disks-image-pricing#disk-and-image-pricing), pricing for storage is for [JEDEC Binary GB or IEC gibibytes(GiB)](https://en.wikipedia.org/wiki/Gigabyte).
-One of the more confusing bits is that the Documentation for disk implies that the size is in GB, but doesn't specify if it's in GB or GiB.
-The initial assumption was to convert the size to GiB, however after collecting data for a month and comparing against billing, we were off by just about ~7%.
-Coincidentally, the conversion from GB to GiB is ~7%, so we removed the code to convert from GB to GiB.
+One of the more confusing bits is that the documentation for [disk](https://pkg.go.dev/google.golang.org/api/compute/v1#Disk) implies that the size is in GB, but doesn't specify if it's a [decimal GB or Binary GB](https://en.wikipedia.org/wiki/Gigabyte).
+`cloudcost-exporter` is assuming that the size is in binary GB which aligns with the pricing documentation.
+
 
