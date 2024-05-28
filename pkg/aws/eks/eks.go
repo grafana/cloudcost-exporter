@@ -141,7 +141,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	wg.Add(len(c.Regions))
 	instanceCh := make(chan []ec2Types.Reservation, len(c.Regions))
 	for _, region := range c.Regions {
-		go func(region ec2Types.Region, profile string) {
+		go func(region ec2Types.Region) {
 			defer wg.Done()
 			client := c.ec2RegionClient[*region.RegionName]
 			reservations, err := ListComputeInstances(context.Background(), client)
@@ -149,9 +149,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				log.Printf("error listing instances: %s", err)
 				return
 			}
-			log.Printf("found %d instances in profile:region %s:%s", len(reservations), profile, *region.RegionName)
+			log.Printf("found %d instances in region %s", len(reservations), *region.RegionName)
 			instanceCh <- reservations
-		}(region, c.Profile)
+		}(region)
 	}
 	go func() {
 		wg.Wait()
@@ -167,15 +167,15 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 			for _, instance := range reservation.Instances {
 				clusterName := clusterNameFromInstance(instance)
 				if clusterName == "" {
-					log.Printf("no cluster name found for instance %v", instance)
+					log.Printf("no cluster name found for instance %v", instance.InstanceId)
 					continue
 				}
 				if instance.PrivateDnsName == nil || *instance.PrivateDnsName == "" {
-					log.Printf("no private dns name found for instance %v", instance)
+					log.Printf("no private dns name found for instance %v", instance.InstanceId)
 					continue
 				}
 				if instance.Placement == nil || instance.Placement.AvailabilityZone == nil {
-					log.Printf("no availability zone found for instance %v", instance)
+					log.Printf("no availability zone found for instance %v", instance.InstanceId)
 					continue
 				}
 
