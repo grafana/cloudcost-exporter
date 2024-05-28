@@ -167,15 +167,15 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 			for _, instance := range reservation.Instances {
 				clusterName := clusterNameFromInstance(instance)
 				if clusterName == "" {
-					log.Printf("no cluster name found for instance %v", instance.InstanceId)
+					log.Printf("no cluster name found for instance %s", *instance.InstanceId)
 					continue
 				}
 				if instance.PrivateDnsName == nil || *instance.PrivateDnsName == "" {
-					log.Printf("no private dns name found for instance %v", instance.InstanceId)
+					log.Printf("no private dns name found for instance %s", *instance.InstanceId)
 					continue
 				}
 				if instance.Placement == nil || instance.Placement.AvailabilityZone == nil {
-					log.Printf("no availability zone found for instance %v", instance.InstanceId)
+					log.Printf("no availability zone found for instance %s", *instance.InstanceId)
 					continue
 				}
 
