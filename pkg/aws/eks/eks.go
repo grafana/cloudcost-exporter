@@ -39,8 +39,8 @@ var (
 	ErrRegionNotFound       = errors.New("no region found")
 	ErrInstanceTypeNotFound = errors.New("no instance type found")
 	ErrClientNotFound       = errors.New("no client found")
-	ListSpotPricesErr       = errors.New("error listing spot prices")
-	GeneratePricingMapErr   = errors.New("error generating pricing map")
+	ErrListSpotPrices       = errors.New("error listing spot prices")
+	ErrGeneratePricingMap   = errors.New("error generating pricing map")
 )
 
 var (
@@ -58,6 +58,8 @@ var (
 	)
 )
 
+// Attributes represents ec2 instance attributes that are pulled from AWS api's describing instances.
+// It's specifically pulled out of productTerm to enable usage during tests.
 type Attributes struct {
 	Region            string `json:"regionCode"`
 	InstanceType      string `json:"instanceType"`
@@ -72,6 +74,7 @@ type Attributes struct {
 	UsageType         string `json:"usageType"`
 }
 
+// productTerm represents the nested json response returned by the AWS pricing API.
 type productTerm struct {
 	Product struct {
 		Attributes Attributes
@@ -85,6 +88,7 @@ type productTerm struct {
 	}
 }
 
+// Collector is a prometheus collector that collects metrics from AWS EKS clusters.
 type Collector struct {
 	Region          string
 	Regions         []ec2Types.Region
@@ -98,12 +102,17 @@ type Collector struct {
 	ec2RegionClient map[string]ec2client.EC2
 }
 
+// CollectMetrics is a no-op function that satisfies the provider.Collector interface.
+// Deprecated: CollectMetrics is deprecated and will be removed in a future release.
 func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 	return 0
 }
 
+// Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	if c.pricingMap == nil {
+	if c.pricingMap == nil || time.Now().After(c.NextScrape) {
+		wg := sync.WaitGroup{}
+		wg.Add(len(c.Regions))
 		var prices []string
 		var spotPrices []ec2Types.SpotPrice
 		for _, region := range c.Regions {
@@ -118,15 +127,16 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			client := c.ec2RegionClient[*region.RegionName]
 			spotPriceList, err := ListSpotPrices(context.Background(), client)
 			if err != nil {
-				return fmt.Errorf("%w: %w", ListSpotPricesErr, err)
+				return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
 			}
 			spotPrices = append(spotPrices, spotPriceList...)
 			c.NextScrape = time.Now().Add(c.ScrapeInterval)
 		}
 		c.pricingMap = NewStructuredPricingMap()
 		if err := c.pricingMap.GeneratePricingMap(prices, spotPrices); err != nil {
-			return fmt.Errorf("%w: %w", GeneratePricingMapErr, err)
+			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 		}
+		c.NextScrape = time.Now().Add(c.ScrapeInterval)
 	}
 
 	wg := sync.WaitGroup{}

@@ -495,7 +495,7 @@ func TestCollector_Collect(t *testing.T) {
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
 		close(ch)
-		assert.ErrorIs(t, err, ListSpotPricesErr)
+		assert.ErrorIs(t, err, ErrListSpotPrices)
 	})
 	t.Run("Collect should return an error if GeneratePricingMap returns an error", func(t *testing.T) {
 		ec2s := mockec2.NewEC2(t)
@@ -529,7 +529,7 @@ func TestCollector_Collect(t *testing.T) {
 		collector := New("us-east-1", "", 0, ps, ec2s, regions, regionClientMap)
 		ch := make(chan prometheus.Metric)
 		defer close(ch)
-		assert.ErrorIs(t, collector.Collect(ch), GeneratePricingMapErr)
+		assert.ErrorIs(t, collector.Collect(ch), ErrGeneratePricingMap)
 	})
 	t.Run("Collect should return an error if GeneratePricingMap returns an error", func(t *testing.T) {
 		ec2s := mockec2.NewEC2(t)
