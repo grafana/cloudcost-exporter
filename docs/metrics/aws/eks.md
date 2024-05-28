@@ -11,7 +11,6 @@ The pricing data is sourced from the [AWS Pricing API](https://docs.aws.amazon.c
 There are a few assumptions that we're making specific to Grafana Labs:
 1. All costs are in USD
 2. Only consider Linux based instances
-3. Only consider instances that are not part of a Savings Plan or Reserved Instance
-4. Only consider instances that are not part of a custom pricing agreement
-5. If an instance doesn't have a cluster associated with it, don't export a metric
+3. `cloudcost-exporter` emits the list price and does not take into account any discounts or savings plans
+4. Only ec2 instances that are associated with an EKS cluster have their pricing metrics exported
 

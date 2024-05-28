@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -14,7 +15,7 @@ import (
 func main() {
 	options := []func(*config.LoadOptions) error{config.WithEC2IMDSRegion()}
 	options = append(options, config.WithRegion("us-east-2"))
-	options = append(options, config.WithSharedConfigProfile("workloads-dev"))
+	options = append(options, config.WithSharedConfigProfile(os.Getenv("AWS_PROFILE")))
 	cfg, err := config.LoadDefaultConfig(context.TODO(), options...)
 	if err != nil {
 		log.Fatalf("unable to load SDK config, %v", err)
@@ -23,7 +24,7 @@ func main() {
 	client := ec2.NewFromConfig(cfg)
 
 	// Call DescribeSpotPriceHistory
-	spotPrices := []types.SpotPrice{}
+	var spotPrices []types.SpotPrice
 	starTime := time.Now().Add(-time.Hour * 24)
 	endTime := time.Now()
 	sphi := &ec2.DescribeSpotPriceHistoryInput{

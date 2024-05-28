@@ -14,7 +14,7 @@ import (
 
 var (
 	ErrInstanceTypeAlreadyExists = errors.New("instance type already exists in the map")
-	ErrCalculatedWeightedCost    = errors.New("could not calculate the weighted cost")
+	ErrParseAttributes           = errors.New("error parsing attribute")
 )
 
 // StructuredPricingMap collects a map of FamilyPricing structs where the key is the region
@@ -115,7 +115,7 @@ func (spm *StructuredPricingMap) AddToPricingMap(price float64, attribute Attrib
 
 	weightedPrice, err := weightedPriceForInstance(price, attribute)
 	if err != nil {
-		return fmt.Errorf("%w:%w", ErrCalculatedWeightedCost, err)
+		return err
 	}
 	spm.Regions[attribute.Region].Family[attribute.InstanceType] = &ComputePrices{
 		Cpu: weightedPrice.Cpu,
@@ -132,19 +132,17 @@ func (spm *StructuredPricingMap) AddInstanceDetails(attributes Attributes) {
 	}
 }
 
-var parseError = errors.New("error parsing attribute")
-
 func weightedPriceForInstance(price float64, attributes Attributes) (*ComputePrices, error) {
 	cpus, err := strconv.ParseFloat(attributes.VCPU, 64)
 	if err != nil {
-		return nil, fmt.Errorf("%w %w", parseError, err)
+		return nil, fmt.Errorf("%w %w", ErrParseAttributes, err)
 	}
 	if strings.Contains(attributes.Memory, " GiB") {
 		attributes.Memory = strings.TrimSuffix(attributes.Memory, " GiB")
 	}
 	ram, err := strconv.ParseFloat(attributes.Memory, 64)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", parseError, err)
+		return nil, fmt.Errorf("%w: %w", ErrParseAttributes, err)
 	}
 	ratio := cpuToCostRation[attributes.InstanceFamily]
 	return &ComputePrices{

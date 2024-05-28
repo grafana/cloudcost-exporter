@@ -105,6 +105,7 @@ func New(config *Config) (*AWS, error) {
 	// I'm going to use the AWS SDK to handle this for me. If the user has provided a region and profile, it will use that.
 	// If not, it will use the EC2 instance metadata service to determine the region and credentials.
 	// This is the same logic that the AWS CLI uses, so it should be fine.
+	ctx := context.Background()
 	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
 	if config.Region != "" {
 		options = append(options, awsconfig.WithRegion(config.Region))
@@ -112,7 +113,7 @@ func New(config *Config) (*AWS, error) {
 	if config.Profile != "" {
 		options = append(options, awsconfig.WithSharedConfigProfile(config.Profile))
 	}
-	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
+	ac, err := awsconfig.LoadDefaultConfig(ctx, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -120,15 +121,12 @@ func New(config *Config) (*AWS, error) {
 		switch strings.ToUpper(service) {
 		case "S3":
 			client := costexplorer.NewFromConfig(ac)
-			collector, err := s3.New(config.ScrapeInterval, client)
-			if err != nil {
-				return nil, fmt.Errorf("error creating s3 collector: %w", err)
-			}
+			collector := s3.New(config.ScrapeInterval, client)
 			collectors = append(collectors, collector)
 		case "EKS":
 			pricingService := pricing.NewFromConfig(ac)
 			computeService := ec2.NewFromConfig(ac)
-			regions, err := computeService.DescribeRegions(context.TODO(), &ec2.DescribeRegionsInput{AllRegions: aws.Bool(false)})
+			regions, err := computeService.DescribeRegions(ctx, &ec2.DescribeRegionsInput{AllRegions: aws.Bool(false)})
 			if err != nil {
 				return nil, fmt.Errorf("error getting regions: %w", err)
 			}
@@ -140,7 +138,7 @@ func New(config *Config) (*AWS, error) {
 				}
 				regionClientMap[*r.RegionName] = client
 			}
-			collector := eks.NewCollector(config.Region, config.Profile, config.ScrapeInterval, pricingService, computeService, regions.Regions, regionClientMap)
+			collector := eks.New(config.Region, config.Profile, config.ScrapeInterval, pricingService, computeService, regions.Regions, regionClientMap)
 			collectors = append(collectors, collector)
 		default:
 			log.Printf("Unknown service %s", service)
@@ -211,11 +209,12 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 func newEc2Client(region, profile string) (*ec2.Client, error) {
 	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
 	options = append(options, awsconfig.WithRegion(region))
-	options = append(options, awsconfig.WithSharedConfigProfile(profile))
+	if profile != "" {
+		options = append(options, awsconfig.WithSharedConfigProfile(profile))
+	}
 	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
 	if err != nil {
 		return nil, err
 	}
-	client := ec2.NewFromConfig(ac)
-	return client, nil
+	return ec2.NewFromConfig(ac), nil
 }

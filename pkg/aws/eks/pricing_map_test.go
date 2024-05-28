@@ -234,14 +234,14 @@ func Test_weightedPriceForInstance(t *testing.T) {
 		"No attributes should return a parse error": {
 			price:      0.65,
 			attributes: Attributes{},
-			err:        parseError,
+			err:        ErrParseAttributes,
 		},
 		"No memory should return a parse error": {
 			price: 0.65,
 			attributes: Attributes{
 				VCPU: "1",
 			},
-			err: parseError,
+			err: ErrParseAttributes,
 		},
 	}
 	for name, tt := range tests {

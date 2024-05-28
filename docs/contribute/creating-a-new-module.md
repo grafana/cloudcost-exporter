@@ -6,7 +6,7 @@ The current architecture of the exporter is designed to be modular and extensibl
 Steps:
 1. Create a new module in the `pkg/${CLOUD_SERVICE_PROVIDER}/${MODULE_NAME}` directory
    1. For example: `pkg/aws/eks/eks.go`
-1. Implement the `Collector` [interface](https://github.com/grafana/cloudcost-exporter/blob/ff3267af66034dabb489bb30c76e115fcc24055f/pkg/provider/provider.go#L15-L21) in the new module
+1. Implement the `Collector` [interface](https://github.com/grafana/cloudcost-exporter/blob/main/pkg/provider/provider.go) in the new module
 1. Create a `PricingMap` for the new module
    1. `PricingMap` should be a `map[string]Pricing`  where key is the region and Pricing is the cost of the resource in that region
    2. Gather pricing information from the cloud provider's pricing API

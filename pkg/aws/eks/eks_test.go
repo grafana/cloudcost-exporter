@@ -360,7 +360,7 @@ func TestNewCollector(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			collector := NewCollector(tt.region, tt.profile, tt.scrapeInternal, tt.ps, tt.ec2s, nil, nil)
+			collector := New(tt.region, tt.profile, tt.scrapeInternal, tt.ps, tt.ec2s, nil, nil)
 			assert.NotNil(t, collector)
 		})
 	}
@@ -368,7 +368,7 @@ func TestNewCollector(t *testing.T) {
 
 func TestCollector_Name(t *testing.T) {
 	t.Run("Name should return the same name as the subsystem const", func(t *testing.T) {
-		collector := NewCollector("", "", 0, nil, nil, nil, nil)
+		collector := New("", "", 0, nil, nil, nil, nil)
 		assert.Equal(t, subsystem, collector.Name())
 	})
 }
@@ -430,7 +430,7 @@ func TestCollector_Collect(t *testing.T) {
 		},
 	}
 	t.Run("Collect should return no error", func(t *testing.T) {
-		collector := NewCollector("", "", 0, nil, nil, nil, nil)
+		collector := New("", "", 0, nil, nil, nil, nil)
 		ch := make(chan prometheus.Metric)
 		go func() {
 			err := collector.Collect(ch)
@@ -451,7 +451,7 @@ func TestCollector_Collect(t *testing.T) {
 				func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
 					return nil, assert.AnError
 				}).Times(1)
-		collector := NewCollector("us-east-1", "", 0, ps, nil, regions, nil)
+		collector := New("us-east-1", "", 0, ps, nil, regions, nil)
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
 		close(ch)
@@ -466,7 +466,7 @@ func TestCollector_Collect(t *testing.T) {
 						PriceList: []string{},
 					}, nil
 				}).Times(1)
-		collector := NewCollector("", "", 0, ps, nil, regions, nil)
+		collector := New("", "", 0, ps, nil, regions, nil)
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
 		close(ch)
@@ -491,7 +491,7 @@ func TestCollector_Collect(t *testing.T) {
 		for _, r := range regions {
 			regionClientMap[*r.RegionName] = ec2s
 		}
-		collector := NewCollector("us-east-1", "", 0, ps, ec2s, regions, regionClientMap)
+		collector := New("us-east-1", "", 0, ps, ec2s, regions, regionClientMap)
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
 		close(ch)
@@ -526,7 +526,7 @@ func TestCollector_Collect(t *testing.T) {
 		for _, r := range regions {
 			regionClientMap[*r.RegionName] = ec2s
 		}
-		collector := NewCollector("us-east-1", "", 0, ps, ec2s, regions, regionClientMap)
+		collector := New("us-east-1", "", 0, ps, ec2s, regions, regionClientMap)
 		ch := make(chan prometheus.Metric)
 		defer close(ch)
 		assert.ErrorIs(t, collector.Collect(ch), GeneratePricingMapErr)
@@ -617,7 +617,7 @@ func TestCollector_Collect(t *testing.T) {
 		for _, r := range regions {
 			regionClientMap[*r.RegionName] = ec2s
 		}
-		collector := NewCollector("us-east-1", "", 0, ps, ec2s, regions, regionClientMap)
+		collector := New("us-east-1", "", 0, ps, ec2s, regions, regionClientMap)
 
 		ch := make(chan prometheus.Metric)
 		go func() {

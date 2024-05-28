@@ -164,28 +164,21 @@ func TestNewCollector(t *testing.T) {
 		interval time.Duration
 	}
 	tests := map[string]struct {
-		args  args
-		want  *Collector
-		error bool
+		args args
+		want *Collector
 	}{
 		"Create a new collector": {
 			args: args{
 				interval: time.Duration(1) * time.Hour,
 			},
-			want:  &Collector{},
-			error: false,
+			want: &Collector{},
 		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			c := mockcostexplorer.NewCostExplorer(t)
 
-			got, err := New(tt.args.interval, c)
-			if tt.error {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
+			got := New(tt.args.interval, c)
 			assert.NotNil(t, got)
 			assert.Equal(t, tt.args.interval, got.interval)
 		})
