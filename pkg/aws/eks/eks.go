@@ -111,8 +111,6 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 // Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	if c.pricingMap == nil || time.Now().After(c.NextScrape) {
-		wg := sync.WaitGroup{}
-		wg.Add(len(c.Regions))
 		var prices []string
 		var spotPrices []ec2Types.SpotPrice
 		for _, region := range c.Regions {
