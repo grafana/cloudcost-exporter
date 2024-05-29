@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
@@ -41,6 +42,7 @@ var (
 	ErrClientNotFound       = errors.New("no client found")
 	ErrListSpotPrices       = errors.New("error listing spot prices")
 	ErrGeneratePricingMap   = errors.New("error generating pricing map")
+	ErrListOnDemandPrices   = errors.New("error listing ondemand prices")
 )
 
 var (
@@ -113,22 +115,34 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	if c.pricingMap == nil || time.Now().After(c.NextScrape) {
 		var prices []string
 		var spotPrices []ec2Types.SpotPrice
+		eg := new(errgroup.Group)
+		eg.SetLimit(5)
+		m := sync.Mutex{}
 		for _, region := range c.Regions {
-			priceList, err := ListOnDemandPrices(context.Background(), *region.RegionName, c.pricingService)
-			if err != nil {
-				return err
-			}
-			prices = append(prices, priceList...)
-			if c.ec2RegionClient[*region.RegionName] == nil {
-				return ErrClientNotFound
-			}
-			client := c.ec2RegionClient[*region.RegionName]
-			spotPriceList, err := ListSpotPrices(context.Background(), client)
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
-			}
-			spotPrices = append(spotPrices, spotPriceList...)
-			c.NextScrape = time.Now().Add(c.ScrapeInterval)
+			eg.Go(func() error {
+				priceList, err := ListOnDemandPrices(context.Background(), *region.RegionName, c.pricingService)
+				if err != nil {
+					return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
+				}
+
+				if c.ec2RegionClient[*region.RegionName] == nil {
+					return ErrClientNotFound
+				}
+				client := c.ec2RegionClient[*region.RegionName]
+				spotPriceList, err := ListSpotPrices(context.Background(), client)
+				if err != nil {
+					return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
+				}
+				m.Lock()
+				spotPrices = append(spotPrices, spotPriceList...)
+				prices = append(prices, priceList...)
+				m.Unlock()
+				return nil
+			})
+		}
+		err := eg.Wait()
+		if err != nil {
+			return err
 		}
 		c.pricingMap = NewStructuredPricingMap()
 		if err := c.pricingMap.GeneratePricingMap(prices, spotPrices); err != nil {
@@ -217,11 +231,11 @@ func (c *Collector) Name() string {
 	return subsystem
 }
 
-func New(region string, profile string, scrapeInternal time.Duration, ps pricingClient.Pricing, ec2s ec2client.EC2, regions []ec2Types.Region, regionClientMap map[string]ec2client.EC2) *Collector {
+func New(region string, profile string, scrapeInterval time.Duration, ps pricingClient.Pricing, ec2s ec2client.EC2, regions []ec2Types.Region, regionClientMap map[string]ec2client.EC2) *Collector {
 	return &Collector{
 		Region:          region,
 		Profile:         profile,
-		ScrapeInterval:  scrapeInternal,
+		ScrapeInterval:  scrapeInterval,
 		pricingService:  ps,
 		ec2Client:       ec2s,
 		Regions:         regions,

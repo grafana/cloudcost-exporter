@@ -94,7 +94,8 @@ var (
 )
 
 const (
-	subsystem = "aws"
+	subsystem        = "aws"
+	maxRetryAttempts = 10
 )
 
 func New(config *Config) (*AWS, error) {
@@ -113,6 +114,7 @@ func New(config *Config) (*AWS, error) {
 	if config.Profile != "" {
 		options = append(options, awsconfig.WithSharedConfigProfile(config.Profile))
 	}
+	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
 	ac, err := awsconfig.LoadDefaultConfig(ctx, options...)
 	if err != nil {
 		return nil, err
@@ -212,9 +214,12 @@ func newEc2Client(region, profile string) (*ec2.Client, error) {
 	if profile != "" {
 		options = append(options, awsconfig.WithSharedConfigProfile(profile))
 	}
+	// Set max retries to 10. Throttling is possible after fetching the pricing data, so setting it to 10 ensures the next scrape will be successful.
+	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
 	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
 	if err != nil {
 		return nil, err
 	}
+
 	return ec2.NewFromConfig(ac), nil
 }
