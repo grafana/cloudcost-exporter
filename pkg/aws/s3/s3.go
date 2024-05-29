@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
-	"github.com/grafana/cloudcost-exporter/pkg/aws/costexplorer"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/services/costexplorer"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
@@ -145,7 +145,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 }
 
 // New creates a new Collector with a client and scrape interval defined.
-func New(scrapeInterval time.Duration, client costexplorer.CostExplorer) (*Collector, error) {
+func New(scrapeInterval time.Duration, client costexplorer.CostExplorer) *Collector {
 	return &Collector{
 		client:   client,
 		interval: scrapeInterval,
@@ -153,7 +153,7 @@ func New(scrapeInterval time.Duration, client costexplorer.CostExplorer) (*Colle
 		nextScrape: time.Now().Add(-scrapeInterval),
 		metrics:    NewMetrics(),
 		m:          sync.Mutex{},
-	}, nil
+	}
 }
 
 func (c *Collector) Name() string {

@@ -4,15 +4,21 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/prometheus/client_golang/prometheus"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/eks"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
+	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
@@ -87,40 +93,54 @@ var (
 	)
 )
 
-var services = []string{"S3"}
-
 const (
-	subsystem = "aws"
+	subsystem        = "aws"
+	maxRetryAttempts = 10
 )
 
 func New(config *Config) (*AWS, error) {
 	var collectors []provider.Collector
-	for _, service := range services {
-		switch service {
+	// There are two scenarios:
+	// 1. Running locally, the user must pass in a region and profile to use
+	// 2. Running within an EC2 instance and the region and profile can be derived
+	// I'm going to use the AWS SDK to handle this for me. If the user has provided a region and profile, it will use that.
+	// If not, it will use the EC2 instance metadata service to determine the region and credentials.
+	// This is the same logic that the AWS CLI uses, so it should be fine.
+	ctx := context.Background()
+	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
+	if config.Region != "" {
+		options = append(options, awsconfig.WithRegion(config.Region))
+	}
+	if config.Profile != "" {
+		options = append(options, awsconfig.WithSharedConfigProfile(config.Profile))
+	}
+	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
+	ac, err := awsconfig.LoadDefaultConfig(ctx, options...)
+	if err != nil {
+		return nil, err
+	}
+	for _, service := range config.Services {
+		switch strings.ToUpper(service) {
 		case "S3":
-			// There are two scenarios:
-			// 1. Running locally, the user must pass in a region and profile to use
-			// 2. Running within an EC2 instance and the region and profile can be derived
-			// I'm going to use the AWS SDK to handle this for me. If the user has provided a region and profile, it will use that.
-			// If not, it will use the EC2 instance metadata service to determine the region and credentials.
-			// This is the same logic that the AWS CLI uses, so it should be fine.
-			options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
-			if config.Region != "" {
-				options = append(options, awsconfig.WithRegion(config.Region))
-			}
-			if config.Profile != "" {
-				options = append(options, awsconfig.WithSharedConfigProfile(config.Profile))
-			}
-			ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
-			if err != nil {
-				return nil, err
-			}
-
 			client := costexplorer.NewFromConfig(ac)
-			collector, err := s3.New(config.ScrapeInterval, client)
+			collector := s3.New(config.ScrapeInterval, client)
+			collectors = append(collectors, collector)
+		case "EKS":
+			pricingService := pricing.NewFromConfig(ac)
+			computeService := ec2.NewFromConfig(ac)
+			regions, err := computeService.DescribeRegions(ctx, &ec2.DescribeRegionsInput{AllRegions: aws.Bool(false)})
 			if err != nil {
-				return nil, fmt.Errorf("error creating s3 collector: %w", err)
+				return nil, fmt.Errorf("error getting regions: %w", err)
 			}
+			regionClientMap := make(map[string]ec2client.EC2)
+			for _, r := range regions.Regions {
+				client, err := newEc2Client(*r.RegionName, config.Profile)
+				if err != nil {
+					return nil, fmt.Errorf("error creating ec2 client: %w", err)
+				}
+				regionClientMap[*r.RegionName] = client
+			}
+			collector := eks.New(config.Region, config.Profile, config.ScrapeInterval, pricingService, computeService, regions.Regions, regionClientMap)
 			collectors = append(collectors, collector)
 		default:
 			log.Printf("Unknown service %s", service)
@@ -186,4 +206,20 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(providerLastScrapeDurationDesc, prometheus.GaugeValue, time.Since(start).Seconds(), subsystem)
 	ch <- prometheus.MustNewConstMetric(providerLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem)
 	providerScrapesTotalCounter.WithLabelValues(subsystem).Inc()
+}
+
+func newEc2Client(region, profile string) (*ec2.Client, error) {
+	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
+	options = append(options, awsconfig.WithRegion(region))
+	if profile != "" {
+		options = append(options, awsconfig.WithSharedConfigProfile(profile))
+	}
+	// Set max retries to 10. Throttling is possible after fetching the pricing data, so setting it to 10 ensures the next scrape will be successful.
+	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
+	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
+	if err != nil {
+		return nil, err
+	}
+
+	return ec2.NewFromConfig(ac), nil
 }

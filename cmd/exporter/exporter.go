@@ -28,7 +28,7 @@ import (
 
 func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.StringVar(&cfg.Provider, "provider", "aws", "aws or gcp")
-	fs.Var(&cfg.Providers.AWS.Profiles, "aws.profile", "AWS profile(s).")
+	fs.StringVar(&cfg.Providers.AWS.Profile, "aws.profile", "", "AWS Profile to authenticate with.")
 	// TODO: RENAME THIS TO JUST PROJECTS
 	fs.Var(&cfg.Providers.GCP.Projects, "gcp.bucket-projects", "GCP project(s).")
 	fs.Var(&cfg.Providers.AWS.Services, "aws.services", "AWS service(s).")
@@ -39,7 +39,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
 }
 
-func operationalFlags(fs *flag.FlagSet, cfg *config.Config) {
+func operationalFlags(cfg *config.Config) {
 	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
 	flag.DurationVar(&cfg.Server.Timeout, "server-timeout", 30*time.Second, "Server timeout")
 	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
@@ -51,7 +51,7 @@ func selectProvider(cfg *config.Config) (provider.Provider, error) {
 	case "aws":
 		return aws.New(&aws.Config{
 			Region:         cfg.Providers.AWS.Region,
-			Profile:        cfg.Providers.AWS.Profiles.String(),
+			Profile:        cfg.Providers.AWS.Profile,
 			ScrapeInterval: cfg.Collector.ScrapeInterval,
 			Services:       strings.Split(cfg.Providers.AWS.Services.String(), ","),
 		})
@@ -126,7 +126,7 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider) e
 func main() {
 	var cfg config.Config
 	providerFlags(flag.CommandLine, &cfg)
-	operationalFlags(flag.CommandLine, &cfg)
+	operationalFlags(&cfg)
 	flag.Parse()
 
 	log.Printf("Version %s", cversion.Info())
