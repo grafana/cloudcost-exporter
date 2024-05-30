@@ -155,8 +155,8 @@ func weightedPriceForInstance(price float64, attributes Attributes) (*ComputePri
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrParseAttributes, err)
 	}
-	ratio := cpuToCostRatio[attributes.InstanceFamily]
-	if ratio == 0 {
+	ratio, ok := cpuToCostRatio[attributes.InstanceFamily]
+	if !ok {
 		log.Printf("no ratio found for instance type %s, defaulting to %s", attributes.InstanceType, defaultInstanceFamily)
 		ratio = cpuToCostRatio[defaultInstanceFamily]
 	}
