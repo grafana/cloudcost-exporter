@@ -243,6 +243,77 @@ func Test_weightedPriceForInstance(t *testing.T) {
 			},
 			err: ErrParseAttributes,
 		},
+		"Handle a machine that's general purpose": {
+			price: 1.0,
+			attributes: Attributes{
+				VCPU:           "1",
+				Memory:         "1 GiB",
+				InstanceFamily: "General purpose",
+			},
+			want: &ComputePrices{
+				Cpu: 0.65,
+				Ram: 0.35,
+			},
+		},
+		"Handle a machine that's compute optimized": {
+			price: 1.0,
+			attributes: Attributes{
+				VCPU:           "1",
+				Memory:         "1 GiB",
+				InstanceFamily: "Compute optimized",
+			},
+			want: &ComputePrices{
+				Cpu: 0.88,
+				Ram: 0.12,
+			},
+		},
+		"Handle a machine that's memory optimized": {
+			price: 1.0,
+			attributes: Attributes{
+				VCPU:           "1",
+				Memory:         "1 GiB",
+				InstanceFamily: "Memory optimized",
+			},
+			want: &ComputePrices{
+				Cpu: 0.48,
+				Ram: 0.52,
+			},
+		},
+		"Handle a machine that's storage optimized": {
+			price: 1.0,
+			attributes: Attributes{
+				VCPU:           "1",
+				Memory:         "1 GiB",
+				InstanceFamily: "Storage optimized",
+			},
+			want: &ComputePrices{
+				Cpu: 0.48,
+				Ram: 0.52,
+			},
+		},
+		"Handle a machine that doesn't have an instance family": {
+			price: 1.0,
+			attributes: Attributes{
+				VCPU:   "1",
+				Memory: "1 GiB",
+			},
+			want: &ComputePrices{
+				Cpu: 0.65,
+				Ram: 0.35,
+			},
+		},
+		"Handle a machine that has a family that doesn't exist": {
+			price: 1.0,
+			attributes: Attributes{
+				VCPU:           "1",
+				Memory:         "1 GiB",
+				InstanceFamily: "Totally a real instance family",
+			},
+			want: &ComputePrices{
+				Cpu: 0.65,
+				Ram: 0.35,
+			},
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
