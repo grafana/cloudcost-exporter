@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	subsystem  = "eks"
+	subsystem  = "aws_eks"
 	maxResults = 1000
 )
 
