@@ -10,7 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.27.11
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.38.4
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.160.0
-	github.com/aws/aws-sdk-go-v2/service/pricing v1.28.1
+	github.com/aws/aws-sdk-go-v2/service/pricing v1.28.5
 	github.com/google/go-cmp v0.6.0
 	github.com/googleapis/gax-go/v2 v2.12.4
 	github.com/prometheus/client_golang v1.19.1
