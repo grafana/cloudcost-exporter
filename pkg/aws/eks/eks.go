@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -95,6 +95,7 @@ type Collector struct {
 	ec2Client       ec2client.EC2
 	NextScrape      time.Time
 	ec2RegionClient map[string]ec2client.EC2
+	logger          *slog.Logger
 }
 
 // CollectMetrics is a no-op function that satisfies the provider.Collector interface.
@@ -149,14 +150,15 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	instanceCh := make(chan []ec2Types.Reservation, len(c.Regions))
 	for _, region := range c.Regions {
 		go func(region ec2Types.Region) {
+			start := time.Now()
 			defer wg.Done()
 			client := c.ec2RegionClient[*region.RegionName]
 			reservations, err := ListComputeInstances(context.Background(), client)
 			if err != nil {
-				log.Printf("error listing instances: %s", err)
+				c.logger.Error("error listing instances", "error", err)
 				return
 			}
-			log.Printf("found %d instances in region %s", len(reservations), *region.RegionName)
+			c.logger.Info("found instances", "count", len(reservations), "region", *region.RegionName, "duration", time.Since(start))
 			instanceCh <- reservations
 		}(region)
 	}
@@ -174,15 +176,15 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 			for _, instance := range reservation.Instances {
 				clusterName := clusterNameFromInstance(instance)
 				if clusterName == "" {
-					log.Printf("no cluster name found for instance %s", *instance.InstanceId)
+					c.logger.Debug("no cluster name found for instance", "instance", *instance.InstanceId)
 					continue
 				}
 				if instance.PrivateDnsName == nil || *instance.PrivateDnsName == "" {
-					log.Printf("no private dns name found for instance %s", *instance.InstanceId)
+					c.logger.Debug("no private dns name found for instance", "instance", *instance.InstanceId)
 					continue
 				}
 				if instance.Placement == nil || instance.Placement.AvailabilityZone == nil {
-					log.Printf("no availability zone found for instance %s", *instance.InstanceId)
+					c.logger.Debug("no availability zone found for instance", "instance", *instance.InstanceId)
 					continue
 				}
 
@@ -196,7 +198,7 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 				}
 				price, err := c.pricingMap.GetPriceForInstanceType(region, string(instance.InstanceType))
 				if err != nil {
-					log.Printf("error getting price for instance type %s: %s", instance.InstanceType, err)
+					c.logger.Error("error getting price for instance type", "instance_type", instance.InstanceType, "error", err)
 					continue
 				}
 				labelValues := []string{
@@ -224,7 +226,7 @@ func (c *Collector) Name() string {
 	return subsystem
 }
 
-func New(region string, profile string, scrapeInterval time.Duration, ps pricingClient.Pricing, ec2s ec2client.EC2, regions []ec2Types.Region, regionClientMap map[string]ec2client.EC2) *Collector {
+func New(region string, profile string, scrapeInterval time.Duration, ps pricingClient.Pricing, ec2s ec2client.EC2, regions []ec2Types.Region, regionClientMap map[string]ec2client.EC2, logger *slog.Logger) *Collector {
 	return &Collector{
 		Region:          region,
 		Profile:         profile,
@@ -233,6 +235,7 @@ func New(region string, profile string, scrapeInterval time.Duration, ps pricing
 		ec2Client:       ec2s,
 		Regions:         regions,
 		ec2RegionClient: regionClientMap,
+		logger:          logger,
 	}
 }
 

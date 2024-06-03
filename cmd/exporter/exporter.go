@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os/signal"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/aws"
 	"github.com/grafana/cloudcost-exporter/pkg/google"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
@@ -44,9 +46,12 @@ func operationalFlags(cfg *config.Config) {
 	flag.DurationVar(&cfg.Server.Timeout, "server-timeout", 30*time.Second, "Server timeout")
 	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
 	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
+	flag.StringVar(&cfg.Logger.Level, "log.level", "info", "Log level(debug, info, warn, error)")
+	flag.StringVar(&cfg.Logger.Output, "log.output", "stdout", "Log output(stdout, stderr)")
+	flag.StringVar(&cfg.Logger.Type, "log.type", "text", "Log type(json, text)")
 }
 
-func selectProvider(cfg *config.Config) (provider.Provider, error) {
+func selectProvider(cfg *config.Config, logger *slog.Logger) (provider.Provider, error) {
 	switch cfg.Provider {
 	case "aws":
 		return aws.New(&aws.Config{
@@ -54,7 +59,7 @@ func selectProvider(cfg *config.Config) (provider.Provider, error) {
 			Profile:        cfg.Providers.AWS.Profile,
 			ScrapeInterval: cfg.Collector.ScrapeInterval,
 			Services:       strings.Split(cfg.Providers.AWS.Services.String(), ","),
-		})
+		}, logger)
 
 	case "gcp":
 		return google.New(&google.Config{
@@ -64,7 +69,7 @@ func selectProvider(cfg *config.Config) (provider.Provider, error) {
 			DefaultDiscount: cfg.Providers.GCP.DefaultGCSDiscount,
 			ScrapeInterval:  cfg.Collector.ScrapeInterval,
 			Services:        strings.Split(cfg.Providers.GCP.Services.String(), ","),
-		})
+		}, logger)
 
 	default:
 		return nil, fmt.Errorf("unknown provider")
@@ -90,7 +95,7 @@ func createPromRegistryHandler(csp provider.Provider) http.Handler {
 	})
 }
 
-func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider) error {
+func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, logger *slog.Logger) error {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path))   // landing page
@@ -100,7 +105,7 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider) e
 	errChan := make(chan error)
 
 	go func() {
-		log.Printf("Listening on %s%s", cfg.Server.Address, cfg.Server.Path)
+		logger.Info("Serving requests", "address", cfg.Server.Address, "path", cfg.Server.Path)
 		errChan <- server.ListenAndServe()
 	}()
 
@@ -129,10 +134,11 @@ func main() {
 	operationalFlags(&cfg)
 	flag.Parse()
 
-	log.Printf("Version %s", cversion.Info())
-	log.Printf("Build Context %s", cversion.BuildContext())
+	logger := SetupLogger(cfg.Logger.Level, cfg.Logger.Output, cfg.Logger.Type)
 
-	csp, err := selectProvider(&cfg)
+	logger.Info("Starting CloudCost Exporter", "version", cversion.Info(), "build_context", cversion.BuildContext())
+
+	csp, err := selectProvider(&cfg, logger)
 	if err != nil {
 		log.Fatalf("Error setting up provider %s: %s", cfg.Provider, err)
 	}
@@ -140,8 +146,14 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	err = runServer(ctx, &cfg, csp)
+	err = runServer(ctx, &cfg, csp, logger)
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func SetupLogger(level, output, logtype string) *slog.Logger {
+	handler := utils.NewLevelHandler(utils.GetLogLevel(level), utils.HandlerForOutput(logtype, utils.WriterForOutput(output)))
+	logger := slog.New(handler)
+	return logger
 }

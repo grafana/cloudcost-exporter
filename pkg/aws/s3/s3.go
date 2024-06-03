@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -128,6 +129,7 @@ type Collector struct {
 	metrics     Metrics
 	billingData *BillingData
 	m           sync.Mutex
+	logger      *slog.Logger
 }
 
 // Describe is used to register the metrics with the Prometheus client
@@ -145,7 +147,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 }
 
 // New creates a new Collector with a client and scrape interval defined.
-func New(scrapeInterval time.Duration, client costexplorer.CostExplorer) *Collector {
+func New(scrapeInterval time.Duration, client costexplorer.CostExplorer, logger *slog.Logger) *Collector {
 	return &Collector{
 		client:   client,
 		interval: scrapeInterval,
@@ -153,6 +155,7 @@ func New(scrapeInterval time.Duration, client costexplorer.CostExplorer) *Collec
 		nextScrape: time.Now().Add(-scrapeInterval),
 		metrics:    NewMetrics(),
 		m:          sync.Mutex{},
+		logger:     logger,
 	}
 }
 
@@ -183,14 +186,13 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 		startDate := endDate.AddDate(0, 0, -30)
 		billingData, err := getBillingData(c.client, startDate, endDate, c.metrics)
 		if err != nil {
-			log.Printf("Error getting billing data: %v\n", err)
+			c.logger.Error("Error getting billing data", "error", err)
 			return 0
 		}
 		c.billingData = billingData
 		c.nextScrape = time.Now().Add(c.interval)
 		c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
 	}
-
 	exportMetrics(c.billingData, c.metrics)
 	return 1.0
 }
@@ -392,7 +394,6 @@ func getComponentFromKey(key string) string {
 
 // exportMetrics will iterate over the S3BillingData and export the metrics to prometheus
 func exportMetrics(s3BillingData *BillingData, m Metrics) {
-	log.Printf("Exporting metrics for %d regions\n", len(s3BillingData.Regions))
 	for region, pricingModel := range s3BillingData.Regions {
 		for component, pricing := range pricingModel.Model {
 			switch component {

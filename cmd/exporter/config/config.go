@@ -29,4 +29,9 @@ type Config struct {
 		Path    string
 		Timeout time.Duration
 	}
+	Logger struct {
+		Level  string // debug, info, warn, error
+		Output string // stdout, stderr
+		Type   string // json, text
+	}
 }

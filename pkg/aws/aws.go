@@ -3,7 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +32,7 @@ type Config struct {
 type AWS struct {
 	Config     *Config
 	collectors []provider.Collector
+	logger     *slog.Logger
 }
 
 var (
@@ -98,7 +99,7 @@ const (
 	maxRetryAttempts = 10
 )
 
-func New(config *Config) (*AWS, error) {
+func New(config *Config, logger *slog.Logger) (*AWS, error) {
 	var collectors []provider.Collector
 	// There are two scenarios:
 	// 1. Running locally, the user must pass in a region and profile to use
@@ -123,7 +124,7 @@ func New(config *Config) (*AWS, error) {
 		switch strings.ToUpper(service) {
 		case "S3":
 			client := costexplorer.NewFromConfig(ac)
-			collector := s3.New(config.ScrapeInterval, client)
+			collector := s3.New(config.ScrapeInterval, client, logger)
 			collectors = append(collectors, collector)
 		case "EKS":
 			pricingService := pricing.NewFromConfig(ac)
@@ -140,21 +141,23 @@ func New(config *Config) (*AWS, error) {
 				}
 				regionClientMap[*r.RegionName] = client
 			}
-			collector := eks.New(config.Region, config.Profile, config.ScrapeInterval, pricingService, computeService, regions.Regions, regionClientMap)
+			collector := eks.New(config.Region, config.Profile, config.ScrapeInterval, pricingService, computeService, regions.Regions, regionClientMap, logger)
 			collectors = append(collectors, collector)
 		default:
-			log.Printf("Unknown service %s", service)
+
+			logger.Warn("Unknown service", "service", service)
 			continue
 		}
 	}
 	return &AWS{
 		Config:     config,
 		collectors: collectors,
+		logger:     logger,
 	}, nil
 }
 
 func (a *AWS) RegisterCollectors(registry provider.Registry) error {
-	log.Printf("Registering %d collectors for AWS", len(a.collectors))
+	a.logger.Info("Registering collectors for AWS", "count", len(a.collectors))
 	registry.MustRegister(
 		collectorScrapesTotalCounter,
 	)
@@ -176,7 +179,7 @@ func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collectorSuccessDesc
 	for _, c := range a.collectors {
 		if err := c.Describe(ch); err != nil {
-			log.Printf("Error describing collector %s: %s", c.Name(), err)
+			a.logger.Warn("Error describing collector", "collector", c.Name(), "error", err)
 		}
 	}
 }
@@ -192,7 +195,7 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 			collectorSuccess := 0.0
 			if err := c.Collect(ch); err != nil {
 				collectorSuccess = 1.0
-				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
+				a.logger.Warn("Error collecting metrics from collector", "collector", c.Name(), "error", err)
 			}
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorSuccess, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), subsystem, c.Name())

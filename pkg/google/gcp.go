@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -95,7 +96,7 @@ type Config struct {
 // New is responsible for parsing out a configuration file and setting up the associated services that could be required.
 // We instantiate services to avoid repeating common services that may be shared across many collectors. In the future we can push
 // collector specific services further down.
-func New(config *Config) (*GCP, error) {
+func New(config *Config, logger *slog.Logger) (*GCP, error) {
 	ctx := context.Background()
 
 	computeService, err := computev1.NewService(ctx)
@@ -131,8 +132,7 @@ func New(config *Config) (*GCP, error) {
 				DefaultDiscount: config.DefaultDiscount,
 			}, cloudCatalogClient, regionsClient, storageClient)
 			if err != nil {
-				log.Printf("Error creating GCS collector: %s", err)
-				continue
+				logger.Info("Error creating GCS collector", "message", err)
 			}
 		case "COMPUTE":
 			collector = compute.New(&compute.Config{
@@ -145,8 +145,7 @@ func New(config *Config) (*GCP, error) {
 				ScrapeInterval: config.ScrapeInterval,
 			}, computeService, cloudCatalogClient)
 		default:
-			log.Printf("Unknown service %s", service)
-			// Continue to next service, no need to halt here
+			logger.Info("Unknown service", "service", service)
 			continue
 		}
 		collectors = append(collectors, collector)
