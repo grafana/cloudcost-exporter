@@ -2,6 +2,8 @@ package eks
 
 import (
 	"context"
+	"log/slog"
+	"os"
 	"testing"
 	"time"
 
@@ -360,7 +362,7 @@ func TestNewCollector(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			collector := New(tt.region, tt.profile, tt.scrapeInternal, tt.ps, tt.ec2s, nil, nil)
+			collector := New(tt.region, tt.profile, tt.scrapeInternal, tt.ps, tt.ec2s, nil, nil, nil)
 			assert.NotNil(t, collector)
 		})
 	}
@@ -368,7 +370,7 @@ func TestNewCollector(t *testing.T) {
 
 func TestCollector_Name(t *testing.T) {
 	t.Run("Name should return the same name as the subsystem const", func(t *testing.T) {
-		collector := New("", "", 0, nil, nil, nil, nil)
+		collector := New("", "", 0, nil, nil, nil, nil, nil)
 		assert.Equal(t, subsystem, collector.Name())
 	})
 }
@@ -424,13 +426,16 @@ func Test_clusterNameFromInstance(t *testing.T) {
 }
 
 func TestCollector_Collect(t *testing.T) {
+	h := slog.NewTextHandler(os.Stdout, nil)
+	handler := utils.NewLevelHandler(utils.GetLogLevel("error"), h)
+	logger := slog.New(handler)
 	regions := []ec2Types.Region{
 		{
 			RegionName: aws.String("us-east-1"),
 		},
 	}
 	t.Run("Collect should return no error", func(t *testing.T) {
-		collector := New("", "", 0, nil, nil, nil, nil)
+		collector := New("", "", 0, nil, nil, nil, nil, logger)
 		ch := make(chan prometheus.Metric)
 		go func() {
 			err := collector.Collect(ch)
@@ -451,7 +456,7 @@ func TestCollector_Collect(t *testing.T) {
 				func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
 					return nil, assert.AnError
 				}).Times(1)
-		collector := New("us-east-1", "", 0, ps, nil, regions, nil)
+		collector := New("us-east-1", "", 0, ps, nil, regions, nil, logger)
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
 		close(ch)
@@ -466,7 +471,7 @@ func TestCollector_Collect(t *testing.T) {
 						PriceList: []string{},
 					}, nil
 				}).Times(1)
-		collector := New("", "", 0, ps, nil, regions, nil)
+		collector := New("", "", 0, ps, nil, regions, nil, logger)
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
 		close(ch)
@@ -491,7 +496,7 @@ func TestCollector_Collect(t *testing.T) {
 		for _, r := range regions {
 			regionClientMap[*r.RegionName] = ec2s
 		}
-		collector := New("us-east-1", "", 0, ps, ec2s, regions, regionClientMap)
+		collector := New("us-east-1", "", 0, ps, ec2s, regions, regionClientMap, logger)
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
 		close(ch)
@@ -526,7 +531,7 @@ func TestCollector_Collect(t *testing.T) {
 		for _, r := range regions {
 			regionClientMap[*r.RegionName] = ec2s
 		}
-		collector := New("us-east-1", "", 0, ps, ec2s, regions, regionClientMap)
+		collector := New("us-east-1", "", 0, ps, ec2s, regions, regionClientMap, logger)
 		ch := make(chan prometheus.Metric)
 		defer close(ch)
 		assert.ErrorIs(t, collector.Collect(ch), ErrGeneratePricingMap)
@@ -617,7 +622,7 @@ func TestCollector_Collect(t *testing.T) {
 		for _, r := range regions {
 			regionClientMap[*r.RegionName] = ec2s
 		}
-		collector := New("us-east-1", "", 0, ps, ec2s, regions, regionClientMap)
+		collector := New("us-east-1", "", 0, ps, ec2s, regions, regionClientMap, logger)
 
 		ch := make(chan prometheus.Metric)
 		go func() {

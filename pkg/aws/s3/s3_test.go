@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -20,6 +21,7 @@ import (
 
 	mockcostexplorer "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/costexplorer"
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 func Test_getDimensionFromKey(t *testing.T) {
@@ -160,6 +162,7 @@ func TestS3BillingData_AddRegion(t *testing.T) {
 }
 
 func TestNewCollector(t *testing.T) {
+
 	type args struct {
 		interval time.Duration
 	}
@@ -178,7 +181,7 @@ func TestNewCollector(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			c := mockcostexplorer.NewCostExplorer(t)
 
-			got := New(tt.args.interval, c)
+			got := New(tt.args.interval, c, nil)
 			assert.NotNil(t, got)
 			assert.Equal(t, tt.args.interval, got.interval)
 		})
@@ -201,6 +204,9 @@ func TestCollector_Register(t *testing.T) {
 }
 
 func TestCollector_Collect(t *testing.T) {
+	h := slog.NewTextHandler(os.Stdout, nil)
+	handler := utils.NewLevelHandler(slog.LevelError, h)
+	logger := slog.New(handler)
 	timeInPast := time.Now().Add(-48 * time.Hour)
 	withoutNextScrape := []string{
 		"cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour",
@@ -596,6 +602,7 @@ cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage"
 				client:     ce,
 				nextScrape: tc.nextScrape,
 				metrics:    NewMetrics(),
+				logger:     logger,
 			}
 			up := c.CollectMetrics(nil)
 			require.Equal(t, tc.expectedResponse, up)

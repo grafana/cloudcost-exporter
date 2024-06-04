@@ -2,6 +2,8 @@ package aws
 
 import (
 	"fmt"
+	"log/slog"
+	"os"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 func Test_New(t *testing.T) {
@@ -25,7 +28,7 @@ func Test_New(t *testing.T) {
 			// TODO refactor New()
 			t.SkipNow()
 
-			a, err := New(&Config{})
+			a, err := New(&Config{}, nil)
 			if tc.expectedError != nil {
 				require.EqualError(t, err, tc.expectedError.Error())
 				return
@@ -37,6 +40,9 @@ func Test_New(t *testing.T) {
 }
 
 func Test_RegisterCollectors(t *testing.T) {
+	h := slog.NewTextHandler(os.Stdout, nil)
+	handler := utils.NewLevelHandler(slog.LevelError, h)
+	logger := slog.New(handler)
 	for _, tc := range []struct {
 		name          string
 		numCollectors int
@@ -72,6 +78,7 @@ func Test_RegisterCollectors(t *testing.T) {
 			a := AWS{
 				Config:     nil,
 				collectors: []provider.Collector{},
+				logger:     logger,
 			}
 			for i := 0; i < tc.numCollectors; i++ {
 				a.collectors = append(a.collectors, c)
