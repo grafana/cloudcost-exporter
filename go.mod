@@ -6,11 +6,11 @@ require (
 	cloud.google.com/go/billing v1.18.5
 	cloud.google.com/go/compute v1.27.0
 	cloud.google.com/go/storage v1.40.0
-	github.com/aws/aws-sdk-go-v2 v1.27.0
+	github.com/aws/aws-sdk-go-v2 v1.27.2
 	github.com/aws/aws-sdk-go-v2/config v1.27.11
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.38.4
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.160.0
-	github.com/aws/aws-sdk-go-v2/service/pricing v1.28.1
+	github.com/aws/aws-sdk-go-v2/service/pricing v1.28.7
 	github.com/google/go-cmp v0.6.0
 	github.com/googleapis/gax-go/v2 v2.12.4
 	github.com/prometheus/client_golang v1.19.1
@@ -32,8 +32,8 @@ require (
 	cloud.google.com/go/iam v1.1.7 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.11 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.1 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.7 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.7 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.9 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.9 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.11.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.11.7 // indirect
