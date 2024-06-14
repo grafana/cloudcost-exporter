@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -60,6 +61,7 @@ type Collector struct {
 	config         *Config
 	Projects       []string
 	NextScrape     time.Time
+	logger         *slog.Logger
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
@@ -78,13 +80,15 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 }
 
 // New is a helper method to properly set up a compute.Collector struct.
-func New(config *Config, computeService *compute.Service, billingService *billingv1.CloudCatalogClient) *Collector {
+func New(config *Config, computeService *compute.Service, billingService *billingv1.CloudCatalogClient, logger *slog.Logger) *Collector {
+	logger = logger.With("collector", "compute")
 	projects := strings.Split(config.Projects, ",")
 	return &Collector{
 		computeService: computeService,
 		billingService: billingService,
 		config:         config,
 		Projects:       projects,
+		logger:         logger,
 	}
 }
 

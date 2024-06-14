@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,6 +36,7 @@ type StructuredPricingMap struct {
 	Regions         map[string]*FamilyPricing
 	InstanceDetails map[string]Attributes
 	m               sync.RWMutex
+	logger          *slog.Logger
 }
 
 // FamilyPricing is a map of instance type to a list of PriceTiers where the key is the ec2 compute instance type
@@ -49,11 +50,13 @@ type ComputePrices struct {
 	Ram float64
 }
 
-func NewStructuredPricingMap() *StructuredPricingMap {
+func NewStructuredPricingMap(logger *slog.Logger) *StructuredPricingMap {
+	logger = logger.With("component", "eks_pricing_map")
 	return &StructuredPricingMap{
 		Regions:         make(map[string]*FamilyPricing),
 		InstanceDetails: make(map[string]Attributes),
 		m:               sync.RWMutex{},
+		logger:          logger,
 	}
 }
 
@@ -75,12 +78,12 @@ func (spm *StructuredPricingMap) GeneratePricingMap(ondemandPrices []string, spo
 			for _, priceDimension := range term.PriceDimensions {
 				price, err := strconv.ParseFloat(priceDimension.PricePerUnit["USD"], 64)
 				if err != nil {
-					log.Printf("error parsing price: %s, skipping", err)
+					spm.logger.Debug("error parsing price: skipping", "message", err)
 					continue
 				}
 				err = spm.AddToPricingMap(price, productInfo.Product.Attributes)
 				if err != nil {
-					log.Printf("error adding to pricing map: %s", err)
+					spm.logger.Debug("error adding to pricing map", "message", err)
 					continue
 				}
 				spm.AddInstanceDetails(productInfo.Product.Attributes)
@@ -91,7 +94,7 @@ func (spm *StructuredPricingMap) GeneratePricingMap(ondemandPrices []string, spo
 		region := *spotPrice.AvailabilityZone
 		instanceType := string(spotPrice.InstanceType)
 		if _, ok := spm.InstanceDetails[instanceType]; !ok {
-			log.Printf("no instance details found for instance type %s", instanceType)
+			spm.logger.Warn("no instance details found for instance type", "instance_type", instanceType)
 			continue
 		}
 		spotProductTerm := spm.InstanceDetails[instanceType]
@@ -99,12 +102,12 @@ func (spm *StructuredPricingMap) GeneratePricingMap(ondemandPrices []string, spo
 		spotProductTerm.Region = region
 		price, err := strconv.ParseFloat(*spotPrice.SpotPrice, 64)
 		if err != nil {
-			log.Printf("error parsing spot price: %s, skipping", err)
+			spm.logger.Debug("error parsing spot price: skipping", "message", err)
 			continue
 		}
 		err = spm.AddToPricingMap(price, spotProductTerm)
 		if err != nil {
-			log.Printf("error adding to pricing map: %s", err)
+			spm.logger.Debug("error adding to spot pricing map", "message", err)
 			continue
 		}
 	}
@@ -124,7 +127,7 @@ func (spm *StructuredPricingMap) AddToPricingMap(price float64, attribute Attrib
 		return ErrInstanceTypeAlreadyExists
 	}
 
-	weightedPrice, err := weightedPriceForInstance(price, attribute)
+	weightedPrice, err := spm.weightedPriceForInstance(price, attribute)
 	if err != nil {
 		return err
 	}
@@ -143,7 +146,7 @@ func (spm *StructuredPricingMap) AddInstanceDetails(attributes Attributes) {
 	}
 }
 
-func weightedPriceForInstance(price float64, attributes Attributes) (*ComputePrices, error) {
+func (spm *StructuredPricingMap) weightedPriceForInstance(price float64, attributes Attributes) (*ComputePrices, error) {
 	cpus, err := strconv.ParseFloat(attributes.VCPU, 64)
 	if err != nil {
 		return nil, fmt.Errorf("%w %w", ErrParseAttributes, err)
@@ -157,7 +160,7 @@ func weightedPriceForInstance(price float64, attributes Attributes) (*ComputePri
 	}
 	ratio, ok := cpuToCostRatio[attributes.InstanceFamily]
 	if !ok {
-		log.Printf("no ratio found for instance type %s, defaulting to %s", attributes.InstanceType, defaultInstanceFamily)
+		spm.logger.Warn("no ratio found for instance type. Using default key", "instance_type", attributes.InstanceType, "default_key", defaultInstanceFamily)
 		ratio = cpuToCostRatio[defaultInstanceFamily]
 	}
 

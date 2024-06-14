@@ -8,6 +8,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -46,7 +47,7 @@ func operationalFlags(cfg *config.Config) {
 	flag.DurationVar(&cfg.Server.Timeout, "server-timeout", 30*time.Second, "Server timeout")
 	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
 	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
-	flag.StringVar(&cfg.Logger.Level, "log.level", "info", "Log level(debug, info, warn, error)")
+	flag.StringVar(&cfg.Logger.Level, "log.level", "warn", "Log level(debug, info, warn, error)")
 	flag.StringVar(&cfg.Logger.Output, "log.output", "stdout", "Log output(stdout, stderr)")
 	flag.StringVar(&cfg.Logger.Type, "log.type", "text", "Log type(json, text)")
 }
@@ -76,7 +77,8 @@ func selectProvider(cfg *config.Config, logger *slog.Logger) (provider.Provider,
 	}
 }
 
-func createPromRegistryHandler(csp provider.Provider) http.Handler {
+// createPromRegistryHandler creates a prometheus handler for the given provider
+func createPromRegistryHandler(csp provider.Provider) (http.Handler, error) {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
 		collectors.NewBuildInfoCollector(),
@@ -87,19 +89,23 @@ func createPromRegistryHandler(csp provider.Provider) http.Handler {
 	)
 	err := csp.RegisterCollectors(registry)
 	if err != nil {
-		log.Fatalf("Error registering collectors: %s", err)
+		return nil, fmt.Errorf("error registering collectors: %w", err)
 	}
 	// CollectMetrics http server for prometheus
 	return promhttp.HandlerFor(registry, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
-	})
+	}), nil
 }
 
 func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, logger *slog.Logger) error {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path))   // landing page
-	mux.Handle(cfg.Server.Path, createPromRegistryHandler(csp)) // prom metrics handler
+	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path)) // landing page
+	handler, err := createPromRegistryHandler(csp)
+	if err != nil {
+		return err
+	}
+	mux.Handle(cfg.Server.Path, handler) // prom metrics handler
 
 	server := &http.Server{Addr: cfg.Server.Address, Handler: mux}
 	errChan := make(chan error)
@@ -111,7 +117,7 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 
 	select {
 	case <-ctx.Done():
-		log.Print("shutting down server")
+		logger.Info("shutting down server")
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.Timeout)
 		defer cancel()
 
@@ -148,7 +154,8 @@ func main() {
 
 	err = runServer(ctx, &cfg, csp, logger)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("Error running server", "error", err)
+		os.Exit(1)
 	}
 }
 

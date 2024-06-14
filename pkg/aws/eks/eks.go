@@ -106,6 +106,7 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 
 // Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+	ctx := context.Background()
 	if c.pricingMap == nil || time.Now().After(c.NextScrape) {
 		var prices []string
 		var spotPrices []ec2Types.SpotPrice
@@ -114,7 +115,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		m := sync.Mutex{}
 		for _, region := range c.Regions {
 			eg.Go(func() error {
-				priceList, err := ListOnDemandPrices(context.Background(), *region.RegionName, c.pricingService)
+				priceList, err := ListOnDemandPrices(ctx, *region.RegionName, c.pricingService)
 				if err != nil {
 					return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
 				}
@@ -123,7 +124,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					return ErrClientNotFound
 				}
 				client := c.ec2RegionClient[*region.RegionName]
-				spotPriceList, err := ListSpotPrices(context.Background(), client)
+				spotPriceList, err := ListSpotPrices(ctx, client)
 				if err != nil {
 					return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
 				}
@@ -138,7 +139,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		if err != nil {
 			return err
 		}
-		c.pricingMap = NewStructuredPricingMap()
+		c.pricingMap = NewStructuredPricingMap(c.logger)
 		if err := c.pricingMap.GeneratePricingMap(prices, spotPrices); err != nil {
 			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 		}
@@ -153,12 +154,18 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			start := time.Now()
 			defer wg.Done()
 			client := c.ec2RegionClient[*region.RegionName]
-			reservations, err := ListComputeInstances(context.Background(), client)
+			reservations, err := ListComputeInstances(ctx, client)
 			if err != nil {
-				c.logger.Error("error listing instances", "error", err)
+				c.logger.LogAttrs(ctx, slog.LevelError, "error listing instances",
+					slog.String("region", *region.RegionName),
+					slog.String("error", err.Error()),
+				)
 				return
 			}
-			c.logger.Info("found instances", "count", len(reservations), "region", *region.RegionName, "duration", time.Since(start))
+			c.logger.Info("found instances",
+				"count", len(reservations),
+				"region", *region.RegionName,
+				"duration", time.Since(start))
 			instanceCh <- reservations
 		}(region)
 	}
@@ -227,6 +234,7 @@ func (c *Collector) Name() string {
 }
 
 func New(region string, profile string, scrapeInterval time.Duration, ps pricingClient.Pricing, ec2s ec2client.EC2, regions []ec2Types.Region, regionClientMap map[string]ec2client.EC2, logger *slog.Logger) *Collector {
+	logger = logger.With("collector", "eks")
 	return &Collector{
 		Region:          region,
 		Profile:         profile,

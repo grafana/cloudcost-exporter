@@ -1,15 +1,22 @@
 package eks
 
 import (
+	"log/slog"
+	"os"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 func TestStructuredPricingMap_AddToPricingMap(t *testing.T) {
+	h := utils.NewLevelHandler(slog.LevelError, slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(h)
+
 	tests := map[string]struct {
 		spm        *StructuredPricingMap
 		Attributes []Attributes
@@ -22,7 +29,7 @@ func TestStructuredPricingMap_AddToPricingMap(t *testing.T) {
 			want:       &StructuredPricingMap{},
 		},
 		"Single attribute": {
-			spm: NewStructuredPricingMap(),
+			spm: NewStructuredPricingMap(logger),
 			Attributes: []Attributes{
 				{
 					Region:         "us-east-1a",
@@ -54,12 +61,15 @@ func TestStructuredPricingMap_AddToPricingMap(t *testing.T) {
 				err := tt.spm.AddToPricingMap(tt.Prices[i], attr)
 				assert.NoError(t, err)
 			}
-			assert.Equal(t, tt.want, tt.spm)
+			assert.Equal(t, tt.want.Regions, tt.spm.Regions)
+			assert.Equal(t, tt.want.InstanceDetails, tt.spm.InstanceDetails)
 		})
 	}
 }
 
 func TestStructuredPricingMap_GeneratePricingMap(t *testing.T) {
+	h := utils.NewLevelHandler(slog.LevelError, slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(h)
 	tests := map[string]struct {
 		smp        *StructuredPricingMap
 		prices     []string
@@ -67,13 +77,13 @@ func TestStructuredPricingMap_GeneratePricingMap(t *testing.T) {
 		want       *StructuredPricingMap
 	}{
 		"No prices input": {
-			smp:        NewStructuredPricingMap(),
+			smp:        NewStructuredPricingMap(logger),
 			prices:     []string{},
 			spotPrices: []ec2Types.SpotPrice{},
-			want:       NewStructuredPricingMap(),
+			want:       NewStructuredPricingMap(logger),
 		},
 		"Just prices as input": {
-			smp: NewStructuredPricingMap(),
+			smp: NewStructuredPricingMap(logger),
 			prices: []string{
 				`{"product":{"productFamily":"Compute Instance","attributes":{"enhancedNetworkingSupported":"Yes","intelTurboAvailable":"No","memory":"16 GiB","dedicatedEbsThroughput":"Up to 3170 Mbps","vcpu":"8","classicnetworkingsupport":"false","capacitystatus":"UnusedCapacityReservation","locationType":"AWS Region","storage":"1 x 300 NVMe SSD","instanceFamily":"Compute optimized","operatingSystem":"Linux","intelAvx2Available":"No","regionCode":"af-south-1","physicalProcessor":"AMD EPYC 7R32","clockSpeed":"3.3 GHz","ecu":"NA","networkPerformance":"Up to 10 Gigabit","servicename":"Amazon Elastic Compute Cloud","instancesku":"Q7GDF95MM7MZ7Y5Q","gpuMemory":"NA","vpcnetworkingsupport":"true","instanceType":"c5ad.2xlarge","tenancy":"Shared","usagetype":"AFS1-UnusedBox:c5ad.2xlarge","normalizationSizeFactor":"16","intelAvxAvailable":"No","processorFeatures":"AMD Turbo; AVX; AVX2","servicecode":"AmazonEC2","licenseModel":"No License required","currentGeneration":"Yes","preInstalledSw":"NA","location":"Africa (Cape Town)","processorArchitecture":"64-bit","marketoption":"OnDemand","operation":"RunInstances","availabilityzone":"NA"},"sku":"2257YY4K7BWZ4F46"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"2257YY4K7BWZ4F46.JRTCKXETXF":{"priceDimensions":{"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","endRange":"Inf","description":"$0.468 per Unused Reservation Linux c5ad.2xlarge Instance Hour","appliesTo":[],"rateCode":"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.4680000000"}}},"sku":"2257YY4K7BWZ4F46","effectiveDate":"2024-04-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240508191027","publicationDate":"2024-05-08T19:10:27Z"}`,
 			},
@@ -107,7 +117,7 @@ func TestStructuredPricingMap_GeneratePricingMap(t *testing.T) {
 			},
 		},
 		"Price and a spot price": {
-			smp: NewStructuredPricingMap(),
+			smp: NewStructuredPricingMap(logger),
 			prices: []string{
 				`{"product":{"productFamily":"Compute Instance","attributes":{"enhancedNetworkingSupported":"Yes","intelTurboAvailable":"No","memory":"16 GiB","dedicatedEbsThroughput":"Up to 3170 Mbps","vcpu":"8","classicnetworkingsupport":"false","capacitystatus":"UnusedCapacityReservation","locationType":"AWS Region","storage":"1 x 300 NVMe SSD","instanceFamily":"Compute optimized","operatingSystem":"Linux","intelAvx2Available":"No","regionCode":"af-south-1","physicalProcessor":"AMD EPYC 7R32","clockSpeed":"3.3 GHz","ecu":"NA","networkPerformance":"Up to 10 Gigabit","servicename":"Amazon Elastic Compute Cloud","instancesku":"Q7GDF95MM7MZ7Y5Q","gpuMemory":"NA","vpcnetworkingsupport":"true","instanceType":"c5ad.2xlarge","tenancy":"Shared","usagetype":"AFS1-UnusedBox:c5ad.2xlarge","normalizationSizeFactor":"16","intelAvxAvailable":"No","processorFeatures":"AMD Turbo; AVX; AVX2","servicecode":"AmazonEC2","licenseModel":"No License required","currentGeneration":"Yes","preInstalledSw":"NA","location":"Africa (Cape Town)","processorArchitecture":"64-bit","marketoption":"OnDemand","operation":"RunInstances","availabilityzone":"NA"},"sku":"2257YY4K7BWZ4F46"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"2257YY4K7BWZ4F46.JRTCKXETXF":{"priceDimensions":{"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","endRange":"Inf","description":"$0.468 per Unused Reservation Linux c5ad.2xlarge Instance Hour","appliesTo":[],"rateCode":"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.4680000000"}}},"sku":"2257YY4K7BWZ4F46","effectiveDate":"2024-04-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240508191027","publicationDate":"2024-05-08T19:10:27Z"}`,
 			},
@@ -159,12 +169,15 @@ func TestStructuredPricingMap_GeneratePricingMap(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			err := tt.smp.GeneratePricingMap(tt.prices, tt.spotPrices)
 			assert.NoError(t, err)
-			assert.Equal(t, tt.want, tt.smp)
+			assert.Equal(t, tt.want.Regions, tt.smp.Regions)
+			assert.Equal(t, tt.want.InstanceDetails, tt.smp.InstanceDetails)
 		})
 	}
 }
 
 func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
+	h := utils.NewLevelHandler(slog.LevelError, slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(h)
 	tests := map[string]struct {
 		spm          *StructuredPricingMap
 		region       string
@@ -173,7 +186,7 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 		want         *ComputePrices
 	}{
 		"An empty structured pricing map should return a no Region found error": {
-			spm:          NewStructuredPricingMap(),
+			spm:          NewStructuredPricingMap(logger),
 			region:       "us-east-1",
 			instanceType: "m5.large",
 			err:          ErrRegionNotFound,
@@ -185,6 +198,7 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 						Family: map[string]*ComputePrices{},
 					},
 				},
+				logger: logger,
 			},
 			region:       "us-east-1",
 			instanceType: "m5.large",
@@ -202,6 +216,7 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 						},
 					},
 				},
+				logger: logger,
 			},
 			region:       "us-east-1",
 			instanceType: "m5.large",
@@ -225,6 +240,7 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 }
 
 func Test_weightedPriceForInstance(t *testing.T) {
+	spm := NewStructuredPricingMap(slog.New(slog.NewTextHandler(os.Stdout, nil)))
 	tests := map[string]struct {
 		price      float64
 		attributes Attributes
@@ -317,7 +333,7 @@ func Test_weightedPriceForInstance(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			got, err := weightedPriceForInstance(tt.price, tt.attributes)
+			got, err := spm.weightedPriceForInstance(tt.price, tt.attributes)
 			if tt.err != nil {
 				assert.ErrorIs(t, err, tt.err)
 				return

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -59,6 +60,7 @@ type Collector struct {
 	Projects          []string
 	ComputePricingMap *gcpCompute.StructuredPricingMap
 	NextScrape        time.Time
+	logger            *slog.Logger
 }
 
 func (c *Collector) Register(_ provider.Registry) error {
@@ -202,13 +204,15 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func New(config *Config, computeService *compute.Service, billingService *billingv1.CloudCatalogClient) *Collector {
+func New(config *Config, computeService *compute.Service, billingService *billingv1.CloudCatalogClient, logger *slog.Logger) *Collector {
+	logger = logger.With("collector", "eks")
 	projects := strings.Split(config.Projects, ",")
 	return &Collector{
 		computeService: computeService,
 		billingService: billingService,
 		config:         config,
 		Projects:       projects,
+		logger:         logger,
 	}
 }
 

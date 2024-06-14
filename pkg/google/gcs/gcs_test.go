@@ -3,6 +3,8 @@ package gcs
 import (
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +26,7 @@ import (
 
 	"github.com/grafana/cloudcost-exporter/mocks/pkg/google/gcs"
 	"github.com/grafana/cloudcost-exporter/pkg/google/billing"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 func TestStorageclassFromSkuDescription(t *testing.T) {
@@ -157,11 +160,12 @@ func TestMisformedPricingInfoFromSku(t *testing.T) {
 func TestNew(t *testing.T) {
 	regionsClient := gcs.NewRegionsClient(t)
 	storageClient := gcs.NewStorageClientInterface(t)
-
+	handler := utils.NewLevelHandler(slog.LevelError, slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(handler)
 	t.Run("should return a non-nil client", func(t *testing.T) {
 		gcsCollector, err := New(&Config{
 			ProjectId: "project-1",
-		}, nil, regionsClient, storageClient)
+		}, nil, regionsClient, storageClient, logger)
 		assert.NoError(t, err)
 		assert.NotNil(t, gcsCollector)
 	})
@@ -169,7 +173,7 @@ func TestNew(t *testing.T) {
 	t.Run("collectorName should be GCS", func(t *testing.T) {
 		gcsCollector, _ := New(&Config{
 			ProjectId: "project-1",
-		}, nil, regionsClient, storageClient)
+		}, nil, regionsClient, storageClient, logger)
 		assert.Equal(t, "GCS", gcsCollector.Name())
 	})
 }
@@ -554,9 +558,11 @@ func TestCollector_Collect(t *testing.T) {
 		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 
 	assert.NoError(t, err)
+	hanlder := utils.NewLevelHandler(slog.LevelError, slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(hanlder)
 	collector, err := New(&Config{
 		ProjectId: "project-1",
-	}, cloudCatalogClient, regionsClient, storageClient)
+	}, cloudCatalogClient, regionsClient, storageClient, logger)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, collector)

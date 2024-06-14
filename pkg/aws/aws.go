@@ -100,6 +100,7 @@ const (
 )
 
 func New(config *Config, logger *slog.Logger) (*AWS, error) {
+	logger = logger.With("provider", subsystem)
 	var collectors []provider.Collector
 	// There are two scenarios:
 	// 1. Running locally, the user must pass in a region and profile to use

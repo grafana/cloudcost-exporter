@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -171,6 +172,7 @@ type Collector struct {
 	discount           int
 	CachedBuckets      *BucketCache
 	metrics            *Metrics
+	logger             *slog.Logger
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
@@ -193,7 +195,8 @@ type RegionsClient interface {
 	List(ctx context.Context, req *computepb.ListRegionsRequest, opts ...gax.CallOption) *compute.RegionIterator
 }
 
-func New(config *Config, cloudCatalogClient *billingv1.CloudCatalogClient, regionsClient RegionsClient, storageClient StorageClientInterface) (*Collector, error) {
+func New(config *Config, cloudCatalogClient *billingv1.CloudCatalogClient, regionsClient RegionsClient, storageClient StorageClientInterface, logger *slog.Logger) (*Collector, error) {
+	logger = logger.With("collector", collectorName)
 	if config.ProjectId == "" {
 		return nil, fmt.Errorf("projectID cannot be empty")
 	}
@@ -201,7 +204,10 @@ func New(config *Config, cloudCatalogClient *billingv1.CloudCatalogClient, regio
 
 	projects := strings.Split(config.Projects, ",")
 	if len(projects) == 1 && projects[0] == "" {
-		log.Printf("No bucket projects specified, defaulting to %s", config.ProjectId)
+		logger.LogAttrs(context.TODO(),
+			slog.LevelDebug,
+			"No bucket projects specified, will use default",
+			slog.String("project_id", config.ProjectId))
 		projects = []string{config.ProjectId}
 	}
 	bucketClient := NewBucketClient(storageClient)
@@ -219,6 +225,7 @@ func New(config *Config, cloudCatalogClient *billingv1.CloudCatalogClient, regio
 		nextScrape:    time.Now().Add(-config.ScrapeInterval),
 		CachedBuckets: NewBucketCache(),
 		metrics:       NewMetrics(),
+		logger:        logger,
 	}, nil
 }
 
@@ -256,7 +263,11 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	ExporterOperationsDiscounts(c.metrics)
 	err := ExportRegionalDiscounts(c.ctx, c.regionsClient, c.ProjectID, c.discount, c.metrics)
 	if err != nil {
-		log.Printf("Error exporting regional discounts: %v", err)
+		c.logger.LogAttrs(context.TODO(),
+			slog.LevelError,
+			"Error exporting regional discounts",
+			slog.String("message", err.Error())
+		)
 	}
 	err = ExportBucketInfo(c.ctx, c.bucketClient, c.Projects, c.CachedBuckets, c.metrics)
 	if err != nil {

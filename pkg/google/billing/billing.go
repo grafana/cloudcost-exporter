@@ -3,7 +3,8 @@ package billing
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
+	"os"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
@@ -11,6 +12,8 @@ import (
 )
 
 var ServiceNotFound = errors.New("service not found")
+
+var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 // GetServiceName will search for a service by the display name and return the full name.
 // The full name is need by the GetPricing method to collect all the pricing information for a given service.
@@ -41,7 +44,7 @@ func GetPricing(ctx context.Context, billingService *billingv1.CloudCatalogClien
 			if errors.Is(err, iterator.Done) {
 				break
 			}
-			log.Println(err) // keep going if we get an error
+			logger.Warn("error iterating over billing data", "error", err) // keep going if we get an error
 		}
 		skus = append(skus, sku)
 	}

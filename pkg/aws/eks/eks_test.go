@@ -2,6 +2,7 @@ package eks
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"os"
 	"testing"
@@ -360,17 +361,21 @@ func TestNewCollector(t *testing.T) {
 			ec2s:           nil,
 		},
 	}
+	hanlder := utils.NewLevelHandler(slog.LevelError, slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(hanlder)
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			collector := New(tt.region, tt.profile, tt.scrapeInternal, tt.ps, tt.ec2s, nil, nil, nil)
+			collector := New(tt.region, tt.profile, tt.scrapeInternal, tt.ps, tt.ec2s, nil, nil, logger)
 			assert.NotNil(t, collector)
 		})
 	}
 }
 
 func TestCollector_Name(t *testing.T) {
+	hanlder := utils.NewLevelHandler(slog.LevelError, slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(hanlder)
 	t.Run("Name should return the same name as the subsystem const", func(t *testing.T) {
-		collector := New("", "", 0, nil, nil, nil, nil, nil)
+		collector := New("", "", 0, nil, nil, nil, nil, logger)
 		assert.Equal(t, subsystem, collector.Name())
 	})
 }

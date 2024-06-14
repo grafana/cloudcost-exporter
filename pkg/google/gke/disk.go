@@ -32,6 +32,9 @@ type Disk struct {
 
 func NewDisk(disk *compute.Disk, project string) *Disk {
 	clusterName := disk.Labels[gcpCompute.GkeClusterLabel]
+	if clusterName == "" {
+		log.Printf("disk(%s) is not associated with a GKE cluster", disk.Name)
+	}
 	d := &Disk{
 		Cluster:     clusterName,
 		Project:     project,

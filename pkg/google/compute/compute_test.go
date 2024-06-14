@@ -3,7 +3,9 @@ package compute
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -26,11 +28,10 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
-var collector *Collector
-
 func TestMain(m *testing.M) {
 	ctx := context.Background()
-
+	handler := utils.NewLevelHandler(slog.LevelError, slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(handler)
 	computeService, err := compute.NewService(ctx)
 	if err != nil {
 		// We silently fail here so that CI works.
@@ -44,9 +45,9 @@ func TestMain(m *testing.M) {
 		// TODO Configure tests so the container gets application credentials by default
 		log.Printf("Error creating billing billingService: %s", err)
 	}
-	collector = New(&Config{
+	_ = New(&Config{
 		Projects: "some_project",
-	}, computeService, billingService)
+	}, computeService, billingService, logger)
 	code := m.Run()
 	os.Exit(code)
 }
@@ -431,8 +432,9 @@ func TestCollector_Collect(t *testing.T) {
 				option.WithoutAuthentication(),
 				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
 			)
-
-			collector := New(test.config, computeService, cloudCatalogClient)
+			hanlder := utils.NewLevelHandler(slog.LevelError, slog.NewTextHandler(io.Discard, nil))
+			logger := slog.New(hanlder)
+			collector := New(test.config, computeService, cloudCatalogClient, logger)
 
 			require.NotNil(t, collector)
 
@@ -511,10 +513,12 @@ func TestCollector_GetPricing(t *testing.T) {
 
 	computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(testServer.URL))
 	require.NoError(t, err)
+	hanlder := utils.NewLevelHandler(slog.LevelError, slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(hanlder)
 	// Create the collector with a nil billing service so we can override it on each test case
 	collector := New(&Config{
 		Projects: "testing",
-	}, computeService, nil)
+	}, computeService, nil, logger)
 
 	var pricingMap *StructuredPricingMap
 	t.Run("Test that the pricing map is cached", func(t *testing.T) {

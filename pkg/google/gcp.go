@@ -3,7 +3,6 @@ package google
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"strings"
 	"sync"
@@ -82,6 +81,7 @@ var (
 type GCP struct {
 	config     *Config
 	collectors []provider.Collector
+	logger     *slog.Logger
 }
 
 type Config struct {
@@ -97,6 +97,7 @@ type Config struct {
 // We instantiate services to avoid repeating common services that may be shared across many collectors. In the future we can push
 // collector specific services further down.
 func New(config *Config, logger *slog.Logger) (*GCP, error) {
+	logger = logger.WithGroup(subsystem)
 	ctx := context.Background()
 
 	computeService, err := computev1.NewService(ctx)
@@ -121,7 +122,11 @@ func New(config *Config, logger *slog.Logger) (*GCP, error) {
 
 	var collectors []provider.Collector
 	for _, service := range config.Services {
-		log.Printf("Creating collector for %s", service)
+		logger.LogAttrs(context.TODO(),
+			slog.LevelInfo,
+			"Creating collector",
+			slog.String("collector", service),
+		)
 		var collector provider.Collector
 		switch strings.ToUpper(service) {
 		case "GCS":
@@ -130,22 +135,31 @@ func New(config *Config, logger *slog.Logger) (*GCP, error) {
 				Projects:        config.Projects,
 				ScrapeInterval:  config.ScrapeInterval,
 				DefaultDiscount: config.DefaultDiscount,
-			}, cloudCatalogClient, regionsClient, storageClient)
+			}, cloudCatalogClient, regionsClient, storageClient, logger)
 			if err != nil {
-				logger.Info("Error creating GCS collector", "message", err)
+				logger.LogAttrs(context.TODO(),
+					slog.LevelError,
+					"Error creating GCS collector",
+					slog.String("message", err.Error()),
+					slog.String("collector", service),
+				)
 			}
 		case "COMPUTE":
 			collector = compute.New(&compute.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
-			}, computeService, cloudCatalogClient)
+			}, computeService, cloudCatalogClient, logger)
 		case "GKE":
 			collector = gke.New(&gke.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
-			}, computeService, cloudCatalogClient)
+			}, computeService, cloudCatalogClient, logger)
 		default:
-			logger.Info("Unknown service", "service", service)
+			logger.LogAttrs(context.TODO(),
+				slog.LevelError,
+				"Unknown service",
+				slog.String("service", service),
+			)
 			continue
 		}
 		collectors = append(collectors, collector)
@@ -153,6 +167,7 @@ func New(config *Config, logger *slog.Logger) (*GCP, error) {
 	return &GCP{
 		config:     config,
 		collectors: collectors,
+		logger:     logger,
 	}, nil
 }
 
@@ -178,7 +193,11 @@ func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
 	ch <- providerLastScrapeTime
 	for _, c := range g.collectors {
 		if err := c.Describe(ch); err != nil {
-			log.Printf("Error describing collector %s: %s", c.Name(), err)
+			g.logger.LogAttrs(context.TODO(),
+				slog.LevelWarn,
+				"Error describing collector",
+				slog.String("message", err.Error()),
+			)
 		}
 	}
 }
@@ -194,10 +213,21 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 			defer wg.Done()
 			collectorSuccess := 0.0
 			if err := c.Collect(ch); err != nil {
-				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
+				g.logger.LogAttrs(context.TODO(),
+					slog.LevelWarn,
+					"Error collecting metrics from collector",
+					slog.String("collector", c.Name()),
+					slog.String("message", err.Error()),
+				)
 				collectorSuccess = 1.0
 			}
-			log.Printf("Collector(%s) collect respose=%.2f", c.Name(), collectorSuccess)
+			g.logger.LogAttrs(context.TODO(),
+				slog.LevelInfo,
+				"Collector collected",
+				slog.String("collector", c.Name()),
+				slog.Float64("success", collectorSuccess),
+				slog.Float64("duration", time.Since(now).Seconds()),
+			)
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorSuccess, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())

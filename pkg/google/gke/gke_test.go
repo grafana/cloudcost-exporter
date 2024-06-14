@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +26,8 @@ import (
 )
 
 func TestCollector_Collect(t *testing.T) {
+	handler := utils.NewLevelHandler(slog.LevelDebug, slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(handler)
 	tests := map[string]struct {
 		config          *Config
 		testServer      *httptest.Server
@@ -406,6 +410,7 @@ func TestCollector_Collect(t *testing.T) {
 			})),
 		},
 	}
+
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -427,7 +432,7 @@ func TestCollector_Collect(t *testing.T) {
 				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
 			)
 			require.NoError(t, err)
-			collector := New(test.config, computeService, cloudCatalogClient)
+			collector := New(test.config, computeService, cloudCatalogClient, logger)
 			require.NotNil(t, collector)
 			ch := make(chan prometheus.Metric)
 			go func() {

@@ -148,6 +148,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 
 // New creates a new Collector with a client and scrape interval defined.
 func New(scrapeInterval time.Duration, client costexplorer.CostExplorer, logger *slog.Logger) *Collector {
+	logger = logger.With("collector", "s3")
 	return &Collector{
 		client:   client,
 		interval: scrapeInterval,

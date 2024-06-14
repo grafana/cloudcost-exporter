@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -177,11 +178,13 @@ func TestNewCollector(t *testing.T) {
 			want: &Collector{},
 		},
 	}
+	hanlder := utils.NewLevelHandler(slog.LevelError, slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(hanlder)
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			c := mockcostexplorer.NewCostExplorer(t)
 
-			got := New(tt.args.interval, c, nil)
+			got := New(tt.args.interval, c, logger)
 			assert.NotNil(t, got)
 			assert.Equal(t, tt.args.interval, got.interval)
 		})

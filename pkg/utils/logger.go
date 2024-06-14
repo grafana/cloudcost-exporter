@@ -52,6 +52,7 @@ func (h *LevelHandler) Handler() slog.Handler {
 	return h.handler
 }
 
+// GetLogLevel parses a string and returns the corresponding slog.Leveler. Returns slog.LevelInfo if the string is not recognized.
 func GetLogLevel(level string) slog.Leveler {
 	switch level {
 	case "debug":
@@ -67,16 +68,19 @@ func GetLogLevel(level string) slog.Leveler {
 	}
 }
 
+// WriterForOutput returns an io.Writer based on the output string. Returns os.Stdout if the string is not recognized.
 func WriterForOutput(output string) io.Writer {
 	switch output {
 	case "stdout":
 		return os.Stdout
 	case "stderr":
 		return os.Stderr
+	default:
+		return os.Stdout
 	}
-	return os.Stdout
 }
 
+// HandlerForOutput returns a slog.Handler based on the output string. Returns a slog.NewTextHandler if the string is not recognized.
 func HandlerForOutput(output string, w io.Writer) slog.Handler {
 	switch output {
 	case "json":
