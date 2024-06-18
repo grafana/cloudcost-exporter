@@ -40,8 +40,8 @@ github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.11.2 h1:Ji0DY1x
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.11.2/go.mod h1:5CsjAbs3NlGQyZNFACh+zztPDI7fU6eW9QsxjfnuBKg=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.11.12 h1:kO2J7WMroF/OTHN9WTcUtMjPhJ7ZoNxx0dwv6UCXQgY=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.11.12/go.mod h1:mrNxrjYvXaSjZe5fkKaWgDnOQ6BExLn/7Ru9OpRsMPY=
-github.com/aws/aws-sdk-go-v2/service/pricing v1.28.1 h1:BUaW46SlGFEqknJq82CjFPTI/M7LhiGuZrLf2zowXiY=
-github.com/aws/aws-sdk-go-v2/service/pricing v1.28.1/go.mod h1:nRP1NcPnLcvdtG5z0QFxYKK2UwV7/ZZaAXh4YMGlGMc=
+github.com/aws/aws-sdk-go-v2/service/pricing v1.28.8 h1:SvPfJJcVZPkv+RDNUmpF6gi3fOVtXkK1WXZlsNV6pOg=
+github.com/aws/aws-sdk-go-v2/service/pricing v1.28.8/go.mod h1:GDa+5dejp/PJ6V+aRdtaDvJONGyWKy6Keml8iqfez3A=
 github.com/aws/aws-sdk-go-v2/service/sso v1.20.11 h1:gEYM2GSpr4YNWc6hCd5nod4+d4kd9vWIAWrmGuLdlMw=
 github.com/aws/aws-sdk-go-v2/service/sso v1.20.11/go.mod h1:gVvwPdPNYehHSP9Rs7q27U1EU+3Or2ZpXvzAYJNh63w=
 github.com/aws/aws-sdk-go-v2/service/ssooidc v1.24.5 h1:iXjh3uaH3vsVcnyZX7MqCoCfcyxIrVE9iOQruRaWPrQ=
