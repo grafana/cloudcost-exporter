@@ -116,7 +116,6 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 
 	select {
 	case <-ctx.Done():
-		log.Info("Context done", slog.String("test", "this"))
 		log.LogAttrs(ctx, slog.LevelInfo, "Shutting down server")
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.Timeout)
 		defer cancel()
