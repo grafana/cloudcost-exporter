@@ -18,5 +18,5 @@ With `slog` being part of Go's stdlib since 1.21, we decided to use it as the lo
 
 ## Expanding the logging
 
-If you need more flexibility or need to expand the logger, please file an [issue](https://github.com/grafana/cloudcost-exporter/issues/new) with the requirements and we can discuss the best way to implement it.
+If you need more flexibility or need to expand the logger, please file an [issue](https://github.com/grafana/cloudcost-exporter/issues/new) with the requirements, and we can discuss the best way to implement it.
 
