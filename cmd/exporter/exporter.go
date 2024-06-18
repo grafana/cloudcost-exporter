@@ -44,6 +44,9 @@ func operationalFlags(cfg *config.Config) {
 	flag.DurationVar(&cfg.Server.Timeout, "server-timeout", 30*time.Second, "Server timeout")
 	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
 	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
+	flag.StringVar(&cfg.Logger.Level, "log.level", "info", "Log level")
+	flag.StringVar(&cfg.Logger.Output, "log.output", "stdout", "Log output")
+	flag.StringVar(&cfg.Logger.Type, "log.type", "text", "Log type")
 }
 
 func selectProvider(cfg *config.Config) (provider.Provider, error) {
