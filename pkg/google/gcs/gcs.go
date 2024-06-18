@@ -266,7 +266,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 		c.logger.LogAttrs(context.TODO(),
 			slog.LevelError,
 			"Error exporting regional discounts",
-			slog.String("message", err.Error())
+			slog.String("message", err.Error()),
 		)
 	}
 	err = ExportBucketInfo(c.ctx, c.bucketClient, c.Projects, c.CachedBuckets, c.metrics)
