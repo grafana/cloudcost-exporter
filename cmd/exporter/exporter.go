@@ -8,6 +8,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -48,9 +49,10 @@ func main() {
 		log.Fatalf("Error setting up provider %s: %s", cfg.Provider, err)
 	}
 
-	err = runServer(ctx, &cfg, csp, nil)
+	err = runServer(ctx, &cfg, csp, logs)
 	if err != nil {
-		log.Fatal(err)
+		logs.LogAttrs(ctx, slog.LevelError, "Error running server", slog.String("message", err.Error()))
+		os.Exit(1)
 	}
 }
 
@@ -76,9 +78,9 @@ func operationalFlags(cfg *config.Config) {
 	flag.DurationVar(&cfg.Server.Timeout, "server-timeout", 30*time.Second, "Server timeout")
 	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
 	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
-	flag.StringVar(&cfg.Logger.Level, "log.level", "info", "Log level")
-	flag.StringVar(&cfg.Logger.Output, "log.output", "stdout", "Log output")
-	flag.StringVar(&cfg.Logger.Type, "log.type", "text", "Log type")
+	flag.StringVar(&cfg.Logger.Level, "log.level", "info", "Log level: debug, info, warn, error")
+	flag.StringVar(&cfg.Logger.Output, "log.output", "stdout", "Log output stream: stdout, stderr, file")
+	flag.StringVar(&cfg.Logger.Type, "log.type", "text", "Log type: json, text")
 }
 
 // setupLogger is a helper method that is responsible for creating a structured logger that is used throughout the application.
@@ -107,6 +109,7 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 
 	select {
 	case <-ctx.Done():
+		log.Info("Context done", slog.String("test", "this"))
 		log.LogAttrs(ctx, slog.LevelInfo, "Shutting down server")
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.Timeout)
 		defer cancel()
