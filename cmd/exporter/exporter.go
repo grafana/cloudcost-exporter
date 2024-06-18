@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -46,7 +45,11 @@ func main() {
 
 	csp, err := selectProvider(&cfg)
 	if err != nil {
-		log.Fatalf("Error setting up provider %s: %s", cfg.Provider, err)
+		logs.LogAttrs(ctx, slog.LevelError, "Error selecting provider",
+			slog.String("message", err.Error()),
+			slog.String("provider", cfg.Provider),
+		)
+		os.Exit(1)
 	}
 
 	err = runServer(ctx, &cfg, csp, logs)
@@ -94,8 +97,12 @@ func setupLogger(level string, output string, logtype string) *slog.Logger {
 func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, log *slog.Logger) error {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path))   // landing page
-	mux.Handle(cfg.Server.Path, createPromRegistryHandler(csp)) // prom metrics handler
+	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path)) // landing page
+	registryHandler, err := createPromRegistryHandler(csp)    // prom metrics handler
+	if err != nil {
+		return err
+	}
+	mux.Handle(cfg.Server.Path, registryHandler) // prom metrics handler
 
 	server := &http.Server{Addr: cfg.Server.Address, Handler: mux}
 	errChan := make(chan error)
@@ -127,7 +134,7 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 	return nil
 }
 
-func createPromRegistryHandler(csp provider.Provider) http.Handler {
+func createPromRegistryHandler(csp provider.Provider) (http.Handler, error) {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
 		collectors.NewBuildInfoCollector(),
@@ -138,12 +145,12 @@ func createPromRegistryHandler(csp provider.Provider) http.Handler {
 	)
 	err := csp.RegisterCollectors(registry)
 	if err != nil {
-		log.Fatalf("Error registering collectors: %s", err)
+		return nil, err
 	}
 	// CollectMetrics http server for prometheus
 	return promhttp.HandlerFor(registry, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
-	})
+	}), nil
 }
 
 func selectProvider(cfg *config.Config) (provider.Provider, error) {
