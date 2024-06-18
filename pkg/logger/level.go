@@ -14,9 +14,9 @@ type LevelHandler struct {
 	handler slog.Handler
 }
 
-// NewHandler returns a LevelHandler with the given level.
+// NewLevelHandler returns a LevelHandler with the given level.
 // All methods except Enabled delegate to h.
-func NewHandler(level slog.Leveler, h slog.Handler) *LevelHandler {
+func NewLevelHandler(level slog.Leveler, h slog.Handler) *LevelHandler {
 	// Optimization: avoid chains of LevelHandlers.
 	if lh, ok := h.(*LevelHandler); ok {
 		h = lh.Handler()
@@ -37,12 +37,12 @@ func (h *LevelHandler) Handle(ctx context.Context, r slog.Record) error {
 
 // WithAttrs implements Handler.WithAttrs.
 func (h *LevelHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return NewHandler(h.level, h.handler.WithAttrs(attrs))
+	return NewLevelHandler(h.level, h.handler.WithAttrs(attrs))
 }
 
 // WithGroup implements Handler.WithGroup.
 func (h *LevelHandler) WithGroup(name string) slog.Handler {
-	return NewHandler(h.level, h.handler.WithGroup(name))
+	return NewLevelHandler(h.level, h.handler.WithGroup(name))
 }
 
 // Handler returns the Handler wrapped by h.
