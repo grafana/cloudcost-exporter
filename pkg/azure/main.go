@@ -210,8 +210,12 @@ func main() {
 		log.Fatal(err)
 	}
 
+	locationSet := map[string]bool{}
 	locationList := []string{}
 	for _, v := range rgLocationMap {
+		locationSet[v] = true
+	}
+	for v := range locationSet {
 		locationList = append(locationList, v)
 	}
 
@@ -225,7 +229,7 @@ func main() {
 	})
 
 	eg.Go(func() error {
-		priceMap, err = getPrices(ctx, locationList)
+		priceMap, err = getPrices(newCtx, locationList)
 		return err
 	})
 
@@ -234,14 +238,39 @@ func main() {
 		log.Fatal(err)
 	}
 
+	type Summary struct {
+		RegionName    string
+		TotalCost     float64
+		TotalMachines int
+		MachineTypes  map[string]bool
+	}
+	totalHourlyCostPerRegion := map[string]Summary{}
+
 	for region, vmInformation := range vmMap.RegionMap {
 		fmt.Printf("Prices for region: %s\n", region)
+		totalCost := float64(0.0)
+		totalMachines := 0
+		machineTypes := map[string]bool{}
 
 		for vmName, vmInfo := range vmInformation {
 			vmType := vmInfo.MachineType
 			vmPrice := priceMap.RegionMap[region][vmType].RetailPrice
+			totalCost += vmPrice
+			totalMachines++
+			machineTypes[vmInfo.MachineType] = true
 
 			fmt.Printf("Prices for vm %s of type %s in region %s: %v\n", vmName, vmType, region, vmPrice)
 		}
+
+		totalHourlyCostPerRegion[region] = Summary{
+			RegionName:    region,
+			TotalCost:     totalCost,
+			TotalMachines: totalMachines,
+			MachineTypes:  machineTypes,
+		}
+	}
+
+	for r, c := range totalHourlyCostPerRegion {
+		fmt.Printf("Total Cost per hour of the Region %s: %+v\n", r, c)
 	}
 }
