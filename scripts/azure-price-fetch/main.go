@@ -8,12 +8,54 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/go-autorest/autorest/to"
 	"golang.org/x/sync/errgroup"
 	"gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
+
+func main() {
+	ctx := context.TODO()
+	subscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
+	if subscriptionID == "" {
+		log.Fatal("no subscription id specified")
+	}
+
+	credential, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	azureClientWrapper, err := NewAzureClientWrapper(ctx, subscriptionID, credential)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	rgLocationMap, uniqueLocationList, err := azureClientWrapper.getResourceGroupsAndLocationsInSubscription(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	vmMap := &VmMap{}
+	priceMap := &PriceMap{}
+
+	eg, newCtx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		vmMap, err = azureClientWrapper.getRegionalVmInformationFromRgVmss(newCtx, rgLocationMap)
+		return err
+	})
+
+	eg.Go(func() error {
+		priceMap, err = azureClientWrapper.getPrices(newCtx, uniqueLocationList)
+		return err
+	})
+
+	err = eg.Wait()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	debugSummary(priceMap, vmMap)
+}
 
 type VirtualMachineInfo struct {
 	Name        string
@@ -27,40 +69,6 @@ type VmMap struct {
 
 type PriceMap struct {
 	RegionMap map[string]map[string]sdk.ResourceSKU
-}
-
-type AzureClientWrapper struct {
-	subscriptionId string
-	priceClient    *sdk.RetailPricesClient
-	rgClient       *armresources.ResourceGroupsClient
-	vmssClient     *armcompute.VirtualMachineScaleSetsClient
-	vmssVmClient   *armcompute.VirtualMachineScaleSetVMsClient
-}
-
-func NewAzureClientWrapper(ctx context.Context, subId string, cred *azidentity.DefaultAzureCredential) (*AzureClientWrapper, error) {
-	retailPricesClient, err := sdk.NewRetailPricesClient(nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create retail prices client: %w", err)
-	}
-
-	rgClient, err := armresources.NewResourceGroupsClient(subId, cred, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build resource group client: %w", err)
-	}
-
-	computeClientFactory, err := armcompute.NewClientFactory(subId, cred, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build compute client: %w", err)
-	}
-
-	return &AzureClientWrapper{
-		subscriptionId: subId,
-
-		priceClient:  retailPricesClient,
-		rgClient:     rgClient,
-		vmssClient:   computeClientFactory.NewVirtualMachineScaleSetsClient(),
-		vmssVmClient: computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
-	}, nil
 }
 
 func (a *AzureClientWrapper) buildQueryFilter(locationList []string) string {
@@ -102,6 +110,8 @@ func (a *AzureClientWrapper) getPrices(ctx context.Context, locationList []strin
 
 func (a *AzureClientWrapper) getResourceGroupsAndLocationsInSubscription(ctx context.Context) (map[string]string, []string, error) {
 	rgToLocationMap := make(map[string]string)
+	locationSet := make(map[string]bool)
+	uniqueLocationList := []string{}
 
 	pager := a.rgClient.NewListPager(nil)
 	for pager.More() {
@@ -112,18 +122,13 @@ func (a *AzureClientWrapper) getResourceGroupsAndLocationsInSubscription(ctx con
 
 		for _, v := range nextResult.Value {
 			rgToLocationMap[*v.Name] = *v.Location
+			locationSet[*v.Location] = true
 		}
 	}
 
-	locationSet := map[string]bool{}
-	uniqueLocationList := []string{}
-	for _, v := range rgToLocationMap {
-		locationSet[v] = true
-	}
 	for v := range locationSet {
 		uniqueLocationList = append(uniqueLocationList, v)
 	}
-
 	return rgToLocationMap, uniqueLocationList, nil
 }
 
@@ -232,48 +237,4 @@ func debugSummary(priceMap *PriceMap, vmMap *VmMap) {
 	for r, c := range totalHourlyCostPerRegion {
 		fmt.Printf("Total Cost per hour of the Region %s: %+v\n", r, c)
 	}
-}
-
-func main() {
-	ctx := context.TODO()
-	subscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
-	if subscriptionID == "" {
-		log.Fatal("no subscription id specified")
-	}
-
-	credential, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	azureClientWrapper, err := NewAzureClientWrapper(ctx, subscriptionID, credential)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	rgLocationMap, uniqueLocationList, err := azureClientWrapper.getResourceGroupsAndLocationsInSubscription(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	vmMap := &VmMap{}
-	priceMap := &PriceMap{}
-
-	eg, newCtx := errgroup.WithContext(ctx)
-	eg.Go(func() error {
-		vmMap, err = azureClientWrapper.getRegionalVmInformationFromRgVmss(newCtx, rgLocationMap)
-		return err
-	})
-
-	eg.Go(func() error {
-		priceMap, err = azureClientWrapper.getPrices(newCtx, uniqueLocationList)
-		return err
-	})
-
-	err = eg.Wait()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	debugSummary(priceMap, vmMap)
 }
