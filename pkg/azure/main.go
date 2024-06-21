@@ -2,21 +2,21 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/costmanagement/armcostmanagement"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+
+	"github.com/Azure/go-autorest/autorest/to"
+	"gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
 
 type PricingDetails struct {
-	RetailPrice   float32 `json:"retailPrice"`
+	RetailPrice   float64 `json:"retailPrice"`
 	Region        string  `json:"armRegionName"`
 	ProductId     string  `json:"productId"`
 	SkuId         string  `json:"skuId"`
@@ -37,89 +37,106 @@ type VmScaleSetInfo struct {
 	Location string
 }
 
-type PriceMap map[string]map[string]PricingDetails
-
-var computeClientFactory *armcompute.ClientFactory
-var costClientFactory *armcostmanagement.ClientFactory
-
-func parseResponse(p *PricingApiResponse, pm *PriceMap) {
-	for _, price := range p.Items {
-		if price.Type != "Consumption" {
-			continue
-		}
-		if price.ServiceFamily != "Compute" {
-			continue
-		}
-		if _, ok := (*pm)[price.Region]; !ok {
-			(*pm)[price.Region] = map[string]PricingDetails{}
-		}
-		(*pm)[price.Region][price.ArmSkuName] = price
-	}
+type TotalPriceInfo struct {
+	Info       VmScaleSetInfo
+	PriceTotal float64
 }
 
-func generatePricingMapFromApi(machineTypes []string) PriceMap {
-	machineTypesStringFilters := []string{}
-
-	for _, t := range machineTypes {
-		machineTypesStringFilters = append(machineTypesStringFilters, fmt.Sprintf("armSkuName eq '%s'", t))
-	}
-	queryFilterString := strings.Join(machineTypesStringFilters, " or ")
-
-	apiUrl := fmt.Sprintf("https://prices.azure.com/api/retail/prices?api-version=2023-01-01-preview&$filter=serviceFamily eq 'Compute' and priceType eq 'Consumption' and %s", queryFilterString)
-	priceMap := PriceMap{}
-
-	for {
-		res, err := http.Get(apiUrl)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer res.Body.Close()
-		body, err := io.ReadAll(res.Body)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		var result PricingApiResponse
-		err = json.Unmarshal(body, &result)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		parseResponse(&result, &priceMap)
-
-		if result.NextPageLink == "" {
-			break
-		}
-
-		apiUrl = result.NextPageLink
-	}
-
-	return priceMap
+type PriceMap struct {
+	RegionMap map[string]map[string]PricingDetails
 }
 
-func main() {
-	subscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
-	if subscriptionID == "" {
-		log.Fatal("no subscription id specified")
-	}
-	ctx := context.TODO()
+func getLocationsFromSubscriptionResourceGroups(ctx context.Context, subId string, cred *azidentity.DefaultAzureCredential) []string {
+	activeLocations := map[string]bool{}
 
-	credential, err := azidentity.NewDefaultAzureCredential(nil)
+	rgClientFactory, err := armresources.NewClientFactory(subId, cred, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	rgClient := rgClientFactory.NewClient()
+	pager := rgClient.NewListPager(nil)
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if page.ResourceListResult.Value != nil {
+			for _, v := range page.ResourceListResult.Value {
+				loc := to.String(v.Location)
+				activeLocations[loc] = true
+			}
+		}
+	}
+
+	activeLocationsList := []string{}
+	for v := range activeLocations {
+		activeLocationsList = append(activeLocationsList, v)
+	}
+
+	return activeLocationsList
+}
+
+func getPrices(ctx context.Context, locationList []string) *PriceMap {
+	pm := PriceMap{
+		RegionMap: make(map[string]map[string]PricingDetails),
+	}
+
+	client, err := sdk.NewRetailPricesClient(nil)
 	if err != nil {
 		panic(err)
 	}
 
-	computeClientFactory, err = armcompute.NewClientFactory(subscriptionID, credential, nil)
+	locationListFilter := []string{}
+	for _, t := range locationList {
+		locationListFilter = append(locationListFilter, fmt.Sprintf("armRegionName eq '%s'", t))
+	}
+	queryFilterString := strings.Join(locationListFilter, " or ")
+
+	pager := client.NewListPager(&sdk.RetailPricesClientListOptions{
+		APIVersion:  to.StringPtr("2023-01-01-preview"), // 2023-01-01-preview
+		Filter:      to.StringPtr(fmt.Sprintf(`serviceName eq 'Virtual Machines' and priceType eq 'Consumption' and (%s)`, queryFilterString)),
+		MeterRegion: to.StringPtr(`'primary'`),
+	})
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			panic(err)
+		}
+		for _, v := range page.Items {
+			reg := v.ArmRegionName
+			skuName := v.ArmSkuName
+
+			pd := PricingDetails{
+				RetailPrice: v.RetailPrice,
+				Region:      reg,
+				ArmSkuName:  skuName,
+			}
+
+			if _, ok := pm.RegionMap[reg]; !ok {
+				pm.RegionMap[reg] = make(map[string]PricingDetails)
+			}
+			pm.RegionMap[reg][skuName] = pd
+		}
+	}
+
+	return &pm
+}
+
+func getVmScaleSetInfo(ctx context.Context, subId string, cred *azidentity.DefaultAzureCredential) map[string]VmScaleSetInfo {
+	vmScaleSetInfoMap := map[string]VmScaleSetInfo{}
+
+	computeClientFactory, err := armcompute.NewClientFactory(subId, cred, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	virtualMachineScaleSetsClient := computeClientFactory.NewVirtualMachineScaleSetsClient()
 
-	opts := armcompute.VirtualMachineScaleSetsClientListAllOptions{}
-	pager := virtualMachineScaleSetsClient.NewListAllPager(&opts)
-
-	vmScaleSetInfoMap := map[string]VmScaleSetInfo{}
+	pager := virtualMachineScaleSetsClient.NewListAllPager(nil)
 
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
@@ -137,26 +154,31 @@ func main() {
 		}
 	}
 
-	machineTypes := map[string]bool{}
-	for _, info := range vmScaleSetInfoMap {
-		machineTypes[info.TypeSku] = true
-	}
-	machineTypeNames := []string{}
-	for i := range machineTypes {
-		machineTypeNames = append(machineTypeNames, i)
+	return vmScaleSetInfoMap
+}
+
+func main() {
+	ctx := context.TODO()
+	subscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
+	if subscriptionID == "" {
+		log.Fatal("no subscription id specified")
 	}
 
-	pm := generatePricingMapFromApi(machineTypeNames)
-
-	type TotalPriceInfo struct {
-		Info       VmScaleSetInfo
-		PriceTotal float32
+	credential, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		panic(err)
 	}
+
+	vmScaleSetInfoMap := getVmScaleSetInfo(ctx, subscriptionID, credential)
+
+	locationsForSubscription := getLocationsFromSubscriptionResourceGroups(ctx, subscriptionID, credential)
+	pm := getPrices(ctx, locationsForSubscription)
+
 	totalPricesMap := map[string]TotalPriceInfo{}
 
 	for vmName, info := range vmScaleSetInfoMap {
-		pricePerType := pm[info.Location][info.TypeSku].RetailPrice
-		totalPrice := pricePerType * float32(info.Capacity)
+		pricePerType := pm.RegionMap[info.Location][info.TypeSku].RetailPrice
+		totalPrice := pricePerType * float64(info.Capacity)
 		totalPricesMap[vmName] = TotalPriceInfo{
 			Info:       info,
 			PriceTotal: totalPrice,
@@ -164,6 +186,6 @@ func main() {
 	}
 
 	for name, info := range totalPricesMap {
-		fmt.Printf("VMSS %s, cost total: %v\n", name, info.PriceTotal)
+		fmt.Printf("VMSS %s, info: %+v\n\n", name, info)
 	}
 }
