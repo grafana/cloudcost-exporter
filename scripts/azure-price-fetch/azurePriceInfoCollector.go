@@ -19,7 +19,10 @@ const (
 	OS_LINUX       string = "Linux"
 )
 
-var ErrClientCreationFailure = errors.New("failed to create client")
+var (
+	ErrClientCreationFailure = errors.New("failed to create client")
+	ErrPageAdvanceFailure    = errors.New("failed to advance page")
+)
 
 type VirtualMachineInfo struct {
 	Name            string
@@ -104,7 +107,7 @@ func (a *AzurePriceInformationCollector) getPrices(ctx context.Context, location
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to advance page: %w", err)
+			return ErrPageAdvanceFailure
 		}
 		for _, v := range page.Items {
 			if _, ok := a.priceMap.RegionMap[v.ArmRegionName]; !ok {
@@ -146,7 +149,7 @@ func (a *AzurePriceInformationCollector) getResourceGroupsAndLocationsInSubscrip
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to advance page: %w", err)
+			return nil, nil, ErrPageAdvanceFailure
 		}
 
 		for _, v := range nextResult.Value {
@@ -168,7 +171,7 @@ func (a *AzurePriceInformationCollector) getVmInfoFromResourceGroup(ctx context.
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to advance page: %w", err)
+			return nil, ErrPageAdvanceFailure
 		}
 
 		for _, v := range nextResult.Value {
@@ -206,7 +209,7 @@ func (a *AzurePriceInformationCollector) getVmInfoFromVmss(ctx context.Context, 
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to advance page: %w", err)
+			return nil, ErrPageAdvanceFailure
 		}
 
 		for _, v := range nextResult.Value {
