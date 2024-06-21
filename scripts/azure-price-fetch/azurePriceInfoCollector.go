@@ -13,7 +13,12 @@ import (
 	"gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
 
-const AZ_API_VERSION string = "2023-01-01-preview" // using latest API Version https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
+const (
+	AZ_API_VERSION string = "2023-01-01-preview" // using latest API Version https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
+	OS_WINDOWS     string = "Windows"
+	OS_LINUX       string = "Linux"
+)
+
 var ErrClientCreationFailure = errors.New("failed to create client")
 
 type VirtualMachineInfo struct {
@@ -110,9 +115,9 @@ func (a *AzurePriceInformationCollector) getPrices(ctx context.Context, location
 			}
 
 			spot := strings.Contains(v.SkuName, "Spot")
-			osKey := "Linux"
+			osKey := OS_LINUX
 			if strings.Contains(v.ProductName, "Windows") {
-				osKey = "Windows"
+				osKey = OS_WINDOWS
 			}
 
 			if spot {
@@ -167,14 +172,16 @@ func (a *AzurePriceInformationCollector) getVmInfoFromResourceGroup(ctx context.
 		}
 
 		for _, v := range nextResult.Value {
-			osInfo := "Windows"
+			osInfo := OS_WINDOWS
 			spot := false
+
 			if v.Properties.VirtualMachineProfile.Priority != nil && *v.Properties.VirtualMachineProfile.Priority == armcompute.VirtualMachinePriorityTypesSpot {
 				spot = true
 			}
 			if v.Properties.VirtualMachineProfile.OSProfile != nil && v.Properties.VirtualMachineProfile.OSProfile.LinuxConfiguration != nil {
-				osInfo = "Linux"
+				osInfo = OS_LINUX
 			}
+
 			vmsInfo, err := a.getVmInfoFromVmss(ctx, rgName, *v.Name, spot, osInfo)
 			if err != nil {
 				return nil, err

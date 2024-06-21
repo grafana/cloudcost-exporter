@@ -55,7 +55,6 @@ func debugSummary(a *AzurePriceInformationCollector) {
 		RegionName    string
 		TotalCost     float64
 		TotalMachines int
-		MachineTypes  map[string]bool
 	}
 	totalHourlyCostPerRegion := map[string]Summary{}
 
@@ -63,21 +62,18 @@ func debugSummary(a *AzurePriceInformationCollector) {
 		fmt.Printf("Prices for region: %s\n", region)
 		totalCost := float64(0.0)
 		totalMachines := 0
-		machineTypes := map[string]bool{}
 
 		for vmName, vmInfo := range vmInformation {
 			totalCost += vmInfo.RetailPrice
 			totalMachines++
-			machineTypes[vmInfo.MachineTypeSku] = true
 
-			fmt.Printf("Prices for vm %s of type %s and sku %s in region %s: %v\n", vmName, vmInfo.MachineTypeName, vmInfo.MachineTypeSku, region, vmInfo.RetailPrice)
+			fmt.Printf("Prices for vm %s in vmss %s of type %s and sku %s and spot: %t and os: %s in region %s: %v\n", vmName, vmInfo.OwningVMSS, vmInfo.MachineTypeName, vmInfo.MachineTypeSku, vmInfo.Spot, vmInfo.OperatingSystem, region, vmInfo.RetailPrice)
 		}
 
 		totalHourlyCostPerRegion[region] = Summary{
 			RegionName:    region,
 			TotalCost:     totalCost,
 			TotalMachines: totalMachines,
-			MachineTypes:  machineTypes,
 		}
 	}
 
