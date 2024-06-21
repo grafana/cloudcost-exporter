@@ -10,9 +10,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/Azure/go-autorest/autorest/to"
+	"golang.org/x/sync/errgroup"
 	"gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
 
@@ -31,56 +30,25 @@ type PricingApiResponse struct {
 	NextPageLink string           `json:"NextPageLink"`
 }
 
-type VmScaleSetInfo struct {
-	Name     string
-	Capacity int
-	TypeSku  string
-	Location string
+// type VmScaleSetInfo struct {
+// 	Name              string
+// 	ResourceGroupName string
+// 	Location          string
+// 	Vms               map[string]VirtualMachineInfo
+// }
+
+type VirtualMachineInfo struct {
+	Name        string
+	OwningVMSS  string
+	MachineType string
 }
 
-type TotalPriceInfo struct {
-	Info       VmScaleSetInfo
-	PriceTotal float64
+type VmMap struct {
+	RegionMap map[string]map[string]VirtualMachineInfo
 }
 
 type PriceMap struct {
-	RegionMap map[string]map[string]PricingDetails
-}
-
-func getLocationsFromSubscriptionVMSS(ctx context.Context, subId string, cred *azidentity.DefaultAzureCredential) ([]string, error) {
-	activeLocations := map[string]bool{}
-
-	rgClientFactory, err := armresources.NewClientFactory(subId, cred, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build resources client: %w", err)
-	}
-
-	rgClient := rgClientFactory.NewClient()
-	opts := &armresources.ClientListOptions{
-		Filter: to.StringPtr(`resourceType eq 'Microsoft.Compute/virtualMachineScaleSets'`),
-	}
-	pager := rgClient.NewListPager(opts)
-
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to advance page: %w", err)
-		}
-
-		if page.ResourceListResult.Value != nil {
-			for _, v := range page.ResourceListResult.Value {
-				loc := to.String(v.Location)
-				activeLocations[loc] = true
-			}
-		}
-	}
-
-	activeLocationsList := []string{}
-	for v := range activeLocations {
-		activeLocationsList = append(activeLocationsList, v)
-	}
-
-	return activeLocationsList, nil
+	RegionMap map[string]map[string]sdk.ResourceSKU
 }
 
 func buildQueryFilter(locationList []string) string {
@@ -95,7 +63,7 @@ func buildQueryFilter(locationList []string) string {
 
 func getPrices(ctx context.Context, locationList []string) (*PriceMap, error) {
 	pm := PriceMap{
-		RegionMap: make(map[string]map[string]PricingDetails),
+		RegionMap: make(map[string]map[string]sdk.ResourceSKU),
 	}
 
 	client, err := sdk.NewRetailPricesClient(nil)
@@ -115,27 +83,41 @@ func getPrices(ctx context.Context, locationList []string) (*PriceMap, error) {
 			return nil, fmt.Errorf("failed to advance page: %w", err)
 		}
 		for _, v := range page.Items {
-			reg := v.ArmRegionName
-			skuName := v.ArmSkuName
-
-			pd := PricingDetails{
-				RetailPrice: v.RetailPrice,
-				Region:      reg,
-				ArmSkuName:  skuName,
+			if _, ok := pm.RegionMap[v.ArmRegionName]; !ok {
+				pm.RegionMap[v.ArmRegionName] = make(map[string]sdk.ResourceSKU)
 			}
-
-			if _, ok := pm.RegionMap[reg]; !ok {
-				pm.RegionMap[reg] = make(map[string]PricingDetails)
-			}
-			pm.RegionMap[reg][skuName] = pd
+			pm.RegionMap[v.ArmRegionName][v.ArmSkuName] = v
 		}
 	}
 
 	return &pm, nil
 }
 
-func getVmScaleSetInfo(ctx context.Context, subId string, cred *azidentity.DefaultAzureCredential) (map[string]VmScaleSetInfo, error) {
-	vmScaleSetInfoMap := map[string]VmScaleSetInfo{}
+func getResourceGroupsAndLocationsInSubscription(ctx context.Context, subId string, cred *azidentity.DefaultAzureCredential) (map[string]string, error) {
+	rgToLocationMap := make(map[string]string)
+
+	rgClient, err := armresources.NewResourceGroupsClient(subId, cred, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build resource group client: %w", err)
+	}
+
+	pager := rgClient.NewListPager(nil)
+	for pager.More() {
+		nextResult, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to advance page: %w", err)
+		}
+
+		for _, v := range nextResult.Value {
+			rgToLocationMap[*v.Name] = *v.Location
+		}
+	}
+
+	return rgToLocationMap, nil
+}
+
+func getVmInfoFromResourceGroup(ctx context.Context, subId string, cred *azidentity.DefaultAzureCredential, rgName string) (map[string]VirtualMachineInfo, error) {
+	vmInfoMap := map[string]VirtualMachineInfo{}
 
 	computeClientFactory, err := armcompute.NewClientFactory(subId, cred, nil)
 	if err != nil {
@@ -143,7 +125,33 @@ func getVmScaleSetInfo(ctx context.Context, subId string, cred *azidentity.Defau
 	}
 
 	virtualMachineScaleSetsClient := computeClientFactory.NewVirtualMachineScaleSetsClient()
-	pager := virtualMachineScaleSetsClient.NewListAllPager(nil)
+	virtualMachineScaleSetsVmClient := computeClientFactory.NewVirtualMachineScaleSetVMsClient()
+	pager := virtualMachineScaleSetsClient.NewListPager(rgName, nil)
+	for pager.More() {
+		nextResult, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to advance page: %w", err)
+		}
+
+		for _, v := range nextResult.Value {
+			vmsInfo, err := getVmInfoFromVmss(ctx, virtualMachineScaleSetsVmClient, rgName, *v.Name)
+			if err != nil {
+				return nil, err
+			}
+
+			for vmName, vmInfo := range vmsInfo {
+				vmInfoMap[vmName] = vmInfo
+			}
+		}
+	}
+
+	return vmInfoMap, nil
+}
+
+func getVmInfoFromVmss(ctx context.Context, client *armcompute.VirtualMachineScaleSetVMsClient, rgName string, vmssName string) (map[string]VirtualMachineInfo, error) {
+	vmInfo := make(map[string]VirtualMachineInfo)
+
+	pager := client.NewListPager(rgName, vmssName, nil)
 
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
@@ -152,31 +160,37 @@ func getVmScaleSetInfo(ctx context.Context, subId string, cred *azidentity.Defau
 		}
 
 		for _, v := range nextResult.Value {
-			vmScaleSetInfoMap[*v.Name] = VmScaleSetInfo{
-				Name:     *v.Name,
-				Location: *v.Location,
-				Capacity: int(*v.SKU.Capacity),
-				TypeSku:  *v.SKU.Name,
+			vmInfo[*v.Name] = VirtualMachineInfo{
+				Name:        *v.Name,
+				OwningVMSS:  vmssName,
+				MachineType: *v.SKU.Name,
 			}
 		}
 	}
 
-	return vmScaleSetInfoMap, nil
+	return vmInfo, nil
 }
 
-func makeTotalPrices(vmScaleSetInfoMap map[string]VmScaleSetInfo, priceInfoMap *PriceMap) map[string]TotalPriceInfo {
-	totalPricesMap := map[string]TotalPriceInfo{}
+func getRegionalVmInformationFromRgVmss(ctx context.Context, subId string, cred *azidentity.DefaultAzureCredential, rgMap map[string]string) (*VmMap, error) {
+	vmMap := VmMap{
+		RegionMap: make(map[string]map[string]VirtualMachineInfo),
+	}
 
-	for vmName, info := range vmScaleSetInfoMap {
-		pricePerType := priceInfoMap.RegionMap[info.Location][info.TypeSku].RetailPrice
-		totalPrice := pricePerType * float64(info.Capacity)
-		totalPricesMap[vmName] = TotalPriceInfo{
-			Info:       info,
-			PriceTotal: totalPrice,
+	for rg, location := range rgMap {
+		m, err := getVmInfoFromResourceGroup(ctx, subId, cred, rg)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(m) > 0 {
+			if _, ok := vmMap.RegionMap[location]; !ok {
+				vmMap.RegionMap[location] = make(map[string]VirtualMachineInfo)
+			}
+			vmMap.RegionMap[location] = m
 		}
 	}
 
-	return totalPricesMap
+	return &vmMap, nil
 }
 
 func main() {
@@ -188,26 +202,30 @@ func main() {
 
 	credential, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
-	vmScaleSetInfoMap := make(map[string]VmScaleSetInfo)
+	rgLocationMap, err := getResourceGroupsAndLocationsInSubscription(ctx, subscriptionID, credential)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	locationList := []string{}
+	for _, v := range rgLocationMap {
+		locationList = append(locationList, v)
+	}
+
+	vmMap := &VmMap{}
 	priceMap := &PriceMap{}
 
 	eg, newCtx := errgroup.WithContext(ctx)
-
 	eg.Go(func() error {
-		vmScaleSetInfoMap, err = getVmScaleSetInfo(newCtx, subscriptionID, credential)
+		vmMap, err = getRegionalVmInformationFromRgVmss(newCtx, subscriptionID, credential, rgLocationMap)
 		return err
 	})
 
 	eg.Go(func() error {
-		locationsForSubscription, err := getLocationsFromSubscriptionVMSS(ctx, subscriptionID, credential)
-		if err != nil {
-			return err
-		}
-
-		priceMap, err = getPrices(ctx, locationsForSubscription)
+		priceMap, err = getPrices(ctx, locationList)
 		return err
 	})
 
@@ -216,9 +234,14 @@ func main() {
 		log.Fatal(err)
 	}
 
-	totalPricesMap := makeTotalPrices(vmScaleSetInfoMap, priceMap)
+	for region, vmInformation := range vmMap.RegionMap {
+		fmt.Printf("Prices for region: %s\n", region)
 
-	for name, info := range totalPricesMap {
-		fmt.Printf("VMSS %s, info: %+v\n\n", name, info)
+		for vmName, vmInfo := range vmInformation {
+			vmType := vmInfo.MachineType
+			vmPrice := priceMap.RegionMap[region][vmType].RetailPrice
+
+			fmt.Printf("Prices for vm %s of type %s in region %s: %v\n", vmName, vmType, region, vmPrice)
+		}
 	}
 }
