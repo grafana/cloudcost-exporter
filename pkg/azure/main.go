@@ -10,6 +10,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/Azure/go-autorest/autorest/to"
 	"gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
@@ -46,21 +47,24 @@ type PriceMap struct {
 	RegionMap map[string]map[string]PricingDetails
 }
 
-func getLocationsFromSubscriptionResourceGroups(ctx context.Context, subId string, cred *azidentity.DefaultAzureCredential) []string {
+func getLocationsFromSubscriptionVMSS(ctx context.Context, subId string, cred *azidentity.DefaultAzureCredential) ([]string, error) {
 	activeLocations := map[string]bool{}
 
 	rgClientFactory, err := armresources.NewClientFactory(subId, cred, nil)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to build resources client: %w", err)
 	}
 
 	rgClient := rgClientFactory.NewClient()
-	pager := rgClient.NewListPager(nil)
+	opts := &armresources.ClientListOptions{
+		Filter: to.StringPtr(`resourceType eq 'Microsoft.Compute/virtualMachineScaleSets'`),
+	}
+	pager := rgClient.NewListPager(opts)
 
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			log.Fatal(err)
+			return nil, fmt.Errorf("failed to advance page: %w", err)
 		}
 
 		if page.ResourceListResult.Value != nil {
@@ -76,35 +80,39 @@ func getLocationsFromSubscriptionResourceGroups(ctx context.Context, subId strin
 		activeLocationsList = append(activeLocationsList, v)
 	}
 
-	return activeLocationsList
+	return activeLocationsList, nil
 }
 
-func getPrices(ctx context.Context, locationList []string) *PriceMap {
+func buildQueryFilter(locationList []string) string {
+	locationListFilter := []string{}
+	for _, t := range locationList {
+		locationListFilter = append(locationListFilter, fmt.Sprintf("armRegionName eq '%s'", t))
+	}
+
+	locationListStr := strings.Join(locationListFilter, " or ")
+	return fmt.Sprintf(`serviceName eq 'Virtual Machines' and priceType eq 'Consumption' and (%s)`, locationListStr)
+}
+
+func getPrices(ctx context.Context, locationList []string) (*PriceMap, error) {
 	pm := PriceMap{
 		RegionMap: make(map[string]map[string]PricingDetails),
 	}
 
 	client, err := sdk.NewRetailPricesClient(nil)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to create retail prices client: %w", err)
 	}
-
-	locationListFilter := []string{}
-	for _, t := range locationList {
-		locationListFilter = append(locationListFilter, fmt.Sprintf("armRegionName eq '%s'", t))
-	}
-	queryFilterString := strings.Join(locationListFilter, " or ")
 
 	pager := client.NewListPager(&sdk.RetailPricesClientListOptions{
-		APIVersion:  to.StringPtr("2023-01-01-preview"), // 2023-01-01-preview
-		Filter:      to.StringPtr(fmt.Sprintf(`serviceName eq 'Virtual Machines' and priceType eq 'Consumption' and (%s)`, queryFilterString)),
+		APIVersion:  to.StringPtr("2023-01-01-preview"),
+		Filter:      to.StringPtr(buildQueryFilter(locationList)),
 		MeterRegion: to.StringPtr(`'primary'`),
 	})
 
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			panic(err)
+			return nil, fmt.Errorf("failed to advance page: %w", err)
 		}
 		for _, v := range page.Items {
 			reg := v.ArmRegionName
@@ -123,25 +131,24 @@ func getPrices(ctx context.Context, locationList []string) *PriceMap {
 		}
 	}
 
-	return &pm
+	return &pm, nil
 }
 
-func getVmScaleSetInfo(ctx context.Context, subId string, cred *azidentity.DefaultAzureCredential) map[string]VmScaleSetInfo {
+func getVmScaleSetInfo(ctx context.Context, subId string, cred *azidentity.DefaultAzureCredential) (map[string]VmScaleSetInfo, error) {
 	vmScaleSetInfoMap := map[string]VmScaleSetInfo{}
 
 	computeClientFactory, err := armcompute.NewClientFactory(subId, cred, nil)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
 	virtualMachineScaleSetsClient := computeClientFactory.NewVirtualMachineScaleSetsClient()
-
 	pager := virtualMachineScaleSetsClient.NewListAllPager(nil)
 
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
-			log.Fatalf("failed to advance page: %v", err)
+			return nil, fmt.Errorf("failed to advance page: %w", err)
 		}
 
 		for _, v := range nextResult.Value {
@@ -154,7 +161,22 @@ func getVmScaleSetInfo(ctx context.Context, subId string, cred *azidentity.Defau
 		}
 	}
 
-	return vmScaleSetInfoMap
+	return vmScaleSetInfoMap, nil
+}
+
+func makeTotalPrices(vmScaleSetInfoMap map[string]VmScaleSetInfo, priceInfoMap *PriceMap) map[string]TotalPriceInfo {
+	totalPricesMap := map[string]TotalPriceInfo{}
+
+	for vmName, info := range vmScaleSetInfoMap {
+		pricePerType := priceInfoMap.RegionMap[info.Location][info.TypeSku].RetailPrice
+		totalPrice := pricePerType * float64(info.Capacity)
+		totalPricesMap[vmName] = TotalPriceInfo{
+			Info:       info,
+			PriceTotal: totalPrice,
+		}
+	}
+
+	return totalPricesMap
 }
 
 func main() {
@@ -169,21 +191,32 @@ func main() {
 		panic(err)
 	}
 
-	vmScaleSetInfoMap := getVmScaleSetInfo(ctx, subscriptionID, credential)
+	vmScaleSetInfoMap := make(map[string]VmScaleSetInfo)
+	priceMap := &PriceMap{}
 
-	locationsForSubscription := getLocationsFromSubscriptionResourceGroups(ctx, subscriptionID, credential)
-	pm := getPrices(ctx, locationsForSubscription)
+	eg, newCtx := errgroup.WithContext(ctx)
 
-	totalPricesMap := map[string]TotalPriceInfo{}
+	eg.Go(func() error {
+		vmScaleSetInfoMap, err = getVmScaleSetInfo(newCtx, subscriptionID, credential)
+		return err
+	})
 
-	for vmName, info := range vmScaleSetInfoMap {
-		pricePerType := pm.RegionMap[info.Location][info.TypeSku].RetailPrice
-		totalPrice := pricePerType * float64(info.Capacity)
-		totalPricesMap[vmName] = TotalPriceInfo{
-			Info:       info,
-			PriceTotal: totalPrice,
+	eg.Go(func() error {
+		locationsForSubscription, err := getLocationsFromSubscriptionVMSS(ctx, subscriptionID, credential)
+		if err != nil {
+			return err
 		}
+
+		priceMap, err = getPrices(ctx, locationsForSubscription)
+		return err
+	})
+
+	err = eg.Wait()
+	if err != nil {
+		log.Fatal(err)
 	}
+
+	totalPricesMap := makeTotalPrices(vmScaleSetInfoMap, priceMap)
 
 	for name, info := range totalPricesMap {
 		fmt.Printf("VMSS %s, info: %+v\n\n", name, info)
