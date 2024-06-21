@@ -22,28 +22,23 @@ func main() {
 		log.Fatal(err)
 	}
 
-	azureClientWrapper, err := NewAzureClientWrapper(subscriptionID, credential)
+	a, err := NewAzurePriceInformationCollector(subscriptionID, credential)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	rgLocationMap, uniqueLocationList, err := azureClientWrapper.getResourceGroupsAndLocationsInSubscription(ctx)
+	rgLocationMap, uniqueLocationList, err := a.getResourceGroupsAndLocationsInSubscription(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	vmMap := &VmMap{}
-	priceMap := &PriceMap{}
 
 	eg, newCtx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		vmMap, err = azureClientWrapper.getRegionalVmInformationFromRgVmss(newCtx, rgLocationMap)
-		return err
+		return a.getRegionalVmInformationFromRgVmss(newCtx, rgLocationMap)
 	})
 
 	eg.Go(func() error {
-		priceMap, err = azureClientWrapper.getPrices(newCtx, uniqueLocationList)
-		return err
+		return a.getPrices(newCtx, uniqueLocationList)
 	})
 
 	err = eg.Wait()
@@ -51,10 +46,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	debugSummary(priceMap, vmMap)
+	a.enrichVmData()
+	debugSummary(a)
 }
 
-func debugSummary(priceMap *PriceMap, vmMap *VmMap) {
+func debugSummary(a *AzurePriceInformationCollector) {
 	type Summary struct {
 		RegionName    string
 		TotalCost     float64
@@ -63,20 +59,18 @@ func debugSummary(priceMap *PriceMap, vmMap *VmMap) {
 	}
 	totalHourlyCostPerRegion := map[string]Summary{}
 
-	for region, vmInformation := range vmMap.RegionMap {
+	for region, vmInformation := range a.vmMap.RegionMap {
 		fmt.Printf("Prices for region: %s\n", region)
 		totalCost := float64(0.0)
 		totalMachines := 0
 		machineTypes := map[string]bool{}
 
 		for vmName, vmInfo := range vmInformation {
-			vmType := vmInfo.MachineType
-			vmPrice := priceMap.RegionMap[region][vmType].RetailPrice
-			totalCost += vmPrice
+			totalCost += vmInfo.RetailPrice
 			totalMachines++
-			machineTypes[vmInfo.MachineType] = true
+			machineTypes[vmInfo.MachineTypeSku] = true
 
-			fmt.Printf("Prices for vm %s of type %s in region %s: %v\n", vmName, vmType, region, vmPrice)
+			fmt.Printf("Prices for vm %s of type %s in region %s: %v\n", vmName, vmInfo.MachineTypeName, region, vmInfo.RetailPrice)
 		}
 
 		totalHourlyCostPerRegion[region] = Summary{

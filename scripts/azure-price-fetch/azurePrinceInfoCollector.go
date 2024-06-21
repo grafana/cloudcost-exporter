@@ -12,15 +12,36 @@ import (
 	"gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
 
-type AzureClientWrapper struct {
-	subscriptionId string
-	priceClient    *sdk.RetailPricesClient
-	rgClient       *armresources.ResourceGroupsClient
-	vmssClient     *armcompute.VirtualMachineScaleSetsClient
-	vmssVmClient   *armcompute.VirtualMachineScaleSetVMsClient
+type VirtualMachineInfo struct {
+	Name            string
+	OwningVMSS      string
+	MachineTypeSku  string
+	MachineTypeName string
+	Spot            bool
+	RetailPrice     float64
 }
 
-func NewAzureClientWrapper(subId string, cred *azidentity.DefaultAzureCredential) (*AzureClientWrapper, error) {
+type VmMap struct {
+	RegionMap map[string]map[string]VirtualMachineInfo
+}
+
+type PriceMap struct {
+	RegionMap map[string]map[string]sdk.ResourceSKU
+}
+
+type AzurePriceInformationCollector struct {
+	subscriptionId string
+
+	priceClient  *sdk.RetailPricesClient
+	rgClient     *armresources.ResourceGroupsClient
+	vmssClient   *armcompute.VirtualMachineScaleSetsClient
+	vmssVmClient *armcompute.VirtualMachineScaleSetVMsClient
+
+	vmMap    *VmMap
+	priceMap *PriceMap
+}
+
+func NewAzurePriceInformationCollector(subId string, cred *azidentity.DefaultAzureCredential) (*AzurePriceInformationCollector, error) {
 	retailPricesClient, err := sdk.NewRetailPricesClient(nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create retail prices client: %w", err)
@@ -36,17 +57,20 @@ func NewAzureClientWrapper(subId string, cred *azidentity.DefaultAzureCredential
 		return nil, fmt.Errorf("failed to build compute client: %w", err)
 	}
 
-	return &AzureClientWrapper{
+	return &AzurePriceInformationCollector{
 		subscriptionId: subId,
 
 		priceClient:  retailPricesClient,
 		rgClient:     rgClient,
 		vmssClient:   computeClientFactory.NewVirtualMachineScaleSetsClient(),
 		vmssVmClient: computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
+
+		vmMap:    &VmMap{RegionMap: make(map[string]map[string]VirtualMachineInfo)},
+		priceMap: &PriceMap{RegionMap: make(map[string]map[string]sdk.ResourceSKU)},
 	}, nil
 }
 
-func (a *AzureClientWrapper) buildQueryFilter(locationList []string) string {
+func (a *AzurePriceInformationCollector) buildQueryFilter(locationList []string) string {
 	locationListFilter := []string{}
 	for _, t := range locationList {
 		locationListFilter = append(locationListFilter, fmt.Sprintf("armRegionName eq '%s'", t))
@@ -56,11 +80,7 @@ func (a *AzureClientWrapper) buildQueryFilter(locationList []string) string {
 	return fmt.Sprintf(`serviceName eq 'Virtual Machines' and priceType eq 'Consumption' and (%s)`, locationListStr)
 }
 
-func (a *AzureClientWrapper) getPrices(ctx context.Context, locationList []string) (*PriceMap, error) {
-	pm := PriceMap{
-		RegionMap: make(map[string]map[string]sdk.ResourceSKU),
-	}
-
+func (a *AzurePriceInformationCollector) getPrices(ctx context.Context, locationList []string) error {
 	pager := a.priceClient.NewListPager(&sdk.RetailPricesClientListOptions{
 		APIVersion:  to.StringPtr("2023-01-01-preview"),
 		Filter:      to.StringPtr(a.buildQueryFilter(locationList)),
@@ -70,20 +90,20 @@ func (a *AzureClientWrapper) getPrices(ctx context.Context, locationList []strin
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to advance page: %w", err)
+			return fmt.Errorf("failed to advance page: %w", err)
 		}
 		for _, v := range page.Items {
-			if _, ok := pm.RegionMap[v.ArmRegionName]; !ok {
-				pm.RegionMap[v.ArmRegionName] = make(map[string]sdk.ResourceSKU)
+			if _, ok := a.priceMap.RegionMap[v.ArmRegionName]; !ok {
+				a.priceMap.RegionMap[v.ArmRegionName] = make(map[string]sdk.ResourceSKU)
 			}
-			pm.RegionMap[v.ArmRegionName][v.ArmSkuName] = v
+			a.priceMap.RegionMap[v.ArmRegionName][v.ArmSkuName] = v
 		}
 	}
 
-	return &pm, nil
+	return nil
 }
 
-func (a *AzureClientWrapper) getResourceGroupsAndLocationsInSubscription(ctx context.Context) (map[string]string, []string, error) {
+func (a *AzurePriceInformationCollector) getResourceGroupsAndLocationsInSubscription(ctx context.Context) (map[string]string, []string, error) {
 	rgToLocationMap := make(map[string]string)
 	locationSet := make(map[string]bool)
 	uniqueLocationList := []string{}
@@ -107,7 +127,7 @@ func (a *AzureClientWrapper) getResourceGroupsAndLocationsInSubscription(ctx con
 	return rgToLocationMap, uniqueLocationList, nil
 }
 
-func (a *AzureClientWrapper) getVmInfoFromResourceGroup(ctx context.Context, rgName string) (map[string]VirtualMachineInfo, error) {
+func (a *AzurePriceInformationCollector) getVmInfoFromResourceGroup(ctx context.Context, rgName string) (map[string]VirtualMachineInfo, error) {
 	vmInfoMap := map[string]VirtualMachineInfo{}
 
 	pager := a.vmssClient.NewListPager(rgName, nil)
@@ -132,10 +152,11 @@ func (a *AzureClientWrapper) getVmInfoFromResourceGroup(ctx context.Context, rgN
 	return vmInfoMap, nil
 }
 
-func (a *AzureClientWrapper) getVmInfoFromVmss(ctx context.Context, rgName string, vmssName string) (map[string]VirtualMachineInfo, error) {
+func (a *AzurePriceInformationCollector) getVmInfoFromVmss(ctx context.Context, rgName string, vmssName string) (map[string]VirtualMachineInfo, error) {
 	vmInfo := make(map[string]VirtualMachineInfo)
 
-	pager := a.vmssVmClient.NewListPager(rgName, vmssName, nil)
+	opts := &armcompute.VirtualMachineScaleSetVMsClientListOptions{}
+	pager := a.vmssVmClient.NewListPager(rgName, vmssName, opts)
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
@@ -144,9 +165,9 @@ func (a *AzureClientWrapper) getVmInfoFromVmss(ctx context.Context, rgName strin
 
 		for _, v := range nextResult.Value {
 			vmInfo[*v.Name] = VirtualMachineInfo{
-				Name:        *v.Name,
-				OwningVMSS:  vmssName,
-				MachineType: *v.SKU.Name,
+				Name:           *v.Name,
+				OwningVMSS:     vmssName,
+				MachineTypeSku: *v.SKU.Name,
 			}
 		}
 	}
@@ -154,24 +175,35 @@ func (a *AzureClientWrapper) getVmInfoFromVmss(ctx context.Context, rgName strin
 	return vmInfo, nil
 }
 
-func (a *AzureClientWrapper) getRegionalVmInformationFromRgVmss(ctx context.Context, rgMap map[string]string) (*VmMap, error) {
-	vmMap := VmMap{
-		RegionMap: make(map[string]map[string]VirtualMachineInfo),
-	}
-
+func (a *AzurePriceInformationCollector) getRegionalVmInformationFromRgVmss(ctx context.Context, rgMap map[string]string) error {
 	for rg, location := range rgMap {
 		m, err := a.getVmInfoFromResourceGroup(ctx, rg)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		if len(m) > 0 {
-			if _, ok := vmMap.RegionMap[location]; !ok {
-				vmMap.RegionMap[location] = make(map[string]VirtualMachineInfo)
+			if _, ok := a.vmMap.RegionMap[location]; !ok {
+				a.vmMap.RegionMap[location] = make(map[string]VirtualMachineInfo)
 			}
-			vmMap.RegionMap[location] = m
+			a.vmMap.RegionMap[location] = m
 		}
 	}
 
-	return &vmMap, nil
+	return nil
+}
+
+func (a *AzurePriceInformationCollector) enrichVmData() {
+	for region, vmRegionInfo := range a.vmMap.RegionMap {
+		for machineName, vmInfo := range vmRegionInfo {
+			vmType := vmInfo.MachineTypeSku
+			machineInfo := a.priceMap.RegionMap[region][vmType]
+
+			vmInfo.RetailPrice = machineInfo.RetailPrice
+			vmInfo.MachineTypeName = machineInfo.ProductName
+			vmInfo.Spot = strings.Contains(machineInfo.SkuName, "Spot")
+
+			a.vmMap.RegionMap[region][machineName] = vmInfo
+		}
+	}
 }
