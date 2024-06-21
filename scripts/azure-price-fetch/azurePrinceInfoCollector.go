@@ -12,6 +12,8 @@ import (
 	"gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
 
+const AZ_API_VERSION string = "2023-01-01-preview" // using latest API Version https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
+
 type VirtualMachineInfo struct {
 	Name            string
 	OwningVMSS      string
@@ -82,7 +84,7 @@ func (a *AzurePriceInformationCollector) buildQueryFilter(locationList []string)
 
 func (a *AzurePriceInformationCollector) getPrices(ctx context.Context, locationList []string) error {
 	pager := a.priceClient.NewListPager(&sdk.RetailPricesClientListOptions{
-		APIVersion:  to.StringPtr("2023-01-01-preview"),
+		APIVersion:  to.StringPtr(AZ_API_VERSION),
 		Filter:      to.StringPtr(a.buildQueryFilter(locationList)),
 		MeterRegion: to.StringPtr(`'primary'`),
 	})
@@ -177,16 +179,16 @@ func (a *AzurePriceInformationCollector) getVmInfoFromVmss(ctx context.Context, 
 
 func (a *AzurePriceInformationCollector) getRegionalVmInformationFromRgVmss(ctx context.Context, rgMap map[string]string) error {
 	for rg, location := range rgMap {
-		m, err := a.getVmInfoFromResourceGroup(ctx, rg)
+		virtualMachineInfoByRg, err := a.getVmInfoFromResourceGroup(ctx, rg)
 		if err != nil {
 			return err
 		}
 
-		if len(m) > 0 {
+		if len(virtualMachineInfoByRg) > 0 {
 			if _, ok := a.vmMap.RegionMap[location]; !ok {
 				a.vmMap.RegionMap[location] = make(map[string]VirtualMachineInfo)
 			}
-			a.vmMap.RegionMap[location] = m
+			a.vmMap.RegionMap[location] = virtualMachineInfoByRg
 		}
 	}
 
