@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,12 +14,14 @@ import (
 )
 
 const AZ_API_VERSION string = "2023-01-01-preview" // using latest API Version https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
+var ErrClientCreationFailure = errors.New("failed to create client")
 
 type VirtualMachineInfo struct {
 	Name            string
 	OwningVMSS      string
 	MachineTypeSku  string
 	MachineTypeName string
+	OperatingSystem string
 	Spot            bool
 	RetailPrice     float64
 }
@@ -26,9 +29,13 @@ type VirtualMachineInfo struct {
 type VmMap struct {
 	RegionMap map[string]map[string]VirtualMachineInfo
 }
+type PriceByPriority struct {
+	SpotPrices    map[string]map[string]sdk.ResourceSKU
+	RegularPrices map[string]map[string]sdk.ResourceSKU
+}
 
 type PriceMap struct {
-	RegionMap map[string]map[string]sdk.ResourceSKU
+	RegionMap map[string]PriceByPriority
 }
 
 type AzurePriceInformationCollector struct {
@@ -46,17 +53,17 @@ type AzurePriceInformationCollector struct {
 func NewAzurePriceInformationCollector(subId string, cred *azidentity.DefaultAzureCredential) (*AzurePriceInformationCollector, error) {
 	retailPricesClient, err := sdk.NewRetailPricesClient(nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create retail prices client: %w", err)
+		return nil, ErrClientCreationFailure
 	}
 
 	rgClient, err := armresources.NewResourceGroupsClient(subId, cred, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build resource group client: %w", err)
+		return nil, ErrClientCreationFailure
 	}
 
 	computeClientFactory, err := armcompute.NewClientFactory(subId, cred, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build compute client: %w", err)
+		return nil, ErrClientCreationFailure
 	}
 
 	return &AzurePriceInformationCollector{
@@ -68,14 +75,14 @@ func NewAzurePriceInformationCollector(subId string, cred *azidentity.DefaultAzu
 		vmssVmClient: computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
 
 		vmMap:    &VmMap{RegionMap: make(map[string]map[string]VirtualMachineInfo)},
-		priceMap: &PriceMap{RegionMap: make(map[string]map[string]sdk.ResourceSKU)},
+		priceMap: &PriceMap{RegionMap: make(map[string]PriceByPriority)},
 	}, nil
 }
 
 func (a *AzurePriceInformationCollector) buildQueryFilter(locationList []string) string {
 	locationListFilter := []string{}
-	for _, t := range locationList {
-		locationListFilter = append(locationListFilter, fmt.Sprintf("armRegionName eq '%s'", t))
+	for _, region := range locationList {
+		locationListFilter = append(locationListFilter, fmt.Sprintf("armRegionName eq '%s'", region))
 	}
 
 	locationListStr := strings.Join(locationListFilter, " or ")
@@ -96,9 +103,29 @@ func (a *AzurePriceInformationCollector) getPrices(ctx context.Context, location
 		}
 		for _, v := range page.Items {
 			if _, ok := a.priceMap.RegionMap[v.ArmRegionName]; !ok {
-				a.priceMap.RegionMap[v.ArmRegionName] = make(map[string]sdk.ResourceSKU)
+				a.priceMap.RegionMap[v.ArmRegionName] = PriceByPriority{
+					SpotPrices:    make(map[string]map[string]sdk.ResourceSKU),
+					RegularPrices: make(map[string]map[string]sdk.ResourceSKU),
+				}
 			}
-			a.priceMap.RegionMap[v.ArmRegionName][v.ArmSkuName] = v
+
+			spot := strings.Contains(v.SkuName, "Spot")
+			osKey := "Linux"
+			if strings.Contains(v.ProductName, "Windows") {
+				osKey = "Windows"
+			}
+
+			if spot {
+				if _, ok := a.priceMap.RegionMap[v.ArmRegionName].SpotPrices[osKey]; !ok {
+					a.priceMap.RegionMap[v.ArmRegionName].SpotPrices[osKey] = make(map[string]sdk.ResourceSKU)
+				}
+				a.priceMap.RegionMap[v.ArmRegionName].SpotPrices[osKey][v.ArmSkuName] = v
+			} else {
+				if _, ok := a.priceMap.RegionMap[v.ArmRegionName].RegularPrices[osKey]; !ok {
+					a.priceMap.RegionMap[v.ArmRegionName].RegularPrices[osKey] = make(map[string]sdk.ResourceSKU)
+				}
+				a.priceMap.RegionMap[v.ArmRegionName].RegularPrices[osKey][v.ArmSkuName] = v
+			}
 		}
 	}
 
@@ -140,7 +167,15 @@ func (a *AzurePriceInformationCollector) getVmInfoFromResourceGroup(ctx context.
 		}
 
 		for _, v := range nextResult.Value {
-			vmsInfo, err := a.getVmInfoFromVmss(ctx, rgName, *v.Name)
+			osInfo := "Windows"
+			spot := false
+			if v.Properties.VirtualMachineProfile.Priority != nil && *v.Properties.VirtualMachineProfile.Priority == armcompute.VirtualMachinePriorityTypesSpot {
+				spot = true
+			}
+			if v.Properties.VirtualMachineProfile.OSProfile != nil && v.Properties.VirtualMachineProfile.OSProfile.LinuxConfiguration != nil {
+				osInfo = "Linux"
+			}
+			vmsInfo, err := a.getVmInfoFromVmss(ctx, rgName, *v.Name, spot, osInfo)
 			if err != nil {
 				return nil, err
 			}
@@ -154,10 +189,12 @@ func (a *AzurePriceInformationCollector) getVmInfoFromResourceGroup(ctx context.
 	return vmInfoMap, nil
 }
 
-func (a *AzurePriceInformationCollector) getVmInfoFromVmss(ctx context.Context, rgName string, vmssName string) (map[string]VirtualMachineInfo, error) {
+func (a *AzurePriceInformationCollector) getVmInfoFromVmss(ctx context.Context, rgName string, vmssName string, vmssIsSpot bool, osInfo string) (map[string]VirtualMachineInfo, error) {
 	vmInfo := make(map[string]VirtualMachineInfo)
 
-	opts := &armcompute.VirtualMachineScaleSetVMsClientListOptions{}
+	opts := &armcompute.VirtualMachineScaleSetVMsClientListOptions{
+		Expand: to.StringPtr("instanceView"),
+	}
 	pager := a.vmssVmClient.NewListPager(rgName, vmssName, opts)
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
@@ -167,9 +204,11 @@ func (a *AzurePriceInformationCollector) getVmInfoFromVmss(ctx context.Context, 
 
 		for _, v := range nextResult.Value {
 			vmInfo[*v.Name] = VirtualMachineInfo{
-				Name:           *v.Name,
-				OwningVMSS:     vmssName,
-				MachineTypeSku: *v.SKU.Name,
+				Name:            *v.Name,
+				OwningVMSS:      vmssName,
+				MachineTypeSku:  *v.SKU.Name,
+				Spot:            vmssIsSpot,
+				OperatingSystem: osInfo,
 			}
 		}
 	}
@@ -198,12 +237,19 @@ func (a *AzurePriceInformationCollector) getRegionalVmInformationFromRgVmss(ctx 
 func (a *AzurePriceInformationCollector) enrichVmData() {
 	for region, vmRegionInfo := range a.vmMap.RegionMap {
 		for machineName, vmInfo := range vmRegionInfo {
+			var machineInfo sdk.ResourceSKU
+
 			vmType := vmInfo.MachineTypeSku
-			machineInfo := a.priceMap.RegionMap[region][vmType]
+			spot := vmInfo.Spot
+			os := vmInfo.OperatingSystem
+			if spot {
+				machineInfo = a.priceMap.RegionMap[region].SpotPrices[os][vmType]
+			} else {
+				machineInfo = a.priceMap.RegionMap[region].RegularPrices[os][vmType]
+			}
 
 			vmInfo.RetailPrice = machineInfo.RetailPrice
 			vmInfo.MachineTypeName = machineInfo.ProductName
-			vmInfo.Spot = strings.Contains(machineInfo.SkuName, "Spot")
 
 			a.vmMap.RegionMap[region][machineName] = vmInfo
 		}

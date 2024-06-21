@@ -70,7 +70,7 @@ func debugSummary(a *AzurePriceInformationCollector) {
 			totalMachines++
 			machineTypes[vmInfo.MachineTypeSku] = true
 
-			fmt.Printf("Prices for vm %s of type %s in region %s: %v\n", vmName, vmInfo.MachineTypeName, region, vmInfo.RetailPrice)
+			fmt.Printf("Prices for vm %s of type %s and sku %s in region %s: %v\n", vmName, vmInfo.MachineTypeName, vmInfo.MachineTypeSku, region, vmInfo.RetailPrice)
 		}
 
 		totalHourlyCostPerRegion[region] = Summary{
