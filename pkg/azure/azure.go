@@ -12,7 +12,7 @@ import (
 
 const (
 	// subsystem = "azure"
-	collectTimeout time.Duration = 5 * time.Minute
+	collectTimeout time.Duration = 1 * time.Minute
 )
 
 var (
