@@ -47,7 +47,7 @@ type Config struct {
 
 // New is a TODO
 func New(ctx context.Context, config *Config) (*Azure, error) {
-	providerGroup := config.Logger.WithGroup(subsystem)
+	logger := config.Logger.With("provider", subsystem)
 	collectors := []provider.Collector{}
 
 	// Collector Registration
@@ -57,17 +57,17 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 		case "AKS":
 			// TODO - Init azure client
 			collector := aks.New(ctx, &aks.Config{
-				Logger: providerGroup,
+				Logger: logger,
 			})
 			collectors = append(collectors, collector)
 		default:
-			providerGroup.LogAttrs(ctx, slog.LevelInfo, "unknown service", slog.String("service", svc))
+			logger.LogAttrs(ctx, slog.LevelInfo, "unknown service", slog.String("service", svc))
 		}
 	}
 
 	return &Azure{
 		Context: ctx,
-		Logger:  providerGroup,
+		Logger:  logger,
 
 		CollectorTimeout: config.CollectorTimeout,
 		Collectors:       collectors,
@@ -76,7 +76,7 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 
 // RegisterCollectors is a TODO
 func (a *Azure) RegisterCollectors(registry provider.Registry) error {
-	a.Logger.LogAttrs(a.Context, slog.LevelInfo, "registering collectors for azure", slog.Int("NumOfCollectors", len(a.Collectors)))
+	a.Logger.LogAttrs(a.Context, slog.LevelInfo, "registering collectors", slog.Int("NumOfCollectors", len(a.Collectors)))
 
 	registry.MustRegister(collectorScrapesTotalCounter)
 	for _, c := range a.Collectors {

@@ -13,7 +13,7 @@ With `slog` being part of Go's stdlib since 1.21, we decided to use it as the lo
 
 1. Every provider _must_ accept a `*slog.Logger` in the constructor
 1. Every collector _must_ accept a `*slog.Logger` in the constructor
-1. Each provider and collector _must_ add a `provider` or `collector` group when initializing using the [slog.WithGroup](https://pkg.go.dev/golang.org/x/exp/slog#Logger.WithGroup) method
+1. Each provider and collector _must_ add a `provider` or `collector` group when initializing using the [slog.Logger.With](https://pkg.go.dev/golang.org/x/exp/slog#Logger.With) method, specifying the collector or provider used
 1. Always prefer to use the `logger.WithAttr(...)` method to add structured data to the log message for both performance and consistency(see [slog blog post](https://go.dev/blog/slog) and search Performance section for more information)
    - NB: If you do not have any additional fields to log out, then you can use the `logger.Info("message")` methods
 

@@ -11,7 +11,6 @@ import (
 
 const (
 	subsystem = "azure_aks"
-	// maxResults = 1000
 )
 
 // Errors
@@ -32,6 +31,14 @@ type Collector struct {
 
 type Config struct {
 	Logger *slog.Logger
+}
+
+func New(ctx context.Context, cfg *Config) *Collector {
+	logger := cfg.Logger.With("collector", subsystem)
+
+	return &Collector{
+		Logger: logger,
+	}
 }
 
 // CollectMetrics is a no-op function that satisfies the provider.Collector interface.
@@ -57,15 +64,7 @@ func (c *Collector) Name() string {
 	return subsystem
 }
 
-func New(ctx context.Context, cfg *Config) *Collector {
-	collectorGroup := cfg.Logger.WithGroup(subsystem)
-
-	return &Collector{
-		Logger: collectorGroup,
-	}
-}
-
 func (c *Collector) Register(_ provider.Registry) error {
-	c.Logger.LogAttrs(c.Context, slog.LevelInfo, "registering aks collector")
+	c.Logger.LogAttrs(c.Context, slog.LevelInfo, "registering collector")
 	return nil
 }
