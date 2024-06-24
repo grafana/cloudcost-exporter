@@ -189,15 +189,15 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 		go func(c provider.Collector) {
 			now := time.Now()
 			defer wg.Done()
-			collectorSuccess := 0.0
+			collectorErrors := 0.0
 			if err := c.Collect(ch); err != nil {
-				collectorSuccess = 1.0
+				collectorErrors = 1.0
 				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
 			}
-			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorSuccess, subsystem, c.Name())
+			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorErrors, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
-			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, collectorSuccess, c.Name())
+			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, collectorErrors, c.Name())
 			collectorScrapesTotalCounter.WithLabelValues(subsystem, c.Name()).Inc()
 		}(c)
 	}
