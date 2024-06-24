@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ type Config struct {
 	Region         string
 	Profile        string
 	ScrapeInterval time.Duration
+	Logger         *slog.Logger
 }
 
 type AWS struct {
@@ -101,6 +103,7 @@ const (
 
 func New(config *Config) (*AWS, error) {
 	var collectors []provider.Collector
+	logger := config.Logger.With("provider", "aws")
 	// There are two scenarios:
 	// 1. Running locally, the user must pass in a region and profile to use
 	// 2. Running within an EC2 instance and the region and profile can be derived
@@ -158,7 +161,10 @@ func New(config *Config) (*AWS, error) {
 				}
 				regionClientMap[*r.RegionName] = client
 			}
-			collector := ec2Collector.New(pricingService, computeService, regions.Regions, regionClientMap)
+			collector := ec2Collector.New(&ec2Collector.Config{
+				Regions: regions.Regions,
+				Logger:  logger,
+			}, pricingService, computeService, regionClientMap)
 			collectors = append(collectors, collector)
 		default:
 			log.Printf("Unknown service %s", service)

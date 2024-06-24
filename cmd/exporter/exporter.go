@@ -166,6 +166,7 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 		})
 	case "aws":
 		return aws.New(&aws.Config{
+			Logger:         cfg.Logger,
 			Region:         cfg.Providers.AWS.Region,
 			Profile:        cfg.Providers.AWS.Profile,
 			ScrapeInterval: cfg.Collector.ScrapeInterval,
