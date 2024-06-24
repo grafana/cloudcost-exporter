@@ -25,8 +25,8 @@ var (
 
 // Collector is a prometheus collector that collects metrics from AKS clusters.
 type Collector struct {
-	Context context.Context
-	Logger  *slog.Logger
+	context context.Context
+	logger  *slog.Logger
 }
 
 type Config struct {
@@ -37,7 +37,7 @@ func New(ctx context.Context, cfg *Config) *Collector {
 	logger := cfg.Logger.With("collector", subsystem)
 
 	return &Collector{
-		Logger: logger,
+		logger: logger,
 	}
 }
 
@@ -50,13 +50,14 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 // Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	// TODO - implement
-	c.Logger.LogAttrs(c.Context, slog.LevelInfo, "TODO - implement AKS collector Collect method")
+
+	c.logger.LogAttrs(c.context, slog.LevelInfo, "TODO - implement AKS collector Collect method")
 	return nil
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	// TODO - implement
-	c.Logger.LogAttrs(c.Context, slog.LevelInfo, "TODO - implement AKS collector Describe method")
+	c.logger.LogAttrs(c.context, slog.LevelInfo, "TODO - implement AKS collector Describe method")
 	return nil
 }
 
@@ -65,6 +66,6 @@ func (c *Collector) Name() string {
 }
 
 func (c *Collector) Register(_ provider.Registry) error {
-	c.Logger.LogAttrs(c.Context, slog.LevelInfo, "registering collector")
+	c.logger.LogAttrs(c.context, slog.LevelInfo, "registering collector")
 	return nil
 }
