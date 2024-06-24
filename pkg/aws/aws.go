@@ -16,7 +16,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
-	"github.com/grafana/cloudcost-exporter/pkg/aws/eks"
+	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/compute/ec2"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/compute/eks"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -141,6 +142,23 @@ func New(config *Config) (*AWS, error) {
 				regionClientMap[*r.RegionName] = client
 			}
 			collector := eks.New(config.Region, config.Profile, config.ScrapeInterval, pricingService, computeService, regions.Regions, regionClientMap)
+			collectors = append(collectors, collector)
+		case "EC2":
+			pricingService := pricing.NewFromConfig(ac)
+			computeService := ec2.NewFromConfig(ac)
+			regions, err := computeService.DescribeRegions(ctx, &ec2.DescribeRegionsInput{AllRegions: aws.Bool(false)})
+			if err != nil {
+				return nil, fmt.Errorf("error getting regions: %w", err)
+			}
+			regionClientMap := make(map[string]ec2client.EC2)
+			for _, r := range regions.Regions {
+				client, err := newEc2Client(*r.RegionName, config.Profile)
+				if err != nil {
+					return nil, fmt.Errorf("error creating ec2 client: %w", err)
+				}
+				regionClientMap[*r.RegionName] = client
+			}
+			collector := ec2Collector.New(pricingService, computeService, regions.Regions, regionClientMap)
 			collectors = append(collectors, collector)
 		default:
 			log.Printf("Unknown service %s", service)

@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/compute"
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -30,12 +31,10 @@ const (
 var clusterTags = []string{"cluster", "eks:cluster-name", "aws:eks:cluster-name"}
 
 var (
-	ErrRegionNotFound       = errors.New("no region found")
-	ErrInstanceTypeNotFound = errors.New("no instance type found")
-	ErrClientNotFound       = errors.New("no client found")
-	ErrListSpotPrices       = errors.New("error listing spot prices")
-	ErrGeneratePricingMap   = errors.New("error generating pricing map")
-	ErrListOnDemandPrices   = errors.New("error listing ondemand prices")
+	ErrClientNotFound     = errors.New("no client found")
+	ErrListSpotPrices     = errors.New("error listing spot prices")
+	ErrGeneratePricingMap = errors.New("error generating pricing map")
+	ErrListOnDemandPrices = errors.New("error listing ondemand prices")
 )
 
 var (
@@ -53,36 +52,6 @@ var (
 	)
 )
 
-// Attributes represents ec2 instance attributes that are pulled from AWS api's describing instances.
-// It's specifically pulled out of productTerm to enable usage during tests.
-type Attributes struct {
-	Region            string `json:"regionCode"`
-	InstanceType      string `json:"instanceType"`
-	VCPU              string `json:"vcpu"`
-	Memory            string `json:"memory"`
-	InstanceFamily    string `json:"instanceFamily"`
-	PhysicalProcessor string `json:"physicalProcessor"`
-	Tenancy           string `json:"tenancy"`
-	MarketOption      string `json:"marketOption"`
-	OperatingSystem   string `json:"operatingSystem"`
-	ClockSpeed        string `json:"clockSpeed"`
-	UsageType         string `json:"usageType"`
-}
-
-// productTerm represents the nested json response returned by the AWS pricing API.
-type productTerm struct {
-	Product struct {
-		Attributes Attributes
-	}
-	Terms struct {
-		OnDemand map[string]struct {
-			PriceDimensions map[string]struct {
-				PricePerUnit map[string]string `json:"pricePerUnit"`
-			}
-		}
-	}
-}
-
 // Collector is a prometheus collector that collects metrics from AWS EKS clusters.
 type Collector struct {
 	Region          string
@@ -90,7 +59,7 @@ type Collector struct {
 	Profile         string
 	Profiles        []string
 	ScrapeInterval  time.Duration
-	pricingMap      *StructuredPricingMap
+	pricingMap      *compute.StructuredPricingMap
 	pricingService  pricingClient.Pricing
 	ec2Client       ec2client.EC2
 	NextScrape      time.Time
@@ -137,7 +106,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		if err != nil {
 			return err
 		}
-		c.pricingMap = NewStructuredPricingMap()
+		c.pricingMap = compute.NewStructuredPricingMap()
 		if err := c.pricingMap.GeneratePricingMap(prices, spotPrices); err != nil {
 			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 		}

@@ -1,4 +1,4 @@
-package eks
+package compute
 
 import (
 	"testing"
