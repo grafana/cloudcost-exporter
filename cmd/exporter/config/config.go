@@ -26,6 +26,7 @@ type Config struct {
 	}
 	Collector struct {
 		ScrapeInterval time.Duration
+		Timeout        time.Duration
 	}
 
 	Server struct {

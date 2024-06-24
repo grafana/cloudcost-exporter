@@ -80,6 +80,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 // TODO: This should probably be moved over to the config package.
 func operationalFlags(cfg *config.Config) {
 	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
+	flag.DurationVar(&cfg.Collector.Timeout, "collector-interval", 1*time.Minute, "Context timeout for collectors")
 	flag.DurationVar(&cfg.Server.Timeout, "server-timeout", 30*time.Second, "Server timeout")
 	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
 	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
@@ -158,7 +159,8 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 	switch cfg.Provider {
 	case "azure":
 		return azure.New(ctx, &azure.Config{
-			Logger: cfg.Logger,
+			Logger:           cfg.Logger,
+			CollectorTimeout: cfg.Collector.Timeout,
 		})
 	case "aws":
 		return aws.New(&aws.Config{
