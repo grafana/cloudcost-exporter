@@ -68,7 +68,7 @@ var (
 	)
 	collectorLastScrapeTime = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "last_scrape_time"),
-		"Time of the last scrape.W",
+		"Time of the last scrape.",
 		[]string{"provider", "collector"},
 		nil,
 	)
