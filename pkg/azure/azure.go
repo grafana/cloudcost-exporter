@@ -93,7 +93,6 @@ type Config struct {
 	Services         []string
 }
 
-// New is a TODO
 func New(ctx context.Context, config *Config) (*Azure, error) {
 	logger := config.Logger.With("provider", subsystem)
 	collectors := []provider.Collector{}
