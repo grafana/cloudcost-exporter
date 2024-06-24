@@ -6,7 +6,6 @@ import (
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/grafana/cloudcost-exporter/pkg/aws/compute"
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -16,8 +15,6 @@ const (
 	subsystem = "aws_ec2"
 )
 
-var ()
-
 // Collector is a prometheus collector that collects metrics from AWS EKS clusters.
 type Collector struct {
 	Region          string
@@ -25,7 +22,6 @@ type Collector struct {
 	Profile         string
 	Profiles        []string
 	ScrapeInterval  time.Duration
-	pricingMap      *compute.StructuredPricingMap
 	pricingService  pricingClient.Pricing
 	ec2Client       ec2client.EC2
 	NextScrape      time.Time
