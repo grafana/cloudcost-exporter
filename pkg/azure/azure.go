@@ -31,11 +31,11 @@ var (
 )
 
 type Azure struct {
-	Context context.Context
-	Logger  *slog.Logger
+	context          context.Context
+	logger           *slog.Logger
+	collectorTimeout time.Duration
 
-	Collectors       []provider.Collector
-	CollectorTimeout time.Duration
+	Collectors []provider.Collector
 }
 
 type Config struct {
@@ -66,17 +66,17 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 	}
 
 	return &Azure{
-		Context: ctx,
-		Logger:  logger,
+		context: ctx,
+		logger:  logger,
 
-		CollectorTimeout: config.CollectorTimeout,
+		collectorTimeout: config.CollectorTimeout,
 		Collectors:       collectors,
 	}, nil
 }
 
 // RegisterCollectors is a TODO
 func (a *Azure) RegisterCollectors(registry provider.Registry) error {
-	a.Logger.LogAttrs(a.Context, slog.LevelInfo, "registering collectors", slog.Int("NumOfCollectors", len(a.Collectors)))
+	a.logger.LogAttrs(a.context, slog.LevelInfo, "registering collectors", slog.Int("NumOfCollectors", len(a.Collectors)))
 
 	registry.MustRegister(collectorScrapesTotalCounter)
 	for _, c := range a.Collectors {
@@ -96,6 +96,6 @@ func (a *Azure) Describe(ch chan<- *prometheus.Desc) {
 // Collect is a TODO
 func (a *Azure) Collect(ch chan<- prometheus.Metric) {
 	// TODO - implement collector context
-	_, cancel := context.WithTimeout(a.Context, a.CollectorTimeout)
+	_, cancel := context.WithTimeout(a.context, a.collectorTimeout)
 	defer cancel()
 }
