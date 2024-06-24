@@ -101,7 +101,7 @@ const (
 	maxRetryAttempts = 10
 )
 
-func New(config *Config) (*AWS, error) {
+func New(ctx context.Context, config *Config) (*AWS, error) {
 	var collectors []provider.Collector
 	logger := config.Logger.With("provider", "aws")
 	// There are two scenarios:
@@ -110,7 +110,6 @@ func New(config *Config) (*AWS, error) {
 	// I'm going to use the AWS SDK to handle this for me. If the user has provided a region and profile, it will use that.
 	// If not, it will use the EC2 instance metadata service to determine the region and credentials.
 	// This is the same logic that the AWS CLI uses, so it should be fine.
-	ctx := context.Background()
 	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
 	if config.Region != "" {
 		options = append(options, awsconfig.WithRegion(config.Region))
@@ -161,7 +160,7 @@ func New(config *Config) (*AWS, error) {
 				}
 				regionClientMap[*r.RegionName] = client
 			}
-			collector := ec2Collector.New(&ec2Collector.Config{
+			collector := ec2Collector.New(nil, &ec2Collector.Config{
 				Regions: regions.Regions,
 				Logger:  logger,
 			}, pricingService, computeService, regionClientMap)

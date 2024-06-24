@@ -58,7 +58,8 @@ func (c *Collector) Name() string {
 	return subsystem
 }
 
-func New(config *Config, ps pricingClient.Pricing, ec2s ec2client.EC2, regionClientMap map[string]ec2client.EC2) *Collector {
+// New creates an AWS EC2 collector.
+func New(ctx context.Context, config *Config, ps pricingClient.Pricing, ec2s ec2client.EC2, regionClientMap map[string]ec2client.EC2) *Collector {
 	logger := config.Logger.With("collector", "ec2")
 	return &Collector{
 		pricingService:  ps,
@@ -66,10 +67,11 @@ func New(config *Config, ps pricingClient.Pricing, ec2s ec2client.EC2, regionCli
 		Regions:         config.Regions,
 		ec2RegionClient: regionClientMap,
 		logger:          logger,
-		context:         context.TODO(),
+		context:         ctx,
 	}
 }
 
+// Register is called by the prometheus library to register any static metrics that require persistence.
 func (c *Collector) Register(_ provider.Registry) error {
 	c.logger.LogAttrs(c.context, slog.LevelInfo, "Registering AWS EC2 collector")
 	return nil

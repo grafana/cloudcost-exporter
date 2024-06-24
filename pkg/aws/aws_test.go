@@ -25,7 +25,7 @@ func Test_New(t *testing.T) {
 			// TODO refactor New()
 			t.SkipNow()
 
-			a, err := New(&Config{})
+			a, err := New(nil, &Config{})
 			if tc.expectedError != nil {
 				require.EqualError(t, err, tc.expectedError.Error())
 				return
