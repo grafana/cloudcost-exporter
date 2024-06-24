@@ -69,6 +69,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	// TODO: RENAME THIS TO JUST PROJECTS
 	fs.Var(&cfg.Providers.GCP.Projects, "gcp.bucket-projects", "GCP project(s).")
 	fs.Var(&cfg.Providers.AWS.Services, "aws.services", "AWS service(s).")
+	fs.Var(&cfg.Providers.Azure.Services, "azure.services", "Azure service(s).")
 	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s).")
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
 	// TODO - PUT PROJECT-ID UNDER GCP
@@ -160,6 +161,7 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 	case "azure":
 		return azure.New(ctx, &azure.Config{
 			Logger:           cfg.Logger,
+			Services:         cfg.Providers.Azure.Services,
 			CollectorTimeout: cfg.Collector.Timeout,
 		})
 	case "aws":
