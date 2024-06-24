@@ -28,5 +28,6 @@ go.work
 
 .run
 .idea
+.vscode
 
 cloudcost-exporter

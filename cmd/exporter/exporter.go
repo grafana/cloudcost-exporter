@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	"github.com/grafana/cloudcost-exporter/cmd/exporter/web"
 	"github.com/grafana/cloudcost-exporter/pkg/aws"
+	"github.com/grafana/cloudcost-exporter/pkg/azure"
 	"github.com/grafana/cloudcost-exporter/pkg/google"
 	"github.com/grafana/cloudcost-exporter/pkg/logger"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -37,11 +38,12 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	logs := setupLogger(cfg.Logger.Level, cfg.Logger.Output, cfg.Logger.Type)
+	logs := setupLogger(cfg.LoggerOpts.Level, cfg.LoggerOpts.Output, cfg.LoggerOpts.Type)
 	logs.LogAttrs(ctx, slog.LevelInfo, "Starting cloudcost-exporter",
 		slog.String("version", cversion.Info()),
 		slog.String("build_context", cversion.BuildContext()),
 	)
+	cfg.Logger = logs
 
 	csp, err := selectProvider(&cfg)
 	if err != nil {
@@ -62,7 +64,7 @@ func main() {
 // providerFlags is a helper method that is responsible for setting up the flags that are used to configure the provider.
 // TODO: This should probably be moved over to the config package.
 func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
-	flag.StringVar(&cfg.Provider, "provider", "aws", "aws or gcp")
+	flag.StringVar(&cfg.Provider, "provider", "aws", "aws, gcp, or azure")
 	fs.StringVar(&cfg.Providers.AWS.Profile, "aws.profile", "", "AWS Profile to authenticate with.")
 	// TODO: RENAME THIS TO JUST PROJECTS
 	fs.Var(&cfg.Providers.GCP.Projects, "gcp.bucket-projects", "GCP project(s).")
@@ -81,9 +83,9 @@ func operationalFlags(cfg *config.Config) {
 	flag.DurationVar(&cfg.Server.Timeout, "server-timeout", 30*time.Second, "Server timeout")
 	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
 	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
-	flag.StringVar(&cfg.Logger.Level, "log.level", "info", "Log level: debug, info, warn, error")
-	flag.StringVar(&cfg.Logger.Output, "log.output", "stdout", "Log output stream: stdout, stderr, file")
-	flag.StringVar(&cfg.Logger.Type, "log.type", "text", "Log type: json, text")
+	flag.StringVar(&cfg.LoggerOpts.Level, "log.level", "info", "Log level: debug, info, warn, error")
+	flag.StringVar(&cfg.LoggerOpts.Output, "log.output", "stdout", "Log output stream: stdout, stderr, file")
+	flag.StringVar(&cfg.LoggerOpts.Type, "log.type", "text", "Log type: json, text")
 }
 
 // setupLogger is a helper method that is responsible for creating a structured logger that is used throughout the application.
@@ -154,6 +156,10 @@ func createPromRegistryHandler(csp provider.Provider) (http.Handler, error) {
 
 func selectProvider(cfg *config.Config) (provider.Provider, error) {
 	switch cfg.Provider {
+	case "azure":
+		return azure.New(&azure.Config{
+			Logger: cfg.Logger,
+		})
 	case "aws":
 		return aws.New(&aws.Config{
 			Region:         cfg.Providers.AWS.Region,

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"time"
 )
 
@@ -29,9 +30,11 @@ type Config struct {
 		Path    string
 		Timeout time.Duration
 	}
-	Logger struct {
+	LoggerOpts struct {
 		Level  string // Maps to slog levels: debug, info, warn, error
 		Output string // io.Writer interface to write out to: stdout, stderr, file
 		Type   string // How to write out the logs: json, text
 	}
+
+	Logger *slog.Logger
 }
