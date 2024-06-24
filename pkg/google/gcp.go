@@ -193,13 +193,13 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 		go func(c provider.Collector) {
 			now := time.Now()
 			defer wg.Done()
-			collectorSuccess := 0.0
+			collectorErrors := 0.0
 			if err := c.Collect(ch); err != nil {
 				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
-				collectorSuccess = 1.0
+				collectorErrors = 1.0
 			}
-			log.Printf("Collector(%s) collect respose=%.2f", c.Name(), collectorSuccess)
-			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorSuccess, subsystem, c.Name())
+			log.Printf("Collector(%s) collect respose=%.2f", c.Name(), collectorErrors)
+			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorErrors, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
 			collectorScrapesTotalCounter.WithLabelValues(subsystem, c.Name()).Inc()
