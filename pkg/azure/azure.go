@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -10,7 +11,8 @@ import (
 )
 
 const (
-	subsystem = "azure"
+	// subsystem = "azure"
+	collectTimeout time.Duration = 5 * time.Minute
 )
 
 var (
@@ -18,7 +20,8 @@ var (
 )
 
 type Azure struct {
-	Logger *slog.Logger
+	Context context.Context
+	Logger  *slog.Logger
 }
 
 type Config struct {
@@ -26,26 +29,27 @@ type Config struct {
 }
 
 // New is a TODO
-func New(config *Config) (*Azure, error) {
-	providerGroup := config.Logger.With("provider", "azure")
+func New(ctx context.Context, config *Config) (*Azure, error) {
+	providerGroup := config.Logger.WithGroup("azure")
 
 	return &Azure{
-		Logger: providerGroup,
+		Context: ctx,
+		Logger:  providerGroup,
 	}, nil
 }
 
 // RegisterCollectors is a TODO
 func (a *Azure) RegisterCollectors(registry provider.Registry) error {
-	a.Logger.LogAttrs(context.TODO(), slog.LevelInfo, "Register")
 	return nil
 }
 
 // Describe is a TODO
 func (a *Azure) Describe(ch chan<- *prometheus.Desc) {
-	a.Logger.LogAttrs(context.TODO(), slog.LevelInfo, "Describe")
 }
 
 // Collect is a TODO
 func (a *Azure) Collect(ch chan<- prometheus.Metric) {
-	a.Logger.LogAttrs(context.TODO(), slog.LevelInfo, "Collect")
+	// TODO - implement collector context
+	_, cancel := context.WithTimeout(a.Context, collectTimeout)
+	defer cancel()
 }

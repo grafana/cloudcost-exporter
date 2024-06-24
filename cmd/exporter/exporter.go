@@ -45,7 +45,7 @@ func main() {
 	)
 	cfg.Logger = logs
 
-	csp, err := selectProvider(&cfg)
+	csp, err := selectProvider(ctx, &cfg)
 	if err != nil {
 		logs.LogAttrs(ctx, slog.LevelError, "Error selecting provider",
 			slog.String("message", err.Error()),
@@ -154,10 +154,10 @@ func createPromRegistryHandler(csp provider.Provider) (http.Handler, error) {
 	}), nil
 }
 
-func selectProvider(cfg *config.Config) (provider.Provider, error) {
+func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider, error) {
 	switch cfg.Provider {
 	case "azure":
-		return azure.New(&azure.Config{
+		return azure.New(ctx, &azure.Config{
 			Logger: cfg.Logger,
 		})
 	case "aws":

@@ -20,6 +20,9 @@ type Config struct {
 			Region             string
 			Services           StringSliceFlag
 		}
+		Azure struct {
+			// TODO
+		}
 	}
 	Collector struct {
 		ScrapeInterval time.Duration
