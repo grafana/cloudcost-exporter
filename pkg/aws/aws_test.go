@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -25,7 +26,7 @@ func Test_New(t *testing.T) {
 			// TODO refactor New()
 			t.SkipNow()
 
-			a, err := New(nil, &Config{})
+			a, err := New(context.Background(), &Config{})
 			if tc.expectedError != nil {
 				require.EqualError(t, err, tc.expectedError.Error())
 				return

@@ -1,6 +1,7 @@
 package ec2
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"testing"
@@ -12,7 +13,7 @@ var testLogger *slog.Logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 func TestNewEC2Collector(t *testing.T) {
 	t.Run("Instance is created", func(t *testing.T) {
-		ec2 := New(nil, &Config{
+		ec2 := New(context.Background(), &Config{
 			Logger: testLogger,
 		}, nil, nil, nil)
 		assert.NotNil(t, ec2)
@@ -22,7 +23,7 @@ func TestNewEC2Collector(t *testing.T) {
 
 func TestCollector_CollectMetrics(t *testing.T) {
 	t.Run("Returns 0", func(t *testing.T) {
-		ec2 := New(nil, &Config{
+		ec2 := New(context.Background(), &Config{
 			Logger: testLogger,
 		}, nil, nil, nil)
 		result := ec2.CollectMetrics(nil)
@@ -32,7 +33,7 @@ func TestCollector_CollectMetrics(t *testing.T) {
 
 func TestCollector_Describe(t *testing.T) {
 	t.Run("Returns nil", func(t *testing.T) {
-		ec2 := New(nil, &Config{
+		ec2 := New(context.Background(), &Config{
 			Logger: testLogger,
 		}, nil, nil, nil)
 		result := ec2.Describe(nil)
@@ -42,7 +43,7 @@ func TestCollector_Describe(t *testing.T) {
 
 func TestCollector_Collect(t *testing.T) {
 	t.Run("Returns nil", func(t *testing.T) {
-		ec2 := New(nil, &Config{
+		ec2 := New(context.Background(), &Config{
 			Logger: testLogger,
 		}, nil, nil, nil)
 		result := ec2.Collect(nil)
@@ -52,7 +53,7 @@ func TestCollector_Collect(t *testing.T) {
 
 func TestCollector_Register(t *testing.T) {
 	t.Run("Runs register", func(t *testing.T) {
-		ec2 := New(nil, &Config{
+		ec2 := New(context.Background(), &Config{
 			Logger: testLogger,
 		}, nil, nil, nil)
 		err := ec2.Register(nil)

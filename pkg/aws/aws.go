@@ -160,7 +160,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 				}
 				regionClientMap[*r.RegionName] = client
 			}
-			collector := ec2Collector.New(nil, &ec2Collector.Config{
+			collector := ec2Collector.New(ctx, &ec2Collector.Config{
 				Regions: regions.Regions,
 				Logger:  logger,
 			}, pricingService, computeService, regionClientMap)
