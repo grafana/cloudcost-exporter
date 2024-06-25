@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Azure/go-autorest/autorest/to"
 	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
@@ -121,6 +122,7 @@ func (p *PriceStore) determineMachinePriority(sku retailPriceSdk.ResourceSKU) Ma
 }
 
 func (p *PriceStore) PopulatePriceStore(locationList []string) error {
+	startTime := time.Now()
 	p.logger.LogAttrs(p.context, slog.LevelInfo, "populating price map")
 
 	p.lock.Lock()
@@ -159,7 +161,7 @@ func (p *PriceStore) PopulatePriceStore(locationList []string) error {
 		}
 	}
 
-	p.logger.LogAttrs(p.context, slog.LevelInfo, "price map populated")
+	p.logger.LogAttrs(p.context, slog.LevelInfo, "price map populated", slog.Duration("duration", time.Since(startTime)))
 	return nil
 }
 
