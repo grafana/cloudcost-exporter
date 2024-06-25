@@ -16,16 +16,19 @@ var (
 
 func Test_New(t *testing.T) {
 	for _, tc := range []struct {
-		name          string
-		expectedError error
+		name           string
+		expectedError  error
+		subscriptionId string
 	}{
 		{
-			name: "no error",
+			subscriptionId: "1234-asdf-adsf-adsf",
+			name:           "no error",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a, err := New(parentCtx, &Config{
-				Logger: testLogger,
+				Logger:         testLogger,
+				SubscriptionId: tc.subscriptionId,
 			})
 			if tc.expectedError != nil {
 				require.EqualError(t, err, tc.expectedError.Error())

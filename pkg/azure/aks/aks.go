@@ -2,11 +2,17 @@ package aks
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
+
+	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
 
 const (
@@ -15,7 +21,8 @@ const (
 
 // Errors
 var (
-// TODO - define Errors
+	ErrClientCreationFailure = errors.New("failed to create client")
+	ErrPageAdvanceFailure    = errors.New("failed to advance page")
 )
 
 // Prometheus Metrics
@@ -27,18 +34,50 @@ var (
 type Collector struct {
 	context context.Context
 	logger  *slog.Logger
+
+	priceClient                  *retailPriceSdk.RetailPricesClient
+	resourceGroupClient          *armresources.ResourceGroupsClient
+	virtualMachineClient         *armcompute.VirtualMachineScaleSetVMsClient
+	virtualMachineScaleSetClient *armcompute.VirtualMachineScaleSetsClient
 }
 
 type Config struct {
-	Logger *slog.Logger
+	Logger      *slog.Logger
+	Credentials *azidentity.DefaultAzureCredential
+
+	SubscriptionId string
 }
 
-func New(ctx context.Context, cfg *Config) *Collector {
-	logger := cfg.Logger.With("collector", subsystem)
+func New(ctx context.Context, cfg *Config) (*Collector, error) {
+	logger := cfg.Logger.With("collector", "aks")
+
+	retailPricesClient, err := retailPriceSdk.NewRetailPricesClient(nil)
+	if err != nil {
+		logger.LogAttrs(ctx, slog.LevelError, "failed to create retail prices client", slog.String("err", err.Error()))
+		return nil, ErrClientCreationFailure
+	}
+
+	rgClient, err := armresources.NewResourceGroupsClient(cfg.SubscriptionId, cfg.Credentials, nil)
+	if err != nil {
+		logger.LogAttrs(ctx, slog.LevelError, "failed to create resource group client", slog.String("err", err.Error()))
+		return nil, ErrClientCreationFailure
+	}
+
+	computeClientFactory, err := armcompute.NewClientFactory(cfg.SubscriptionId, cfg.Credentials, nil)
+	if err != nil {
+		logger.LogAttrs(ctx, slog.LevelError, "failed to create compute client factory", slog.String("err", err.Error()))
+		return nil, ErrClientCreationFailure
+	}
 
 	return &Collector{
-		logger: logger,
-	}
+		context: ctx,
+		logger:  logger,
+
+		priceClient:                  retailPricesClient,
+		resourceGroupClient:          rgClient,
+		virtualMachineClient:         computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
+		virtualMachineScaleSetClient: computeClientFactory.NewVirtualMachineScaleSetsClient(),
+	}, nil
 }
 
 // CollectMetrics is a no-op function that satisfies the provider.Collector interface.
