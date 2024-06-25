@@ -63,7 +63,7 @@ func TestCollector_Collect(t *testing.T) {
 		Regions: regions,
 	}
 	t.Run("Collect should return no error", func(t *testing.T) {
-		collector := New(nil, &Config{
+		collector := New(context.Background(), &Config{
 			Logger: testLogger,
 		}, nil, nil, nil)
 		ch := make(chan prometheus.Metric)
@@ -81,7 +81,7 @@ func TestCollector_Collect(t *testing.T) {
 				func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
 					return nil, assert.AnError
 				}).Times(1)
-		collector := New(nil, config, ps, nil, nil)
+		collector := New(context.Background(), config, ps, nil, nil)
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
 		close(ch)
@@ -96,7 +96,7 @@ func TestCollector_Collect(t *testing.T) {
 						PriceList: []string{},
 					}, nil
 				}).Times(1)
-		collector := New(nil, config, ps, nil, nil)
+		collector := New(context.Background(), config, ps, nil, nil)
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
 		close(ch)
@@ -121,7 +121,7 @@ func TestCollector_Collect(t *testing.T) {
 		for _, r := range regions {
 			regionClientMap[*r.RegionName] = ec2s
 		}
-		collector := New(nil, config, ps, ec2s, regionClientMap)
+		collector := New(context.Background(), config, ps, ec2s, regionClientMap)
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
 		close(ch)
@@ -156,7 +156,7 @@ func TestCollector_Collect(t *testing.T) {
 		for _, r := range regions {
 			regionClientMap[*r.RegionName] = ec2s
 		}
-		collector := New(nil, config, ps, ec2s, regionClientMap)
+		collector := New(context.Background(), config, ps, ec2s, regionClientMap)
 		ch := make(chan prometheus.Metric)
 		defer close(ch)
 		assert.ErrorIs(t, collector.Collect(ch), ErrGeneratePricingMap)
