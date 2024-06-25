@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -16,7 +17,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
-	"github.com/grafana/cloudcost-exporter/pkg/aws/eks"
+	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/compute/ec2"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/compute/eks"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -27,6 +29,7 @@ type Config struct {
 	Region         string
 	Profile        string
 	ScrapeInterval time.Duration
+	Logger         *slog.Logger
 }
 
 type AWS struct {
@@ -98,15 +101,15 @@ const (
 	maxRetryAttempts = 10
 )
 
-func New(config *Config) (*AWS, error) {
+func New(ctx context.Context, config *Config) (*AWS, error) {
 	var collectors []provider.Collector
+	logger := config.Logger.With("provider", "aws")
 	// There are two scenarios:
 	// 1. Running locally, the user must pass in a region and profile to use
 	// 2. Running within an EC2 instance and the region and profile can be derived
 	// I'm going to use the AWS SDK to handle this for me. If the user has provided a region and profile, it will use that.
 	// If not, it will use the EC2 instance metadata service to determine the region and credentials.
 	// This is the same logic that the AWS CLI uses, so it should be fine.
-	ctx := context.Background()
 	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
 	if config.Region != "" {
 		options = append(options, awsconfig.WithRegion(config.Region))
@@ -141,6 +144,26 @@ func New(config *Config) (*AWS, error) {
 				regionClientMap[*r.RegionName] = client
 			}
 			collector := eks.New(config.Region, config.Profile, config.ScrapeInterval, pricingService, computeService, regions.Regions, regionClientMap)
+			collectors = append(collectors, collector)
+		case "EC2":
+			pricingService := pricing.NewFromConfig(ac)
+			computeService := ec2.NewFromConfig(ac)
+			regions, err := computeService.DescribeRegions(ctx, &ec2.DescribeRegionsInput{AllRegions: aws.Bool(false)})
+			if err != nil {
+				return nil, fmt.Errorf("error getting regions: %w", err)
+			}
+			regionClientMap := make(map[string]ec2client.EC2)
+			for _, r := range regions.Regions {
+				client, err := newEc2Client(*r.RegionName, config.Profile)
+				if err != nil {
+					return nil, fmt.Errorf("error creating ec2 client: %w", err)
+				}
+				regionClientMap[*r.RegionName] = client
+			}
+			collector := ec2Collector.New(ctx, &ec2Collector.Config{
+				Regions: regions.Regions,
+				Logger:  logger,
+			}, pricingService, computeService, regionClientMap)
 			collectors = append(collectors, collector)
 		default:
 			log.Printf("Unknown service %s", service)
