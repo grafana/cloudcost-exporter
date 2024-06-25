@@ -14,6 +14,7 @@ var (
 	parentCtx  context.Context                    = context.TODO()
 	testLogger *slog.Logger                       = slog.New(slog.NewTextHandler(os.Stdout, nil))
 	fakeCreds  *azidentity.DefaultAzureCredential = &azidentity.DefaultAzureCredential{}
+	testSubId  string                             = "1234-asdf-adsf-adsf"
 )
 
 func Test_New(t *testing.T) {
@@ -23,7 +24,7 @@ func Test_New(t *testing.T) {
 		expectedError  error
 	}{
 		{
-			subscriptionId: "1234-asdf-adsf-adsf",
+			subscriptionId: testSubId,
 			name:           "no error",
 		},
 	} {
