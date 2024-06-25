@@ -8,7 +8,7 @@ require (
 	cloud.google.com/go/storage v1.42.0
 	github.com/aws/aws-sdk-go-v2 v1.30.0
 	github.com/aws/aws-sdk-go-v2/config v1.27.21
-	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.38.4
+	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.39.1
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.164.2
 	github.com/aws/aws-sdk-go-v2/service/pricing v1.29.1
 	github.com/google/go-cmp v0.6.0
