@@ -74,7 +74,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
 	// TODO - PUT PROJECT-ID UNDER GCP
 	flag.StringVar(&cfg.ProjectID, "project-id", "ops-tools-1203", "Project ID to target.")
-	flag.StringVar(&cfg.Providers.Azure.SubscriptionId, "azure.subid", "", "Azure subscription ID to pull data from.")
+	flag.StringVar(&cfg.Providers.Azure.SubscriptionId, "azure.subscription-id", "", "Azure subscription ID to pull data from.")
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
 }
 
