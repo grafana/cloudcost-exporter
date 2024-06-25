@@ -2,11 +2,13 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/cloudcost-exporter/pkg/azure/aks"
@@ -17,6 +19,10 @@ import (
 
 const (
 	subsystem = "azure"
+)
+
+var (
+	InvalidSubscriptionId = errors.New("subscription id was invalid")
 )
 
 var (
@@ -79,15 +85,20 @@ var (
 )
 
 type Azure struct {
-	context          context.Context
-	logger           *slog.Logger
-	collectorTimeout time.Duration
+	context context.Context
+	logger  *slog.Logger
 
-	collectors []provider.Collector
+	subscriptionId string
+	azCredentials  *azidentity.DefaultAzureCredential
+
+	collectorTimeout time.Duration
+	collectors       []provider.Collector
 }
 
 type Config struct {
 	Logger *slog.Logger
+
+	SubscriptionId string
 
 	CollectorTimeout time.Duration
 	Services         []string
@@ -97,15 +108,29 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 	logger := config.Logger.With("provider", subsystem)
 	collectors := []provider.Collector{}
 
+	if config.SubscriptionId == "" {
+		logger.LogAttrs(ctx, slog.LevelError, "subscription id was invalid")
+		return nil, InvalidSubscriptionId
+	}
+
+	creds, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		logger.LogAttrs(ctx, slog.LevelError, "failed to create azure credentials", slog.String("err", err.Error()))
+		return nil, err
+	}
+
 	// Collector Registration
-	// TODO - implement AZ Auth, AZ SDK init
 	for _, svc := range config.Services {
 		switch strings.ToUpper(svc) {
 		case "AKS":
-			// TODO - Init azure client
-			collector := aks.New(ctx, &aks.Config{
-				Logger: logger,
+			collector, err := aks.New(ctx, &aks.Config{
+				Credentials:    creds,
+				SubscriptionId: config.SubscriptionId,
+				Logger:         logger,
 			})
+			if err != nil {
+				return nil, err
+			}
 			collectors = append(collectors, collector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelInfo, "unknown service", slog.String("service", svc))
@@ -115,6 +140,9 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 	return &Azure{
 		context: ctx,
 		logger:  logger,
+
+		subscriptionId: config.SubscriptionId,
+		azCredentials:  creds,
 
 		collectorTimeout: config.CollectorTimeout,
 		collectors:       collectors,

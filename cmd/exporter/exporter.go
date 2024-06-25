@@ -74,6 +74,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
 	// TODO - PUT PROJECT-ID UNDER GCP
 	flag.StringVar(&cfg.ProjectID, "project-id", "ops-tools-1203", "Project ID to target.")
+	flag.StringVar(&cfg.Providers.Azure.SubscriptionId, "azure.subid", "", "Azure subscription ID to pull data from.")
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
 }
 
@@ -161,6 +162,7 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 	case "azure":
 		return azure.New(ctx, &azure.Config{
 			Logger:           cfg.Logger,
+			SubscriptionId:   cfg.Providers.Azure.SubscriptionId,
 			Services:         cfg.Providers.Azure.Services,
 			CollectorTimeout: cfg.Collector.Timeout,
 		})
