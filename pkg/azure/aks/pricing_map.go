@@ -23,7 +23,7 @@ const (
 )
 
 func (o MachineOperatingSystem) String() string {
-	return [...]string{"Linux", "Windows"}[o-1]
+	return [2]string{"Linux", "Windows"}[o-1]
 }
 
 type MachinePriority int
@@ -34,7 +34,7 @@ const (
 )
 
 func (v MachinePriority) String() string {
-	return [...]string{"OnDemand", "Spot"}[v-1]
+	return [2]string{"OnDemand", "Spot"}[v-1]
 }
 
 type PriceBySku map[string]retailPriceSdk.ResourceSKU
@@ -79,11 +79,11 @@ func NewPricingStore(subId string, priceClient *retailPriceSdk.RetailPricesClien
 }
 
 func (p *PriceStore) buildQueryFilter(locationList []string) string {
-	locationListFilter := []string{}
 	if len(locationList) == 0 {
 		return `serviceName eq 'Virtual Machines' and priceType eq 'Consumption'`
 	}
 
+	locationListFilter := []string{}
 	for _, region := range locationList {
 		locationListFilter = append(locationListFilter, fmt.Sprintf("armRegionName eq '%s'", region))
 	}
