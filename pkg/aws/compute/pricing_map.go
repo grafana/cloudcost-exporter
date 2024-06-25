@@ -1,6 +1,7 @@
 package compute
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,11 +9,21 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/pricing"
+	"github.com/aws/aws-sdk-go-v2/service/pricing/types"
+
+	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
+	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 )
 
-const defaultInstanceFamily = "General purpose"
+const (
+	defaultInstanceFamily = "General purpose"
+)
 
 var (
 	ErrInstanceTypeAlreadyExists = errors.New("instance type already exists in the map")
@@ -42,13 +53,14 @@ type StructuredPricingMap struct {
 
 // FamilyPricing is a map of instance type to a list of PriceTiers where the key is the ec2 compute instance type
 type FamilyPricing struct {
-	Family map[string]*ComputePrices // Each Family can have many PriceTiers
+	Family map[string]*Prices // Each Family can have many PriceTiers
 }
 
 // ComputePrices holds the price of a compute instances CPU and RAM. The price is in USD
-type ComputePrices struct {
-	Cpu float64
-	Ram float64
+type Prices struct {
+	Cpu   float64
+	Ram   float64
+	Total float64
 }
 
 func NewStructuredPricingMap() *StructuredPricingMap {
@@ -119,7 +131,7 @@ func (spm *StructuredPricingMap) AddToPricingMap(price float64, attribute Attrib
 	defer spm.m.Unlock()
 	if spm.Regions[attribute.Region] == nil {
 		spm.Regions[attribute.Region] = &FamilyPricing{}
-		spm.Regions[attribute.Region].Family = make(map[string]*ComputePrices)
+		spm.Regions[attribute.Region].Family = make(map[string]*Prices)
 	}
 
 	if spm.Regions[attribute.Region].Family[attribute.InstanceType] != nil {
@@ -130,9 +142,10 @@ func (spm *StructuredPricingMap) AddToPricingMap(price float64, attribute Attrib
 	if err != nil {
 		return err
 	}
-	spm.Regions[attribute.Region].Family[attribute.InstanceType] = &ComputePrices{
-		Cpu: weightedPrice.Cpu,
-		Ram: weightedPrice.Ram,
+	spm.Regions[attribute.Region].Family[attribute.InstanceType] = &Prices{
+		Cpu:   weightedPrice.Cpu,
+		Ram:   weightedPrice.Ram,
+		Total: price,
 	}
 	return nil
 }
@@ -145,7 +158,7 @@ func (spm *StructuredPricingMap) AddInstanceDetails(attributes Attributes) {
 	}
 }
 
-func weightedPriceForInstance(price float64, attributes Attributes) (*ComputePrices, error) {
+func weightedPriceForInstance(price float64, attributes Attributes) (*Prices, error) {
 	cpus, err := strconv.ParseFloat(attributes.VCPU, 64)
 	if err != nil {
 		return nil, fmt.Errorf("%w %w", ErrParseAttributes, err)
@@ -163,13 +176,13 @@ func weightedPriceForInstance(price float64, attributes Attributes) (*ComputePri
 		ratio = cpuToCostRatio[defaultInstanceFamily]
 	}
 
-	return &ComputePrices{
+	return &Prices{
 		Cpu: price * ratio / cpus,
 		Ram: price * (1 - ratio) / ram,
 	}, nil
 }
 
-func (spm *StructuredPricingMap) GetPriceForInstanceType(region string, instanceType string) (*ComputePrices, error) {
+func (spm *StructuredPricingMap) GetPriceForInstanceType(region string, instanceType string) (*Prices, error) {
 	spm.m.RLock()
 	defer spm.m.RUnlock()
 	if _, ok := spm.Regions[region]; !ok {
@@ -210,4 +223,104 @@ type productTerm struct {
 			}
 		}
 	}
+}
+
+var ErrListSpotPrices = errors.New("error listing spot prices")
+
+var ErrListOnDemandPrices = errors.New("error listing ondemand prices")
+
+func ListOnDemandPrices(ctx context.Context, region string, client pricingClient.Pricing) ([]string, error) {
+	var productOutputs []string
+	input := &pricing.GetProductsInput{
+		ServiceCode: aws.String("AmazonEC2"),
+		Filters: []types.Filter{
+			{
+				Field: aws.String("regionCode"),
+				// TODO: Use the defined enum for this once I figure out how I can import it
+				Type:  "TERM_MATCH",
+				Value: aws.String(region),
+			},
+			{
+				// Limit output to only base installs
+				Field: aws.String("preInstalledSw"),
+				Type:  "TERM_MATCH",
+				Value: aws.String("NA"),
+			},
+			{
+				// Limit to shared tenancy machines
+				Field: aws.String("tenancy"),
+				Type:  "TERM_MATCH",
+				Value: aws.String("shared"),
+			},
+			{
+				// Limit to compute instances(ie, not bare metal)
+				Field: aws.String("productFamily"),
+				Type:  "TERM_MATCH",
+				Value: aws.String("Compute Instance"),
+			},
+			{
+				// RunInstances is the operation that we're interested in.
+				Field: aws.String("operation"),
+				Type:  "TERM_MATCH",
+				Value: aws.String("RunInstances"),
+			},
+			{
+				// This effectively filters only for ondemand pricing
+				Field: aws.String("capacitystatus"),
+				Type:  "TERM_MATCH",
+				Value: aws.String("UnusedCapacityReservation"),
+			},
+			{
+				// Only care about Linux. If there's a request for windows, remove this flag and expand the pricing map to include a key for operating system
+				Field: aws.String("operatingSystem"),
+				Type:  "TERM_MATCH",
+				Value: aws.String("Linux"),
+			},
+		},
+	}
+
+	for {
+		products, err := client.GetProducts(ctx, input)
+		if err != nil {
+			return productOutputs, err
+		}
+
+		if products == nil {
+			break
+		}
+
+		productOutputs = append(productOutputs, products.PriceList...)
+		if products.NextToken == nil {
+			break
+		}
+		input.NextToken = products.NextToken
+	}
+	return productOutputs, nil
+}
+
+func ListSpotPrices(ctx context.Context, client ec2client.EC2) ([]ec2Types.SpotPrice, error) {
+	var spotPrices []ec2Types.SpotPrice
+	startTime := time.Now().Add(-time.Hour)
+	endTime := time.Now()
+	sphi := &ec2.DescribeSpotPriceHistoryInput{
+		ProductDescriptions: []string{
+			"Linux/UNIX (Amazon VPC)",
+		},
+
+		StartTime: &startTime,
+		EndTime:   &endTime,
+	}
+	for {
+		resp, err := client.DescribeSpotPriceHistory(ctx, sphi)
+		if err != nil {
+			// If there's an error, return the set of processed spotPrices and the error.
+			return spotPrices, err
+		}
+		spotPrices = append(spotPrices, resp.SpotPriceHistory...)
+		if resp.NextToken == nil || *resp.NextToken == "" {
+			break
+		}
+		sphi.NextToken = resp.NextToken
+	}
+	return spotPrices, nil
 }

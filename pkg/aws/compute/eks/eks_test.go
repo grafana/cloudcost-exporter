@@ -15,239 +15,11 @@ import (
 
 	mockec2 "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/ec2"
 	mockpricing "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/pricing"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/compute"
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
-
-func TestListSpotPrices(t *testing.T) {
-	tests := map[string]struct {
-		ctx                      context.Context
-		DescribeSpotPriceHistory func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error)
-		err                      error
-		want                     []ec2Types.SpotPrice
-		expectedCalls            int
-	}{
-		"No instance should return nothing": {
-			ctx: context.Background(),
-			DescribeSpotPriceHistory: func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
-				return &ec2.DescribeSpotPriceHistoryOutput{}, nil
-			},
-			err:           nil,
-			want:          nil,
-			expectedCalls: 1,
-		},
-		"Single instance should return a single instance": {
-			ctx: context.Background(),
-			DescribeSpotPriceHistory: func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
-				return &ec2.DescribeSpotPriceHistoryOutput{
-					SpotPriceHistory: []ec2Types.SpotPrice{
-						{
-							AvailabilityZone: aws.String("us-east-1a"),
-							InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
-							SpotPrice:        aws.String("0.4680000000"),
-						},
-					},
-				}, nil
-			},
-			err: nil,
-			want: []ec2Types.SpotPrice{
-				{
-					AvailabilityZone: aws.String("us-east-1a"),
-					InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
-					SpotPrice:        aws.String("0.4680000000"),
-				},
-			},
-			expectedCalls: 1,
-		},
-		"Ensure errors propagate": {
-			ctx: context.Background(),
-			DescribeSpotPriceHistory: func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
-				return nil, assert.AnError
-			},
-			err:           assert.AnError,
-			want:          nil,
-			expectedCalls: 1,
-		},
-		"NextToken should return multiple instances": {
-			ctx: context.Background(),
-			DescribeSpotPriceHistory: func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
-				if input.NextToken == nil {
-					return &ec2.DescribeSpotPriceHistoryOutput{
-						NextToken: aws.String("token"),
-						SpotPriceHistory: []ec2Types.SpotPrice{
-							{
-								AvailabilityZone: aws.String("us-east-1a"),
-								InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
-								SpotPrice:        aws.String("0.4680000000"),
-							},
-						},
-					}, nil
-				}
-				return &ec2.DescribeSpotPriceHistoryOutput{
-					SpotPriceHistory: []ec2Types.SpotPrice{
-						{
-							AvailabilityZone: aws.String("us-east-1a"),
-							InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
-							SpotPrice:        aws.String("0.4680000000"),
-						},
-					},
-				}, nil
-			},
-			err: nil,
-			want: []ec2Types.SpotPrice{
-				{
-					AvailabilityZone: aws.String("us-east-1a"),
-					InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
-					SpotPrice:        aws.String("0.4680000000"),
-				},
-				{
-					AvailabilityZone: aws.String("us-east-1a"),
-					InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
-					SpotPrice:        aws.String("0.4680000000"),
-				},
-			},
-			expectedCalls: 2,
-		},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			client := mockec2.NewEC2(t)
-			client.EXPECT().
-				DescribeSpotPriceHistory(mock.Anything, mock.Anything, mock.Anything).
-				RunAndReturn(tt.DescribeSpotPriceHistory).
-				Times(tt.expectedCalls)
-
-			got, err := ListSpotPrices(tt.ctx, client)
-			if tt.err != nil {
-				assert.Equal(t, tt.err, err)
-			}
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func TestListComputeInstances(t *testing.T) {
-	tests := map[string]struct {
-		ctx               context.Context
-		DescribeInstances func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
-		err               error
-		want              []ec2Types.Reservation
-		expectedCalls     int
-	}{
-		"No instance should return nothing": {
-			ctx: context.Background(),
-			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
-				return &ec2.DescribeInstancesOutput{}, nil
-			},
-			err:           nil,
-			want:          nil,
-			expectedCalls: 1,
-		},
-		"Single instance should return a single instance": {
-			ctx: context.Background(),
-			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
-				return &ec2.DescribeInstancesOutput{
-					Reservations: []ec2Types.Reservation{
-						{
-							Instances: []ec2Types.Instance{
-								{
-									InstanceId:   aws.String("i-1234567890abcdef0"),
-									InstanceType: ec2Types.InstanceTypeA1Xlarge,
-								},
-							},
-						},
-					},
-				}, nil
-			},
-			err: nil,
-			want: []ec2Types.Reservation{
-				{
-					Instances: []ec2Types.Instance{
-						{
-							InstanceId:   aws.String("i-1234567890abcdef0"),
-							InstanceType: ec2Types.InstanceTypeA1Xlarge,
-						},
-					},
-				},
-			},
-		},
-		"Ensure errors propagate": {
-			ctx: context.Background(),
-			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
-				return nil, assert.AnError
-			},
-			err:  assert.AnError,
-			want: nil,
-		},
-		"NextToken should return multiple instances": {
-			ctx: context.Background(),
-			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
-				if e.NextToken == nil {
-					return &ec2.DescribeInstancesOutput{
-						NextToken: aws.String("token"),
-						Reservations: []ec2Types.Reservation{
-							{
-								Instances: []ec2Types.Instance{
-									{
-										InstanceId:   aws.String("i-1234567890abcdef0"),
-										InstanceType: ec2Types.InstanceTypeA1Xlarge,
-									},
-								},
-							},
-						},
-					}, nil
-				}
-				return &ec2.DescribeInstancesOutput{
-					Reservations: []ec2Types.Reservation{
-						{
-							Instances: []ec2Types.Instance{
-								{
-									InstanceId:   aws.String("i-1234567890abcdef0"),
-									InstanceType: ec2Types.InstanceTypeA1Xlarge,
-								},
-							},
-						},
-					},
-				}, nil
-			},
-
-			err: nil,
-			want: []ec2Types.Reservation{
-				{
-					Instances: []ec2Types.Instance{
-						{
-							InstanceId:   aws.String("i-1234567890abcdef0"),
-							InstanceType: ec2Types.InstanceTypeA1Xlarge,
-						},
-					},
-				},
-				{
-					Instances: []ec2Types.Instance{
-						{
-							InstanceId:   aws.String("i-1234567890abcdef0"),
-							InstanceType: ec2Types.InstanceTypeA1Xlarge,
-						},
-					},
-				},
-			},
-			expectedCalls: 2,
-		},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			client := mockec2.NewEC2(t)
-			client.EXPECT().
-				DescribeInstances(mock.Anything, mock.Anything, mock.Anything).
-				RunAndReturn(tt.DescribeInstances).
-				Times(tt.expectedCalls)
-
-			got, err := ListComputeInstances(tt.ctx, client)
-			assert.Equal(t, tt.err, err)
-			assert.Equalf(t, tt.want, got, "ListComputeInstances(%v, %v)", tt.ctx, client)
-		})
-	}
-}
 
 func TestCollector_ListOnDemandPrices(t *testing.T) {
 	tests := map[string]struct {
@@ -326,7 +98,7 @@ func TestCollector_ListOnDemandPrices(t *testing.T) {
 				GetProducts(mock.Anything, mock.Anything, mock.Anything).
 				RunAndReturn(tt.GetProducts).
 				Times(tt.expectedCalls)
-			got, err := ListOnDemandPrices(tt.ctx, tt.region, client)
+			got, err := compute.ListOnDemandPrices(tt.ctx, tt.region, client)
 			if tt.err != nil {
 				assert.Equal(t, tt.err, err)
 			}
@@ -371,56 +143,6 @@ func TestCollector_Name(t *testing.T) {
 		collector := New("", "", 0, nil, nil, nil, nil)
 		assert.Equal(t, subsystem, collector.Name())
 	})
-}
-
-func Test_clusterNameFromInstance(t *testing.T) {
-	tests := map[string]struct {
-		instance ec2Types.Instance
-		want     string
-	}{
-		"Instance with no tags should return an empty string": {
-			instance: ec2Types.Instance{},
-			want:     "",
-		},
-		"Instance with a tag should return the cluster name": {
-			instance: ec2Types.Instance{
-				Tags: []ec2Types.Tag{
-					{
-						Key:   aws.String("cluster"),
-						Value: aws.String("cluster-name"),
-					},
-				},
-			},
-			want: "cluster-name",
-		},
-		"Instance with eks:clustername should return the cluster name": {
-			instance: ec2Types.Instance{
-				Tags: []ec2Types.Tag{
-					{
-						Key:   aws.String("eks:cluster-name"),
-						Value: aws.String("cluster-name"),
-					},
-				},
-			},
-			want: "cluster-name",
-		},
-		"Instance with aws:eks:cluster-name should return the cluster name": {
-			instance: ec2Types.Instance{
-				Tags: []ec2Types.Tag{
-					{
-						Key:   aws.String("eks:cluster-name"),
-						Value: aws.String("cluster-name"),
-					},
-				},
-			},
-			want: "cluster-name",
-		},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, clusterNameFromInstance(tt.instance), "clusterNameFromInstance(%v)", tt.instance)
-		})
-	}
 }
 
 func TestCollector_Collect(t *testing.T) {
@@ -495,7 +217,7 @@ func TestCollector_Collect(t *testing.T) {
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
 		close(ch)
-		assert.ErrorIs(t, err, ErrListSpotPrices)
+		assert.ErrorIs(t, err, compute.ErrListSpotPrices)
 	})
 	t.Run("Collect should return an error if GeneratePricingMap returns an error", func(t *testing.T) {
 		ec2s := mockec2.NewEC2(t)
