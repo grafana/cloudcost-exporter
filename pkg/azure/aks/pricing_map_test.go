@@ -89,13 +89,13 @@ func TestDetermineMachineOperatingSystem(t *testing.T) {
 	}{
 		"Linux": {
 			sku: retailPriceSdk.ResourceSKU{
-				ProductName: "Standard D4",
+				ProductName: "Virtual Machines Esv4 Series",
 			},
 			expectedMachine: Linux,
 		},
 		"Windows": {
 			sku: retailPriceSdk.ResourceSKU{
-				ProductName: "Standard D4 Windows",
+				ProductName: "Virtual Machines D Series Windows",
 			},
 			expectedMachine: Windows,
 		},
@@ -117,13 +117,13 @@ func TestDetermineMachinePriority(t *testing.T) {
 	}{
 		"OnDemand": {
 			sku: retailPriceSdk.ResourceSKU{
-				ProductName: "Standard D4",
+				SkuName: "Standard_E16pds_v5 Low Priority",
 			},
 			expectedPriority: OnDemand,
 		},
 		"Spot": {
 			sku: retailPriceSdk.ResourceSKU{
-				ProductName: "Standard D4 Windows",
+				SkuName: "B4ls v2 Spot",
 			},
 			expectedPriority: Spot,
 		},
@@ -131,7 +131,7 @@ func TestDetermineMachinePriority(t *testing.T) {
 
 	for name, test := range testTable {
 		t.Run(name, func(t *testing.T) {
-			machinePriority := p.determineMachineOperatingSystem(test.sku)
+			machinePriority := p.determineMachinePriority(test.sku)
 			assert.Equal(t, test.expectedPriority, machinePriority)
 		})
 	}
