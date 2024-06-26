@@ -8,11 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/aws-sdk-go-v2/service/pricing"
-	"github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
@@ -24,17 +20,13 @@ import (
 )
 
 const (
-	subsystem  = "aws_eks"
-	maxResults = 1000
+	subsystem = "aws_eks"
 )
 
-var clusterTags = []string{"cluster", "eks:cluster-name", "aws:eks:cluster-name"}
-
 var (
-	ErrClientNotFound     = errors.New("no client found")
-	ErrListSpotPrices     = errors.New("error listing spot prices")
+	ErrClientNotFound = errors.New("no client found")
+
 	ErrGeneratePricingMap = errors.New("error generating pricing map")
-	ErrListOnDemandPrices = errors.New("error listing ondemand prices")
 )
 
 var (
@@ -82,18 +74,18 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		m := sync.Mutex{}
 		for _, region := range c.Regions {
 			eg.Go(func() error {
-				priceList, err := ListOnDemandPrices(context.Background(), *region.RegionName, c.pricingService)
+				priceList, err := compute.ListOnDemandPrices(context.Background(), *region.RegionName, c.pricingService)
 				if err != nil {
-					return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
+					return fmt.Errorf("%w: %w", compute.ErrListOnDemandPrices, err)
 				}
 
 				if c.ec2RegionClient[*region.RegionName] == nil {
 					return ErrClientNotFound
 				}
 				client := c.ec2RegionClient[*region.RegionName]
-				spotPriceList, err := ListSpotPrices(context.Background(), client)
+				spotPriceList, err := compute.ListSpotPrices(context.Background(), client)
 				if err != nil {
-					return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
+					return fmt.Errorf("%w: %w", compute.ErrListSpotPrices, err)
 				}
 				m.Lock()
 				spotPrices = append(spotPrices, spotPriceList...)
@@ -120,7 +112,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		go func(region ec2Types.Region) {
 			defer wg.Done()
 			client := c.ec2RegionClient[*region.RegionName]
-			reservations, err := ListComputeInstances(context.Background(), client)
+			reservations, err := compute.ListComputeInstances(context.Background(), client)
 			if err != nil {
 				log.Printf("error listing instances: %s", err)
 				return
@@ -141,7 +133,7 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 	for reservations := range reservationsCh {
 		for _, reservation := range reservations {
 			for _, instance := range reservation.Instances {
-				clusterName := clusterNameFromInstance(instance)
+				clusterName := compute.ClusterNameFromInstance(instance)
 				if clusterName == "" {
 					log.Printf("no cluster name found for instance %s", *instance.InstanceId)
 					continue
@@ -207,132 +199,4 @@ func New(region string, profile string, scrapeInterval time.Duration, ps pricing
 
 func (c *Collector) Register(_ provider.Registry) error {
 	return nil
-}
-
-func ListOnDemandPrices(ctx context.Context, region string, client pricingClient.Pricing) ([]string, error) {
-	var productOutputs []string
-	input := &pricing.GetProductsInput{
-		ServiceCode: aws.String("AmazonEC2"),
-		Filters: []types.Filter{
-			{
-				Field: aws.String("regionCode"),
-				// TODO: Use the defined enum for this once I figure out how I can import it
-				Type:  "TERM_MATCH",
-				Value: aws.String(region),
-			},
-			{
-				// Limit output to only base installs
-				Field: aws.String("preInstalledSw"),
-				Type:  "TERM_MATCH",
-				Value: aws.String("NA"),
-			},
-			{
-				// Limit to shared tenancy machines
-				Field: aws.String("tenancy"),
-				Type:  "TERM_MATCH",
-				Value: aws.String("shared"),
-			},
-			{
-				// Limit to compute instances(ie, not bare metal)
-				Field: aws.String("productFamily"),
-				Type:  "TERM_MATCH",
-				Value: aws.String("Compute Instance"),
-			},
-			{
-				// RunInstances is the operation that we're interested in.
-				Field: aws.String("operation"),
-				Type:  "TERM_MATCH",
-				Value: aws.String("RunInstances"),
-			},
-			{
-				// This effectively filters only for ondemand pricing
-				Field: aws.String("capacitystatus"),
-				Type:  "TERM_MATCH",
-				Value: aws.String("UnusedCapacityReservation"),
-			},
-			{
-				// Only care about Linux. If there's a request for windows, remove this flag and expand the pricing map to include a key for operating system
-				Field: aws.String("operatingSystem"),
-				Type:  "TERM_MATCH",
-				Value: aws.String("Linux"),
-			},
-		},
-	}
-
-	for {
-		products, err := client.GetProducts(ctx, input)
-		if err != nil {
-			return productOutputs, err
-		}
-
-		if products == nil {
-			break
-		}
-
-		productOutputs = append(productOutputs, products.PriceList...)
-		if products.NextToken == nil {
-			break
-		}
-		input.NextToken = products.NextToken
-	}
-	return productOutputs, nil
-}
-
-func ListComputeInstances(ctx context.Context, client ec2client.EC2) ([]ec2Types.Reservation, error) {
-	dii := &ec2.DescribeInstancesInput{
-		// 1000 max results was decided arbitrarily. This can likely be tuned.
-		MaxResults: aws.Int32(maxResults),
-	}
-	var instances []ec2Types.Reservation
-	for {
-		resp, err := client.DescribeInstances(ctx, dii)
-		if err != nil {
-			return nil, err
-		}
-		instances = append(instances, resp.Reservations...)
-		if resp.NextToken == nil || *resp.NextToken == "" {
-			break
-		}
-		dii.NextToken = resp.NextToken
-	}
-
-	return instances, nil
-}
-
-func ListSpotPrices(ctx context.Context, client ec2client.EC2) ([]ec2Types.SpotPrice, error) {
-	var spotPrices []ec2Types.SpotPrice
-	startTime := time.Now().Add(-time.Hour)
-	endTime := time.Now()
-	sphi := &ec2.DescribeSpotPriceHistoryInput{
-		ProductDescriptions: []string{
-			"Linux/UNIX (Amazon VPC)",
-		},
-
-		StartTime: &startTime,
-		EndTime:   &endTime,
-	}
-	for {
-		resp, err := client.DescribeSpotPriceHistory(ctx, sphi)
-		if err != nil {
-			// If there's an error, return the set of processed spotPrices and the error.
-			return spotPrices, err
-		}
-		spotPrices = append(spotPrices, resp.SpotPriceHistory...)
-		if resp.NextToken == nil || *resp.NextToken == "" {
-			break
-		}
-		sphi.NextToken = resp.NextToken
-	}
-	return spotPrices, nil
-}
-
-func clusterNameFromInstance(instance ec2Types.Instance) string {
-	for _, tag := range instance.Tags {
-		for _, key := range clusterTags {
-			if *tag.Key == key {
-				return *tag.Value
-			}
-		}
-	}
-	return ""
 }

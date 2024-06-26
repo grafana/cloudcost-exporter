@@ -1,12 +1,17 @@
 package compute
 
 import (
+	"context"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	ec22 "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/ec2"
 )
 
 func TestStructuredPricingMap_AddToPricingMap(t *testing.T) {
@@ -36,10 +41,11 @@ func TestStructuredPricingMap_AddToPricingMap(t *testing.T) {
 			want: &StructuredPricingMap{
 				Regions: map[string]*FamilyPricing{
 					"us-east-1a": {
-						Family: map[string]*ComputePrices{
+						Family: map[string]*Prices{
 							"m5.large": {
-								Cpu: 0.65,
-								Ram: 0.35,
+								Cpu:   0.65,
+								Ram:   0.35,
+								Total: 1.0,
 							},
 						},
 					},
@@ -81,10 +87,11 @@ func TestStructuredPricingMap_GeneratePricingMap(t *testing.T) {
 			want: &StructuredPricingMap{
 				Regions: map[string]*FamilyPricing{
 					"af-south-1": {
-						Family: map[string]*ComputePrices{
+						Family: map[string]*Prices{
 							"c5ad.2xlarge": {
-								Cpu: 0.051480000000000005,
-								Ram: 0.00351,
+								Cpu:   0.051480000000000005,
+								Ram:   0.00351,
+								Total: 0.4680000000,
 							},
 						},
 					},
@@ -121,18 +128,20 @@ func TestStructuredPricingMap_GeneratePricingMap(t *testing.T) {
 			want: &StructuredPricingMap{
 				Regions: map[string]*FamilyPricing{
 					"af-south-1": {
-						Family: map[string]*ComputePrices{
+						Family: map[string]*Prices{
 							"c5ad.2xlarge": {
-								Cpu: 0.051480000000000005,
-								Ram: 0.00351,
+								Cpu:   0.051480000000000005,
+								Ram:   0.00351,
+								Total: 0.4680000000,
 							},
 						},
 					},
 					"af-south-1a": {
-						Family: map[string]*ComputePrices{
+						Family: map[string]*Prices{
 							"c5ad.2xlarge": {
-								Cpu: 0.051480000000000005,
-								Ram: 0.00351,
+								Cpu:   0.051480000000000005,
+								Ram:   0.00351,
+								Total: 0.4680000000,
 							},
 						},
 					},
@@ -170,7 +179,7 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 		region       string
 		instanceType string
 		err          error
-		want         *ComputePrices
+		want         *Prices
 	}{
 		"An empty structured pricing map should return a no Region found error": {
 			spm:          NewStructuredPricingMap(),
@@ -182,7 +191,7 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 			spm: &StructuredPricingMap{
 				Regions: map[string]*FamilyPricing{
 					"us-east-1": {
-						Family: map[string]*ComputePrices{},
+						Family: map[string]*Prices{},
 					},
 				},
 			},
@@ -194,7 +203,7 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 			spm: &StructuredPricingMap{
 				Regions: map[string]*FamilyPricing{
 					"us-east-1": {
-						Family: map[string]*ComputePrices{
+						Family: map[string]*Prices{
 							"m5.large": {
 								Cpu: 0.65,
 								Ram: 0.35,
@@ -205,7 +214,7 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 			},
 			region:       "us-east-1",
 			instanceType: "m5.large",
-			want: &ComputePrices{
+			want: &Prices{
 				Cpu: 0.65,
 				Ram: 0.35,
 			},
@@ -229,7 +238,7 @@ func Test_weightedPriceForInstance(t *testing.T) {
 		price      float64
 		attributes Attributes
 		err        error
-		want       *ComputePrices
+		want       *Prices
 	}{
 		"No attributes should return a parse error": {
 			price:      0.65,
@@ -250,7 +259,7 @@ func Test_weightedPriceForInstance(t *testing.T) {
 				Memory:         "1 GiB",
 				InstanceFamily: "General purpose",
 			},
-			want: &ComputePrices{
+			want: &Prices{
 				Cpu: 0.65,
 				Ram: 0.35,
 			},
@@ -262,7 +271,7 @@ func Test_weightedPriceForInstance(t *testing.T) {
 				Memory:         "1 GiB",
 				InstanceFamily: "Compute optimized",
 			},
-			want: &ComputePrices{
+			want: &Prices{
 				Cpu: 0.88,
 				Ram: 0.12,
 			},
@@ -274,7 +283,7 @@ func Test_weightedPriceForInstance(t *testing.T) {
 				Memory:         "1 GiB",
 				InstanceFamily: "Memory optimized",
 			},
-			want: &ComputePrices{
+			want: &Prices{
 				Cpu: 0.48,
 				Ram: 0.52,
 			},
@@ -286,7 +295,7 @@ func Test_weightedPriceForInstance(t *testing.T) {
 				Memory:         "1 GiB",
 				InstanceFamily: "Storage optimized",
 			},
-			want: &ComputePrices{
+			want: &Prices{
 				Cpu: 0.48,
 				Ram: 0.52,
 			},
@@ -297,7 +306,7 @@ func Test_weightedPriceForInstance(t *testing.T) {
 				VCPU:   "1",
 				Memory: "1 GiB",
 			},
-			want: &ComputePrices{
+			want: &Prices{
 				Cpu: 0.65,
 				Ram: 0.35,
 			},
@@ -309,7 +318,7 @@ func Test_weightedPriceForInstance(t *testing.T) {
 				Memory:         "1 GiB",
 				InstanceFamily: "Totally a real instance family",
 			},
-			want: &ComputePrices{
+			want: &Prices{
 				Cpu: 0.65,
 				Ram: 0.35,
 			},
@@ -323,6 +332,113 @@ func Test_weightedPriceForInstance(t *testing.T) {
 				return
 			}
 			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestListSpotPrices(t *testing.T) {
+	tests := map[string]struct {
+		ctx                      context.Context
+		DescribeSpotPriceHistory func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error)
+		err                      error
+		want                     []ec2Types.SpotPrice
+		expectedCalls            int
+	}{
+		"No instance should return nothing": {
+			ctx: context.Background(),
+			DescribeSpotPriceHistory: func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
+				return &ec2.DescribeSpotPriceHistoryOutput{}, nil
+			},
+			err:           nil,
+			want:          nil,
+			expectedCalls: 1,
+		},
+		"Single instance should return a single instance": {
+			ctx: context.Background(),
+			DescribeSpotPriceHistory: func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
+				return &ec2.DescribeSpotPriceHistoryOutput{
+					SpotPriceHistory: []ec2Types.SpotPrice{
+						{
+							AvailabilityZone: aws.String("us-east-1a"),
+							InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
+							SpotPrice:        aws.String("0.4680000000"),
+						},
+					},
+				}, nil
+			},
+			err: nil,
+			want: []ec2Types.SpotPrice{
+				{
+					AvailabilityZone: aws.String("us-east-1a"),
+					InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
+					SpotPrice:        aws.String("0.4680000000"),
+				},
+			},
+			expectedCalls: 1,
+		},
+		"Ensure errors propagate": {
+			ctx: context.Background(),
+			DescribeSpotPriceHistory: func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
+				return nil, assert.AnError
+			},
+			err:           assert.AnError,
+			want:          nil,
+			expectedCalls: 1,
+		},
+		"NextToken should return multiple instances": {
+			ctx: context.Background(),
+			DescribeSpotPriceHistory: func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
+				if input.NextToken == nil {
+					return &ec2.DescribeSpotPriceHistoryOutput{
+						NextToken: aws.String("token"),
+						SpotPriceHistory: []ec2Types.SpotPrice{
+							{
+								AvailabilityZone: aws.String("us-east-1a"),
+								InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
+								SpotPrice:        aws.String("0.4680000000"),
+							},
+						},
+					}, nil
+				}
+				return &ec2.DescribeSpotPriceHistoryOutput{
+					SpotPriceHistory: []ec2Types.SpotPrice{
+						{
+							AvailabilityZone: aws.String("us-east-1a"),
+							InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
+							SpotPrice:        aws.String("0.4680000000"),
+						},
+					},
+				}, nil
+			},
+			err: nil,
+			want: []ec2Types.SpotPrice{
+				{
+					AvailabilityZone: aws.String("us-east-1a"),
+					InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
+					SpotPrice:        aws.String("0.4680000000"),
+				},
+				{
+					AvailabilityZone: aws.String("us-east-1a"),
+					InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
+					SpotPrice:        aws.String("0.4680000000"),
+				},
+			},
+			expectedCalls: 2,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			client := ec22.NewEC2(t)
+			client.EXPECT().
+				DescribeSpotPriceHistory(mock.Anything, mock.Anything, mock.Anything).
+				RunAndReturn(tt.DescribeSpotPriceHistory).
+				Times(tt.expectedCalls)
+
+			got, err := ListSpotPrices(tt.ctx, client)
+			if tt.err != nil {
+				assert.Equal(t, tt.err, err)
+			}
 			assert.Equal(t, tt.want, got)
 		})
 	}
