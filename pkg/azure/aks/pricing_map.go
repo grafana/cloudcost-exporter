@@ -23,8 +23,10 @@ const (
 	Windows
 )
 
+var machineOperatingSystemNames [2]string = [2]string{"Linux", "Windows"}
+
 func (o MachineOperatingSystem) String() string {
-	return [2]string{"Linux", "Windows"}[o-1]
+	return machineOperatingSystemNames[o-1]
 }
 
 type MachinePriority int
@@ -34,8 +36,10 @@ const (
 	Spot
 )
 
+var machinePriorityNames [2]string = [2]string{"OnDemand", "Spot"}
+
 func (v MachinePriority) String() string {
-	return [2]string{"OnDemand", "Spot"}[v-1]
+	return machinePriorityNames[v-1]
 }
 
 type PriceBySku map[string]retailPriceSdk.ResourceSKU
@@ -140,7 +144,7 @@ func (p *PriceStore) PopulatePriceStore(locationList []string) error {
 		for _, v := range page.Items {
 			regionName := v.ArmRegionName
 			if regionName == "" {
-				p.logger.LogAttrs(p.context, slog.LevelInfo, "region name for price not found")
+				p.logger.LogAttrs(p.context, slog.LevelInfo, "region name for price not found", slog.String("sku", v.SkuName))
 				continue
 			}
 
