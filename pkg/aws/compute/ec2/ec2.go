@@ -100,7 +100,7 @@ func (c *Collector) Collect(_ chan<- prometheus.Metric) error {
 			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 		}
 		c.NextScrape = time.Now().Add(c.ScrapeInterval)
-		c.logger.LogAttrs(c.context, slog.LevelInfo, "Generated EC2 Pricing Map",
+		c.logger.LogAttrs(c.context, slog.LevelInfo, "Generated Pricing Map",
 			slog.Duration("duration", time.Since(now)),
 		)
 	}
