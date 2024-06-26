@@ -233,7 +233,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			vmInfo.Region,
 			"TODO - MACHINE FAMILY?",
 			vmInfo.MachineTypeSku,
-			"TODO - ClusterName",
+			vmInfo.OwningCluster,
 			vmInfo.Priority.String(),
 		}
 		ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)

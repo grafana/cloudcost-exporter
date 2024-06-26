@@ -19,6 +19,7 @@ type VirtualMachineInfo struct {
 	Name            string
 	Region          string
 	OwningVMSS      string
+	OwningCluster   string
 	MachineTypeSku  string
 	OperatingSystem MachineOperatingSystem
 	Priority        MachinePriority
@@ -147,7 +148,7 @@ func (m *MachineStore) getVmInfoFromVmss(rgName string, vmssName string, priorit
 	return vmInfo, nil
 }
 
-func (m *MachineStore) getVmInfoFromResourceGroup(rgName string) (map[string]*VirtualMachineInfo, error) {
+func (m *MachineStore) getVmInfoFromResourceGroup(rgName, clusterName string) (map[string]*VirtualMachineInfo, error) {
 	vmInfoMap := make(map[string]*VirtualMachineInfo)
 
 	pager := m.azVMSSClient.NewListPager(rgName, nil)
@@ -168,6 +169,7 @@ func (m *MachineStore) getVmInfoFromResourceGroup(rgName string) (map[string]*Vi
 			}
 
 			for name, info := range vmInfo {
+				info.OwningCluster = clusterName
 				vmInfoMap[name] = info
 			}
 		}
@@ -194,26 +196,19 @@ func (m *MachineStore) setRegionListFromClusterList(rgList []*armcontainerservic
 	m.RegionList = uniqueLocationList
 }
 
-func (m *MachineStore) getResourceGroupsFromClusterList(clusterList []*armcontainerservice.ManagedCluster) []string {
-	regionList := []string{}
-
-	for _, c := range clusterList {
-		regionList = append(regionList, to.String(c.Properties.NodeResourceGroup))
-	}
-
-	return regionList
-}
-
-func (m *MachineStore) getClusterInfo() []*armcontainerservice.ManagedCluster {
+func (m *MachineStore) getClustersInSubscription() ([]*armcontainerservice.ManagedCluster, error) {
 	clusterList := []*armcontainerservice.ManagedCluster{}
 
 	pager := m.azAksClient.NewListPager(nil)
 	for pager.More() {
-		page, _ := pager.NextPage(m.context)
+		page, err := pager.NextPage(m.context)
+		if err != nil {
+			return nil, ErrPageAdvanceFailure
+		}
 		clusterList = append(clusterList, page.Value...)
 	}
 
-	return clusterList
+	return clusterList, nil
 }
 
 func (m *MachineStore) PopulateMachineStore() error {
@@ -223,29 +218,33 @@ func (m *MachineStore) PopulateMachineStore() error {
 	m.machineMapLock.Lock()
 	defer m.machineMapLock.Unlock()
 
-	// Clear the existing Map
-	m.MachineMap = make(map[string]*VirtualMachineInfo)
-
-	clusterList := m.getClusterInfo()
-	resourceGroupList := m.getResourceGroupsFromClusterList(clusterList)
+	clusterList, err := m.getClustersInSubscription()
+	if err != nil {
+		return err
+	}
 
 	go m.setRegionListFromClusterList(clusterList)
 
-	vmInfoStore := make(map[string]*VirtualMachineInfo)
+	// Clear the existing Map
+	m.MachineMap = make(map[string]*VirtualMachineInfo)
 
-	for _, rg := range resourceGroupList {
-		vmInfo, err := m.getVmInfoFromResourceGroup(rg)
+	tmpInfoStore := make(map[string]*VirtualMachineInfo)
+	for _, cluster := range clusterList {
+		clusterName := to.String(cluster.Name)
+		rgName := to.String(cluster.Properties.NodeResourceGroup)
+
+		vmInfo, err := m.getVmInfoFromResourceGroup(rgName, clusterName)
 		if err != nil {
 			return err
 		}
 
 		for name, info := range vmInfo {
-			vmInfoStore[name] = info
+			tmpInfoStore[name] = info
 		}
 
 	}
 
-	m.MachineMap = vmInfoStore
+	m.MachineMap = tmpInfoStore
 
 	m.logger.LogAttrs(m.context, slog.LevelInfo, "machine store populated", slog.Duration("duration", time.Since(startTime)))
 	return nil
