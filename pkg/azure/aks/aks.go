@@ -35,10 +35,11 @@ type Collector struct {
 	context context.Context
 	logger  *slog.Logger
 
-	priceClient                  *retailPriceSdk.RetailPricesClient
 	resourceGroupClient          *armresources.ResourceGroupsClient
 	virtualMachineClient         *armcompute.VirtualMachineScaleSetVMsClient
 	virtualMachineScaleSetClient *armcompute.VirtualMachineScaleSetsClient
+
+	PriceStore *PriceStore
 }
 
 type Config struct {
@@ -73,10 +74,11 @@ func New(ctx context.Context, cfg *Config) (*Collector, error) {
 		context: ctx,
 		logger:  logger,
 
-		priceClient:                  retailPricesClient,
 		resourceGroupClient:          rgClient,
 		virtualMachineClient:         computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
 		virtualMachineScaleSetClient: computeClientFactory.NewVirtualMachineScaleSetsClient(),
+
+		PriceStore: NewPricingStore(cfg.SubscriptionId, retailPricesClient, logger, ctx),
 	}, nil
 }
 
@@ -89,7 +91,6 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 // Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	// TODO - implement
-
 	c.logger.LogAttrs(c.context, slog.LevelInfo, "TODO - implement AKS collector Collect method")
 	return nil
 }
