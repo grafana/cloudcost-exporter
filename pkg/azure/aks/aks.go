@@ -27,8 +27,8 @@ const (
 
 var machineOperatingSystemNames [2]string = [2]string{"Linux", "Windows"}
 
-func (o MachineOperatingSystem) String() string {
-	return machineOperatingSystemNames[o-1]
+func (mo MachineOperatingSystem) String() string {
+	return machineOperatingSystemNames[mo]
 }
 
 type MachinePriority int
@@ -40,8 +40,8 @@ const (
 
 var machinePriorityNames [2]string = [2]string{"OnDemand", "Spot"}
 
-func (v MachinePriority) String() string {
-	return machinePriorityNames[v-1]
+func (mp MachinePriority) String() string {
+	return machinePriorityNames[mp]
 }
 
 // Errors
