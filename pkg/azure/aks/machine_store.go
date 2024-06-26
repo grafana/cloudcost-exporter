@@ -76,28 +76,6 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 	return ms, nil
 }
 
-func (m *MachineStore) determineMachineScaleSetPriority(vmss *armcompute.VirtualMachineScaleSet) MachinePriority {
-	if vmss.Properties.VirtualMachineProfile.Priority != nil && *vmss.Properties.VirtualMachineProfile.Priority == armcompute.VirtualMachinePriorityTypesSpot {
-		return Spot
-	}
-	return OnDemand
-}
-
-func (m *MachineStore) determineMachineScaleSetOperatingSystem(vmss *armcompute.VirtualMachineScaleSet) MachineOperatingSystem {
-	if vmss.Properties.VirtualMachineProfile.OSProfile.LinuxConfiguration != nil {
-		return Linux
-	}
-	return Windows
-}
-
-func (m *MachineStore) determineMachineName(vm *armcompute.VirtualMachineScaleSetVM) (string, error) {
-	if vm.Properties.InstanceView == nil {
-		return "", fmt.Errorf("unable to determine machine name, instanceView property not set: %v", vm)
-	}
-
-	return to.String(vm.Properties.InstanceView.ComputerName), nil
-}
-
 func (m *MachineStore) getVmInfoFromVmss(rgName string, vmssName string, priority MachinePriority, osInfo MachineOperatingSystem) (map[string]*VirtualMachineInfo, error) {
 	vmInfo := make(map[string]*VirtualMachineInfo)
 
@@ -112,7 +90,7 @@ func (m *MachineStore) getVmInfoFromVmss(rgName string, vmssName string, priorit
 		}
 
 		for _, v := range nextResult.Value {
-			vmName, err := m.determineMachineName(v)
+			vmName, err := determineMachineName(v)
 			if err != nil {
 				m.logger.Error(err.Error())
 				continue
@@ -144,8 +122,8 @@ func (m *MachineStore) getVmInfoFromResourceGroup(rgName string) (map[string]*Vi
 
 		for _, v := range nextResult.Value {
 			vmssName := to.String(v.Name)
-			vmssPriority := m.determineMachineScaleSetPriority(v)
-			vmssOperationSystem := m.determineMachineScaleSetOperatingSystem(v)
+			vmssPriority := determineMachineScaleSetPriority(v)
+			vmssOperationSystem := determineMachineScaleSetOperatingSystem(v)
 
 			vmInfo, err := m.getVmInfoFromVmss(rgName, vmssName, vmssPriority, vmssOperationSystem)
 			if err != nil {
@@ -224,4 +202,26 @@ func (m *MachineStore) PopulateMachineStore() error {
 
 	m.logger.LogAttrs(m.context, slog.LevelInfo, "machine store populated", slog.Duration("duration", time.Since(startTime)))
 	return nil
+}
+
+func determineMachineScaleSetPriority(vmss *armcompute.VirtualMachineScaleSet) MachinePriority {
+	if vmss.Properties.VirtualMachineProfile.Priority != nil && *vmss.Properties.VirtualMachineProfile.Priority == armcompute.VirtualMachinePriorityTypesSpot {
+		return Spot
+	}
+	return OnDemand
+}
+
+func determineMachineScaleSetOperatingSystem(vmss *armcompute.VirtualMachineScaleSet) MachineOperatingSystem {
+	if vmss.Properties.VirtualMachineProfile.OSProfile.LinuxConfiguration != nil {
+		return Linux
+	}
+	return Windows
+}
+
+func determineMachineName(vm *armcompute.VirtualMachineScaleSetVM) (string, error) {
+	if vm.Properties.InstanceView == nil {
+		return "", fmt.Errorf("unable to determine machine name, instanceView property not set: %v", vm)
+	}
+
+	return to.String(vm.Properties.InstanceView.ComputerName), nil
 }

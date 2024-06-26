@@ -82,7 +82,6 @@ func TestBuildListOptions(t *testing.T) {
 }
 
 func TestDetermineMachineOperatingSystem(t *testing.T) {
-	p := PriceStore{}
 	testTable := map[string]struct {
 		sku             retailPriceSdk.ResourceSKU
 		expectedMachine MachineOperatingSystem
@@ -103,14 +102,13 @@ func TestDetermineMachineOperatingSystem(t *testing.T) {
 
 	for name, test := range testTable {
 		t.Run(name, func(t *testing.T) {
-			machineOs := p.determineMachineOperatingSystem(test.sku)
+			machineOs := determineMachineOperatingSystem(test.sku)
 			assert.Equal(t, test.expectedMachine, machineOs)
 		})
 	}
 }
 
 func TestDetermineMachinePriority(t *testing.T) {
-	p := PriceStore{}
 	testTable := map[string]struct {
 		sku              retailPriceSdk.ResourceSKU
 		expectedPriority MachinePriority
@@ -131,7 +129,7 @@ func TestDetermineMachinePriority(t *testing.T) {
 
 	for name, test := range testTable {
 		t.Run(name, func(t *testing.T) {
-			machinePriority := p.determineMachinePriority(test.sku)
+			machinePriority := determineMachinePriority(test.sku)
 			assert.Equal(t, test.expectedPriority, machinePriority)
 		})
 	}
