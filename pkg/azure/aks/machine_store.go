@@ -33,10 +33,11 @@ type MachineStore struct {
 	azVMSSClient          *armcompute.VirtualMachineScaleSetsClient
 	azVMSSVmClient        *armcompute.VirtualMachineScaleSetVMsClient
 
-	machineMapLock *sync.RWMutex
+	RegionList     []string
+	regionListLock *sync.RWMutex
 
-	RegionList []string
-	MachineMap map[string]*VirtualMachineInfo
+	MachineMap     map[string]*VirtualMachineInfo
+	machineMapLock *sync.RWMutex
 }
 
 func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subscriptionId string, credentials *azidentity.DefaultAzureCredential) (*MachineStore, error) {
@@ -60,10 +61,11 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 		azVMSSClient:          computeClientFactory.NewVirtualMachineScaleSetsClient(),
 		azVMSSVmClient:        computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
 
-		machineMapLock: &sync.RWMutex{},
+		RegionList:     []string{},
+		regionListLock: &sync.RWMutex{},
 
-		RegionList: []string{},
-		MachineMap: make(map[string]*VirtualMachineInfo),
+		MachineMap:     make(map[string]*VirtualMachineInfo),
+		machineMapLock: &sync.RWMutex{},
 	}
 
 	go func() {
@@ -74,6 +76,31 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 	}()
 
 	return ms, nil
+}
+
+func (m *MachineStore) getVmInfoByVmName(vmName string) *VirtualMachineInfo {
+	m.machineMapLock.RLock()
+	defer m.machineMapLock.RUnlock()
+
+	vmInfo := m.MachineMap[vmName]
+
+	return &VirtualMachineInfo{
+		Name:            vmInfo.Name,
+		Region:          vmInfo.Region,
+		OwningVMSS:      vmInfo.OwningVMSS,
+		MachineTypeSku:  vmInfo.MachineTypeSku,
+		OperatingSystem: vmInfo.OperatingSystem,
+		Priority:        vmInfo.Priority,
+	}
+}
+
+func (m *MachineStore) getRegionList() []string {
+	m.regionListLock.RLock()
+	defer m.regionListLock.RUnlock()
+
+	regionListCopy := make([]string, len(m.RegionList))
+	copy(regionListCopy, m.RegionList)
+	return regionListCopy
 }
 
 func (m *MachineStore) getVmInfoFromVmss(rgName string, vmssName string, priority MachinePriority, osInfo MachineOperatingSystem) (map[string]*VirtualMachineInfo, error) {
@@ -104,6 +131,7 @@ func (m *MachineStore) getVmInfoFromVmss(rgName string, vmssName string, priorit
 				Priority:        priority,
 				OperatingSystem: osInfo,
 			}
+			m.logger.LogAttrs(m.context, slog.LevelDebug, "found machine information", slog.String("machineName", vmName))
 		}
 	}
 
@@ -140,6 +168,9 @@ func (m *MachineStore) getVmInfoFromResourceGroup(rgName string) (map[string]*Vi
 }
 
 func (m *MachineStore) setRegionListFromResourceGroupList(rgList []*armresources.ResourceGroup) {
+	m.regionListLock.Lock()
+	defer m.regionListLock.Unlock()
+
 	locationSet := make(map[string]bool)
 	uniqueLocationList := []string{}
 
@@ -175,6 +206,9 @@ func (m *MachineStore) PopulateMachineStore() error {
 
 	m.machineMapLock.Lock()
 	defer m.machineMapLock.Unlock()
+
+	// Clear the existing Map
+	m.MachineMap = make(map[string]*VirtualMachineInfo)
 
 	resourceGroups, err := m.getResourceGroupsForSubscription()
 	if err != nil {
