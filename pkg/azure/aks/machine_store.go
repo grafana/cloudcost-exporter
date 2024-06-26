@@ -9,7 +9,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+
 	"github.com/Azure/go-autorest/autorest/to"
 )
 
@@ -32,6 +34,7 @@ type MachineStore struct {
 	azResourceGroupClient *armresources.ResourceGroupsClient
 	azVMSSClient          *armcompute.VirtualMachineScaleSetsClient
 	azVMSSVmClient        *armcompute.VirtualMachineScaleSetVMsClient
+	azAksClient           *armcontainerservice.ManagedClustersClient
 
 	RegionList     []string
 	regionListLock *sync.RWMutex
@@ -53,6 +56,11 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 		return nil, ErrClientCreationFailure
 	}
 
+	containerClientFactory, err := armcontainerservice.NewClientFactory(subscriptionId, credentials, nil)
+	if err != nil {
+		return nil, ErrClientCreationFailure
+	}
+
 	ms := &MachineStore{
 		context: parentCtx,
 		logger:  logger,
@@ -60,6 +68,7 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 		azResourceGroupClient: rgClient,
 		azVMSSClient:          computeClientFactory.NewVirtualMachineScaleSetsClient(),
 		azVMSSVmClient:        computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
+		azAksClient:           containerClientFactory.NewManagedClustersClient(),
 
 		RegionList:     []string{},
 		regionListLock: &sync.RWMutex{},
@@ -167,7 +176,7 @@ func (m *MachineStore) getVmInfoFromResourceGroup(rgName string) (map[string]*Vi
 	return vmInfoMap, nil
 }
 
-func (m *MachineStore) setRegionListFromResourceGroupList(rgList []*armresources.ResourceGroup) {
+func (m *MachineStore) setRegionListFromClusterList(rgList []*armcontainerservice.ManagedCluster) {
 	m.regionListLock.Lock()
 	defer m.regionListLock.Unlock()
 
@@ -185,19 +194,26 @@ func (m *MachineStore) setRegionListFromResourceGroupList(rgList []*armresources
 	m.RegionList = uniqueLocationList
 }
 
-func (m *MachineStore) getResourceGroupsForSubscription() ([]*armresources.ResourceGroup, error) {
-	resourceGroups := []*armresources.ResourceGroup{}
+func (m *MachineStore) getResourceGroupsFromClusterList(clusterList []*armcontainerservice.ManagedCluster) []string {
+	regionList := []string{}
 
-	pager := m.azResourceGroupClient.NewListPager(nil)
-	for pager.More() {
-		nextResult, err := pager.NextPage(m.context)
-		if err != nil {
-			return nil, ErrPageAdvanceFailure
-		}
-
-		resourceGroups = append(resourceGroups, nextResult.Value...)
+	for _, c := range clusterList {
+		regionList = append(regionList, to.String(c.Properties.NodeResourceGroup))
 	}
-	return resourceGroups, nil
+
+	return regionList
+}
+
+func (m *MachineStore) getClusterInfo() []*armcontainerservice.ManagedCluster {
+	clusterList := []*armcontainerservice.ManagedCluster{}
+
+	pager := m.azAksClient.NewListPager(nil)
+	for pager.More() {
+		page, _ := pager.NextPage(m.context)
+		clusterList = append(clusterList, page.Value...)
+	}
+
+	return clusterList
 }
 
 func (m *MachineStore) PopulateMachineStore() error {
@@ -210,18 +226,15 @@ func (m *MachineStore) PopulateMachineStore() error {
 	// Clear the existing Map
 	m.MachineMap = make(map[string]*VirtualMachineInfo)
 
-	resourceGroups, err := m.getResourceGroupsForSubscription()
-	if err != nil {
-		return err
-	}
+	clusterList := m.getClusterInfo()
+	resourceGroupList := m.getResourceGroupsFromClusterList(clusterList)
 
-	go m.setRegionListFromResourceGroupList(resourceGroups)
+	go m.setRegionListFromClusterList(clusterList)
 
 	vmInfoStore := make(map[string]*VirtualMachineInfo)
 
-	for _, rg := range resourceGroups {
-		rgName := to.String(rg.Name)
-		vmInfo, err := m.getVmInfoFromResourceGroup(rgName)
+	for _, rg := range resourceGroupList {
+		vmInfo, err := m.getVmInfoFromResourceGroup(rg)
 		if err != nil {
 			return err
 		}
