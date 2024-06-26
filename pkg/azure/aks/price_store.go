@@ -12,36 +12,6 @@ import (
 	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
 
-const (
-	AZ_API_VERSION string = "2023-01-01-preview" // using latest API Version https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
-)
-
-type MachineOperatingSystem int
-
-const (
-	Linux MachineOperatingSystem = iota
-	Windows
-)
-
-var machineOperatingSystemNames [2]string = [2]string{"Linux", "Windows"}
-
-func (o MachineOperatingSystem) String() string {
-	return machineOperatingSystemNames[o-1]
-}
-
-type MachinePriority int
-
-const (
-	OnDemand MachinePriority = iota
-	Spot
-)
-
-var machinePriorityNames [2]string = [2]string{"OnDemand", "Spot"}
-
-func (v MachinePriority) String() string {
-	return machinePriorityNames[v-1]
-}
-
 type PriceBySku map[string]retailPriceSdk.ResourceSKU
 
 type PriceByOperatingSystem map[MachineOperatingSystem]PriceBySku
@@ -56,21 +26,25 @@ type PriceStore struct {
 	retailPriceClient *retailPriceSdk.RetailPricesClient
 
 	RegionMap map[string]PriceByPriority
-	Cache     map[string]*retailPriceSdk.ResourceSKU
 }
 
-func NewPricingStore(subId string, priceClient *retailPriceSdk.RetailPricesClient, parentLogger *slog.Logger, parentContext context.Context) *PriceStore {
-	logger := parentLogger.With("subsystem", "pricingMap")
+func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, subId string) (*PriceStore, error) {
+	logger := parentLogger.With("subsystem", "priceStore")
+
+	retailPricesClient, err := retailPriceSdk.NewRetailPricesClient(nil)
+	if err != nil {
+		logger.LogAttrs(parentContext, slog.LevelError, "failed to create retail prices client", slog.String("err", err.Error()))
+		return nil, ErrClientCreationFailure
+	}
 
 	p := &PriceStore{
 		lock:              &sync.RWMutex{},
 		logger:            logger,
 		context:           parentContext,
 		subscriptionId:    subId,
-		retailPriceClient: priceClient,
+		retailPriceClient: retailPricesClient,
 
 		RegionMap: make(map[string]PriceByPriority),
-		Cache:     make(map[string]*retailPriceSdk.ResourceSKU),
 	}
 
 	go func() {
@@ -80,7 +54,7 @@ func NewPricingStore(subId string, priceClient *retailPriceSdk.RetailPricesClien
 		}
 	}()
 
-	return p
+	return p, err
 }
 
 func (p *PriceStore) buildQueryFilter(locationList []string) string {
@@ -127,7 +101,7 @@ func (p *PriceStore) determineMachinePriority(sku retailPriceSdk.ResourceSKU) Ma
 
 func (p *PriceStore) PopulatePriceStore(locationList []string) error {
 	startTime := time.Now()
-	p.logger.LogAttrs(p.context, slog.LevelInfo, "populating price map")
+	p.logger.Info("populating price store")
 
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -165,7 +139,7 @@ func (p *PriceStore) PopulatePriceStore(locationList []string) error {
 		}
 	}
 
-	p.logger.LogAttrs(p.context, slog.LevelInfo, "price map populated", slog.Duration("duration", time.Since(startTime)))
+	p.logger.LogAttrs(p.context, slog.LevelInfo, "price store populated", slog.Duration("duration", time.Since(startTime)))
 	return nil
 }
 

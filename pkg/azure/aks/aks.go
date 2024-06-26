@@ -4,20 +4,45 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/prometheus/client_golang/prometheus"
+	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
-
-	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
 
 const (
-	subsystem = "azure_aks"
+	subsystem             = "azure_aks"
+	AZ_API_VERSION string = "2023-01-01-preview" // using latest API Version https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
 )
+
+type MachineOperatingSystem int
+
+const (
+	Linux MachineOperatingSystem = iota
+	Windows
+)
+
+var machineOperatingSystemNames [2]string = [2]string{"Linux", "Windows"}
+
+func (o MachineOperatingSystem) String() string {
+	return machineOperatingSystemNames[o-1]
+}
+
+type MachinePriority int
+
+const (
+	OnDemand MachinePriority = iota
+	Spot
+)
+
+var machinePriorityNames [2]string = [2]string{"OnDemand", "Spot"}
+
+func (v MachinePriority) String() string {
+	return machinePriorityNames[v-1]
+}
 
 // Errors
 var (
@@ -35,11 +60,11 @@ type Collector struct {
 	context context.Context
 	logger  *slog.Logger
 
-	resourceGroupClient          *armresources.ResourceGroupsClient
-	virtualMachineClient         *armcompute.VirtualMachineScaleSetVMsClient
-	virtualMachineScaleSetClient *armcompute.VirtualMachineScaleSetsClient
+	PriceStore   *PriceStore
+	MachineStore *MachineStore
 
-	PriceStore *PriceStore
+	cacheLock          *sync.RWMutex
+	MachinePricesCache map[string]*retailPriceSdk.ResourceSKU
 }
 
 type Config struct {
@@ -52,33 +77,25 @@ type Config struct {
 func New(ctx context.Context, cfg *Config) (*Collector, error) {
 	logger := cfg.Logger.With("collector", "aks")
 
-	retailPricesClient, err := retailPriceSdk.NewRetailPricesClient(nil)
+	priceStore, err := NewPricingStore(ctx, logger, cfg.SubscriptionId)
 	if err != nil {
-		logger.LogAttrs(ctx, slog.LevelError, "failed to create retail prices client", slog.String("err", err.Error()))
-		return nil, ErrClientCreationFailure
+		return nil, err
 	}
 
-	rgClient, err := armresources.NewResourceGroupsClient(cfg.SubscriptionId, cfg.Credentials, nil)
+	machineStore, err := NewMachineStore(ctx, logger, priceStore.subscriptionId, cfg.Credentials)
 	if err != nil {
-		logger.LogAttrs(ctx, slog.LevelError, "failed to create resource group client", slog.String("err", err.Error()))
-		return nil, ErrClientCreationFailure
-	}
-
-	computeClientFactory, err := armcompute.NewClientFactory(cfg.SubscriptionId, cfg.Credentials, nil)
-	if err != nil {
-		logger.LogAttrs(ctx, slog.LevelError, "failed to create compute client factory", slog.String("err", err.Error()))
-		return nil, ErrClientCreationFailure
+		return nil, err
 	}
 
 	return &Collector{
 		context: ctx,
 		logger:  logger,
 
-		resourceGroupClient:          rgClient,
-		virtualMachineClient:         computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
-		virtualMachineScaleSetClient: computeClientFactory.NewVirtualMachineScaleSetsClient(),
+		PriceStore:   priceStore,
+		MachineStore: machineStore,
 
-		PriceStore: NewPricingStore(cfg.SubscriptionId, retailPricesClient, logger, ctx),
+		cacheLock:          &sync.RWMutex{},
+		MachinePricesCache: make(map[string]*retailPriceSdk.ResourceSKU),
 	}, nil
 }
 
