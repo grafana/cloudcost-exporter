@@ -80,3 +80,59 @@ func TestBuildListOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestDetermineMachineOperatingSystem(t *testing.T) {
+	p := PriceStore{}
+	testTable := map[string]struct {
+		sku             retailPriceSdk.ResourceSKU
+		expectedMachine MachineOperatingSystem
+	}{
+		"Linux": {
+			sku: retailPriceSdk.ResourceSKU{
+				ProductName: "Standard D4",
+			},
+			expectedMachine: Linux,
+		},
+		"Windows": {
+			sku: retailPriceSdk.ResourceSKU{
+				ProductName: "Standard D4 Windows",
+			},
+			expectedMachine: Windows,
+		},
+	}
+
+	for name, test := range testTable {
+		t.Run(name, func(t *testing.T) {
+			machineOs := p.determineMachineOperatingSystem(test.sku)
+			assert.Equal(t, test.expectedMachine, machineOs)
+		})
+	}
+}
+
+func TestDetermineMachinePriority(t *testing.T) {
+	p := PriceStore{}
+	testTable := map[string]struct {
+		sku              retailPriceSdk.ResourceSKU
+		expectedPriority MachinePriority
+	}{
+		"OnDemand": {
+			sku: retailPriceSdk.ResourceSKU{
+				ProductName: "Standard D4",
+			},
+			expectedPriority: OnDemand,
+		},
+		"Spot": {
+			sku: retailPriceSdk.ResourceSKU{
+				ProductName: "Standard D4 Windows",
+			},
+			expectedPriority: Spot,
+		},
+	}
+
+	for name, test := range testTable {
+		t.Run(name, func(t *testing.T) {
+			machinePriority := p.determineMachineOperatingSystem(test.sku)
+			assert.Equal(t, test.expectedPriority, machinePriority)
+		})
+	}
+}
