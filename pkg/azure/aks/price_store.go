@@ -80,25 +80,6 @@ func (p *PriceStore) buildListOptions(locationList []string) *retailPriceSdk.Ret
 	}
 }
 
-func (p *PriceStore) determineMachineOperatingSystem(sku retailPriceSdk.ResourceSKU) MachineOperatingSystem {
-	switch {
-	case strings.Contains(sku.ProductName, "Windows"):
-		return Windows
-	default:
-		return Linux
-	}
-}
-
-func (p *PriceStore) determineMachinePriority(sku retailPriceSdk.ResourceSKU) MachinePriority {
-	switch {
-	case strings.Contains(sku.SkuName, "Spot"):
-		return Spot
-	default:
-		return OnDemand
-	}
-
-}
-
 func (p *PriceStore) PopulatePriceStore(locationList []string) error {
 	startTime := time.Now()
 	p.logger.Info("populating price store")
@@ -129,8 +110,8 @@ func (p *PriceStore) PopulatePriceStore(locationList []string) error {
 				p.RegionMap[regionName][OnDemand] = make(PriceByOperatingSystem)
 			}
 
-			machineOperatingSystem := p.determineMachineOperatingSystem(v)
-			machinePriority := p.determineMachinePriority(v)
+			machineOperatingSystem := determineMachineOperatingSystem(v)
+			machinePriority := determineMachinePriority(v)
 
 			if _, ok := p.RegionMap[regionName][machinePriority][machineOperatingSystem]; !ok {
 				p.RegionMap[regionName][machinePriority][machineOperatingSystem] = make(PriceBySku)
@@ -141,6 +122,25 @@ func (p *PriceStore) PopulatePriceStore(locationList []string) error {
 
 	p.logger.LogAttrs(p.context, slog.LevelInfo, "price store populated", slog.Duration("duration", time.Since(startTime)))
 	return nil
+}
+
+func determineMachineOperatingSystem(sku retailPriceSdk.ResourceSKU) MachineOperatingSystem {
+	switch {
+	case strings.Contains(sku.ProductName, "Windows"):
+		return Windows
+	default:
+		return Linux
+	}
+}
+
+func determineMachinePriority(sku retailPriceSdk.ResourceSKU) MachinePriority {
+	switch {
+	case strings.Contains(sku.SkuName, "Spot"):
+		return Spot
+	default:
+		return OnDemand
+	}
+
 }
 
 // TODO - implement ability to lookup a certain VM's
