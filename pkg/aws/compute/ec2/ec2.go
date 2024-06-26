@@ -78,7 +78,7 @@ func (c *Collector) Collect(_ chan<- prometheus.Metric) error {
 					return ErrClientNotFound
 				}
 				client := c.ec2RegionClient[*region.RegionName]
-				c.logger.LogAttrs(c.context, slog.LevelDebug, "Getting EC2 spot prices for region", slog.String("region", *region.RegionName))
+				c.logger.LogAttrs(c.context, slog.LevelDebug, "Getting spot prices for region", slog.String("region", *region.RegionName))
 				spotPriceList, err := compute.ListSpotPrices(context.TODO(), client)
 				if err != nil {
 					return fmt.Errorf("%w: %w", compute.ErrListSpotPrices, err)
