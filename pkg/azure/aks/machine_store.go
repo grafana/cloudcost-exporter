@@ -2,6 +2,7 @@ package aks
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -13,11 +14,10 @@ import (
 )
 
 type VirtualMachineInfo struct {
-	Id              string
+	Name            string
 	Region          string
 	OwningVMSS      string
 	MachineTypeSku  string
-	MachineTypeName string
 	OperatingSystem MachineOperatingSystem
 	Priority        MachinePriority
 
@@ -76,6 +76,91 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 	return ms, nil
 }
 
+func (m *MachineStore) determineMachineScaleSetPriority(vmss *armcompute.VirtualMachineScaleSet) MachinePriority {
+	if vmss.Properties.VirtualMachineProfile.Priority != nil && *vmss.Properties.VirtualMachineProfile.Priority == armcompute.VirtualMachinePriorityTypesSpot {
+		return Spot
+	}
+	return OnDemand
+}
+
+func (m *MachineStore) determineMachineScaleSetOperatingSystem(vmss *armcompute.VirtualMachineScaleSet) MachineOperatingSystem {
+	if vmss.Properties.VirtualMachineProfile.OSProfile.LinuxConfiguration != nil {
+		return Linux
+	}
+	return Windows
+}
+
+func (m *MachineStore) determineMachineName(vm *armcompute.VirtualMachineScaleSetVM) (string, error) {
+	if vm.Properties.InstanceView == nil {
+		return "", fmt.Errorf("unable to determine machine name, instanceView property not set: %v", vm)
+	}
+
+	return to.String(vm.Properties.InstanceView.ComputerName), nil
+}
+
+func (m *MachineStore) getVmInfoFromVmss(rgName string, vmssName string, priority MachinePriority, osInfo MachineOperatingSystem) (map[string]*VirtualMachineInfo, error) {
+	vmInfo := make(map[string]*VirtualMachineInfo)
+
+	opts := &armcompute.VirtualMachineScaleSetVMsClientListOptions{
+		Expand: to.StringPtr("instanceView"),
+	}
+	pager := m.azVMSSVmClient.NewListPager(rgName, vmssName, opts)
+	for pager.More() {
+		nextResult, err := pager.NextPage(m.context)
+		if err != nil {
+			return nil, ErrPageAdvanceFailure
+		}
+
+		for _, v := range nextResult.Value {
+			vmName, err := m.determineMachineName(v)
+			if err != nil {
+				m.logger.Error(err.Error())
+				continue
+			}
+
+			vmInfo[vmName] = &VirtualMachineInfo{
+				Name:            vmName,
+				Region:          to.String(v.Location),
+				OwningVMSS:      vmssName,
+				MachineTypeSku:  to.String(v.SKU.Name),
+				Priority:        priority,
+				OperatingSystem: osInfo,
+			}
+		}
+	}
+
+	return vmInfo, nil
+}
+
+func (m *MachineStore) getVmInfoFromResourceGroup(rgName string) (map[string]*VirtualMachineInfo, error) {
+	vmInfoMap := make(map[string]*VirtualMachineInfo)
+
+	pager := m.azVMSSClient.NewListPager(rgName, nil)
+	for pager.More() {
+		nextResult, err := pager.NextPage(m.context)
+		if err != nil {
+			return nil, ErrPageAdvanceFailure
+		}
+
+		for _, v := range nextResult.Value {
+			vmssName := to.String(v.Name)
+			vmssPriority := m.determineMachineScaleSetPriority(v)
+			vmssOperationSystem := m.determineMachineScaleSetOperatingSystem(v)
+
+			vmInfo, err := m.getVmInfoFromVmss(rgName, vmssName, vmssPriority, vmssOperationSystem)
+			if err != nil {
+				return nil, err
+			}
+
+			for name, info := range vmInfo {
+				vmInfoMap[name] = info
+			}
+		}
+	}
+
+	return vmInfoMap, nil
+}
+
 func (m *MachineStore) setRegionListFromResourceGroupList(rgList []*armresources.ResourceGroup) {
 	locationSet := make(map[string]bool)
 	uniqueLocationList := []string{}
@@ -109,6 +194,7 @@ func (m *MachineStore) getResourceGroupsForSubscription() ([]*armresources.Resou
 func (m *MachineStore) PopulateMachineStore() error {
 	startTime := time.Now()
 	m.logger.Info("populating machine store")
+
 	m.machineMapLock.Lock()
 	defer m.machineMapLock.Unlock()
 
@@ -118,6 +204,23 @@ func (m *MachineStore) PopulateMachineStore() error {
 	}
 
 	go m.setRegionListFromResourceGroupList(resourceGroups)
+
+	vmInfoStore := make(map[string]*VirtualMachineInfo)
+
+	for _, rg := range resourceGroups {
+		rgName := to.String(rg.Name)
+		vmInfo, err := m.getVmInfoFromResourceGroup(rgName)
+		if err != nil {
+			return err
+		}
+
+		for name, info := range vmInfo {
+			vmInfoStore[name] = info
+		}
+
+	}
+
+	m.MachineMap = vmInfoStore
 
 	m.logger.LogAttrs(m.context, slog.LevelInfo, "machine store populated", slog.Duration("duration", time.Since(startTime)))
 	return nil
