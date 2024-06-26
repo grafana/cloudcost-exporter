@@ -60,7 +60,7 @@ func (c *Collector) Collect(_ chan<- prometheus.Metric) error {
 	c.logger.LogAttrs(c.context, slog.LevelInfo, "Collecting Metrics")
 	if c.pricingMap == nil || time.Now().After(c.NextScrape) {
 		now := time.Now()
-		c.logger.LogAttrs(c.context, slog.LevelInfo, "Generating EC2 Pricing Map")
+		c.logger.LogAttrs(c.context, slog.LevelInfo, "Generating Pricing Map")
 		var prices []string
 		var spotPrices []ec2Types.SpotPrice
 		eg := new(errgroup.Group)
