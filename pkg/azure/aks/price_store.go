@@ -19,13 +19,13 @@ type PriceByOperatingSystem map[MachineOperatingSystem]PriceBySku
 type PriceByPriority map[MachinePriority]PriceByOperatingSystem
 
 type PriceStore struct {
-	lock              *sync.RWMutex
 	subscriptionId    string
 	logger            *slog.Logger
 	context           context.Context
 	retailPriceClient *retailPriceSdk.RetailPricesClient
 
-	RegionMap map[string]PriceByPriority
+	regionMapLock *sync.RWMutex
+	RegionMap     map[string]PriceByPriority
 }
 
 func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, subId string) (*PriceStore, error) {
@@ -38,13 +38,13 @@ func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, s
 	}
 
 	p := &PriceStore{
-		lock:              &sync.RWMutex{},
 		logger:            logger,
 		context:           parentContext,
 		subscriptionId:    subId,
 		retailPriceClient: retailPricesClient,
 
-		RegionMap: make(map[string]PriceByPriority),
+		regionMapLock: &sync.RWMutex{},
+		RegionMap:     make(map[string]PriceByPriority),
 	}
 
 	go func() {
@@ -55,6 +55,20 @@ func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, s
 	}()
 
 	return p, err
+}
+
+func (p *PriceStore) getPriceInfoFromVmInfo(vmInfo *VirtualMachineInfo) (float64, error) {
+	p.regionMapLock.RLock()
+	defer p.regionMapLock.RUnlock()
+
+	region := vmInfo.Region
+	priority := vmInfo.Priority
+	operatingSystem := vmInfo.OperatingSystem
+	sku := vmInfo.MachineTypeSku
+
+	vmPriceInfo := p.RegionMap[region][priority][operatingSystem][sku]
+
+	return vmPriceInfo.RetailPrice, nil
 }
 
 func (p *PriceStore) buildQueryFilter(locationList []string) string {
@@ -84,11 +98,13 @@ func (p *PriceStore) PopulatePriceStore(locationList []string) error {
 	startTime := time.Now()
 	p.logger.Info("populating price store")
 
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	p.regionMapLock.Lock()
+	defer p.regionMapLock.Unlock()
 
-	pager := p.retailPriceClient.NewListPager(p.buildListOptions(locationList))
+	// clear the existing region map
+	p.RegionMap = make(map[string]PriceByPriority)
 
+	pager := p.retailPriceClient.NewListPager((p.buildListOptions(locationList)))
 	for pager.More() {
 		page, err := pager.NextPage(p.context)
 		if err != nil {
@@ -104,7 +120,7 @@ func (p *PriceStore) PopulatePriceStore(locationList []string) error {
 			}
 
 			if _, ok := p.RegionMap[regionName]; !ok {
-				p.logger.LogAttrs(p.context, slog.LevelInfo, "populating machine prices for region", slog.String("region", regionName))
+				p.logger.LogAttrs(p.context, slog.LevelDebug, "populating machine prices for region", slog.String("region", regionName))
 				p.RegionMap[regionName] = make(PriceByPriority)
 				p.RegionMap[regionName][Spot] = make(PriceByOperatingSystem)
 				p.RegionMap[regionName][OnDemand] = make(PriceByOperatingSystem)
@@ -142,20 +158,3 @@ func determineMachinePriority(sku retailPriceSdk.ResourceSKU) MachinePriority {
 	}
 
 }
-
-// TODO - implement ability to lookup a certain VM's
-// Price by it's ID
-func (p *PriceStore) GetVmPrice() {}
-
-// TODO - use to grab regional prices
-// func (p *PriceStore) getPricesByRegion(region string) (*PriceByPriority, error) {
-// 	p.lock.RLock()
-// 	defer p.lock.RUnlock()
-
-// 	priceByPriority, ok := p.RegionMap[region]
-// 	if !ok {
-// 		return nil, fmt.Errorf("region %s not found", region)
-// 	}
-
-// 	return &priceByPriority, nil
-// }
