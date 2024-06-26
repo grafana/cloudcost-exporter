@@ -68,7 +68,7 @@ func (c *Collector) Collect(_ chan<- prometheus.Metric) error {
 		m := sync.Mutex{}
 		for _, region := range c.Regions {
 			eg.Go(func() error {
-				c.logger.LogAttrs(c.context, slog.LevelDebug, "Getting EC2 on demand prices for region", slog.String("region", *region.RegionName))
+				c.logger.LogAttrs(c.context, slog.LevelDebug, "Getting on demand prices for region", slog.String("region", *region.RegionName))
 				priceList, err := compute.ListOnDemandPrices(context.TODO(), *region.RegionName, c.pricingService)
 				if err != nil {
 					return fmt.Errorf("%w: %w", compute.ErrListOnDemandPrices, err)
