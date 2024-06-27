@@ -149,7 +149,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 				RegionClients:  regionClientMap,
 				Logger:         logger,
 				ScrapeInterval: config.ScrapeInterval,
-			}, pricingService, computeService)
+			}, pricingService)
 			collectors = append(collectors, collector)
 		default:
 			log.Printf("Unknown service %s", service)

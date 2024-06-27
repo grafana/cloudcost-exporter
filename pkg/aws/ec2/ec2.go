@@ -69,12 +69,13 @@ type Config struct {
 }
 
 // New creates an ec2 collector
-func New(config *Config, ps pricingClient.Pricing, ec2s ec2client.EC2) *Collector {
+func New(config *Config, ps pricingClient.Pricing) *Collector {
+	logger := config.Logger.With("logger", "ec2")
 	return &Collector{
 		ScrapeInterval:   config.ScrapeInterval,
 		Regions:          config.Regions,
 		ec2RegionClients: config.RegionClients,
-		logger:           config.Logger,
+		logger:           logger,
 		pricingService:   ps,
 	}
 }
@@ -87,7 +88,10 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 
 // Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+	start := time.Now()
+	c.logger.LogAttrs(context.TODO(), slog.LevelInfo, "calling collect")
 	if c.pricingMap == nil || time.Now().After(c.NextScrape) {
+		c.logger.LogAttrs(context.Background(), slog.LevelInfo, "Refreshing pricing map")
 		var prices []string
 		var spotPrices []ec2Types.SpotPrice
 		eg := new(errgroup.Group)
@@ -95,6 +99,8 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		m := sync.Mutex{}
 		for _, region := range c.Regions {
 			eg.Go(func() error {
+				ctx := context.Background()
+				c.logger.LogAttrs(ctx, slog.LevelDebug, "fetching pricing info", slog.String("region", *region.RegionName))
 				priceList, err := ListOnDemandPrices(context.Background(), *region.RegionName, c.pricingService)
 				if err != nil {
 					return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
@@ -131,14 +137,21 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	instanceCh := make(chan []ec2Types.Reservation, len(c.Regions))
 	for _, region := range c.Regions {
 		go func(region ec2Types.Region) {
+			ctx := context.Background()
+			now := time.Now()
+			c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching instances", slog.String("region", *region.RegionName))
 			defer wg.Done()
 			client := c.ec2RegionClients[*region.RegionName]
 			reservations, err := ListComputeInstances(context.Background(), client)
 			if err != nil {
-				log.Printf("error listing instances: %s", err)
+				c.logger.LogAttrs(ctx, slog.LevelError, "Could not list compute instances", slog.String("message", err.Error()))
 				return
 			}
-			log.Printf("found %d instances in Region %s", len(reservations), *region.RegionName)
+			c.logger.LogAttrs(ctx, slog.LevelInfo, "Successfully listed instances",
+				slog.String("region", *region.RegionName),
+				slog.Int("instances", len(reservations)),
+				slog.Duration("duration", time.Since(now)),
+			)
 			instanceCh <- reservations
 		}(region)
 	}
@@ -147,6 +160,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		close(instanceCh)
 	}()
 	c.emitMetricsFromChannel(instanceCh, ch)
+	c.logger.LogAttrs(context.TODO(), slog.LevelInfo, "Finished collect", slog.Duration("duration", time.Since(start)))
 	return nil
 }
 
