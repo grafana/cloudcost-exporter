@@ -354,6 +354,6 @@ func TestCollector_Collect(t *testing.T) {
 			assert.NotNil(t, metric)
 			metrics = append(metrics, utils.ReadMetrics(metric))
 		}
-		assert.Len(t, metrics, 4)
+		assert.Len(t, metrics, 6)
 	})
 }

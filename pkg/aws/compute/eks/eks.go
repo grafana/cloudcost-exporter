@@ -42,6 +42,12 @@ var (
 		[]string{"instance", "region", "family", "machine_type", "cluster", "price_tier"},
 		nil,
 	)
+	InstanceTotalHourlyCostDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_total_hourly_cost_usd"),
+		"The total cost of the compute instance in USD/h",
+		[]string{"instance", "region", "family", "machine_type", "cluster", "price_tier"},
+		nil,
+	)
 )
 
 // Collector is a prometheus collector that collects metrics from AWS EKS clusters.
@@ -134,10 +140,6 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 		for _, reservation := range reservations {
 			for _, instance := range reservation.Instances {
 				clusterName := compute.ClusterNameFromInstance(instance)
-				if clusterName == "" {
-					log.Printf("no cluster name found for instance %s", *instance.InstanceId)
-					continue
-				}
 				if instance.PrivateDnsName == nil || *instance.PrivateDnsName == "" {
 					log.Printf("no private dns name found for instance %s", *instance.InstanceId)
 					continue
@@ -170,6 +172,7 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 				}
 				ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.Cpu, labelValues...)
 				ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.Ram, labelValues...)
+				ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.Total, labelValues...)
 			}
 		}
 	}
@@ -178,6 +181,7 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- InstanceCPUHourlyCostDesc
 	ch <- InstanceMemoryHourlyCostDesc
+	ch <- InstanceTotalHourlyCostDesc
 	return nil
 }
 
