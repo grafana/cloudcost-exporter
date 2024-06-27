@@ -1,10 +1,11 @@
-package eks
+package ec2
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -13,14 +14,13 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
-	"github.com/grafana/cloudcost-exporter/pkg/aws/compute"
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
 const (
-	subsystem = "aws_eks"
+	subsystem = "aws_ec2"
 )
 
 var (
@@ -32,36 +32,51 @@ var (
 var (
 	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
-		"The cpu cost a compute instance in USD/(core*h)",
-		[]string{"instance", "region", "family", "machine_type", "cluster", "price_tier"},
+		"The cpu cost a ec2 instance in USD/(core*h)",
+		[]string{"instance", "Region", "family", "machine_type", "cluster", "price_tier"},
 		nil,
 	)
 	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
-		"The memory cost of a compute instance in USD/(GiB*h)",
-		[]string{"instance", "region", "family", "machine_type", "cluster", "price_tier"},
+		"The memory cost of a ec2 instance in USD/(GiB*h)",
+		[]string{"instance", "Region", "family", "machine_type", "cluster", "price_tier"},
 		nil,
 	)
 	InstanceTotalHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_total_hourly_cost_usd"),
-		"The total cost of the compute instance in USD/h",
-		[]string{"instance", "region", "family", "machine_type", "cluster", "price_tier"},
+		"The total cost of the ec2 instance in USD/h",
+		[]string{"instance", "Region", "family", "machine_type", "cluster", "price_tier"},
 		nil,
 	)
 )
 
 // Collector is a prometheus collector that collects metrics from AWS EKS clusters.
 type Collector struct {
-	Region          string
-	Regions         []ec2Types.Region
-	Profile         string
-	Profiles        []string
-	ScrapeInterval  time.Duration
-	pricingMap      *compute.StructuredPricingMap
-	pricingService  pricingClient.Pricing
-	ec2Client       ec2client.EC2
-	NextScrape      time.Time
-	ec2RegionClient map[string]ec2client.EC2
+	Regions          []ec2Types.Region
+	ScrapeInterval   time.Duration
+	pricingMap       *StructuredPricingMap
+	pricingService   pricingClient.Pricing
+	NextScrape       time.Time
+	ec2RegionClients map[string]ec2client.EC2
+	logger           *slog.Logger
+}
+
+type Config struct {
+	ScrapeInterval time.Duration
+	Regions        []ec2Types.Region
+	RegionClients  map[string]ec2client.EC2
+	Logger         *slog.Logger
+}
+
+// New creates an ec2 collector
+func New(config *Config, ps pricingClient.Pricing, ec2s ec2client.EC2) *Collector {
+	return &Collector{
+		ScrapeInterval:   config.ScrapeInterval,
+		Regions:          config.Regions,
+		ec2RegionClients: config.RegionClients,
+		logger:           config.Logger,
+		pricingService:   ps,
+	}
 }
 
 // CollectMetrics is a no-op function that satisfies the provider.Collector interface.
@@ -80,18 +95,18 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		m := sync.Mutex{}
 		for _, region := range c.Regions {
 			eg.Go(func() error {
-				priceList, err := compute.ListOnDemandPrices(context.Background(), *region.RegionName, c.pricingService)
+				priceList, err := ListOnDemandPrices(context.Background(), *region.RegionName, c.pricingService)
 				if err != nil {
-					return fmt.Errorf("%w: %w", compute.ErrListOnDemandPrices, err)
+					return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
 				}
 
-				if c.ec2RegionClient[*region.RegionName] == nil {
+				if c.ec2RegionClients[*region.RegionName] == nil {
 					return ErrClientNotFound
 				}
-				client := c.ec2RegionClient[*region.RegionName]
-				spotPriceList, err := compute.ListSpotPrices(context.Background(), client)
+				client := c.ec2RegionClients[*region.RegionName]
+				spotPriceList, err := ListSpotPrices(context.Background(), client)
 				if err != nil {
-					return fmt.Errorf("%w: %w", compute.ErrListSpotPrices, err)
+					return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
 				}
 				m.Lock()
 				spotPrices = append(spotPrices, spotPriceList...)
@@ -104,7 +119,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		if err != nil {
 			return err
 		}
-		c.pricingMap = compute.NewStructuredPricingMap()
+		c.pricingMap = NewStructuredPricingMap()
 		if err := c.pricingMap.GeneratePricingMap(prices, spotPrices); err != nil {
 			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 		}
@@ -117,13 +132,13 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	for _, region := range c.Regions {
 		go func(region ec2Types.Region) {
 			defer wg.Done()
-			client := c.ec2RegionClient[*region.RegionName]
-			reservations, err := compute.ListComputeInstances(context.Background(), client)
+			client := c.ec2RegionClients[*region.RegionName]
+			reservations, err := ListComputeInstances(context.Background(), client)
 			if err != nil {
 				log.Printf("error listing instances: %s", err)
 				return
 			}
-			log.Printf("found %d instances in region %s", len(reservations), *region.RegionName)
+			log.Printf("found %d instances in Region %s", len(reservations), *region.RegionName)
 			instanceCh <- reservations
 		}(region)
 	}
@@ -139,7 +154,7 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 	for reservations := range reservationsCh {
 		for _, reservation := range reservations {
 			for _, instance := range reservation.Instances {
-				clusterName := compute.ClusterNameFromInstance(instance)
+				clusterName := ClusterNameFromInstance(instance)
 				if instance.PrivateDnsName == nil || *instance.PrivateDnsName == "" {
 					log.Printf("no private dns name found for instance %s", *instance.InstanceId)
 					continue
@@ -154,7 +169,7 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 				pricetier := "spot"
 				if instance.InstanceLifecycle != ec2Types.InstanceLifecycleTypeSpot {
 					pricetier = "ondemand"
-					// Ondemand instances are keyed based upon their region, so we need to remove the availability zone
+					// Ondemand instances are keyed based upon their Region, so we need to remove the availability zone
 					region = region[:len(region)-1]
 				}
 				price, err := c.pricingMap.GetPriceForInstanceType(region, string(instance.InstanceType))
@@ -187,18 +202,6 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 
 func (c *Collector) Name() string {
 	return subsystem
-}
-
-func New(region string, profile string, scrapeInterval time.Duration, ps pricingClient.Pricing, ec2s ec2client.EC2, regions []ec2Types.Region, regionClientMap map[string]ec2client.EC2) *Collector {
-	return &Collector{
-		Region:          region,
-		Profile:         profile,
-		ScrapeInterval:  scrapeInterval,
-		pricingService:  ps,
-		ec2Client:       ec2s,
-		Regions:         regions,
-		ec2RegionClient: regionClientMap,
-	}
 }
 
 func (c *Collector) Register(_ provider.Registry) error {
