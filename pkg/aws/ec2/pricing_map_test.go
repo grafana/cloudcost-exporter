@@ -1,4 +1,4 @@
-package compute
+package ec2
 
 import (
 	"context"
@@ -181,7 +181,7 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 		err          error
 		want         *Prices
 	}{
-		"An empty structured pricing map should return a no Region found error": {
+		"An empty structured pricing map should return a no region found error": {
 			spm:          NewStructuredPricingMap(),
 			region:       "us-east-1",
 			instanceType: "m5.large",

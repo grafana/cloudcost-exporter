@@ -1,4 +1,4 @@
-package compute
+package ec2
 
 import (
 	"context"
