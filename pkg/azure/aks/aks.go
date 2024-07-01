@@ -63,13 +63,13 @@ var (
 	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
 		"The cpu cost a compute instance in USD/(core*h)",
-		[]string{"instance", "region", "machine_type", "cluster", "price_tier"},
+		[]string{"instance", "region", "machine_type", "cluster", "price_tier", "operating_system"},
 		nil,
 	)
 	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
 		"The memory cost of a compute instance in USD/(GiB*h)",
-		[]string{"instance", "region", "machine_type", "cluster", "price_tier"},
+		[]string{"instance", "region", "machine_type", "cluster", "price_tier", "operating_system"},
 		nil,
 	)
 )
@@ -191,6 +191,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			vmInfo.MachineTypeSku,
 			vmInfo.OwningCluster,
 			vmInfo.Priority.String(),
+			vmInfo.OperatingSystem.String(),
 		}
 		ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
 		ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
@@ -201,8 +202,8 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
-	// TODO - implement
-	c.logger.LogAttrs(c.context, slog.LevelInfo, "TODO - implement AKS collector Describe method")
+	ch <- InstanceCPUHourlyCostDesc
+	ch <- InstanceMemoryHourlyCostDesc
 	return nil
 }
 
