@@ -4,20 +4,52 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 
-	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
+	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 )
 
 const (
-	subsystem = "azure_aks"
+	subsystem             = "azure_aks"
+	AZ_API_VERSION string = "2023-01-01-preview" // using latest API Version https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
+
+	priceRefreshInterval      = 24 * time.Hour  // TODO - update to 24 hours
+	machineRefreshInterval    = 5 * time.Minute // TODO - update to 5 minutes
+	cacheInvalidationInterval = 24 * time.Hour  // TODO - update to 24 hours
 )
+
+type MachineOperatingSystem int
+
+const (
+	Linux MachineOperatingSystem = iota
+	Windows
+)
+
+var machineOperatingSystemNames [2]string = [2]string{"Linux", "Windows"}
+
+func (mo MachineOperatingSystem) String() string {
+	return machineOperatingSystemNames[mo]
+}
+
+type MachinePriority int
+
+const (
+	OnDemand MachinePriority = iota
+	Spot
+)
+
+var machinePriorityNames [2]string = [2]string{"OnDemand", "Spot"}
+
+func (mp MachinePriority) String() string {
+	return machinePriorityNames[mp]
+}
 
 // Errors
 var (
@@ -27,7 +59,18 @@ var (
 
 // Prometheus Metrics
 var (
-// TODO - define Prometheus Metrics
+	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
+		"The cpu cost a compute instance in USD/(core*h)",
+		[]string{"instance", "region", "family", "machine_type", "cluster", "price_tier"},
+		nil,
+	)
+	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
+		"The memory cost of a compute instance in USD/(GiB*h)",
+		[]string{"instance", "region", "family", "machine_type", "cluster", "price_tier"},
+		nil,
+	)
 )
 
 // Collector is a prometheus collector that collects metrics from AKS clusters.
@@ -35,11 +78,15 @@ type Collector struct {
 	context context.Context
 	logger  *slog.Logger
 
-	resourceGroupClient          *armresources.ResourceGroupsClient
-	virtualMachineClient         *armcompute.VirtualMachineScaleSetVMsClient
-	virtualMachineScaleSetClient *armcompute.VirtualMachineScaleSetsClient
+	PriceStore                   *PriceStore
+	priceStoreNextPopulationTime time.Time
 
-	PriceStore *PriceStore
+	MachineStore                   *MachineStore
+	machineStoreNextPopulationTime time.Time
+
+	cacheLock             *sync.RWMutex
+	cacheInvalidationTime time.Time
+	MachinePricesCache    map[string]float64
 }
 
 type Config struct {
@@ -51,34 +98,31 @@ type Config struct {
 
 func New(ctx context.Context, cfg *Config) (*Collector, error) {
 	logger := cfg.Logger.With("collector", "aks")
+	now := time.Now()
 
-	retailPricesClient, err := retailPriceSdk.NewRetailPricesClient(nil)
+	priceStore, err := NewPricingStore(ctx, logger, cfg.SubscriptionId)
 	if err != nil {
-		logger.LogAttrs(ctx, slog.LevelError, "failed to create retail prices client", slog.String("err", err.Error()))
-		return nil, ErrClientCreationFailure
+		return nil, err
 	}
 
-	rgClient, err := armresources.NewResourceGroupsClient(cfg.SubscriptionId, cfg.Credentials, nil)
+	machineStore, err := NewMachineStore(ctx, logger, priceStore.subscriptionId, cfg.Credentials)
 	if err != nil {
-		logger.LogAttrs(ctx, slog.LevelError, "failed to create resource group client", slog.String("err", err.Error()))
-		return nil, ErrClientCreationFailure
-	}
-
-	computeClientFactory, err := armcompute.NewClientFactory(cfg.SubscriptionId, cfg.Credentials, nil)
-	if err != nil {
-		logger.LogAttrs(ctx, slog.LevelError, "failed to create compute client factory", slog.String("err", err.Error()))
-		return nil, ErrClientCreationFailure
+		return nil, err
 	}
 
 	return &Collector{
 		context: ctx,
 		logger:  logger,
 
-		resourceGroupClient:          rgClient,
-		virtualMachineClient:         computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
-		virtualMachineScaleSetClient: computeClientFactory.NewVirtualMachineScaleSetsClient(),
+		PriceStore:                   priceStore,
+		priceStoreNextPopulationTime: now.Add(priceRefreshInterval),
 
-		PriceStore: NewPricingStore(cfg.SubscriptionId, retailPricesClient, logger, ctx),
+		MachineStore:                   machineStore,
+		machineStoreNextPopulationTime: now.Add(machineRefreshInterval),
+
+		cacheLock:             &sync.RWMutex{},
+		cacheInvalidationTime: now.Add(cacheInvalidationInterval),
+		MachinePricesCache:    make(map[string]float64),
 	}, nil
 }
 
@@ -88,10 +132,115 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 	return 0
 }
 
+func (c *Collector) populateMachinePricesCache() error {
+	c.cacheLock.Lock()
+	defer c.cacheLock.Unlock()
+	c.logger.Info("populating machine prices cache")
+
+	c.MachineStore.machineMapLock.RLock()
+	defer c.MachineStore.machineMapLock.RUnlock()
+
+	for vmName, vmInfo := range c.MachineStore.MachineMap {
+		price, err := c.PriceStore.getPriceInfoFromVmInfo(vmInfo)
+		if err != nil {
+			return err
+		}
+
+		c.MachinePricesCache[vmName] = price
+	}
+
+	return nil
+}
+
+// TODO - BREAK INTO CPU AND RAM
+func (c *Collector) getMachinePrices(vmName string) (float64, error) {
+	// Cache Hit
+	c.cacheLock.RLock()
+	if price, ok := c.MachinePricesCache[vmName]; ok {
+		c.cacheLock.RUnlock()
+		return price, nil
+	}
+	c.cacheLock.RUnlock()
+
+	// Cache Miss
+	c.cacheLock.Lock()
+	defer c.cacheLock.Unlock()
+
+	vmInfo := c.MachineStore.getVmInfoByVmName(vmName)
+	price, err := c.PriceStore.getPriceInfoFromVmInfo(vmInfo)
+	if err != nil {
+		return 0.0, err
+	}
+
+	return price, nil
+}
+
 // Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	// TODO - implement
-	c.logger.LogAttrs(c.context, slog.LevelInfo, "TODO - implement AKS collector Collect method")
+	c.logger.Info("collecting metrics")
+	now := time.Now()
+
+	eg := new(errgroup.Group)
+	if now.After(c.machineStoreNextPopulationTime) {
+		eg.Go(func() error {
+			err := c.MachineStore.PopulateMachineStore()
+			if err != nil {
+				return err
+			}
+
+			c.machineStoreNextPopulationTime = time.Now().Add(machineRefreshInterval)
+			return nil
+		})
+	}
+
+	if now.After(c.priceStoreNextPopulationTime) {
+		eg.Go(func() error {
+			regionList := c.MachineStore.getRegionList()
+			err := c.PriceStore.PopulatePriceStore(regionList)
+			if err != nil {
+				return err
+			}
+
+			c.priceStoreNextPopulationTime = time.Now().Add(priceRefreshInterval)
+			return nil
+		})
+	}
+
+	err := eg.Wait()
+	if err != nil {
+		return err
+	}
+
+	if now.After(c.cacheInvalidationTime) {
+		c.MachinePricesCache = make(map[string]float64)
+		c.cacheInvalidationTime = now.Add(cacheInvalidationInterval)
+		err = c.populateMachinePricesCache()
+		if err != nil {
+			return nil
+		}
+	}
+
+	c.MachineStore.machineMapLock.RLock()
+	defer c.MachineStore.machineMapLock.RUnlock()
+	for vmName, vmInfo := range c.MachineStore.MachineMap {
+		price, err := c.getMachinePrices(vmName)
+		if err != nil {
+			return err
+		}
+
+		labelValues := []string{
+			vmName,
+			vmInfo.Region,
+			"TODO - MACHINE FAMILY?",
+			vmInfo.MachineTypeSku,
+			vmInfo.OwningCluster,
+			vmInfo.Priority.String(),
+		}
+		ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
+		ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
+	}
+
+	c.logger.Info("metrics collected")
 	return nil
 }
 

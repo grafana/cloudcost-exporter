@@ -12,36 +12,6 @@ import (
 	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
 
-const (
-	AZ_API_VERSION string = "2023-01-01-preview" // using latest API Version https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
-)
-
-type MachineOperatingSystem int
-
-const (
-	Linux MachineOperatingSystem = iota
-	Windows
-)
-
-var machineOperatingSystemNames [2]string = [2]string{"Linux", "Windows"}
-
-func (o MachineOperatingSystem) String() string {
-	return machineOperatingSystemNames[o-1]
-}
-
-type MachinePriority int
-
-const (
-	OnDemand MachinePriority = iota
-	Spot
-)
-
-var machinePriorityNames [2]string = [2]string{"OnDemand", "Spot"}
-
-func (v MachinePriority) String() string {
-	return machinePriorityNames[v-1]
-}
-
 type PriceBySku map[string]retailPriceSdk.ResourceSKU
 
 type PriceByOperatingSystem map[MachineOperatingSystem]PriceBySku
@@ -49,28 +19,32 @@ type PriceByOperatingSystem map[MachineOperatingSystem]PriceBySku
 type PriceByPriority map[MachinePriority]PriceByOperatingSystem
 
 type PriceStore struct {
-	lock              *sync.RWMutex
 	subscriptionId    string
 	logger            *slog.Logger
 	context           context.Context
 	retailPriceClient *retailPriceSdk.RetailPricesClient
 
-	RegionMap map[string]PriceByPriority
-	Cache     map[string]*retailPriceSdk.ResourceSKU
+	regionMapLock *sync.RWMutex
+	RegionMap     map[string]PriceByPriority
 }
 
-func NewPricingStore(subId string, priceClient *retailPriceSdk.RetailPricesClient, parentLogger *slog.Logger, parentContext context.Context) *PriceStore {
-	logger := parentLogger.With("subsystem", "pricingMap")
+func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, subId string) (*PriceStore, error) {
+	logger := parentLogger.With("subsystem", "priceStore")
+
+	retailPricesClient, err := retailPriceSdk.NewRetailPricesClient(nil)
+	if err != nil {
+		logger.LogAttrs(parentContext, slog.LevelError, "failed to create retail prices client", slog.String("err", err.Error()))
+		return nil, ErrClientCreationFailure
+	}
 
 	p := &PriceStore{
-		lock:              &sync.RWMutex{},
 		logger:            logger,
 		context:           parentContext,
 		subscriptionId:    subId,
-		retailPriceClient: priceClient,
+		retailPriceClient: retailPricesClient,
 
-		RegionMap: make(map[string]PriceByPriority),
-		Cache:     make(map[string]*retailPriceSdk.ResourceSKU),
+		regionMapLock: &sync.RWMutex{},
+		RegionMap:     make(map[string]PriceByPriority),
 	}
 
 	go func() {
@@ -80,7 +54,21 @@ func NewPricingStore(subId string, priceClient *retailPriceSdk.RetailPricesClien
 		}
 	}()
 
-	return p
+	return p, err
+}
+
+func (p *PriceStore) getPriceInfoFromVmInfo(vmInfo *VirtualMachineInfo) (float64, error) {
+	p.regionMapLock.RLock()
+	defer p.regionMapLock.RUnlock()
+
+	region := vmInfo.Region
+	priority := vmInfo.Priority
+	operatingSystem := vmInfo.OperatingSystem
+	sku := vmInfo.MachineTypeSku
+
+	vmPriceInfo := p.RegionMap[region][priority][operatingSystem][sku]
+
+	return vmPriceInfo.RetailPrice, nil
 }
 
 func (p *PriceStore) buildQueryFilter(locationList []string) string {
@@ -106,34 +94,17 @@ func (p *PriceStore) buildListOptions(locationList []string) *retailPriceSdk.Ret
 	}
 }
 
-func (p *PriceStore) determineMachineOperatingSystem(sku retailPriceSdk.ResourceSKU) MachineOperatingSystem {
-	switch {
-	case strings.Contains(sku.ProductName, "Windows"):
-		return Windows
-	default:
-		return Linux
-	}
-}
-
-func (p *PriceStore) determineMachinePriority(sku retailPriceSdk.ResourceSKU) MachinePriority {
-	switch {
-	case strings.Contains(sku.SkuName, "Spot"):
-		return Spot
-	default:
-		return OnDemand
-	}
-
-}
-
 func (p *PriceStore) PopulatePriceStore(locationList []string) error {
 	startTime := time.Now()
-	p.logger.LogAttrs(p.context, slog.LevelInfo, "populating price map")
+	p.logger.Info("populating price store")
 
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	p.regionMapLock.Lock()
+	defer p.regionMapLock.Unlock()
 
-	pager := p.retailPriceClient.NewListPager(p.buildListOptions(locationList))
+	// clear the existing region map
+	p.RegionMap = make(map[string]PriceByPriority)
 
+	pager := p.retailPriceClient.NewListPager((p.buildListOptions(locationList)))
 	for pager.More() {
 		page, err := pager.NextPage(p.context)
 		if err != nil {
@@ -149,14 +120,14 @@ func (p *PriceStore) PopulatePriceStore(locationList []string) error {
 			}
 
 			if _, ok := p.RegionMap[regionName]; !ok {
-				p.logger.LogAttrs(p.context, slog.LevelInfo, "populating machine prices for region", slog.String("region", regionName))
+				p.logger.LogAttrs(p.context, slog.LevelDebug, "populating machine prices for region", slog.String("region", regionName))
 				p.RegionMap[regionName] = make(PriceByPriority)
 				p.RegionMap[regionName][Spot] = make(PriceByOperatingSystem)
 				p.RegionMap[regionName][OnDemand] = make(PriceByOperatingSystem)
 			}
 
-			machineOperatingSystem := p.determineMachineOperatingSystem(v)
-			machinePriority := p.determineMachinePriority(v)
+			machineOperatingSystem := determineMachineOperatingSystem(v)
+			machinePriority := determineMachinePriority(v)
 
 			if _, ok := p.RegionMap[regionName][machinePriority][machineOperatingSystem]; !ok {
 				p.RegionMap[regionName][machinePriority][machineOperatingSystem] = make(PriceBySku)
@@ -165,23 +136,25 @@ func (p *PriceStore) PopulatePriceStore(locationList []string) error {
 		}
 	}
 
-	p.logger.LogAttrs(p.context, slog.LevelInfo, "price map populated", slog.Duration("duration", time.Since(startTime)))
+	p.logger.LogAttrs(p.context, slog.LevelInfo, "price store populated", slog.Duration("duration", time.Since(startTime)))
 	return nil
 }
 
-// TODO - implement ability to lookup a certain VM's
-// Price by it's ID
-func (p *PriceStore) GetVmPrice() {}
+func determineMachineOperatingSystem(sku retailPriceSdk.ResourceSKU) MachineOperatingSystem {
+	switch {
+	case strings.Contains(sku.ProductName, "Windows"):
+		return Windows
+	default:
+		return Linux
+	}
+}
 
-// TODO - use to grab regional prices
-// func (p *PriceStore) getPricesByRegion(region string) (*PriceByPriority, error) {
-// 	p.lock.RLock()
-// 	defer p.lock.RUnlock()
+func determineMachinePriority(sku retailPriceSdk.ResourceSKU) MachinePriority {
+	switch {
+	case strings.Contains(sku.SkuName, "Spot"):
+		return Spot
+	default:
+		return OnDemand
+	}
 
-// 	priceByPriority, ok := p.RegionMap[region]
-// 	if !ok {
-// 		return nil, fmt.Errorf("region %s not found", region)
-// 	}
-
-// 	return &priceByPriority, nil
-// }
+}
