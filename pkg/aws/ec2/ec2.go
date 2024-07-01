@@ -33,19 +33,19 @@ var (
 	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
 		"The cpu cost a ec2 instance in USD/(core*h)",
-		[]string{"instance", "Region", "family", "machine_type", "cluster", "price_tier"},
+		[]string{"instance", "Region", "family", "machine_type", "cluster_name", "price_tier"},
 		nil,
 	)
 	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
 		"The memory cost of a ec2 instance in USD/(GiB*h)",
-		[]string{"instance", "Region", "family", "machine_type", "cluster", "price_tier"},
+		[]string{"instance", "Region", "family", "machine_type", "cluster_name", "price_tier"},
 		nil,
 	)
 	InstanceTotalHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_total_hourly_cost_usd"),
+		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_total_usd_per_hour"),
 		"The total cost of the ec2 instance in USD/h",
-		[]string{"instance", "Region", "family", "machine_type", "cluster", "price_tier"},
+		[]string{"instance", "Region", "family", "machine_type", "cluster_name", "price_tier"},
 		nil,
 	)
 )

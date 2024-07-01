@@ -53,14 +53,14 @@ When fetching the list prices, `cloudcost-exporter` will use the ratio from GCP 
 Here's some example PromQL queries that can be used to calculate the costs of ec2 instances:
 
 ```PromQL
-// Calculate the total houlry cost of all ec2 instances
-sum(cloudcost_aws_ec2_instance_hourly_cost)
+// Calculate the total hourly cost of all ec2 instances
+sum(cloudcost_aws_ec2_instance_total_usd_per_houry)
 // Calculate the total hourly cost by region
-sum by (region) (cloudcost_aws_ec2_instance_hourly_cost)
+sum by (region) (cloudcost_aws_ec2_instance_total_usd_per_houry)
 // Calculate the total hourly cost by machine type
-sum by (machine_type) (cloudcost_aws_ec2_instance_hourly_cost)
+sum by (machine_type) (cloudcost_aws_ec2_instance_total_usd_per_houry)
 // Calculate the total hourly cost by reservation type
-sum by (reservation) (cloudcost_aws_ec2_instance_hourly_cost)
+sum by (reservation) (cloudcost_aws_ec2_instance_total_usd_per_houry)
 ```
 
 You can do more interesting queries if you run [yace]() and export the following metrics:
@@ -72,7 +72,7 @@ All of these examples assume that you have created the tag name referenced in th
 // Calculate the total hourly cost by team
 // Assumes a tag called `Team` has been created on the ec2 instances
 sum by (team) (
-    cloudcost_aws_ec2_instance_hourly_cost
+    cloudcost_aws_ec2_instance_total_usd_per_houry
     * on (instance_id) group_right()
     label_join(aws_ec2_info, "team", "tag_Team")
 )
@@ -81,7 +81,7 @@ sum by (team) (
 // Assumes a tag called `Team` has been created on the ec2 instances
 // Assumes a tag called `Environment` has been created on the ec2 instances
 sum by (team, environment) (
-    cloudcost_aws_ec2_instance_hourly_cost
+    cloudcost_aws_ec2_instance_total_usd_per_houry
     * on (instance_id) group_right()
     label_join(
         label_join(aws_ec2_info, "environment", "tag_Environment")
