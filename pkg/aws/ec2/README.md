@@ -1,18 +1,23 @@
 # ec2 cost module
 
 This module is responsible for collecting pricing information for EC2 instances.
-See [metrics](/docs/metrics.md) for more information on the metrics that are collected.
+See [metrics](/docs/metrics/aws/ec2.md) for more information on the metrics that are collected.
 
 ## Overview
 
-ec2 has a fairly large overlap with [eks]() for the pricing map and collecting of instances.
-The primary reason to have two dedicated implementations is that they emit two distinct sets of metrics.
-There are two differences in the ec2 implementation:
-- filters out instances associated with eks clusters
-- emits the __total__ price of a machine
+EC2 instances are a foundational component in the AWS ecosystem. 
+They can be used as bare bone virtual machines, or used as the underlying infrastructure for services like 
+1. [EC2 instances](https://aws.amazon.com/ec2/pricing/on-demand/)
+1. [ECS Clusters](https://aws.amazon.com/ecs/pricing/) that use ec2 instances*
+1. [EKS Clusters](https://aws.amazon.com/eks/pricing/)
 
-The primary use case for this metric is to associate an ec2 instance to a team, by environment.
-A major assumption made for the module is that each machine has one distinct owner. 
+This module aims to emit metrics generically for ec2 instances that can be used for the services above.
+A conscious decision was made the keep ec2 + eks implementations coupled.
+See [#215](https://github.com/grafana/cloudcost-exporter/pull/215) for more details on _why_, as this decision _can_ be reversed in the future.
+
+*Fargate is a serverless product which builds upon ec2 instances, but with a specific caveat: [Pricing is based upon the requests by workloads](https://aws.amazon.com/fargate/pricing/)
+> ![WARNING]
+> Even though Fargate uses ec2 instances under the hood, it would require a separate module since the pricing comes from a different end point
 
 ## Pricing Map
 
@@ -28,14 +33,11 @@ Here's how the data structure looks like:
               --> price
 ```
 
-Regions are populated by making an [api call]() to find the regions enabled for the account.
-The [price]() instance has an attribute for the __total__ hourly cost of a machine.
-
-The following attributes must be available to make the lookup:
-- region
-- machine type
-- reservation type
-- operating system
+Regions are populated by making a [describe region](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html) api call to find the regions enabled for the account.
+The [price](https://github.com/grafana/cloudcost-exporter/blob/eb6b3ed9e0d4ab4eb27bda71ada091730c95f709/pkg/aws/ec2/pricing_map.go#L62) keeps track of the hourly cost per:
+1. price per cpu
+2. price per GiB of ram
+3. total price
 
 The pricing information for the compute instances is collected from the AWS Pricing API.
 Detailed documentation around the pricing API can be found [here](https://aws.amazon.com/ec2/pricing/on-demand/).
@@ -46,7 +48,14 @@ When fetching the list prices, `cloudcost-exporter` will use the ratio from GCP 
  
 ## Collecting Machines
 
-
+The following attributes must be available from the ec2 instance to make the lookup:
+- region
+- machine type
+- reservation type
+ 
+Every time the collector is scraped, a list of machines is collected _by region_ in a seperate goroutine.
+This allows the collector to scrape each region in parallel, making the largest region be the bottleneck. 
+For simplicity, there is no cache, though this is a nice feature to add in the future. 
 
 ## Cost Calculations
 
@@ -63,7 +72,7 @@ sum by (machine_type) (cloudcost_aws_ec2_instance_total_usd_per_houry)
 sum by (reservation) (cloudcost_aws_ec2_instance_total_usd_per_houry)
 ```
 
-You can do more interesting queries if you run [yace]() and export the following metrics:
+You can do more interesting queries if you run [yet-another-cloudwatch-exporter](https://github.com/nerdswords/yet-another-cloudwatch-exporter) and export the following metrics:
 - `aws_ec2_info`
 
 All of these examples assume that you have created the tag name referenced in the examples.
