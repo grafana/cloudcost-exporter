@@ -52,7 +52,7 @@ func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, s
 	}
 
 	go func() {
-		err := p.PopulatePriceStore()
+		err := p.PopulatePriceStore(p.context)
 		if err != nil {
 			p.logger.LogAttrs(p.context, slog.LevelError, "error populating initial price store", slog.String("error", err.Error()))
 		}
@@ -107,7 +107,7 @@ func (p *PriceStore) getPriceInfoFromVmInfo(vmInfo *VirtualMachineInfo) (float64
 	return skuInfo.RetailPrice, nil
 }
 
-func (p *PriceStore) PopulatePriceStore() error {
+func (p *PriceStore) PopulatePriceStore(ctx context.Context) error {
 	startTime := time.Now()
 	p.logger.Info("populating price store")
 
@@ -124,21 +124,21 @@ func (p *PriceStore) PopulatePriceStore() error {
 
 	pager := p.retailPriceClient.NewListPager(opts)
 	for pager.More() {
-		page, err := pager.NextPage(p.context)
+		page, err := pager.NextPage(ctx)
 		if err != nil {
-			p.logger.LogAttrs(p.context, slog.LevelError, "error paging through retail prices")
+			p.logger.LogAttrs(ctx, slog.LevelError, "error paging through retail prices")
 			return ErrPageAdvanceFailure
 		}
 
 		for _, v := range page.Items {
 			regionName := v.ArmRegionName
 			if regionName == "" {
-				p.logger.LogAttrs(p.context, slog.LevelInfo, "region name for price not found", slog.String("sku", v.SkuName))
+				p.logger.LogAttrs(ctx, slog.LevelInfo, "region name for price not found", slog.String("sku", v.SkuName))
 				continue
 			}
 
 			if _, ok := p.RegionMap[regionName]; !ok {
-				p.logger.LogAttrs(p.context, slog.LevelDebug, "populating machine prices for region", slog.String("region", regionName))
+				p.logger.LogAttrs(ctx, slog.LevelDebug, "populating machine prices for region", slog.String("region", regionName))
 				p.RegionMap[regionName] = make(PriceByPriority)
 				p.RegionMap[regionName][Spot] = make(PriceByOperatingSystem)
 				p.RegionMap[regionName][OnDemand] = make(PriceByOperatingSystem)
@@ -154,7 +154,7 @@ func (p *PriceStore) PopulatePriceStore() error {
 		}
 	}
 
-	p.logger.LogAttrs(p.context, slog.LevelInfo, "price store populated", slog.Duration("duration", time.Since(startTime)))
+	p.logger.LogAttrs(ctx, slog.LevelInfo, "price store populated", slog.Duration("duration", time.Since(startTime)))
 	return nil
 }
 
