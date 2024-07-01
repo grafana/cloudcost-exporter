@@ -78,7 +78,7 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 	}
 
 	go func() {
-		err := ms.PopulateMachineStore()
+		err := ms.PopulateMachineStore(ms.context)
 		if err != nil {
 			ms.logger.LogAttrs(ms.context, slog.LevelError, "error populating initial machine store", slog.String("error", err.Error()))
 		}
@@ -99,7 +99,7 @@ func (m *MachineStore) getVmInfoByVmName(vmName string) (*VirtualMachineInfo, er
 	return vmInfo, nil
 }
 
-func (m *MachineStore) getVmInfoFromVmss(rgName string, vmssName string, priority MachinePriority, osInfo MachineOperatingSystem) (map[string]*VirtualMachineInfo, error) {
+func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName string, vmssName string, priority MachinePriority, osInfo MachineOperatingSystem) (map[string]*VirtualMachineInfo, error) {
 	vmInfo := make(map[string]*VirtualMachineInfo)
 
 	opts := &armcompute.VirtualMachineScaleSetVMsClientListOptions{
@@ -107,9 +107,9 @@ func (m *MachineStore) getVmInfoFromVmss(rgName string, vmssName string, priorit
 	}
 	pager := m.azVMSSVmClient.NewListPager(rgName, vmssName, opts)
 	for pager.More() {
-		nextResult, err := pager.NextPage(m.context)
+		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
-			m.logger.LogAttrs(m.context, slog.LevelError, "unable to advance page in VMSS VM Client", slog.String("err", err.Error()))
+			m.logger.LogAttrs(ctx, slog.LevelError, "unable to advance page in VMSS VM Client", slog.String("err", err.Error()))
 			return nil, ErrPageAdvanceFailure
 		}
 
@@ -128,21 +128,21 @@ func (m *MachineStore) getVmInfoFromVmss(rgName string, vmssName string, priorit
 				Priority:        priority,
 				OperatingSystem: osInfo,
 			}
-			m.logger.LogAttrs(m.context, slog.LevelDebug, "found machine information", slog.String("machineName", vmName))
+			m.logger.LogAttrs(ctx, slog.LevelDebug, "found machine information", slog.String("machineName", vmName))
 		}
 	}
 
 	return vmInfo, nil
 }
 
-func (m *MachineStore) getVmInfoFromResourceGroup(rgName, clusterName string) (map[string]*VirtualMachineInfo, error) {
+func (m *MachineStore) getVmInfoFromResourceGroup(ctx context.Context, rgName, clusterName string) (map[string]*VirtualMachineInfo, error) {
 	vmInfoMap := make(map[string]*VirtualMachineInfo)
 
 	pager := m.azVMSSClient.NewListPager(rgName, nil)
 	for pager.More() {
-		nextResult, err := pager.NextPage(m.context)
+		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
-			m.logger.LogAttrs(m.context, slog.LevelError, "unable to advance page in VMSS Client", slog.String("err", err.Error()))
+			m.logger.LogAttrs(ctx, slog.LevelError, "unable to advance page in VMSS Client", slog.String("err", err.Error()))
 			return nil, ErrPageAdvanceFailure
 		}
 
@@ -151,7 +151,7 @@ func (m *MachineStore) getVmInfoFromResourceGroup(rgName, clusterName string) (m
 			vmssPriority := getMachineScaleSetPriority(v)
 			vmssOperationSystem := getMachineScaleSetOperatingSystem(v)
 
-			vmInfo, err := m.getVmInfoFromVmss(rgName, vmssName, vmssPriority, vmssOperationSystem)
+			vmInfo, err := m.getVmInfoFromVmss(ctx, rgName, vmssName, vmssPriority, vmssOperationSystem)
 			if err != nil {
 				return nil, err
 			}
@@ -166,14 +166,14 @@ func (m *MachineStore) getVmInfoFromResourceGroup(rgName, clusterName string) (m
 	return vmInfoMap, nil
 }
 
-func (m *MachineStore) getClustersInSubscription() ([]*armcontainerservice.ManagedCluster, error) {
+func (m *MachineStore) getClustersInSubscription(ctx context.Context) ([]*armcontainerservice.ManagedCluster, error) {
 	clusterList := []*armcontainerservice.ManagedCluster{}
 
 	pager := m.azAksClient.NewListPager(nil)
 	for pager.More() {
-		page, err := pager.NextPage(m.context)
+		page, err := pager.NextPage(ctx)
 		if err != nil {
-			m.logger.LogAttrs(m.context, slog.LevelError, "unable to advance page in AKS Client", slog.String("err", err.Error()))
+			m.logger.LogAttrs(ctx, slog.LevelError, "unable to advance page in AKS Client", slog.String("err", err.Error()))
 			return nil, ErrPageAdvanceFailure
 		}
 		clusterList = append(clusterList, page.Value...)
@@ -182,14 +182,14 @@ func (m *MachineStore) getClustersInSubscription() ([]*armcontainerservice.Manag
 	return clusterList, nil
 }
 
-func (m *MachineStore) PopulateMachineStore() error {
+func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
 	startTime := time.Now()
 	m.logger.Info("populating machine store")
 
 	m.machineMapLock.Lock()
 	defer m.machineMapLock.Unlock()
 
-	clusterList, err := m.getClustersInSubscription()
+	clusterList, err := m.getClustersInSubscription(ctx)
 	if err != nil {
 		return err
 	}
@@ -210,7 +210,7 @@ func (m *MachineStore) PopulateMachineStore() error {
 			continue
 		}
 
-		vmInfo, err := m.getVmInfoFromResourceGroup(rgName, clusterName)
+		vmInfo, err := m.getVmInfoFromResourceGroup(ctx, rgName, clusterName)
 		if err != nil {
 			return err
 		}

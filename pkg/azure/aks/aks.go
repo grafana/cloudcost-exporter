@@ -145,10 +145,10 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	c.logger.Info("collecting metrics")
 	now := time.Now()
 
-	eg := new(errgroup.Group)
+	eg, egCtx := errgroup.WithContext(c.context)
 	if now.After(c.machineStoreNextPopulationTime) {
 		eg.Go(func() error {
-			err := c.MachineStore.PopulateMachineStore()
+			err := c.MachineStore.PopulateMachineStore(egCtx)
 			if err != nil {
 				return ErrMachineStorePopulationFailure
 			}
@@ -161,7 +161,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 
 	if now.After(c.priceStoreNextPopulationTime) {
 		eg.Go(func() error {
-			err := c.PriceStore.PopulatePriceStore()
+			err := c.PriceStore.PopulatePriceStore(egCtx)
 			if err != nil {
 				return ErrPriceStorePopulationFailure
 			}
