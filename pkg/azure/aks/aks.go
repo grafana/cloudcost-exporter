@@ -72,6 +72,12 @@ var (
 		[]string{"instance", "region", "machine_type", "cluster", "price_tier", "operating_system"},
 		nil,
 	)
+	InstanceTotalHourlyCostDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_total_usd_per_hour"),
+		"The total cost of an compute instance in USD/h)",
+		[]string{"instance", "region", "machine_type", "cluster", "price_tier", "operating_system"},
+		nil,
+	)
 )
 
 // Collector is a prometheus collector that collects metrics from AKS clusters.
@@ -193,8 +199,11 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			vmInfo.Priority.String(),
 			vmInfo.OperatingSystem.String(),
 		}
-		ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
-		ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
+
+		// TODO - implement memory and CPU pricing
+		// ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
+		// ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
+		ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
 	}
 
 	c.logger.LogAttrs(c.context, slog.LevelInfo, "metrics collected", slog.Duration("duration", time.Since(now)))
@@ -204,6 +213,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- InstanceCPUHourlyCostDesc
 	ch <- InstanceMemoryHourlyCostDesc
+	ch <- InstanceTotalHourlyCostDesc
 	return nil
 }
 
