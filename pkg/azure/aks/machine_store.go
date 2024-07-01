@@ -2,6 +2,7 @@ package aks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -15,6 +16,10 @@ import (
 	"github.com/Azure/go-autorest/autorest/to"
 )
 
+var (
+	ErrMachineNotFound = errors.New("machine not found in map")
+)
+
 type VirtualMachineInfo struct {
 	Name            string
 	Region          string
@@ -23,9 +28,6 @@ type VirtualMachineInfo struct {
 	MachineTypeSku  string
 	OperatingSystem MachineOperatingSystem
 	Priority        MachinePriority
-
-	// TODO - decide if this should be stored here or not
-	// RetailPrice     float64
 }
 
 type MachineStore struct {
@@ -37,9 +39,6 @@ type MachineStore struct {
 	azVMSSVmClient        *armcompute.VirtualMachineScaleSetVMsClient
 	azAksClient           *armcontainerservice.ManagedClustersClient
 
-	RegionList     []string
-	regionListLock *sync.RWMutex
-
 	MachineMap     map[string]*VirtualMachineInfo
 	machineMapLock *sync.RWMutex
 }
@@ -49,16 +48,19 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 
 	rgClient, err := armresources.NewResourceGroupsClient(subscriptionId, credentials, nil)
 	if err != nil {
+		logger.LogAttrs(parentCtx, slog.LevelError, "unable to create resource group client", slog.String("err", err.Error()))
 		return nil, ErrClientCreationFailure
 	}
 
 	computeClientFactory, err := armcompute.NewClientFactory(subscriptionId, credentials, nil)
 	if err != nil {
+		logger.LogAttrs(parentCtx, slog.LevelError, "unable to create compute client factory", slog.String("err", err.Error()))
 		return nil, ErrClientCreationFailure
 	}
 
 	containerClientFactory, err := armcontainerservice.NewClientFactory(subscriptionId, credentials, nil)
 	if err != nil {
+		logger.LogAttrs(parentCtx, slog.LevelError, "unable to create container client factory", slog.String("err", err.Error()))
 		return nil, ErrClientCreationFailure
 	}
 
@@ -70,9 +72,6 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 		azVMSSClient:          computeClientFactory.NewVirtualMachineScaleSetsClient(),
 		azVMSSVmClient:        computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
 		azAksClient:           containerClientFactory.NewManagedClustersClient(),
-
-		RegionList:     []string{},
-		regionListLock: &sync.RWMutex{},
 
 		MachineMap:     make(map[string]*VirtualMachineInfo),
 		machineMapLock: &sync.RWMutex{},
@@ -88,29 +87,16 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 	return ms, nil
 }
 
-func (m *MachineStore) getVmInfoByVmName(vmName string) *VirtualMachineInfo {
+func (m *MachineStore) getVmInfoByVmName(vmName string) (*VirtualMachineInfo, error) {
 	m.machineMapLock.RLock()
 	defer m.machineMapLock.RUnlock()
 
 	vmInfo := m.MachineMap[vmName]
-
-	return &VirtualMachineInfo{
-		Name:            vmInfo.Name,
-		Region:          vmInfo.Region,
-		OwningVMSS:      vmInfo.OwningVMSS,
-		MachineTypeSku:  vmInfo.MachineTypeSku,
-		OperatingSystem: vmInfo.OperatingSystem,
-		Priority:        vmInfo.Priority,
+	if vmInfo == nil {
+		return nil, ErrMachineNotFound
 	}
-}
 
-func (m *MachineStore) getRegionList() []string {
-	m.regionListLock.RLock()
-	defer m.regionListLock.RUnlock()
-
-	regionListCopy := make([]string, len(m.RegionList))
-	copy(regionListCopy, m.RegionList)
-	return regionListCopy
+	return vmInfo, nil
 }
 
 func (m *MachineStore) getVmInfoFromVmss(rgName string, vmssName string, priority MachinePriority, osInfo MachineOperatingSystem) (map[string]*VirtualMachineInfo, error) {
@@ -123,11 +109,12 @@ func (m *MachineStore) getVmInfoFromVmss(rgName string, vmssName string, priorit
 	for pager.More() {
 		nextResult, err := pager.NextPage(m.context)
 		if err != nil {
+			m.logger.LogAttrs(m.context, slog.LevelError, "unable to advance page in VMSS VM Client", slog.String("err", err.Error()))
 			return nil, ErrPageAdvanceFailure
 		}
 
 		for _, v := range nextResult.Value {
-			vmName, err := determineMachineName(v)
+			vmName, err := getMachineName(v)
 			if err != nil {
 				m.logger.Error(err.Error())
 				continue
@@ -155,13 +142,14 @@ func (m *MachineStore) getVmInfoFromResourceGroup(rgName, clusterName string) (m
 	for pager.More() {
 		nextResult, err := pager.NextPage(m.context)
 		if err != nil {
+			m.logger.LogAttrs(m.context, slog.LevelError, "unable to advance page in VMSS Client", slog.String("err", err.Error()))
 			return nil, ErrPageAdvanceFailure
 		}
 
 		for _, v := range nextResult.Value {
 			vmssName := to.String(v.Name)
-			vmssPriority := determineMachineScaleSetPriority(v)
-			vmssOperationSystem := determineMachineScaleSetOperatingSystem(v)
+			vmssPriority := getMachineScaleSetPriority(v)
+			vmssOperationSystem := getMachineScaleSetOperatingSystem(v)
 
 			vmInfo, err := m.getVmInfoFromVmss(rgName, vmssName, vmssPriority, vmssOperationSystem)
 			if err != nil {
@@ -178,24 +166,6 @@ func (m *MachineStore) getVmInfoFromResourceGroup(rgName, clusterName string) (m
 	return vmInfoMap, nil
 }
 
-func (m *MachineStore) setRegionListFromClusterList(rgList []*armcontainerservice.ManagedCluster) {
-	m.regionListLock.Lock()
-	defer m.regionListLock.Unlock()
-
-	locationSet := make(map[string]bool)
-	uniqueLocationList := []string{}
-
-	for _, v := range rgList {
-		locationSet[to.String(v.Location)] = true
-	}
-
-	for r := range locationSet {
-		uniqueLocationList = append(uniqueLocationList, r)
-	}
-
-	m.RegionList = uniqueLocationList
-}
-
 func (m *MachineStore) getClustersInSubscription() ([]*armcontainerservice.ManagedCluster, error) {
 	clusterList := []*armcontainerservice.ManagedCluster{}
 
@@ -203,6 +173,7 @@ func (m *MachineStore) getClustersInSubscription() ([]*armcontainerservice.Manag
 	for pager.More() {
 		page, err := pager.NextPage(m.context)
 		if err != nil {
+			m.logger.LogAttrs(m.context, slog.LevelError, "unable to advance page in AKS Client", slog.String("err", err.Error()))
 			return nil, ErrPageAdvanceFailure
 		}
 		clusterList = append(clusterList, page.Value...)
@@ -223,15 +194,21 @@ func (m *MachineStore) PopulateMachineStore() error {
 		return err
 	}
 
-	go m.setRegionListFromClusterList(clusterList)
+	clear(m.MachineMap)
 
-	// Clear the existing Map
-	m.MachineMap = make(map[string]*VirtualMachineInfo)
-
-	tmpInfoStore := make(map[string]*VirtualMachineInfo)
 	for _, cluster := range clusterList {
 		clusterName := to.String(cluster.Name)
 		rgName := to.String(cluster.Properties.NodeResourceGroup)
+
+		if len(clusterName) == 0 {
+			m.logger.Error("cluster name not found")
+			continue
+		}
+
+		if len(rgName) == 0 {
+			m.logger.Error("resource group name not found")
+			continue
+		}
 
 		vmInfo, err := m.getVmInfoFromResourceGroup(rgName, clusterName)
 		if err != nil {
@@ -239,35 +216,38 @@ func (m *MachineStore) PopulateMachineStore() error {
 		}
 
 		for name, info := range vmInfo {
-			tmpInfoStore[name] = info
+			m.MachineMap[name] = info
 		}
 
 	}
-
-	m.MachineMap = tmpInfoStore
 
 	m.logger.LogAttrs(m.context, slog.LevelInfo, "machine store populated", slog.Duration("duration", time.Since(startTime)))
 	return nil
 }
 
-func determineMachineScaleSetPriority(vmss *armcompute.VirtualMachineScaleSet) MachinePriority {
+func getMachineScaleSetPriority(vmss *armcompute.VirtualMachineScaleSet) MachinePriority {
 	if vmss.Properties.VirtualMachineProfile.Priority != nil && *vmss.Properties.VirtualMachineProfile.Priority == armcompute.VirtualMachinePriorityTypesSpot {
 		return Spot
 	}
 	return OnDemand
 }
 
-func determineMachineScaleSetOperatingSystem(vmss *armcompute.VirtualMachineScaleSet) MachineOperatingSystem {
+func getMachineScaleSetOperatingSystem(vmss *armcompute.VirtualMachineScaleSet) MachineOperatingSystem {
 	if vmss.Properties.VirtualMachineProfile.OSProfile.LinuxConfiguration != nil {
 		return Linux
 	}
 	return Windows
 }
 
-func determineMachineName(vm *armcompute.VirtualMachineScaleSetVM) (string, error) {
+func getMachineName(vm *armcompute.VirtualMachineScaleSetVM) (string, error) {
 	if vm.Properties.InstanceView == nil {
 		return "", fmt.Errorf("unable to determine machine name, instanceView property not set: %v", vm)
 	}
 
-	return to.String(vm.Properties.InstanceView.ComputerName), nil
+	computerName := to.String(vm.Properties.InstanceView.ComputerName)
+	if len(computerName) == 0 {
+		return "", fmt.Errorf("unable to determine machine name for: %v", vm)
+	}
+
+	return computerName, nil
 }

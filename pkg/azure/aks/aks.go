@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -20,9 +19,8 @@ const (
 	subsystem             = "azure_aks"
 	AZ_API_VERSION string = "2023-01-01-preview" // using latest API Version https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
 
-	priceRefreshInterval      = 24 * time.Hour  // TODO - update to 24 hours
-	machineRefreshInterval    = 5 * time.Minute // TODO - update to 5 minutes
-	cacheInvalidationInterval = 24 * time.Hour  // TODO - update to 24 hours
+	priceRefreshInterval   = 24 * time.Hour
+	machineRefreshInterval = 5 * time.Minute
 )
 
 type MachineOperatingSystem int
@@ -53,8 +51,11 @@ func (mp MachinePriority) String() string {
 
 // Errors
 var (
-	ErrClientCreationFailure = errors.New("failed to create client")
-	ErrPageAdvanceFailure    = errors.New("failed to advance page")
+	ErrClientCreationFailure         = errors.New("failed to create client")
+	ErrPageAdvanceFailure            = errors.New("failed to advance page")
+	ErrPriceStorePopulationFailure   = errors.New("failed to populate price store")
+	ErrMachineStorePopulationFailure = errors.New("failed to populate machine store")
+	ErrVmPriceRetrievalFailure       = errors.New("failed to retrieve price info for VM")
 )
 
 // Prometheus Metrics
@@ -83,10 +84,6 @@ type Collector struct {
 
 	MachineStore                   *MachineStore
 	machineStoreNextPopulationTime time.Time
-
-	cacheLock             *sync.RWMutex
-	cacheInvalidationTime time.Time
-	MachinePricesCache    map[string]float64
 }
 
 type Config struct {
@@ -120,9 +117,9 @@ func New(ctx context.Context, cfg *Config) (*Collector, error) {
 		MachineStore:                   machineStore,
 		machineStoreNextPopulationTime: now.Add(machineRefreshInterval),
 
-		cacheLock:             &sync.RWMutex{},
-		cacheInvalidationTime: now.Add(cacheInvalidationInterval),
-		MachinePricesCache:    make(map[string]float64),
+		// cacheLock:             &sync.RWMutex{},
+		// cacheInvalidationTime: now.Add(cacheInvalidationInterval),
+		// MachinePricesCache:    make(map[string]float64),
 	}, nil
 }
 
@@ -132,44 +129,16 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 	return 0
 }
 
-func (c *Collector) populateMachinePricesCache() error {
-	c.cacheLock.Lock()
-	defer c.cacheLock.Unlock()
-	c.logger.Info("populating machine prices cache")
-
-	c.MachineStore.machineMapLock.RLock()
-	defer c.MachineStore.machineMapLock.RUnlock()
-
-	for vmName, vmInfo := range c.MachineStore.MachineMap {
-		price, err := c.PriceStore.getPriceInfoFromVmInfo(vmInfo)
-		if err != nil {
-			return err
-		}
-
-		c.MachinePricesCache[vmName] = price
-	}
-
-	return nil
-}
-
 // TODO - BREAK INTO CPU AND RAM
 func (c *Collector) getMachinePrices(vmName string) (float64, error) {
-	// Cache Hit
-	c.cacheLock.RLock()
-	if price, ok := c.MachinePricesCache[vmName]; ok {
-		c.cacheLock.RUnlock()
-		return price, nil
-	}
-	c.cacheLock.RUnlock()
-
-	// Cache Miss
-	c.cacheLock.Lock()
-	defer c.cacheLock.Unlock()
-
-	vmInfo := c.MachineStore.getVmInfoByVmName(vmName)
-	price, err := c.PriceStore.getPriceInfoFromVmInfo(vmInfo)
+	vmInfo, err := c.MachineStore.getVmInfoByVmName(vmName)
 	if err != nil {
 		return 0.0, err
+	}
+
+	price, err := c.PriceStore.getPriceInfoFromVmInfo(vmInfo)
+	if err != nil {
+		return 0.0, ErrVmPriceRetrievalFailure
 	}
 
 	return price, nil
@@ -185,23 +154,24 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		eg.Go(func() error {
 			err := c.MachineStore.PopulateMachineStore()
 			if err != nil {
-				return err
+				return ErrMachineStorePopulationFailure
 			}
 
 			c.machineStoreNextPopulationTime = time.Now().Add(machineRefreshInterval)
+			c.logger.LogAttrs(c.context, slog.LevelInfo, "repopulated machine store", slog.Time("nextPopulationTime", c.machineStoreNextPopulationTime))
 			return nil
 		})
 	}
 
 	if now.After(c.priceStoreNextPopulationTime) {
 		eg.Go(func() error {
-			regionList := c.MachineStore.getRegionList()
-			err := c.PriceStore.PopulatePriceStore(regionList)
+			err := c.PriceStore.PopulatePriceStore()
 			if err != nil {
-				return err
+				return ErrPriceStorePopulationFailure
 			}
 
 			c.priceStoreNextPopulationTime = time.Now().Add(priceRefreshInterval)
+			c.logger.LogAttrs(c.context, slog.LevelInfo, "repopulated price store", slog.Time("nextPopulationTime", c.priceStoreNextPopulationTime))
 			return nil
 		})
 	}
@@ -209,15 +179,6 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	err := eg.Wait()
 	if err != nil {
 		return err
-	}
-
-	if now.After(c.cacheInvalidationTime) {
-		c.MachinePricesCache = make(map[string]float64)
-		c.cacheInvalidationTime = now.Add(cacheInvalidationInterval)
-		err = c.populateMachinePricesCache()
-		if err != nil {
-			return nil
-		}
 	}
 
 	c.MachineStore.machineMapLock.RLock()

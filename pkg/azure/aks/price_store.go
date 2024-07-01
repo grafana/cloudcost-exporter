@@ -2,7 +2,7 @@ package aks
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -12,7 +12,11 @@ import (
 	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
 
-type PriceBySku map[string]retailPriceSdk.ResourceSKU
+var (
+	ErrPriceInformationNotFound = errors.New("price information not found in map")
+)
+
+type PriceBySku map[string]*retailPriceSdk.ResourceSKU
 
 type PriceByOperatingSystem map[MachineOperatingSystem]PriceBySku
 
@@ -48,7 +52,7 @@ func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, s
 	}
 
 	go func() {
-		err := p.PopulatePriceStore([]string{})
+		err := p.PopulatePriceStore()
 		if err != nil {
 			p.logger.LogAttrs(p.context, slog.LevelError, "error populating initial price store", slog.String("error", err.Error()))
 		}
@@ -66,49 +70,58 @@ func (p *PriceStore) getPriceInfoFromVmInfo(vmInfo *VirtualMachineInfo) (float64
 	operatingSystem := vmInfo.OperatingSystem
 	sku := vmInfo.MachineTypeSku
 
-	vmPriceInfo := p.RegionMap[region][priority][operatingSystem][sku]
-
-	return vmPriceInfo.RetailPrice, nil
-}
-
-func (p *PriceStore) buildQueryFilter(locationList []string) string {
-	if len(locationList) == 0 {
-		return `serviceName eq 'Virtual Machines' and priceType eq 'Consumption'`
+	if len(region) == 0 || len(sku) == 0 {
+		p.logger.LogAttrs(p.context, slog.LevelError, "region or sku not defined", slog.String("region", region), slog.String("sku", sku))
+		return 0.0, ErrPriceInformationNotFound
 	}
 
-	locationListFilter := []string{}
-	for _, region := range locationList {
-		locationListFilter = append(locationListFilter, fmt.Sprintf("armRegionName eq '%s'", region))
+	rMap := p.RegionMap[region]
+	if rMap == nil {
+		p.logger.LogAttrs(p.context, slog.LevelError, "region not found in price map", slog.String("region", region))
+		return 0.0, ErrPriceInformationNotFound
 	}
 
-	locationListStr := strings.Join(locationListFilter, " or ")
-	return fmt.Sprintf(`serviceName eq 'Virtual Machines' and priceType eq 'Consumption' and (%s)`, locationListStr)
-}
-
-func (p *PriceStore) buildListOptions(locationList []string) *retailPriceSdk.RetailPricesClientListOptions {
-	queryFilter := p.buildQueryFilter(locationList)
-	return &retailPriceSdk.RetailPricesClientListOptions{
-		APIVersion:  to.StringPtr(AZ_API_VERSION),
-		Filter:      to.StringPtr(queryFilter),
-		MeterRegion: to.StringPtr(`'primary'`),
+	pMap := rMap[priority]
+	if pMap == nil {
+		p.logger.LogAttrs(p.context, slog.LevelError, "priority not found in region map", slog.String("region", region), slog.String("priority", priority.String()))
+		return 0.0, ErrPriceInformationNotFound
 	}
+
+	osMap := pMap[operatingSystem]
+	if osMap == nil {
+		p.logger.LogAttrs(p.context, slog.LevelError, "os map not found in priority map", slog.String("os", operatingSystem.String()))
+		return 0.0, ErrPriceInformationNotFound
+	}
+
+	skuInfo := osMap[sku]
+	if skuInfo == nil {
+		p.logger.LogAttrs(p.context, slog.LevelError, "sku info not found in os map", slog.String("sku", sku))
+		return 0.0, ErrPriceInformationNotFound
+	}
+
+	return skuInfo.RetailPrice, nil
 }
 
-func (p *PriceStore) PopulatePriceStore(locationList []string) error {
+func (p *PriceStore) PopulatePriceStore() error {
 	startTime := time.Now()
 	p.logger.Info("populating price store")
 
 	p.regionMapLock.Lock()
 	defer p.regionMapLock.Unlock()
 
-	// clear the existing region map
-	p.RegionMap = make(map[string]PriceByPriority)
+	clear(p.RegionMap)
 
-	pager := p.retailPriceClient.NewListPager((p.buildListOptions(locationList)))
+	opts := &retailPriceSdk.RetailPricesClientListOptions{
+		APIVersion:  to.StringPtr(AZ_API_VERSION),
+		Filter:      to.StringPtr(`serviceName eq 'Virtual Machines' and priceType eq 'Consumption'`),
+		MeterRegion: to.StringPtr(`'primary'`),
+	}
+
+	pager := p.retailPriceClient.NewListPager(opts)
 	for pager.More() {
 		page, err := pager.NextPage(p.context)
 		if err != nil {
-			p.logger.LogAttrs(p.context, slog.LevelError, "error paging")
+			p.logger.LogAttrs(p.context, slog.LevelError, "error paging through retail prices")
 			return ErrPageAdvanceFailure
 		}
 
@@ -126,13 +139,13 @@ func (p *PriceStore) PopulatePriceStore(locationList []string) error {
 				p.RegionMap[regionName][OnDemand] = make(PriceByOperatingSystem)
 			}
 
-			machineOperatingSystem := determineMachineOperatingSystem(v)
-			machinePriority := determineMachinePriority(v)
+			machineOperatingSystem := getMachineOperatingSystemFromSku(v)
+			machinePriority := getMachinePriorityFromSku(v)
 
 			if _, ok := p.RegionMap[regionName][machinePriority][machineOperatingSystem]; !ok {
 				p.RegionMap[regionName][machinePriority][machineOperatingSystem] = make(PriceBySku)
 			}
-			p.RegionMap[regionName][machinePriority][machineOperatingSystem][v.ArmSkuName] = v
+			p.RegionMap[regionName][machinePriority][machineOperatingSystem][v.ArmSkuName] = &v
 		}
 	}
 
@@ -140,7 +153,7 @@ func (p *PriceStore) PopulatePriceStore(locationList []string) error {
 	return nil
 }
 
-func determineMachineOperatingSystem(sku retailPriceSdk.ResourceSKU) MachineOperatingSystem {
+func getMachineOperatingSystemFromSku(sku retailPriceSdk.ResourceSKU) MachineOperatingSystem {
 	switch {
 	case strings.Contains(sku.ProductName, "Windows"):
 		return Windows
@@ -149,7 +162,7 @@ func determineMachineOperatingSystem(sku retailPriceSdk.ResourceSKU) MachineOper
 	}
 }
 
-func determineMachinePriority(sku retailPriceSdk.ResourceSKU) MachinePriority {
+func getMachinePriorityFromSku(sku retailPriceSdk.ResourceSKU) MachinePriority {
 	switch {
 	case strings.Contains(sku.SkuName, "Spot"):
 		return Spot
