@@ -63,13 +63,13 @@ var (
 	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
 		"The cpu cost a compute instance in USD/(core*h)",
-		[]string{"instance", "region", "family", "machine_type", "cluster", "price_tier"},
+		[]string{"instance", "region", "machine_type", "cluster", "price_tier"},
 		nil,
 	)
 	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
 		"The memory cost of a compute instance in USD/(GiB*h)",
-		[]string{"instance", "region", "family", "machine_type", "cluster", "price_tier"},
+		[]string{"instance", "region", "machine_type", "cluster", "price_tier"},
 		nil,
 	)
 )
@@ -188,7 +188,6 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		labelValues := []string{
 			vmName,
 			vmInfo.Region,
-			"TODO - MACHINE FAMILY?",
 			vmInfo.MachineTypeSku,
 			vmInfo.OwningCluster,
 			vmInfo.Priority.String(),
@@ -197,7 +196,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
 	}
 
-	c.logger.Info("metrics collected")
+	c.logger.LogAttrs(c.context, slog.LevelInfo, "metrics collected", slog.Duration("duration", time.Since(now)))
 	return nil
 }
 
