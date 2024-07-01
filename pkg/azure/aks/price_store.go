@@ -65,6 +65,11 @@ func (p *PriceStore) getPriceInfoFromVmInfo(vmInfo *VirtualMachineInfo) (float64
 	p.regionMapLock.RLock()
 	defer p.regionMapLock.RUnlock()
 
+	if vmInfo == nil {
+		p.logger.Error("nil vm info passed into price map")
+		return 0.0, ErrPriceInformationNotFound
+	}
+
 	region := vmInfo.Region
 	priority := vmInfo.Priority
 	operatingSystem := vmInfo.OperatingSystem
