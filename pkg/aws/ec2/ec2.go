@@ -144,7 +144,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			client := c.ec2RegionClients[*region.RegionName]
 			reservations, err := ListComputeInstances(context.Background(), client)
 			if err != nil {
-				c.logger.LogAttrs(ctx, slog.LevelError, "Could not list compute instances", slog.String("message", err.Error()))
+				c.logger.LogAttrs(ctx, slog.LevelError, "Could not list compute instances",
+					slog.String("region", *region.RegionName),
+					slog.String("message", err.Error()))
 				return
 			}
 			c.logger.LogAttrs(ctx, slog.LevelInfo, "Successfully listed instances",

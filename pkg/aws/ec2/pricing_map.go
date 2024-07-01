@@ -28,7 +28,7 @@ const (
 var (
 	ErrInstanceTypeAlreadyExists = errors.New("instance type already exists in the map")
 	ErrParseAttributes           = errors.New("error parsing attribute")
-	ErrRegionNotFound            = errors.New("no Region found")
+	ErrRegionNotFound            = errors.New("no region found")
 	ErrInstanceTypeNotFound      = errors.New("no instance type found")
 	ErrListSpotPrices            = errors.New("error listing spot prices")
 	ErrListOnDemandPrices        = errors.New("error listing ondemand prices")
@@ -43,17 +43,17 @@ var cpuToCostRatio = map[string]float64{
 	"Storage optimized": 0.48,
 }
 
-// StructuredPricingMap collects a map of FamilyPricing structs where the key is the Region
+// StructuredPricingMap collects a map of FamilyPricing structs where the key is the region
 type StructuredPricingMap struct {
-	// Regions is a map of Region code to FamilyPricing
-	// key is the Region
+	// Regions is a map of region code to FamilyPricing
+	// key is the region
 	// value is a map of instance type to PriceTiers
 	Regions         map[string]*FamilyPricing
 	InstanceDetails map[string]Attributes
 	m               sync.RWMutex
 }
 
-// FamilyPricing is a map of instance type to a list of PriceTiers where the key is the ec2 ec2 instance type
+// FamilyPricing is a map of instance type to a list of PriceTiers where the key is the ec2 compute instance type
 type FamilyPricing struct {
 	Family map[string]*Prices // Each Family can have many PriceTiers
 }
@@ -111,7 +111,7 @@ func (spm *StructuredPricingMap) GeneratePricingMap(ondemandPrices []string, spo
 			continue
 		}
 		spotProductTerm := spm.InstanceDetails[instanceType]
-		// Override the Region with the availability zone
+		// Override the region with the availability zone
 		spotProductTerm.Region = region
 		price, err := strconv.ParseFloat(*spotPrice.SpotPrice, 64)
 		if err != nil {

@@ -181,13 +181,13 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 		err          error
 		want         *Prices
 	}{
-		"An empty structured pricing map should return a no Region found error": {
+		"An empty structured pricing map should return a no region found error": {
 			spm:          NewStructuredPricingMap(),
 			region:       "us-east-1",
 			instanceType: "m5.large",
 			err:          ErrRegionNotFound,
 		},
-		"An empty Region should return a no instance type found error": {
+		"An empty region should return a no instance type found error": {
 			spm: &StructuredPricingMap{
 				Regions: map[string]*FamilyPricing{
 					"us-east-1": {
@@ -199,7 +199,7 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 			instanceType: "m5.large",
 			err:          ErrInstanceTypeNotFound,
 		},
-		"A Region with an instance type should return the price": {
+		"A region with an instance type should return the price": {
 			spm: &StructuredPricingMap{
 				Regions: map[string]*FamilyPricing{
 					"us-east-1": {
@@ -264,7 +264,7 @@ func Test_weightedPriceForInstance(t *testing.T) {
 				Ram: 0.35,
 			},
 		},
-		"Handle a machine that's ec2 optimized": {
+		"Handle a machine that's compute optimized": {
 			price: 1.0,
 			attributes: Attributes{
 				VCPU:           "1",
