@@ -116,10 +116,6 @@ func New(ctx context.Context, cfg *Config) (*Collector, error) {
 
 		MachineStore:                   machineStore,
 		machineStoreNextPopulationTime: now.Add(machineRefreshInterval),
-
-		// cacheLock:             &sync.RWMutex{},
-		// cacheInvalidationTime: now.Add(cacheInvalidationInterval),
-		// MachinePricesCache:    make(map[string]float64),
 	}, nil
 }
 
