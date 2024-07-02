@@ -36,19 +36,6 @@ func (mo MachineOperatingSystem) String() string {
 	return machineOperatingSystemNames[mo]
 }
 
-type MachineTier int
-
-const (
-	Regular MachineTier = iota
-	Low
-)
-
-var MachineTierNames [2]string = [2]string{"Regular", "Low"}
-
-func (mt MachineTier) String() string {
-	return MachineTierNames[mt]
-}
-
 type MachinePriority int
 
 const (

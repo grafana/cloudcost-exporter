@@ -34,7 +34,6 @@ type VirtualMachineInfo struct {
 	MachineTypeSku  string
 	OperatingSystem MachineOperatingSystem
 	Priority        MachinePriority
-	Tier            MachineTier
 }
 
 type MachineStore struct {
@@ -106,7 +105,7 @@ func (m *MachineStore) getVmInfoByVmName(vmName string) (*VirtualMachineInfo, er
 	return m.MachineMap[vmName], nil
 }
 
-func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, cluster string, priority MachinePriority, osInfo MachineOperatingSystem, tier MachineTier) (map[string]*VirtualMachineInfo, error) {
+func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, cluster string, priority MachinePriority, osInfo MachineOperatingSystem) (map[string]*VirtualMachineInfo, error) {
 	vmInfo := make(map[string]*VirtualMachineInfo)
 
 	opts := &armcompute.VirtualMachineScaleSetVMsClientListOptions{
@@ -134,7 +133,6 @@ func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, 
 				MachineTypeSku:  to.String(v.SKU.Name),
 				Priority:        priority,
 				OperatingSystem: osInfo,
-				Tier:            tier,
 			}
 			m.logger.LogAttrs(ctx, slog.LevelDebug, "found machine information", slog.String("machineName", vmName))
 		}
@@ -229,12 +227,11 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
 				eg.Go(func() error {
 					vmssPriority := getMachineScaleSetPriority(vmssInfo)
 					vmssOperatingSystem := getMachineScaleSetOperatingSystem(vmssInfo)
-					vmssTier, err := getMachineScaleSetTier(vmssInfo)
 					if err != nil {
 						return err
 					}
 
-					vmssVmInfo, err := m.getVmInfoFromVmss(nestedCtx, rgName, vmssName, clusterName, vmssPriority, vmssOperatingSystem, vmssTier)
+					vmssVmInfo, err := m.getVmInfoFromVmss(nestedCtx, rgName, vmssName, clusterName, vmssPriority, vmssOperatingSystem)
 					if err != nil {
 						return err
 					}
@@ -288,16 +285,4 @@ func getMachineScaleSetOperatingSystem(vmss *armcompute.VirtualMachineScaleSet) 
 		return Linux
 	}
 	return Windows
-}
-
-func getMachineScaleSetTier(vmss *armcompute.VirtualMachineScaleSet) (MachineTier, error) {
-	if vmss.SKU == nil {
-		return 0, ErrMachineTierNotFound
-	}
-
-	tier := to.String(vmss.SKU.Tier)
-	if len(tier) == 0 || tier != "Standard" {
-		return Low, nil
-	}
-	return Regular, nil
 }
