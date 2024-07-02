@@ -3,6 +3,7 @@ package aks
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -83,7 +84,7 @@ func (p *PriceStore) getPriceInfoFromVmInfo(vmInfo *VirtualMachineInfo) (float64
 	sku := vmInfo.MachineTypeSku
 
 	if len(region) == 0 || len(sku) == 0 {
-		p.logger.LogAttrs(p.context, slog.LevelError, "region or sku not defined", slog.String("region", region), slog.String("sku", sku))
+		p.logger.LogAttrs(p.context, slog.LevelError, "region or sku not defined", slog.String("region", region), slog.String("sku", sku), slog.String("vmInfo", fmt.Sprintf("%+v", vmInfo)))
 		return 0.0, ErrPriceInformationNotFound
 	}
 
@@ -95,19 +96,19 @@ func (p *PriceStore) getPriceInfoFromVmInfo(vmInfo *VirtualMachineInfo) (float64
 
 	pMap := rMap[priority]
 	if pMap == nil {
-		p.logger.LogAttrs(p.context, slog.LevelError, "priority not found in region map", slog.String("region", region), slog.String("priority", priority.String()))
+		p.logger.LogAttrs(p.context, slog.LevelError, "priority not found in region map", slog.String("region", region), slog.String("priority", priority.String()), slog.String("vmInfo", fmt.Sprintf("%+v", vmInfo)))
 		return 0.0, ErrPriceInformationNotFound
 	}
 
 	osMap := pMap[operatingSystem]
 	if osMap == nil {
-		p.logger.LogAttrs(p.context, slog.LevelError, "os map not found in priority map", slog.String("os", operatingSystem.String()))
+		p.logger.LogAttrs(p.context, slog.LevelError, "os map not found in priority map", slog.String("os", operatingSystem.String()), slog.String("vmInfo", fmt.Sprintf("%+v", vmInfo)))
 		return 0.0, ErrPriceInformationNotFound
 	}
 
 	skuInfo := osMap[sku]
 	if skuInfo == nil {
-		p.logger.LogAttrs(p.context, slog.LevelError, "sku info not found in os map", slog.String("sku", sku))
+		p.logger.LogAttrs(p.context, slog.LevelError, "sku info not found in os map", slog.String("sku", sku), slog.String("vmInfo", fmt.Sprintf("%+v", vmInfo)))
 		return 0.0, ErrPriceInformationNotFound
 	}
 
@@ -128,7 +129,7 @@ func (p *PriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, 
 	}
 
 	skuName := sku.SkuName
-	if len(skuName) == 0 || !strings.Contains(skuName, "Low Priority") {
+	if len(skuName) == 0 || strings.Contains(skuName, "Low Priority") {
 		p.logger.LogAttrs(ctx, slog.LevelDebug, "disregarding low priority machines", slog.String("sku", sku.SkuName))
 		return false
 	}
