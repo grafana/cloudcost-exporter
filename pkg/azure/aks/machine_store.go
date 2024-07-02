@@ -17,6 +17,10 @@ import (
 	"github.com/Azure/go-autorest/autorest/to"
 )
 
+const (
+	ConcurrentGoroutineLimit = 10
+)
+
 var (
 	ErrMachineNotFound = errors.New("machine not found in map")
 )
@@ -150,7 +154,8 @@ func (m *MachineStore) getVMSSInfoFromResourceGroup(ctx context.Context, rgName,
 		for _, v := range nextResult.Value {
 			vmssName := to.String(v.Name)
 			if len(vmssName) == 0 {
-				m.logger.Error("unable to determine VMSS name")
+				m.logger.Error(fmt.Sprintf("unable to determine VMSS name: %+v", v))
+				continue
 			}
 
 			vmssInfo[vmssName] = v
@@ -194,18 +199,19 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
 	vmInfoLock := sync.Mutex{}
 
 	eg, nestedCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(ConcurrentGoroutineLimit)
 
 	for _, cluster := range clusterList {
 		clusterName := to.String(cluster.Name)
 		rgName := to.String(cluster.Properties.NodeResourceGroup)
 
 		if len(clusterName) == 0 {
-			m.logger.Error("cluster name not found")
+			m.logger.Error(fmt.Sprintf("cluster name not found: %+v", cluster))
 			continue
 		}
 
 		if len(rgName) == 0 {
-			m.logger.Error("resource group name not found")
+			m.logger.Error(fmt.Sprintf("resource group name not found: %+v", cluster))
 			continue
 		}
 
@@ -218,9 +224,9 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
 			for vmssName, vmssInfo := range vmssMap {
 				eg.Go(func() error {
 					vmssPriority := getMachineScaleSetPriority(vmssInfo)
-					vmssOperationSystem := getMachineScaleSetOperatingSystem(vmssInfo)
+					vmssOperatingSystem := getMachineScaleSetOperatingSystem(vmssInfo)
 
-					vmssVmInfo, err := m.getVmInfoFromVmss(nestedCtx, rgName, vmssName, vmssPriority, vmssOperationSystem)
+					vmssVmInfo, err := m.getVmInfoFromVmss(nestedCtx, rgName, vmssName, vmssPriority, vmssOperatingSystem)
 					if err != nil {
 						return err
 					}
@@ -242,10 +248,7 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
 		return err
 	}
 
-	for name, info := range vmInfoMap {
-		m.MachineMap[name] = info
-	}
-
+	m.MachineMap = vmInfoMap
 	m.logger.LogAttrs(m.context, slog.LevelInfo, "machine store populated", slog.Duration("duration", time.Since(startTime)))
 	return nil
 }

@@ -74,7 +74,7 @@ var (
 	)
 	InstanceTotalHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_total_usd_per_hour"),
-		"The total cost of an compute instance in USD/h)",
+		"The total cost of an compute instance in USD/h",
 		[]string{"instance", "region", "machine_type", "cluster_name", "price_tier", "operating_system"},
 		nil,
 	)
