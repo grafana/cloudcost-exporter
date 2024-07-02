@@ -12,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/Azure/go-autorest/autorest/to"
 )
@@ -134,8 +135,9 @@ func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName string, vms
 	return vmInfo, nil
 }
 
-func (m *MachineStore) getVmInfoFromResourceGroup(ctx context.Context, rgName, clusterName string) (map[string]*VirtualMachineInfo, error) {
-	vmInfoMap := make(map[string]*VirtualMachineInfo)
+func (m *MachineStore) getVMSSInfoFromResourceGroup(ctx context.Context, rgName, clusterName string) (map[string]*armcompute.VirtualMachineScaleSet, error) {
+	m.logger.LogAttrs(ctx, slog.LevelInfo, "getting VMSS info from resource group of cluster", slog.String("resourceGroup", rgName), slog.String("cluster", clusterName))
+	vmssInfo := make(map[string]*armcompute.VirtualMachineScaleSet)
 
 	pager := m.azVMSSClient.NewListPager(rgName, nil)
 	for pager.More() {
@@ -147,22 +149,15 @@ func (m *MachineStore) getVmInfoFromResourceGroup(ctx context.Context, rgName, c
 
 		for _, v := range nextResult.Value {
 			vmssName := to.String(v.Name)
-			vmssPriority := getMachineScaleSetPriority(v)
-			vmssOperationSystem := getMachineScaleSetOperatingSystem(v)
-
-			vmInfo, err := m.getVmInfoFromVmss(ctx, rgName, vmssName, vmssPriority, vmssOperationSystem)
-			if err != nil {
-				return nil, err
+			if len(vmssName) == 0 {
+				m.logger.Error("unable to determine VMSS name")
 			}
 
-			for name, info := range vmInfo {
-				info.OwningCluster = clusterName
-				vmInfoMap[name] = info
-			}
+			vmssInfo[vmssName] = v
 		}
 	}
 
-	return vmInfoMap, nil
+	return vmssInfo, nil
 }
 
 func (m *MachineStore) getClustersInSubscription(ctx context.Context) ([]*armcontainerservice.ManagedCluster, error) {
@@ -195,6 +190,11 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
 
 	clear(m.MachineMap)
 
+	vmInfoMap := make(map[string]*VirtualMachineInfo)
+	vmInfoLock := sync.Mutex{}
+
+	eg, nestedCtx := errgroup.WithContext(ctx)
+
 	for _, cluster := range clusterList {
 		clusterName := to.String(cluster.Name)
 		rgName := to.String(cluster.Properties.NodeResourceGroup)
@@ -209,15 +209,41 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
 			continue
 		}
 
-		vmInfo, err := m.getVmInfoFromResourceGroup(ctx, rgName, clusterName)
-		if err != nil {
-			return err
-		}
+		eg.Go(func() error {
+			vmssMap, err := m.getVMSSInfoFromResourceGroup(nestedCtx, rgName, clusterName)
+			if err != nil {
+				return err
+			}
 
-		for name, info := range vmInfo {
-			m.MachineMap[name] = info
-		}
+			for vmssName, vmssInfo := range vmssMap {
+				eg.Go(func() error {
+					vmssPriority := getMachineScaleSetPriority(vmssInfo)
+					vmssOperationSystem := getMachineScaleSetOperatingSystem(vmssInfo)
 
+					vmssVmInfo, err := m.getVmInfoFromVmss(nestedCtx, rgName, vmssName, vmssPriority, vmssOperationSystem)
+					if err != nil {
+						return err
+					}
+
+					vmInfoLock.Lock()
+					for vmName, vmInfo := range vmssVmInfo {
+						vmInfoMap[vmName] = vmInfo
+					}
+					vmInfoLock.Unlock()
+					return nil
+				})
+			}
+			return nil
+		})
+	}
+
+	err = eg.Wait()
+	if err != nil {
+		return err
+	}
+
+	for name, info := range vmInfoMap {
+		m.MachineMap[name] = info
 	}
 
 	m.logger.LogAttrs(m.context, slog.LevelInfo, "machine store populated", slog.Duration("duration", time.Since(startTime)))

@@ -176,5 +176,4 @@ func getMachinePriorityFromSku(sku retailPriceSdk.ResourceSKU) MachinePriority {
 	default:
 		return OnDemand
 	}
-
 }
