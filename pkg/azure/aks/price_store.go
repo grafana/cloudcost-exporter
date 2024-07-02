@@ -52,8 +52,10 @@ func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, s
 	}
 
 	go func() {
+		// populate the store before it is used
 		err := p.PopulatePriceStore(p.context)
 		if err != nil {
+			// if it fails, subsequent calls to Collect() will populate the store
 			p.logger.LogAttrs(p.context, slog.LevelError, "error populating initial price store", slog.String("error", err.Error()))
 		}
 	}()

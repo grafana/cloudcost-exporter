@@ -34,9 +34,5 @@ That way, in order to uniquely identify a price, we will have to have the follow
 # Future Work 
 
 - (Pricing Map) - implement background job to populate pricing map every 24 hours
-- (Pricing Map) - clear and repopulate Price Map and cache with backgroud job
 - (Pricing Map) - implement retry mechanism to pricing map, crash program if it doesn't populate after 5 tries
-- (Pricing Map) - implement VM lookup by machine ID
-- (VMs) - implement VM list
-- connect VM list with Pricing Map 
-- Prometheus metrics
+- Prometheus metrics - CPU and Memory

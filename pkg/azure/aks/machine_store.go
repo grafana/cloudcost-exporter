@@ -78,8 +78,10 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 	}
 
 	go func() {
+		// populate the store before it is used
 		err := ms.PopulateMachineStore(ms.context)
 		if err != nil {
+			// if it fails, subsequent calls to Collect() will populate the store
 			ms.logger.LogAttrs(ms.context, slog.LevelError, "error populating initial machine store", slog.String("error", err.Error()))
 		}
 	}()
