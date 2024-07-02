@@ -1,6 +1,7 @@
 package aks
 
 import (
+	"log/slog"
 	"sync"
 	"testing"
 
@@ -132,6 +133,9 @@ func TestGetMachineScaleSetOperatingSystem(t *testing.T) {
 }
 
 func TestGetMachineName(t *testing.T) {
+	fakeMachineStore := &MachineStore{
+		logger: slog.Default(),
+	}
 	testTable := map[string]struct {
 		vmObject     *armcompute.VirtualMachineScaleSetVM
 		expectedName string
@@ -170,7 +174,7 @@ func TestGetMachineName(t *testing.T) {
 
 	for name, tc := range testTable {
 		t.Run(name, func(t *testing.T) {
-			machineName, err := getMachineName(tc.vmObject)
+			machineName, err := fakeMachineStore.getMachineName(tc.vmObject)
 
 			if tc.expectedErr {
 				assert.NotNil(t, err)

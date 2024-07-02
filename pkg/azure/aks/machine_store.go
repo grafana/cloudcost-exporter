@@ -95,8 +95,6 @@ func (m *MachineStore) getVmInfoByVmName(vmName string) (*VirtualMachineInfo, er
 		return nil, ErrMachineNotFound
 	}
 	return m.MachineMap[vmName], nil
-
-	return vmInfo, nil
 }
 
 func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName string, vmssName string, priority MachinePriority, osInfo MachineOperatingSystem) (map[string]*VirtualMachineInfo, error) {
@@ -114,9 +112,8 @@ func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName string, vms
 		}
 
 		for _, v := range nextResult.Value {
-			vmName, err := getMachineName(v)
+			vmName, err := m.getMachineName(v)
 			if err != nil {
-				m.logger.Error(err.Error())
 				continue
 			}
 
@@ -225,6 +222,21 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
 	return nil
 }
 
+func (m *MachineStore) getMachineName(vm *armcompute.VirtualMachineScaleSetVM) (string, error) {
+	if vm.Properties.InstanceView == nil {
+		m.logger.Error(fmt.Sprintf("unable to determine machine name, instanceView property not set: %+v", vm))
+		return "", fmt.Errorf("unable to determine machine name, instanceView property not set: %+v", vm)
+	}
+
+	computerName := to.String(vm.Properties.InstanceView.ComputerName)
+	if len(computerName) == 0 {
+		m.logger.Error(fmt.Sprintf("unable to determine machine name: %+v", vm))
+		return "", fmt.Errorf("unable to determine machine name: %+v", vm)
+	}
+
+	return computerName, nil
+}
+
 func getMachineScaleSetPriority(vmss *armcompute.VirtualMachineScaleSet) MachinePriority {
 	if vmss.Properties.VirtualMachineProfile.Priority != nil && *vmss.Properties.VirtualMachineProfile.Priority == armcompute.VirtualMachinePriorityTypesSpot {
 		return Spot
@@ -237,17 +249,4 @@ func getMachineScaleSetOperatingSystem(vmss *armcompute.VirtualMachineScaleSet) 
 		return Linux
 	}
 	return Windows
-}
-
-func getMachineName(vm *armcompute.VirtualMachineScaleSetVM) (string, error) {
-	if vm.Properties.InstanceView == nil {
-		return "", fmt.Errorf("unable to determine machine name, instanceView property not set: %v", vm)
-	}
-
-	computerName := to.String(vm.Properties.InstanceView.ComputerName)
-	if len(computerName) == 0 {
-		return "", fmt.Errorf("unable to determine machine name for: %v", vm)
-	}
-
-	return computerName, nil
 }
