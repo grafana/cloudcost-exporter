@@ -19,9 +19,11 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 		RegionMap: map[string]PriceByPriority{
 			"region1": {
 				OnDemand: PriceByOperatingSystem{
-					Linux: PriceBySku{
-						"sku1": &retailPriceSdk.ResourceSKU{
-							RetailPrice: 1.0,
+					Linux: PriceByTier{
+						Regular: PriceBySku{
+							"sku1": &retailPriceSdk.ResourceSKU{
+								RetailPrice: 1.0,
+							},
 						},
 					},
 				},
@@ -47,6 +49,7 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 				Priority:        OnDemand,
 				OperatingSystem: Linux,
 				MachineTypeSku:  "sku1",
+				Tier:            Regular,
 			},
 			expectedPrice: 0.0,
 			expectedErr:   ErrPriceInformationNotFound,
@@ -56,6 +59,7 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 				Priority:        OnDemand,
 				Region:          "region1",
 				OperatingSystem: Linux,
+				Tier:            Regular,
 			},
 			expectedPrice: 0.0,
 			expectedErr:   ErrPriceInformationNotFound,
@@ -66,6 +70,7 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 				Region:          "region1",
 				OperatingSystem: Linux,
 				MachineTypeSku:  "sku1",
+				Tier:            Regular,
 			},
 			expectedPrice: 1.0,
 			expectedErr:   nil,
@@ -76,6 +81,7 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 				Region:          "region2",
 				OperatingSystem: Windows,
 				MachineTypeSku:  "sku3",
+				Tier:            Regular,
 			},
 			expectedPrice: 0.0,
 			expectedErr:   ErrPriceInformationNotFound,

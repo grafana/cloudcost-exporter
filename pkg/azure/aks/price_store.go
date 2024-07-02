@@ -105,13 +105,13 @@ func (p *PriceStore) getPriceInfoFromVmInfo(vmInfo *VirtualMachineInfo) (float64
 
 	tierMap := osMap[tier]
 	if tierMap == nil {
-		p.logger.LogAttrs(p.context, slog.LevelError, "os map not found in priority map", slog.String("os", operatingSystem.String()))
+		p.logger.LogAttrs(p.context, slog.LevelError, "tier map not found in os map", slog.String("tier", tier.String()))
 		return 0.0, ErrPriceInformationNotFound
 	}
 
 	skuInfo := tierMap[sku]
 	if skuInfo == nil {
-		p.logger.LogAttrs(p.context, slog.LevelError, "sku info not found in os map", slog.String("sku", sku))
+		p.logger.LogAttrs(p.context, slog.LevelError, "sku info not found in tier map", slog.String("sku", sku))
 		return 0.0, ErrPriceInformationNotFound
 	}
 

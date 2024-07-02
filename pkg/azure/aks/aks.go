@@ -45,6 +45,10 @@ const (
 
 var MachineTierNames [2]string = [2]string{"Regular", "Low"}
 
+func (mt MachineTier) String() string {
+	return MachineTierNames[mt]
+}
+
 type MachinePriority int
 
 const (
