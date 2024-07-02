@@ -1,4 +1,4 @@
-package compute
+package ec2
 
 import (
 	"context"
@@ -58,7 +58,7 @@ type FamilyPricing struct {
 	Family map[string]*Prices // Each Family can have many PriceTiers
 }
 
-// ComputePrices holds the price of a compute instances CPU and RAM. The price is in USD
+// ComputePrices holds the price of a ec2 instances CPU and RAM. The price is in USD
 type Prices struct {
 	Cpu   float64
 	Ram   float64
@@ -251,7 +251,7 @@ func ListOnDemandPrices(ctx context.Context, region string, client pricingClient
 				Value: aws.String("shared"),
 			},
 			{
-				// Limit to compute instances(ie, not bare metal)
+				// Limit to ec2 instances(ie, not bare metal)
 				Field: aws.String("productFamily"),
 				Type:  "TERM_MATCH",
 				Value: aws.String("Compute Instance"),

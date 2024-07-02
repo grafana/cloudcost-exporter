@@ -16,9 +16,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/prometheus/client_golang/prometheus"
 
+	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
+
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
-	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/compute/ec2"
-	"github.com/grafana/cloudcost-exporter/pkg/aws/compute/eks"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -128,7 +128,8 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			client := costexplorer.NewFromConfig(ac)
 			collector := s3.New(config.ScrapeInterval, client)
 			collectors = append(collectors, collector)
-		case "EKS":
+			// TODO: Deprecate EKS once we've migrated to using EC2
+		case "EKS", "EC2":
 			pricingService := pricing.NewFromConfig(ac)
 			computeService := ec2.NewFromConfig(ac)
 			regions, err := computeService.DescribeRegions(ctx, &ec2.DescribeRegionsInput{AllRegions: aws.Bool(false)})
@@ -143,27 +144,12 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 				}
 				regionClientMap[*r.RegionName] = client
 			}
-			collector := eks.New(config.Region, config.Profile, config.ScrapeInterval, pricingService, computeService, regions.Regions, regionClientMap)
-			collectors = append(collectors, collector)
-		case "EC2":
-			pricingService := pricing.NewFromConfig(ac)
-			computeService := ec2.NewFromConfig(ac)
-			regions, err := computeService.DescribeRegions(ctx, &ec2.DescribeRegionsInput{AllRegions: aws.Bool(false)})
-			if err != nil {
-				return nil, fmt.Errorf("error getting regions: %w", err)
-			}
-			regionClientMap := make(map[string]ec2client.EC2)
-			for _, r := range regions.Regions {
-				client, err := newEc2Client(*r.RegionName, config.Profile)
-				if err != nil {
-					return nil, fmt.Errorf("error creating ec2 client: %w", err)
-				}
-				regionClientMap[*r.RegionName] = client
-			}
-			collector := ec2Collector.New(ctx, &ec2Collector.Config{
-				Regions: regions.Regions,
-				Logger:  logger,
-			}, pricingService, computeService, regionClientMap)
+			collector := ec2Collector.New(&ec2Collector.Config{
+				Regions:        regions.Regions,
+				RegionClients:  regionClientMap,
+				Logger:         logger,
+				ScrapeInterval: config.ScrapeInterval,
+			}, pricingService)
 			collectors = append(collectors, collector)
 		default:
 			log.Printf("Unknown service %s", service)
