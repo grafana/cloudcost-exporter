@@ -18,7 +18,9 @@ var (
 
 type PriceBySku map[string]*retailPriceSdk.ResourceSKU
 
-type PriceByOperatingSystem map[MachineOperatingSystem]PriceBySku
+type PriceByTier map[MachineTier]PriceBySku
+
+type PriceByOperatingSystem map[MachineOperatingSystem]PriceByTier
 
 type PriceByPriority map[MachinePriority]PriceByOperatingSystem
 
@@ -75,6 +77,7 @@ func (p *PriceStore) getPriceInfoFromVmInfo(vmInfo *VirtualMachineInfo) (float64
 	region := vmInfo.Region
 	priority := vmInfo.Priority
 	operatingSystem := vmInfo.OperatingSystem
+	tier := vmInfo.Tier
 	sku := vmInfo.MachineTypeSku
 
 	if len(region) == 0 || len(sku) == 0 {
@@ -100,7 +103,13 @@ func (p *PriceStore) getPriceInfoFromVmInfo(vmInfo *VirtualMachineInfo) (float64
 		return 0.0, ErrPriceInformationNotFound
 	}
 
-	skuInfo := osMap[sku]
+	tierMap := osMap[tier]
+	if tierMap == nil {
+		p.logger.LogAttrs(p.context, slog.LevelError, "os map not found in priority map", slog.String("os", operatingSystem.String()))
+		return 0.0, ErrPriceInformationNotFound
+	}
+
+	skuInfo := tierMap[sku]
 	if skuInfo == nil {
 		p.logger.LogAttrs(p.context, slog.LevelError, "sku info not found in os map", slog.String("sku", sku))
 		return 0.0, ErrPriceInformationNotFound
@@ -135,7 +144,16 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) error {
 		for _, v := range page.Items {
 			regionName := v.ArmRegionName
 			if regionName == "" {
-				p.logger.LogAttrs(ctx, slog.LevelInfo, "region name for price not found", slog.String("sku", v.SkuName))
+				p.logger.LogAttrs(ctx, slog.LevelDebug, "region name for price not found", slog.String("sku", v.SkuName))
+				continue
+			}
+			productName := v.ProductName
+			if len(productName) == 0 {
+				p.logger.LogAttrs(ctx, slog.LevelDebug, "product name for price not found", slog.String("sku", v.SkuName))
+				continue
+			}
+			if !strings.Contains(productName, "Virtual Machines") {
+				p.logger.LogAttrs(ctx, slog.LevelDebug, "product in price is not a virtual machine", slog.String("sku", v.SkuName))
 				continue
 			}
 
@@ -144,15 +162,20 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) error {
 				p.RegionMap[regionName] = make(PriceByPriority)
 				p.RegionMap[regionName][Spot] = make(PriceByOperatingSystem)
 				p.RegionMap[regionName][OnDemand] = make(PriceByOperatingSystem)
+				p.RegionMap[regionName][Spot][Linux] = make(PriceByTier)
+				p.RegionMap[regionName][Spot][Windows] = make(PriceByTier)
+				p.RegionMap[regionName][OnDemand][Linux] = make(PriceByTier)
+				p.RegionMap[regionName][OnDemand][Windows] = make(PriceByTier)
 			}
 
 			machineOperatingSystem := getMachineOperatingSystemFromSku(v)
 			machinePriority := getMachinePriorityFromSku(v)
+			machineTier := getMachineTierFromSku(v)
 
-			if _, ok := p.RegionMap[regionName][machinePriority][machineOperatingSystem]; !ok {
-				p.RegionMap[regionName][machinePriority][machineOperatingSystem] = make(PriceBySku)
+			if _, ok := p.RegionMap[regionName][machinePriority][machineOperatingSystem][machineTier]; !ok {
+				p.RegionMap[regionName][machinePriority][machineOperatingSystem][machineTier] = make(PriceBySku)
 			}
-			p.RegionMap[regionName][machinePriority][machineOperatingSystem][v.ArmSkuName] = &v
+			p.RegionMap[regionName][machinePriority][machineOperatingSystem][machineTier][v.ArmSkuName] = &v
 		}
 	}
 
@@ -176,4 +199,11 @@ func getMachinePriorityFromSku(sku retailPriceSdk.ResourceSKU) MachinePriority {
 	default:
 		return OnDemand
 	}
+}
+
+func getMachineTierFromSku(sku retailPriceSdk.ResourceSKU) MachineTier {
+	if strings.Contains(sku.MeterName, "Low Priority") || strings.Contains(sku.SkuName, "Low Priority") {
+		return Low
+	}
+	return Regular
 }
