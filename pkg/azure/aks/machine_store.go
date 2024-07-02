@@ -91,10 +91,10 @@ func (m *MachineStore) getVmInfoByVmName(vmName string) (*VirtualMachineInfo, er
 	m.machineMapLock.RLock()
 	defer m.machineMapLock.RUnlock()
 
-	vmInfo := m.MachineMap[vmName]
-	if vmInfo == nil {
+	if _, ok := m.MachineMap[vmName]; !ok {
 		return nil, ErrMachineNotFound
 	}
+	return m.MachineMap[vmName], nil
 
 	return vmInfo, nil
 }
