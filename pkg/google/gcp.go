@@ -3,7 +3,7 @@ package google
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -81,6 +81,7 @@ var (
 type GCP struct {
 	config     *Config
 	collectors []provider.Collector
+	logger     *slog.Logger
 }
 
 type Config struct {
@@ -90,6 +91,7 @@ type Config struct {
 	Services        []string
 	ScrapeInterval  time.Duration
 	DefaultDiscount int
+	Logger          *slog.Logger
 }
 
 // New is responsible for parsing out a configuration file and setting up the associated services that could be required.
@@ -97,6 +99,7 @@ type Config struct {
 // collector specific services further down.
 func New(config *Config) (*GCP, error) {
 	ctx := context.Background()
+	logger := config.Logger.With("provider", "gcp")
 
 	computeService, err := computev1.NewService(ctx)
 	if err != nil {
@@ -120,7 +123,9 @@ func New(config *Config) (*GCP, error) {
 
 	var collectors []provider.Collector
 	for _, service := range config.Services {
-		log.Printf("Creating collector for %s", service)
+		logger.LogAttrs(ctx, slog.LevelInfo, "Creating service",
+			slog.String("service", service))
+
 		var collector provider.Collector
 		switch strings.ToUpper(service) {
 		case "GCS":
@@ -131,7 +136,9 @@ func New(config *Config) (*GCP, error) {
 				DefaultDiscount: config.DefaultDiscount,
 			}, cloudCatalogClient, regionsClient, storageClient)
 			if err != nil {
-				log.Printf("Error creating GCS collector: %s", err)
+				logger.LogAttrs(ctx, slog.LevelWarn, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
 				continue
 			}
 		case "COMPUTE":
@@ -145,8 +152,9 @@ func New(config *Config) (*GCP, error) {
 				ScrapeInterval: config.ScrapeInterval,
 			}, computeService, cloudCatalogClient)
 		default:
-			log.Printf("Unknown service %s", service)
-			// Continue to next service, no need to halt here
+
+			logger.LogAttrs(ctx, slog.LevelWarn, "Error creating service, does not exist",
+				slog.String("service", service))
 			continue
 		}
 		collectors = append(collectors, collector)
@@ -154,6 +162,7 @@ func New(config *Config) (*GCP, error) {
 	return &GCP{
 		config:     config,
 		collectors: collectors,
+		logger:     logger,
 	}, nil
 }
 
@@ -179,7 +188,9 @@ func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
 	ch <- providerLastScrapeTime
 	for _, c := range g.collectors {
 		if err := c.Describe(ch); err != nil {
-			log.Printf("Error describing collector %s: %s", c.Name(), err)
+			g.logger.LogAttrs(context.Background(), slog.LevelError, "Error calling describe",
+				slog.String("message", err.Error()),
+			)
 		}
 	}
 }
@@ -195,10 +206,16 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 			defer wg.Done()
 			collectorErrors := 0.0
 			if err := c.Collect(ch); err != nil {
-				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
+				g.logger.LogAttrs(context.Background(), slog.LevelError, "Error collecting metrics",
+					slog.String("collector", c.Name()),
+					slog.String("message", err.Error()),
+				)
 				collectorErrors = 1.0
 			}
-			log.Printf("Collector(%s) collect respose=%.2f", c.Name(), collectorErrors)
+			g.logger.LogAttrs(context.Background(), slog.LevelInfo, "Collect successful",
+				slog.String("collector", c.Name()),
+				slog.Duration("duration", time.Since(now)),
+			)
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorErrors, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
