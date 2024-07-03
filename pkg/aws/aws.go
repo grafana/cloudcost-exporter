@@ -128,7 +128,6 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			client := costexplorer.NewFromConfig(ac)
 			collector := s3.New(config.ScrapeInterval, client)
 			collectors = append(collectors, collector)
-			// TODO: Deprecate EKS once we've migrated to using EC2
 		case "EC2":
 			pricingService := pricing.NewFromConfig(ac)
 			computeService := ec2.NewFromConfig(ac)
