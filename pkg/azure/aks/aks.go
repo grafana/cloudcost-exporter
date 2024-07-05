@@ -132,8 +132,8 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 }
 
 // TODO - BREAK INTO CPU AND RAM
-func (c *Collector) getMachinePrices(vmName string) (float64, error) {
-	vmInfo, err := c.MachineStore.getVmInfoByVmName(vmName)
+func (c *Collector) getMachinePrices(vmId string) (float64, error) {
+	vmInfo, err := c.MachineStore.getVmInfoByVmId(vmId)
 	if err != nil {
 		return 0.0, err
 	}
@@ -185,14 +185,14 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 
 	c.MachineStore.machineMapLock.RLock()
 	defer c.MachineStore.machineMapLock.RUnlock()
-	for vmName, vmInfo := range c.MachineStore.MachineMap {
-		price, err := c.getMachinePrices(vmName)
+	for vmId, vmInfo := range c.MachineStore.MachineMap {
+		price, err := c.getMachinePrices(vmId)
 		if err != nil {
 			return err
 		}
 
 		labelValues := []string{
-			vmName,
+			vmInfo.Name,
 			vmInfo.Region,
 			vmInfo.MachineTypeSku,
 			vmInfo.OwningCluster,

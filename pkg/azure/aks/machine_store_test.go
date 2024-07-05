@@ -43,7 +43,7 @@ func TestGetVmInfoByName(t *testing.T) {
 
 	for name, tc := range testTable {
 		t.Run(name, func(t *testing.T) {
-			machine, err := fakeMachineStore.getVmInfoByVmName(tc.machineName)
+			machine, err := fakeMachineStore.getVmInfoByVmId(tc.machineName)
 
 			if tc.expectedNil {
 				assert.Nil(t, machine)
