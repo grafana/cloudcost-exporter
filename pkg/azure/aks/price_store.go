@@ -243,30 +243,6 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) error {
 	return nil
 }
 
-// func weightedPriceForInstance(price float64, attributes Attributes) (*Prices, error) {
-// 	cpus, err := strconv.ParseFloat(attributes.VCPU, 64)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("%w %w", ErrParseAttributes, err)
-// 	}
-// 	if strings.Contains(attributes.Memory, " GiB") {
-// 		attributes.Memory = strings.TrimSuffix(attributes.Memory, " GiB")
-// 	}
-// 	ram, err := strconv.ParseFloat(attributes.Memory, 64)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("%w: %w", ErrParseAttributes, err)
-// 	}
-// 	ratio, ok := cpuToCostRatio[attributes.InstanceFamily]
-// 	if !ok {
-// 		log.Printf("no ratio found for instance type %s, defaulting to %s", attributes.InstanceType, defaultInstanceFamily)
-// 		ratio = cpuToCostRatio[defaultInstanceFamily]
-// 	}
-
-// 	return &Prices{
-// 		Cpu: price * ratio / cpus,
-// 		Ram: price * (1 - ratio) / ram,
-// 	}, nil
-// }
-
 func getMachineOperatingSystemFromSku(sku retailPriceSdk.ResourceSKU) MachineOperatingSystem {
 	switch {
 	case strings.Contains(sku.ProductName, "Windows"):
