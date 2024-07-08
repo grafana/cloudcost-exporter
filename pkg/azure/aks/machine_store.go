@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,8 +23,26 @@ const (
 )
 
 var (
-	ErrMachineNotFound     = errors.New("machine not found in map")
-	ErrMachineTierNotFound = errors.New("machine tier not found in VMSS object")
+	ErrMachineNotFound       = errors.New("machine not found in map")
+	ErrMachineFamilyNotFound = errors.New("machine family not able to be determined by SKU")
+	ErrMachineTierNotFound   = errors.New("machine tier not found in VMSS object")
+
+	// As annoying as this is, I am unable to find an API call for this
+	// and performance of a map lookup will be quite faster
+	// than maintaining lists of each family
+	//
+	// Based on this logic https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
+	MachineFamilyTypeMap map[byte]string = map[byte]string{
+		'A': "GeneralPurpose",
+		'B': "GeneralPurpose",
+		'D': "GeneralPurpose",
+		'F': "ComputeOptimized",
+		'E': "MemoryOptimized",
+		'M': "MemoryOptimized",
+		'L': "StorageOptimized",
+		'N': "GPUAccelerated",
+		'H': "HighPerformanceCompute",
+	}
 )
 
 type VirtualMachineInfo struct {
@@ -33,6 +52,7 @@ type VirtualMachineInfo struct {
 	OwningVMSS      string
 	OwningCluster   string
 	MachineTypeSku  string
+	MachineFamily   string
 	OperatingSystem MachineOperatingSystem
 	Priority        MachinePriority
 
@@ -147,6 +167,11 @@ func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, 
 			}
 			vmSku := to.String(v.SKU.Name)
 
+			vmFamily, err := m.getMachineFamilyFromSku(vmSku)
+			if err != nil {
+				continue
+			}
+
 			vmRegion := to.String(v.Location)
 			if len(vmRegion) == 0 {
 				m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM region found", slog.String("machineName", vmName))
@@ -167,6 +192,7 @@ func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, 
 					OwningVMSS:      vmssName,
 					OwningCluster:   cluster,
 					MachineTypeSku:  vmSku,
+					MachineFamily:   vmFamily,
 					Priority:        priority,
 					OperatingSystem: osInfo,
 
@@ -357,6 +383,20 @@ func (m *MachineStore) getMachineName(vm *armcompute.VirtualMachineScaleSetVM) (
 	}
 
 	return computerName, nil
+}
+
+// Based on this logic https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
+func (m *MachineStore) getMachineFamilyFromSku(sku string) (string, error) {
+	sku = strings.TrimPrefix(sku, "Standard_")
+	skuStartsWith := sku[0]
+
+	family, ok := MachineFamilyTypeMap[skuStartsWith]
+	if !ok {
+		m.logger.Error(ErrMachineFamilyNotFound.Error())
+		return "", ErrMachineFamilyNotFound
+	}
+
+	return family, nil
 }
 
 func getMachineScaleSetPriority(vmss *armcompute.VirtualMachineScaleSet) MachinePriority {
