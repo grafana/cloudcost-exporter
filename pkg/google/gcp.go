@@ -136,7 +136,7 @@ func New(config *Config) (*GCP, error) {
 				DefaultDiscount: config.DefaultDiscount,
 			}, cloudCatalogClient, regionsClient, storageClient)
 			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelWarn, "Error creating collector",
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
 					slog.String("message", err.Error()))
 				continue
@@ -152,8 +152,7 @@ func New(config *Config) (*GCP, error) {
 				ScrapeInterval: config.ScrapeInterval,
 			}, computeService, cloudCatalogClient)
 		default:
-
-			logger.LogAttrs(ctx, slog.LevelWarn, "Error creating service, does not exist",
+			logger.LogAttrs(ctx, slog.LevelError, "Error creating service, does not exist",
 				slog.String("service", service))
 			continue
 		}
