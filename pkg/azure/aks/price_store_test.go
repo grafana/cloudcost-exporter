@@ -81,7 +81,7 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 			},
 			expectedPrice:    1.0,
 			expectedCpuPrice: 0.1625,
-			expectedRamPrice: 0.021875,
+			expectedRamPrice: 0.0224,
 			expectedErr:      nil,
 		},
 		"all information complete but not in map": {

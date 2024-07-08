@@ -105,7 +105,7 @@ func (p *PriceStore) getPriceBreakdownFromVmInfo(vmInfo *VirtualMachineInfo, pri
 
 	return &MachinePrices{
 		PricePerCore: price * ratio / float64(vmInfo.NumOfCores),
-		PricePerGiB:  (price * (1 - ratio) / float64(vmInfo.MemoryInMiB)) * 1000,
+		PricePerGiB:  (price * (1 - ratio) / float64(vmInfo.MemoryInMiB)) * 1024,
 	}
 }
 
