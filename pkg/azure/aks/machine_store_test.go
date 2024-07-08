@@ -43,7 +43,7 @@ func TestGetVmInfoByName(t *testing.T) {
 
 	for name, tc := range testTable {
 		t.Run(name, func(t *testing.T) {
-			machine, err := fakeMachineStore.getVmInfoByVmName(tc.machineName)
+			machine, err := fakeMachineStore.getVmInfoByVmId(tc.machineName)
 
 			if tc.expectedNil {
 				assert.Nil(t, machine)
@@ -181,6 +181,49 @@ func TestGetMachineName(t *testing.T) {
 			}
 
 			assert.Equal(t, tc.expectedName, machineName)
+		})
+	}
+}
+
+func TestGetMachineFamily(t *testing.T) {
+	fakeMachineStore := &MachineStore{
+		logger: slog.Default(),
+	}
+	testTable := map[string]struct {
+		skuName        string
+		expectedFamily string
+		expectedErr    bool
+	}{
+		"General Purpose": {
+			skuName:        "D5v2",
+			expectedFamily: "GeneralPurpose",
+			expectedErr:    false,
+		},
+		"General Purpose - standard": {
+			skuName:        "Standard_D16_v3",
+			expectedFamily: "GeneralPurpose",
+			expectedErr:    false,
+		},
+		"Memory Optimized": {
+			skuName:        "M416ms_v2",
+			expectedFamily: "MemoryOptimized",
+			expectedErr:    false,
+		},
+		"GPU Accelerated": {
+			skuName:        "NC4as_T4_v3",
+			expectedFamily: "GPUAccelerated",
+			expectedErr:    false,
+		},
+	}
+
+	for name, tc := range testTable {
+		t.Run(name, func(t *testing.T) {
+			machineFamily, err := fakeMachineStore.getMachineFamilyFromSku(tc.skuName)
+			if tc.expectedErr {
+				assert.NotNil(t, err)
+			}
+
+			assert.Equal(t, tc.expectedFamily, machineFamily)
 		})
 	}
 }

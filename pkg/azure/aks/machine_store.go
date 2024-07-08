@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,18 +23,42 @@ const (
 )
 
 var (
-	ErrMachineNotFound     = errors.New("machine not found in map")
-	ErrMachineTierNotFound = errors.New("machine tier not found in VMSS object")
+	ErrMachineNotFound       = errors.New("machine not found in map")
+	ErrMachineFamilyNotFound = errors.New("machine family not able to be determined by SKU")
+	ErrMachineTierNotFound   = errors.New("machine tier not found in VMSS object")
+
+	// As annoying as this is, I am unable to find an API call for this
+	// and performance of a map lookup will be quite faster
+	// than maintaining lists of each family
+	//
+	// Based on this logic https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
+	MachineFamilyTypeMap map[byte]string = map[byte]string{
+		'A': "GeneralPurpose",
+		'B': "GeneralPurpose",
+		'D': "GeneralPurpose",
+		'F': "ComputeOptimized",
+		'E': "MemoryOptimized",
+		'M': "MemoryOptimized",
+		'L': "StorageOptimized",
+		'N': "GPUAccelerated",
+		'H': "HighPerformanceCompute",
+	}
 )
 
 type VirtualMachineInfo struct {
 	Name            string
+	Id              string
 	Region          string
 	OwningVMSS      string
 	OwningCluster   string
 	MachineTypeSku  string
+	MachineFamily   string
 	OperatingSystem MachineOperatingSystem
 	Priority        MachinePriority
+
+	NumOfCores     int32
+	MemoryInMiB    int32
+	OsDiskSizeInMB int32
 }
 
 type MachineStore struct {
@@ -41,9 +66,13 @@ type MachineStore struct {
 	logger  *slog.Logger
 
 	azResourceGroupClient *armresources.ResourceGroupsClient
+	azVMSizesClient       *armcompute.VirtualMachineSizesClient
 	azVMSSClient          *armcompute.VirtualMachineScaleSetsClient
 	azVMSSVmClient        *armcompute.VirtualMachineScaleSetVMsClient
 	azAksClient           *armcontainerservice.ManagedClustersClient
+
+	MachineSizeMap     map[string]map[string]*armcompute.VirtualMachineSize
+	machineSizeMapLock *sync.RWMutex
 
 	MachineMap     map[string]*VirtualMachineInfo
 	machineMapLock *sync.RWMutex
@@ -75,9 +104,13 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 		logger:  logger,
 
 		azResourceGroupClient: rgClient,
+		azVMSizesClient:       computeClientFactory.NewVirtualMachineSizesClient(),
 		azVMSSClient:          computeClientFactory.NewVirtualMachineScaleSetsClient(),
 		azVMSSVmClient:        computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
 		azAksClient:           containerClientFactory.NewManagedClustersClient(),
+
+		MachineSizeMap:     make(map[string]map[string]*armcompute.VirtualMachineSize),
+		machineSizeMapLock: &sync.RWMutex{},
 
 		MachineMap:     make(map[string]*VirtualMachineInfo),
 		machineMapLock: &sync.RWMutex{},
@@ -95,18 +128,21 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 	return ms, nil
 }
 
-func (m *MachineStore) getVmInfoByVmName(vmName string) (*VirtualMachineInfo, error) {
+func (m *MachineStore) getVmInfoByVmId(vmId string) (*VirtualMachineInfo, error) {
 	m.machineMapLock.RLock()
 	defer m.machineMapLock.RUnlock()
 
-	if _, ok := m.MachineMap[vmName]; !ok {
+	if _, ok := m.MachineMap[vmId]; !ok {
 		return nil, ErrMachineNotFound
 	}
-	return m.MachineMap[vmName], nil
+	return m.MachineMap[vmId], nil
 }
 
 func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, cluster string, priority MachinePriority, osInfo MachineOperatingSystem) (map[string]*VirtualMachineInfo, error) {
 	vmInfo := make(map[string]*VirtualMachineInfo)
+
+	m.machineSizeMapLock.RLock()
+	defer m.machineSizeMapLock.RUnlock()
 
 	opts := &armcompute.VirtualMachineScaleSetVMsClientListOptions{
 		Expand: to.StringPtr("instanceView"),
@@ -125,16 +161,51 @@ func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, 
 				continue
 			}
 
-			vmInfo[vmName] = &VirtualMachineInfo{
+			if v.SKU == nil || v.SKU.Name == nil {
+				m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM Sku found", slog.String("machineName", vmName))
+				continue
+			}
+			vmSku := to.String(v.SKU.Name)
+
+			vmFamily, err := m.getMachineFamilyFromSku(vmSku)
+			if err != nil {
+				continue
+			}
+
+			vmRegion := to.String(v.Location)
+			if len(vmRegion) == 0 {
+				m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM region found", slog.String("machineName", vmName))
+				continue
+			}
+
+			if v.Properties == nil || v.Properties.VMID == nil {
+				m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM ID found", slog.String("machineName", vmName))
+				continue
+			}
+			vmId := to.String(v.Properties.VMID)
+
+			vmSizeInfo, ok := m.MachineSizeMap[vmRegion][vmSku]
+			if !ok {
+				m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM sizing info found", slog.String("machineName", vmName))
+				continue
+			}
+
+			m.logger.LogAttrs(ctx, slog.LevelDebug, "found machine information", slog.String("machineName", vmName))
+			vmInfo[vmId] = &VirtualMachineInfo{
 				Name:            vmName,
-				Region:          to.String(v.Location),
+				Id:              vmId,
+				Region:          vmRegion,
 				OwningVMSS:      vmssName,
 				OwningCluster:   cluster,
-				MachineTypeSku:  to.String(v.SKU.Name),
+				MachineTypeSku:  vmSku,
+				MachineFamily:   vmFamily,
 				Priority:        priority,
 				OperatingSystem: osInfo,
+
+				NumOfCores:     to.Int32(vmSizeInfo.NumberOfCores),
+				MemoryInMiB:    to.Int32(vmSizeInfo.MemoryInMB),
+				OsDiskSizeInMB: to.Int32(vmSizeInfo.OSDiskSizeInMB),
 			}
-			m.logger.LogAttrs(ctx, slog.LevelDebug, "found machine information", slog.String("machineName", vmName))
 		}
 	}
 
@@ -183,19 +254,53 @@ func (m *MachineStore) getClustersInSubscription(ctx context.Context) ([]*armcon
 	return clusterList, nil
 }
 
+func (m *MachineStore) getMachineTypesByLocation(ctx context.Context, location string) error {
+	m.machineSizeMapLock.Lock()
+	defer m.machineSizeMapLock.Unlock()
+
+	m.MachineSizeMap[location] = make(map[string]*armcompute.VirtualMachineSize)
+
+	pager := m.azVMSizesClient.NewListPager(location, nil)
+	for pager.More() {
+		nextResult, err := pager.NextPage(ctx)
+		if err != nil {
+			m.logger.LogAttrs(ctx, slog.LevelError, "unable to advance page in VM Sizes Client", slog.String("err", err.Error()))
+			return ErrPageAdvanceFailure
+		}
+
+		for _, v := range nextResult.Value {
+			sizeId := to.String(v.Name)
+
+			m.MachineSizeMap[location][sizeId] = v
+		}
+	}
+	return nil
+}
+
 func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
 	startTime := time.Now()
 	m.logger.Info("populating machine store")
-
-	m.machineMapLock.Lock()
-	defer m.machineMapLock.Unlock()
 
 	clusterList, err := m.getClustersInSubscription(ctx)
 	if err != nil {
 		return err
 	}
 
+	locationSet := make(map[string]bool)
+	for _, c := range clusterList {
+		locationSet[to.String(c.Location)] = true
+	}
+
+	m.machineMapLock.Lock()
+	defer m.machineMapLock.Unlock()
+
 	clear(m.MachineMap)
+
+	// Note that this needs to be immediately unlocked because it will be re-locked
+	// and repopulated below
+	m.machineSizeMapLock.Lock()
+	clear(m.MachineSizeMap)
+	m.machineSizeMapLock.Unlock()
 
 	vmInfoMap := make(map[string]*VirtualMachineInfo)
 	vmInfoLock := sync.Mutex{}
@@ -203,6 +308,14 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
 	eg, nestedCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(ConcurrentGoroutineLimit)
 
+	// Populate Machine Types
+	for location := range locationSet {
+		eg.Go(func() error {
+			return m.getMachineTypesByLocation(nestedCtx, location)
+		})
+	}
+
+	// Populate Machines
 	for _, cluster := range clusterList {
 		clusterName := to.String(cluster.Name)
 		rgName := to.String(cluster.Properties.NodeResourceGroup)
@@ -271,6 +384,20 @@ func (m *MachineStore) getMachineName(vm *armcompute.VirtualMachineScaleSetVM) (
 	}
 
 	return computerName, nil
+}
+
+// Based on this logic https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
+func (m *MachineStore) getMachineFamilyFromSku(sku string) (string, error) {
+	sku = strings.TrimPrefix(sku, "Standard_")
+	skuStartsWith := sku[0]
+
+	family, ok := MachineFamilyTypeMap[skuStartsWith]
+	if !ok {
+		m.logger.Error(ErrMachineFamilyNotFound.Error())
+		return "", ErrMachineFamilyNotFound
+	}
+
+	return family, nil
 }
 
 func getMachineScaleSetPriority(vmss *armcompute.VirtualMachineScaleSet) MachinePriority {
