@@ -187,6 +187,7 @@ func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, 
 			vmSizeInfo, ok := m.MachineSizeMap[vmRegion][vmSku]
 			if !ok {
 				m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM sizing info found", slog.String("machineName", vmName))
+				continue
 			}
 
 			m.logger.LogAttrs(ctx, slog.LevelDebug, "found machine information", slog.String("machineName", vmName))
