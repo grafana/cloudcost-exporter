@@ -57,7 +57,7 @@ type VirtualMachineInfo struct {
 	Priority        MachinePriority
 
 	NumOfCores     int32
-	MemoryInMB     int32
+	MemoryInMiB    int32
 	OsDiskSizeInMB int32
 }
 
@@ -197,7 +197,7 @@ func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, 
 					OperatingSystem: osInfo,
 
 					NumOfCores:     to.Int32(vmSizeInfo.NumberOfCores),
-					MemoryInMB:     to.Int32(vmSizeInfo.MemoryInMB),
+					MemoryInMiB:    to.Int32(vmSizeInfo.MemoryInMB),
 					OsDiskSizeInMB: to.Int32(vmSizeInfo.OSDiskSizeInMB),
 				}
 				m.logger.LogAttrs(ctx, slog.LevelDebug, "found machine information", slog.String("machineName", vmName))
