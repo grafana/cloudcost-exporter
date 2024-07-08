@@ -20,7 +20,7 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 			"region1": {
 				OnDemand: PriceByOperatingSystem{
 					Linux: PriceBySku{
-						"sku1": &retailPriceSdk.ResourceSKU{
+						"sku1": &MachineSku{
 							RetailPrice: 1.0,
 						},
 					},
@@ -85,14 +85,12 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 	for name, test := range testTable {
 		t.Run(name, func(t *testing.T) {
 			price, err := fakePriceStore.getPriceInfoFromVmInfo(test.vmInfo)
-
-			assert.Equal(t, test.expectedPrice, price)
 			if test.expectedErr != nil {
 				assert.Equal(t, test.expectedErr, err)
 			} else {
 				assert.Nil(t, err)
+				assert.Equal(t, test.expectedPrice, price.RetailPrice)
 			}
-
 		})
 	}
 }

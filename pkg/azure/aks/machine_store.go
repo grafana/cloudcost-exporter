@@ -33,15 +33,15 @@ var (
 	//
 	// Based on this logic https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
 	MachineFamilyTypeMap map[byte]string = map[byte]string{
-		'A': "GeneralPurpose",
-		'B': "GeneralPurpose",
-		'D': "GeneralPurpose",
-		'F': "ComputeOptimized",
-		'E': "MemoryOptimized",
-		'M': "MemoryOptimized",
-		'L': "StorageOptimized",
-		'N': "GPUAccelerated",
-		'H': "HighPerformanceCompute",
+		'A': "General purpose",
+		'B': "General purpose",
+		'D': "General purpose",
+		'F': "Compute optimized",
+		'E': "Memory optimized",
+		'M': "Memory optimized",
+		'L': "Storage optimized",
+		'N': "GPU accelerated",
+		'H': "High performance compute",
 	}
 )
 
@@ -57,7 +57,7 @@ type VirtualMachineInfo struct {
 	Priority        MachinePriority
 
 	NumOfCores     int32
-	MemoryInMiB    int32
+	MemoryInMiB    int32 // Note, the Azure Docs say MiB, the golang docs say MB, we're going with the Azure Docs :nervous:
 	OsDiskSizeInMB int32
 }
 

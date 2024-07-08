@@ -131,19 +131,18 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 	return 0
 }
 
-// TODO - BREAK INTO CPU AND RAM
-func (c *Collector) getMachinePrices(vmId string) (float64, error) {
+func (c *Collector) getMachinePrices(vmId string) (*MachineSku, error) {
 	vmInfo, err := c.MachineStore.getVmInfoByVmId(vmId)
 	if err != nil {
-		return 0.0, err
+		return nil, err
 	}
 
-	price, err := c.PriceStore.getPriceInfoFromVmInfo(vmInfo)
+	prices, err := c.PriceStore.getPriceInfoFromVmInfo(vmInfo)
 	if err != nil {
-		return 0.0, ErrVmPriceRetrievalFailure
+		return nil, ErrVmPriceRetrievalFailure
 	}
 
-	return price, nil
+	return prices, nil
 }
 
 // Collect satisfies the provider.Collector interface.
@@ -200,10 +199,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			vmInfo.OperatingSystem.String(),
 		}
 
-		// TODO - implement memory and CPU pricing
-		// ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
-		// ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
-		ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
+		ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerCore, labelValues...)
+		ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerGiB, labelValues...)
+		ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.RetailPrice, labelValues...)
 	}
 
 	c.logger.LogAttrs(c.context, slog.LevelInfo, "metrics collected", slog.Duration("duration", time.Since(now)))
