@@ -3,7 +3,6 @@ package aws
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"strings"
 	"sync"
@@ -35,6 +34,7 @@ type Config struct {
 type AWS struct {
 	Config     *Config
 	collectors []provider.Collector
+	logger     *slog.Logger
 }
 
 var (
@@ -151,18 +151,23 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			}, pricingService)
 			collectors = append(collectors, collector)
 		default:
-			log.Printf("Unknown service %s", service)
+			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",
+				slog.String("service", service),
+			)
 			continue
 		}
 	}
 	return &AWS{
 		Config:     config,
 		collectors: collectors,
+		logger:     logger,
 	}, nil
 }
 
 func (a *AWS) RegisterCollectors(registry provider.Registry) error {
-	log.Printf("Registering %d collectors for AWS", len(a.collectors))
+	a.logger.LogAttrs(context.Background(), slog.LevelInfo, "registering collectors",
+		slog.Int("count", len(a.collectors)),
+	)
 	registry.MustRegister(
 		collectorScrapesTotalCounter,
 	)
@@ -184,7 +189,10 @@ func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collectorSuccessDesc
 	for _, c := range a.collectors {
 		if err := c.Describe(ch); err != nil {
-			log.Printf("Error describing collector %s: %s", c.Name(), err)
+			a.logger.LogAttrs(context.Background(), slog.LevelError, "failed to describe collector",
+				slog.String("message", err.Error()),
+				slog.String("collector", c.Name()),
+			)
 		}
 	}
 }
@@ -200,7 +208,10 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 			collectorErrors := 0.0
 			if err := c.Collect(ch); err != nil {
 				collectorErrors = 1.0
-				log.Printf("Error collecting metrics from collector %s: %s", c.Name(), err)
+				a.logger.LogAttrs(context.Background(), slog.LevelError, "could not collect metrics",
+					slog.String("collector", c.Name()),
+					slog.String("message", err.Error()),
+				)
 			}
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorErrors, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), subsystem, c.Name())
