@@ -184,27 +184,27 @@ func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, 
 			}
 			vmId := to.String(v.Properties.VMID)
 
-			if vmSizeInfo, ok := m.MachineSizeMap[vmRegion][vmSku]; ok {
-				vmInfo[vmId] = &VirtualMachineInfo{
-					Name:            vmName,
-					Id:              vmId,
-					Region:          vmRegion,
-					OwningVMSS:      vmssName,
-					OwningCluster:   cluster,
-					MachineTypeSku:  vmSku,
-					MachineFamily:   vmFamily,
-					Priority:        priority,
-					OperatingSystem: osInfo,
-
-					NumOfCores:     to.Int32(vmSizeInfo.NumberOfCores),
-					MemoryInMiB:    to.Int32(vmSizeInfo.MemoryInMB),
-					OsDiskSizeInMB: to.Int32(vmSizeInfo.OSDiskSizeInMB),
-				}
-				m.logger.LogAttrs(ctx, slog.LevelDebug, "found machine information", slog.String("machineName", vmName))
-				continue
+			vmSizeInfo, ok := m.MachineSizeMap[vmRegion][vmSku]
+			if !ok {
+				m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM sizing info found", slog.String("machineName", vmName))
 			}
 
-			m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM sizing info found", slog.String("machineName", vmName))
+			m.logger.LogAttrs(ctx, slog.LevelDebug, "found machine information", slog.String("machineName", vmName))
+			vmInfo[vmId] = &VirtualMachineInfo{
+				Name:            vmName,
+				Id:              vmId,
+				Region:          vmRegion,
+				OwningVMSS:      vmssName,
+				OwningCluster:   cluster,
+				MachineTypeSku:  vmSku,
+				MachineFamily:   vmFamily,
+				Priority:        priority,
+				OperatingSystem: osInfo,
+
+				NumOfCores:     to.Int32(vmSizeInfo.NumberOfCores),
+				MemoryInMiB:    to.Int32(vmSizeInfo.MemoryInMB),
+				OsDiskSizeInMB: to.Int32(vmSizeInfo.OSDiskSizeInMB),
+			}
 		}
 	}
 
