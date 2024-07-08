@@ -2,6 +2,8 @@ package google
 
 import (
 	"fmt"
+	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +16,8 @@ import (
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
+
+var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 func Test_RegisterCollectors(t *testing.T) {
 	tests := map[string]struct {
@@ -47,6 +51,7 @@ func Test_RegisterCollectors(t *testing.T) {
 			gcp := &GCP{
 				config:     &Config{},
 				collectors: []provider.Collector{},
+				logger:     logger,
 			}
 			for i := 0; i < tt.numCollectors; i++ {
 				gcp.collectors = append(gcp.collectors, c)
@@ -174,6 +179,7 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			gcp := &GCP{
 				config:     &Config{},
 				collectors: []provider.Collector{},
+				logger:     logger,
 			}
 
 			for i := 0; i < tt.numCollectors; i++ {
