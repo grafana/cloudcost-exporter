@@ -32,14 +32,18 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 	}
 
 	testTable := map[string]struct {
-		vmInfo        *VirtualMachineInfo
-		expectedPrice float64
-		expectedErr   error
+		vmInfo           *VirtualMachineInfo
+		expectedPrice    float64
+		expectedCpuPrice float64
+		expectedRamPrice float64
+		expectedErr      error
 	}{
 		"nil vm info": {
-			vmInfo:        nil,
-			expectedPrice: 0.0,
-			expectedErr:   ErrPriceInformationNotFound,
+			vmInfo:           nil,
+			expectedPrice:    0.0,
+			expectedCpuPrice: 0.0,
+			expectedRamPrice: 0.0,
+			expectedErr:      ErrPriceInformationNotFound,
 		},
 
 		"missing region": {
@@ -48,8 +52,10 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 				OperatingSystem: Linux,
 				MachineTypeSku:  "sku1",
 			},
-			expectedPrice: 0.0,
-			expectedErr:   ErrPriceInformationNotFound,
+			expectedPrice:    0.0,
+			expectedCpuPrice: 0.0,
+			expectedRamPrice: 0.0,
+			expectedErr:      ErrPriceInformationNotFound,
 		},
 		"missing sku": {
 			vmInfo: &VirtualMachineInfo{
@@ -57,8 +63,10 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 				Region:          "region1",
 				OperatingSystem: Linux,
 			},
-			expectedPrice: 0.0,
-			expectedErr:   ErrPriceInformationNotFound,
+			expectedPrice:    0.0,
+			expectedCpuPrice: 0.0,
+			expectedRamPrice: 0.0,
+			expectedErr:      ErrPriceInformationNotFound,
 		},
 		"all information complete": {
 			vmInfo: &VirtualMachineInfo{
@@ -66,9 +74,15 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 				Region:          "region1",
 				OperatingSystem: Linux,
 				MachineTypeSku:  "sku1",
+				MachineFamily:   "General purpose",
+
+				NumOfCores:  4.0,
+				MemoryInMiB: 16000.0,
 			},
-			expectedPrice: 1.0,
-			expectedErr:   nil,
+			expectedPrice:    1.0,
+			expectedCpuPrice: 0.1625,
+			expectedRamPrice: 0.021875,
+			expectedErr:      nil,
 		},
 		"all information complete but not in map": {
 			vmInfo: &VirtualMachineInfo{
@@ -89,7 +103,10 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 				assert.Equal(t, test.expectedErr, err)
 			} else {
 				assert.Nil(t, err)
+				assert.NotNil(t, price.MachinePricesBreakdown)
 				assert.Equal(t, test.expectedPrice, price.RetailPrice)
+				assert.Equal(t, test.expectedCpuPrice, price.MachinePricesBreakdown.PricePerCore)
+				assert.Equal(t, test.expectedRamPrice, price.MachinePricesBreakdown.PricePerGiB)
 			}
 		})
 	}
