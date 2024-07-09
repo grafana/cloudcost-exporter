@@ -16,8 +16,9 @@ import (
 const (
 	AzurePriceSearchFilter = `serviceName eq 'Virtual Machines' and priceType eq 'Consumption'`
 	AzureMeterRegion       = `'primary'`
+	DefaultInstanceFamily  = "General purpose"
 
-	DefaultInstanceFamily = "General purpose"
+	MiBsToGiB = 1024
 )
 
 var (
@@ -99,13 +100,16 @@ func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, s
 func (p *PriceStore) getPriceBreakdownFromVmInfo(vmInfo *VirtualMachineInfo, price float64) *MachinePrices {
 	ratio, ok := cpuToCostRatio[vmInfo.MachineFamily]
 	if !ok {
-		p.logger.LogAttrs(p.context, slog.LevelInfo, "no ratio found for instance type, using default", slog.String("instanceType", vmInfo.MachineTypeSku), slog.String("instanceFamily", vmInfo.MachineFamily))
+		p.logger.LogAttrs(p.context, slog.LevelInfo, "no ratio found for instance type, using default",
+			slog.String("instanceType", vmInfo.MachineTypeSku),
+			slog.String("instanceFamily", vmInfo.MachineFamily),
+		)
 		ratio = cpuToCostRatio[DefaultInstanceFamily]
 	}
 
 	return &MachinePrices{
 		PricePerCore: price * ratio / float64(vmInfo.NumOfCores),
-		PricePerGiB:  (price * (1 - ratio) / float64(vmInfo.MemoryInMiB)) * 1024,
+		PricePerGiB:  (price * (1 - ratio) / float64(vmInfo.MemoryInMiB)) * MiBsToGiB,
 	}
 }
 
