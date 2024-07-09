@@ -26,6 +26,9 @@ go run cmd/exporter/exporter.go -provider gcp -project-id=$GCP_PROJECT_ID -gcp.b
 
 # AWS - Prod
 go run cmd/exporter/exporter.go -provider aws -aws.profile $AWS_PROFILE
+
+# Azure
+go run cmd/exporter/exporter.go -provider azure -azure.subscription-id $AZ_SUBSCRIPTION_ID
 ```
 
 ## Project Structure

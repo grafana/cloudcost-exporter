@@ -77,6 +77,7 @@ func New(config *Config, ps pricingClient.Pricing) *Collector {
 		ec2RegionClients: config.RegionClients,
 		logger:           logger,
 		pricingService:   ps,
+		pricingMap:       NewStructuredPricingMap(),
 	}
 }
 

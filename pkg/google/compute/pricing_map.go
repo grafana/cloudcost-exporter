@@ -109,7 +109,7 @@ func NewStructuredPricingMap() *StructuredPricingMap {
 }
 
 func (spm *StructuredPricingMap) CheckReadiness() bool {
-	// TODO - implement
+	// TODO - implement locking on the pricing map
 	return true
 }
 

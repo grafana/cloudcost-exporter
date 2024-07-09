@@ -178,7 +178,6 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 }
 
 func (c *Collector) CheckReadiness() bool {
-	// TODO - implement
 	return c.CachedBuckets.m.TryRLock()
 }
 
