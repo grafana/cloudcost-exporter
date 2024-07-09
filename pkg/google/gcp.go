@@ -194,6 +194,15 @@ func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
 	}
 }
 
+func (g *GCP) CheckReadiness() bool {
+	for _, c := range g.collectors {
+		if !c.CheckReadiness() {
+			return false
+		}
+	}
+	return true
+}
+
 // Collect implements the prometheus.Collector interface and will iterate over all the collectors instantiated during New and collect their metrics.
 func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 	wg := sync.WaitGroup{}

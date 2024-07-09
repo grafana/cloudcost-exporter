@@ -108,6 +108,11 @@ func NewStructuredPricingMap() *StructuredPricingMap {
 	}
 }
 
+func (spm *StructuredPricingMap) CheckReadiness() bool {
+	// TODO - implement
+	return true
+}
+
 // FamilyPricing is a map where the key is the family and the value is the price tiers
 type FamilyPricing struct {
 	Family map[string]*PriceTiers
