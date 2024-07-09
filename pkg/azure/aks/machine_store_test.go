@@ -196,22 +196,22 @@ func TestGetMachineFamily(t *testing.T) {
 	}{
 		"General Purpose": {
 			skuName:        "D5v2",
-			expectedFamily: "GeneralPurpose",
+			expectedFamily: "General purpose",
 			expectedErr:    false,
 		},
 		"General Purpose - standard": {
 			skuName:        "Standard_D16_v3",
-			expectedFamily: "GeneralPurpose",
+			expectedFamily: "General purpose",
 			expectedErr:    false,
 		},
 		"Memory Optimized": {
 			skuName:        "M416ms_v2",
-			expectedFamily: "MemoryOptimized",
+			expectedFamily: "Memory optimized",
 			expectedErr:    false,
 		},
 		"GPU Accelerated": {
 			skuName:        "NC4as_T4_v3",
-			expectedFamily: "GPUAccelerated",
+			expectedFamily: "GPU accelerated",
 			expectedErr:    false,
 		},
 	}

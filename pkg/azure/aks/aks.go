@@ -63,19 +63,19 @@ var (
 	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
 		"The cpu cost a compute instance in USD/(core*h)",
-		[]string{"instance", "region", "machine_type", "cluster_name", "price_tier", "operating_system"},
+		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
 		nil,
 	)
 	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
 		"The memory cost of a compute instance in USD/(GiB*h)",
-		[]string{"instance", "region", "machine_type", "cluster_name", "price_tier", "operating_system"},
+		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
 		nil,
 	)
 	InstanceTotalHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_total_usd_per_hour"),
 		"The total cost of an compute instance in USD/h",
-		[]string{"instance", "region", "machine_type", "cluster_name", "price_tier", "operating_system"},
+		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
 		nil,
 	)
 )
@@ -131,19 +131,18 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 	return 0
 }
 
-// TODO - BREAK INTO CPU AND RAM
-func (c *Collector) getMachinePrices(vmId string) (float64, error) {
+func (c *Collector) getMachinePrices(vmId string) (*MachineSku, error) {
 	vmInfo, err := c.MachineStore.getVmInfoByVmId(vmId)
 	if err != nil {
-		return 0.0, err
+		return nil, err
 	}
 
-	price, err := c.PriceStore.getPriceInfoFromVmInfo(vmInfo)
+	prices, err := c.PriceStore.getPriceInfoFromVmInfo(vmInfo)
 	if err != nil {
-		return 0.0, ErrVmPriceRetrievalFailure
+		return nil, ErrVmPriceRetrievalFailure
 	}
 
-	return price, nil
+	return prices, nil
 }
 
 // Collect satisfies the provider.Collector interface.
@@ -195,15 +194,15 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			vmInfo.Name,
 			vmInfo.Region,
 			vmInfo.MachineTypeSku,
+			vmInfo.MachineFamily,
 			vmInfo.OwningCluster,
 			vmInfo.Priority.String(),
 			vmInfo.OperatingSystem.String(),
 		}
 
-		// TODO - implement memory and CPU pricing
-		// ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
-		// ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
-		ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
+		ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerCore, labelValues...)
+		ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerGiB, labelValues...)
+		ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.RetailPrice, labelValues...)
 	}
 
 	c.logger.LogAttrs(c.context, slog.LevelInfo, "metrics collected", slog.Duration("duration", time.Since(now)))

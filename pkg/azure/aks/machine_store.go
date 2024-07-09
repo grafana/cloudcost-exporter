@@ -33,15 +33,15 @@ var (
 	//
 	// Based on this logic https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
 	MachineFamilyTypeMap map[byte]string = map[byte]string{
-		'A': "GeneralPurpose",
-		'B': "GeneralPurpose",
-		'D': "GeneralPurpose",
-		'F': "ComputeOptimized",
-		'E': "MemoryOptimized",
-		'M': "MemoryOptimized",
-		'L': "StorageOptimized",
-		'N': "GPUAccelerated",
-		'H': "HighPerformanceCompute",
+		'A': "General purpose",
+		'B': "General purpose",
+		'D': "General purpose",
+		'F': "Compute optimized",
+		'E': "Memory optimized",
+		'M': "Memory optimized",
+		'L': "Storage optimized",
+		'N': "GPU accelerated",
+		'H': "High performance compute",
 	}
 )
 
@@ -56,9 +56,9 @@ type VirtualMachineInfo struct {
 	OperatingSystem MachineOperatingSystem
 	Priority        MachinePriority
 
-	NumOfCores     int32
-	MemoryInMiB    int32
-	OsDiskSizeInMB int32
+	NumOfCores     float64
+	MemoryInMiB    float64 // Note, the Azure Docs say MiB, the golang docs say MB, we're going with the Azure Docs :nervous:
+	OsDiskSizeInMB float64
 }
 
 type MachineStore struct {
@@ -202,9 +202,9 @@ func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, 
 				Priority:        priority,
 				OperatingSystem: osInfo,
 
-				NumOfCores:     to.Int32(vmSizeInfo.NumberOfCores),
-				MemoryInMiB:    to.Int32(vmSizeInfo.MemoryInMB),
-				OsDiskSizeInMB: to.Int32(vmSizeInfo.OSDiskSizeInMB),
+				NumOfCores:     float64(to.Int32(vmSizeInfo.NumberOfCores)),
+				MemoryInMiB:    float64(to.Int32(vmSizeInfo.MemoryInMB)),
+				OsDiskSizeInMB: float64(to.Int32(vmSizeInfo.OSDiskSizeInMB)),
 			}
 		}
 	}
