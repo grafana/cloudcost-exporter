@@ -25,6 +25,10 @@ build-binary:
 
 build: build-binary build-image
 
+generate-mocks:
+	mockery --all
+	mockgen -source=pkg/provider/provider.go -destination pkg/provider/mocks/provider.go
+
 test: build
 	go test -v ./...
 

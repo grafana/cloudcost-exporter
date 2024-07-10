@@ -97,6 +97,10 @@ func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, s
 	return p, err
 }
 
+func (p *PriceStore) CheckReadiness() bool {
+	return p.regionMapLock.TryRLock()
+}
+
 func (p *PriceStore) getPriceBreakdownFromVmInfo(vmInfo *VirtualMachineInfo, price float64) *MachinePrices {
 	ratio, ok := cpuToCostRatio[vmInfo.MachineFamily]
 	if !ok {

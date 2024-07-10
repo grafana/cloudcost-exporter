@@ -69,6 +69,10 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	return nil
 }
 
+func (c *Collector) CheckReadiness() bool {
+	return c.PricingMap.CheckReadiness()
+}
+
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	up := c.CollectMetrics(ch)
 	if up == 0 {

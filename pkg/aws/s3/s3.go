@@ -127,7 +127,7 @@ type Collector struct {
 	nextScrape  time.Time
 	metrics     Metrics
 	billingData *BillingData
-	m           sync.Mutex
+	m           sync.RWMutex
 }
 
 // Describe is used to register the metrics with the Prometheus client
@@ -152,7 +152,7 @@ func New(scrapeInterval time.Duration, client costexplorer.CostExplorer) *Collec
 		// Initially Set nextScrape to the current time minus the scrape interval so that the first scrape will run immediately
 		nextScrape: time.Now().Add(-scrapeInterval),
 		metrics:    NewMetrics(),
-		m:          sync.Mutex{},
+		m:          sync.RWMutex{},
 	}
 }
 
@@ -274,6 +274,10 @@ func (s *BillingData) AddMetricGroup(region string, component string, group type
 	}
 
 	componentsMap.UnitCost = unitCostForComponent(component, componentsMap)
+}
+
+func (c *Collector) CheckReadiness() bool {
+	return c.m.TryRLock()
 }
 
 // getBillingData is responsible for making the API call to the AWS Cost Explorer API and parsing the response

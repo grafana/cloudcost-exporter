@@ -131,6 +131,10 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 	return 0
 }
 
+func (c *Collector) CheckReadiness() bool {
+	return c.PriceStore.CheckReadiness() && c.MachineStore.CheckReadiness()
+}
+
 func (c *Collector) getMachinePrices(vmId string) (*MachineSku, error) {
 	vmInfo, err := c.MachineStore.getVmInfoByVmId(vmId)
 	if err != nil {

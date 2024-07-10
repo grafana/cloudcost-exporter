@@ -77,6 +77,7 @@ func New(config *Config, ps pricingClient.Pricing) *Collector {
 		ec2RegionClients: config.RegionClients,
 		logger:           logger,
 		pricingService:   ps,
+		pricingMap:       NewStructuredPricingMap(),
 	}
 }
 
@@ -207,6 +208,10 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 			}
 		}
 	}
+}
+
+func (c *Collector) CheckReadiness() bool {
+	return c.pricingMap.CheckReadiness()
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {

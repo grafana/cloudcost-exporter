@@ -277,6 +277,10 @@ func (m *MachineStore) getMachineTypesByLocation(ctx context.Context, location s
 	return nil
 }
 
+func (m *MachineStore) CheckReadiness() bool {
+	return m.machineSizeMapLock.TryRLock() && m.machineMapLock.TryRLock()
+}
+
 func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
 	startTime := time.Now()
 	m.logger.Info("populating machine store")
