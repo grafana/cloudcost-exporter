@@ -18,7 +18,8 @@ const (
 	AzureMeterRegion       = `'primary'`
 	DefaultInstanceFamily  = "General purpose"
 
-	MiBsToGiB = 1024
+	MiBsToGiB            = 1024
+	priceRefreshInterval = 24 * time.Hour
 )
 
 var (
@@ -62,6 +63,9 @@ type PriceStore struct {
 	context           context.Context
 	retailPriceClient *retailPriceSdk.RetailPricesClient
 
+	currentlyPopulating bool
+	nextPopulationTime  time.Time
+
 	regionMapLock *sync.RWMutex
 	RegionMap     map[string]PriceByPriority
 }
@@ -80,6 +84,9 @@ func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, s
 		context:           parentContext,
 		subscriptionId:    subId,
 		retailPriceClient: retailPricesClient,
+
+		currentlyPopulating: false,
+		nextPopulationTime:  time.Now(),
 
 		regionMapLock: &sync.RWMutex{},
 		RegionMap:     make(map[string]PriceByPriority),
@@ -192,6 +199,17 @@ func (p *PriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, 
 
 func (p *PriceStore) PopulatePriceStore(ctx context.Context) error {
 	startTime := time.Now()
+	if startTime.Before(p.nextPopulationTime) {
+		p.logger.LogAttrs(p.context, slog.LevelDebug, "not time to populate yet", slog.Time("nextPopulationTime", p.nextPopulationTime))
+		return nil
+	}
+
+	if p.currentlyPopulating {
+		p.logger.Info("another process is currently populating, aborting")
+		return nil
+	}
+
+	p.currentlyPopulating = true
 	p.logger.Info("populating price store")
 
 	p.regionMapLock.Lock()
@@ -247,7 +265,9 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) error {
 		}
 	}
 
-	p.logger.LogAttrs(ctx, slog.LevelInfo, "price store populated", slog.Duration("duration", time.Since(startTime)))
+	p.nextPopulationTime = time.Now().Add(priceRefreshInterval)
+	p.currentlyPopulating = false
+	p.logger.LogAttrs(ctx, slog.LevelInfo, "price store populated", slog.Duration("duration", time.Since(startTime)), slog.Time("nextPopulationTime", p.nextPopulationTime))
 	return nil
 }
 
