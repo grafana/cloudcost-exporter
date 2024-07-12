@@ -20,7 +20,7 @@ import (
 const (
 	ConcurrentGoroutineLimit = 10
 
-	machineRefreshInterval = 1 * time.Minute
+	machineRefreshInterval = 5 * time.Minute
 )
 
 var (
