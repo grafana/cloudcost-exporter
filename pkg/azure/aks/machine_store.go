@@ -12,7 +12,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v5"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/Azure/go-autorest/autorest/to"
@@ -65,11 +64,10 @@ type MachineStore struct {
 	context context.Context
 	logger  *slog.Logger
 
-	azResourceGroupClient *armresources.ResourceGroupsClient
-	azVMSizesClient       *armcompute.VirtualMachineSizesClient
-	azVMSSClient          *armcompute.VirtualMachineScaleSetsClient
-	azVMSSVmClient        *armcompute.VirtualMachineScaleSetVMsClient
-	azAksClient           *armcontainerservice.ManagedClustersClient
+	azVMSizesClient *armcompute.VirtualMachineSizesClient
+	azVMSSClient    *armcompute.VirtualMachineScaleSetsClient
+	azVMSSVmClient  *armcompute.VirtualMachineScaleSetVMsClient
+	azAksClient     *armcontainerservice.ManagedClustersClient
 
 	MachineSizeMap     map[string]map[string]*armcompute.VirtualMachineSize
 	machineSizeMapLock *sync.RWMutex
@@ -80,12 +78,6 @@ type MachineStore struct {
 
 func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subscriptionId string, credentials *azidentity.DefaultAzureCredential) (*MachineStore, error) {
 	logger := parentLogger.With("subsystem", "machineStore")
-
-	rgClient, err := armresources.NewResourceGroupsClient(subscriptionId, credentials, nil)
-	if err != nil {
-		logger.LogAttrs(parentCtx, slog.LevelError, "unable to create resource group client", slog.String("err", err.Error()))
-		return nil, ErrClientCreationFailure
-	}
 
 	computeClientFactory, err := armcompute.NewClientFactory(subscriptionId, credentials, nil)
 	if err != nil {
@@ -103,11 +95,10 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 		context: parentCtx,
 		logger:  logger,
 
-		azResourceGroupClient: rgClient,
-		azVMSizesClient:       computeClientFactory.NewVirtualMachineSizesClient(),
-		azVMSSClient:          computeClientFactory.NewVirtualMachineScaleSetsClient(),
-		azVMSSVmClient:        computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
-		azAksClient:           containerClientFactory.NewManagedClustersClient(),
+		azVMSizesClient: computeClientFactory.NewVirtualMachineSizesClient(),
+		azVMSSClient:    computeClientFactory.NewVirtualMachineScaleSetsClient(),
+		azVMSSVmClient:  computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
+		azAksClient:     containerClientFactory.NewManagedClustersClient(),
 
 		MachineSizeMap:     make(map[string]map[string]*armcompute.VirtualMachineSize),
 		machineSizeMapLock: &sync.RWMutex{},
