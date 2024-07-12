@@ -198,7 +198,8 @@ func (spm *StructuredPricingMap) GetPriceForInstanceType(region string, instance
 }
 
 func (spm *StructuredPricingMap) CheckReadiness() bool {
-	return spm.m.TryRLock()
+	// TODO - implement
+	return true
 }
 
 // Attributes represents ec2 instance attributes that are pulled from AWS api's describing instances.

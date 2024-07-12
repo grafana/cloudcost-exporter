@@ -178,7 +178,8 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 }
 
 func (c *Collector) CheckReadiness() bool {
-	return c.CachedBuckets.m.TryRLock()
+	// TODO - implement
+	return true
 }
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {

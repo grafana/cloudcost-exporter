@@ -105,7 +105,7 @@ func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, s
 }
 
 func (p *PriceStore) CheckReadiness() bool {
-	return p.regionMapLock.TryRLock()
+	return !p.currentlyPopulating
 }
 
 func (p *PriceStore) getPriceBreakdownFromVmInfo(vmInfo *VirtualMachineInfo, price float64) *MachinePrices {

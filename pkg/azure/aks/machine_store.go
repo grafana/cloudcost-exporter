@@ -277,7 +277,9 @@ func (m *MachineStore) getMachineTypesByLocation(ctx context.Context, location s
 }
 
 func (m *MachineStore) CheckReadiness() bool {
-	return m.machineSizeMapLock.TryRLock() && m.machineMapLock.TryRLock()
+	// TODO - come up with better way to check readiness,
+	// this seems very error-prone
+	return !m.currentlyPopulating
 }
 
 func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
