@@ -2,6 +2,15 @@
 
 This guide will help you get started with the development environment and how to contribute to the project.
 
+## External Dependencies
+
+There are two tools that we use to generate mocks for testing that need to be installed independently:
+1. [mockery](https://vektra.github.io/mockery/latest/installation/): See the note about _not_ using go tools to install
+2. [mockgen](https://github.com/uber-go/mock?tab=readme-ov-file#installation)
+
+Use the latest version available for both. 
+The tools are used by `make generate-mocks` in the [Makefile](https://github.com/grafana/cloudcost-exporter/blob/66b83baacf9ad4408f0ad7c7b1738ac3b2c179b2/Makefile#L28)
+
 ## Running Locally
 
 Prior to running the exporter, you will need to ensure you have the appropriate credentials for the cloud provider you are trying to export data for.
