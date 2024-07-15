@@ -87,8 +87,8 @@ func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, s
 	}
 
 	// populate the store before it is used
-	// Note this is done in a goroutine on first startup because it can take awhile...
 	go p.PopulatePriceStore()
+
 	return p, err
 }
 

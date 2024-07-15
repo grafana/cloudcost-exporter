@@ -110,7 +110,7 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 	}
 
 	// Populate before using
-	ms.PopulateMachineStore()
+	go ms.PopulateMachineStore()
 
 	return ms, nil
 }
