@@ -71,9 +71,6 @@ type MachineStore struct {
 	azVMSSVmClient  *armcompute.VirtualMachineScaleSetVMsClient
 	azAksClient     *armcontainerservice.ManagedClustersClient
 
-	nextPopulationTime  time.Time
-	currentlyPopulating bool
-
 	MachineSizeMap     map[string]map[string]*armcompute.VirtualMachineSize
 	machineSizeMapLock *sync.RWMutex
 
@@ -105,9 +102,6 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 		azVMSSVmClient:  computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
 		azAksClient:     containerClientFactory.NewManagedClustersClient(),
 
-		nextPopulationTime:  time.Now(),
-		currentlyPopulating: false,
-
 		MachineSizeMap:     make(map[string]map[string]*armcompute.VirtualMachineSize),
 		machineSizeMapLock: &sync.RWMutex{},
 
@@ -115,14 +109,8 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 		machineMapLock: &sync.RWMutex{},
 	}
 
-	go func() {
-		// populate the store before it is used
-		err = ms.PopulateMachineStore(ms.context)
-		if err != nil {
-			// if it fails, subsequent calls to Collect() will populate the store
-			ms.logger.LogAttrs(ms.context, slog.LevelError, "error populating initial machine store", slog.String("error", err.Error()))
-		}
-	}()
+	// Populate before using
+	ms.PopulateMachineStore()
 
 	return ms, nil
 }
@@ -277,30 +265,31 @@ func (m *MachineStore) getMachineTypesByLocation(ctx context.Context, location s
 }
 
 func (m *MachineStore) CheckReadiness() bool {
-	// TODO - come up with better way to check readiness,
-	// this seems very error-prone
-	return !m.currentlyPopulating
+	// TODO - implement
+	return true
 }
 
-func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
+func (m *MachineStore) GetListOfVmsForSubscription() ([]*VirtualMachineInfo, error) {
+	m.machineMapLock.RLock()
+	defer m.machineMapLock.RUnlock()
+
+	vmi := make([]*VirtualMachineInfo, 0, len(m.MachineMap))
+	for _, vmInfo := range m.MachineMap {
+		vmi = append(vmi, vmInfo)
+	}
+
+	return vmi, nil
+}
+
+func (m *MachineStore) PopulateMachineStore() {
 	startTime := time.Now()
+	ctx := context.TODO()
 
-	if startTime.Before(m.nextPopulationTime) {
-		m.logger.LogAttrs(m.context, slog.LevelDebug, "not time to populate yet", slog.Time("nextPopulationTime", m.nextPopulationTime))
-		return nil
-	}
-
-	if m.currentlyPopulating {
-		m.logger.Info("another process is currently populating, aborting")
-		return nil
-	}
-
-	m.currentlyPopulating = true
 	m.logger.Info("populating machine store")
 
 	clusterList, err := m.getClustersInSubscription(ctx)
 	if err != nil {
-		return err
+		return
 	}
 
 	locationSet := make(map[string]bool)
@@ -379,14 +368,12 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
 
 	err = eg.Wait()
 	if err != nil {
-		return err
+		m.logger.Error("BIG ERROR YO")
+		return
 	}
 
 	m.MachineMap = vmInfoMap
-	m.nextPopulationTime = time.Now().Add(machineRefreshInterval)
-	m.currentlyPopulating = false
-	m.logger.LogAttrs(m.context, slog.LevelInfo, "machine store populated", slog.Duration("duration", time.Since(startTime)), slog.Time("nextPopulationTime", m.nextPopulationTime))
-	return nil
+	m.logger.LogAttrs(m.context, slog.LevelInfo, "machine store populated", slog.Duration("duration", time.Since(startTime)))
 }
 
 func (m *MachineStore) getMachineName(vm *armcompute.VirtualMachineScaleSetVM) (string, error) {

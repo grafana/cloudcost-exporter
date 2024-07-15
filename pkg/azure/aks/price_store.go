@@ -63,9 +63,6 @@ type PriceStore struct {
 	context           context.Context
 	retailPriceClient *retailPriceSdk.RetailPricesClient
 
-	currentlyPopulating bool
-	nextPopulationTime  time.Time
-
 	regionMapLock *sync.RWMutex
 	RegionMap     map[string]PriceByPriority
 }
@@ -85,27 +82,19 @@ func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, s
 		subscriptionId:    subId,
 		retailPriceClient: retailPricesClient,
 
-		currentlyPopulating: false,
-		nextPopulationTime:  time.Now(),
-
 		regionMapLock: &sync.RWMutex{},
 		RegionMap:     make(map[string]PriceByPriority),
 	}
 
-	go func() {
-		// populate the store before it is used
-		err := p.PopulatePriceStore(p.context)
-		if err != nil {
-			// if it fails, subsequent calls to Collect() will populate the store
-			p.logger.LogAttrs(p.context, slog.LevelError, "error populating initial price store", slog.String("error", err.Error()))
-		}
-	}()
-
+	// populate the store before it is used
+	// Note this is done in a goroutine on first startup because it can take awhile...
+	go p.PopulatePriceStore()
 	return p, err
 }
 
 func (p *PriceStore) CheckReadiness() bool {
-	return !p.currentlyPopulating
+	// TODO - implement
+	return true
 }
 
 func (p *PriceStore) getPriceBreakdownFromVmInfo(vmInfo *VirtualMachineInfo, price float64) *MachinePrices {
@@ -197,25 +186,15 @@ func (p *PriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, 
 	return true
 }
 
-func (p *PriceStore) PopulatePriceStore(ctx context.Context) error {
+func (p *PriceStore) PopulatePriceStore() {
 	startTime := time.Now()
-	if startTime.Before(p.nextPopulationTime) {
-		p.logger.LogAttrs(p.context, slog.LevelDebug, "not time to populate yet", slog.Time("nextPopulationTime", p.nextPopulationTime))
-		return nil
-	}
-
-	if p.currentlyPopulating {
-		p.logger.Info("another process is currently populating, aborting")
-		return nil
-	}
-
-	p.currentlyPopulating = true
-	p.logger.Info("populating price store")
+	ctx := context.TODO()
 
 	p.regionMapLock.Lock()
 	defer p.regionMapLock.Unlock()
-
 	clear(p.RegionMap)
+
+	p.logger.Info("populating price store")
 
 	opts := &retailPriceSdk.RetailPricesClientListOptions{
 		APIVersion:  to.StringPtr(AZ_API_VERSION),
@@ -228,7 +207,7 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) error {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			p.logger.LogAttrs(ctx, slog.LevelError, "error paging through retail prices")
-			return ErrPageAdvanceFailure
+			return
 		}
 
 		p.logger.Debug("new page")
@@ -265,10 +244,7 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) error {
 		}
 	}
 
-	p.nextPopulationTime = time.Now().Add(priceRefreshInterval)
-	p.currentlyPopulating = false
-	p.logger.LogAttrs(ctx, slog.LevelInfo, "price store populated", slog.Duration("duration", time.Since(startTime)), slog.Time("nextPopulationTime", p.nextPopulationTime))
-	return nil
+	p.logger.LogAttrs(ctx, slog.LevelInfo, "price store populated", slog.Duration("duration", time.Since(startTime)))
 }
 
 func getMachineOperatingSystemFromSku(sku retailPriceSdk.ResourceSKU) MachineOperatingSystem {

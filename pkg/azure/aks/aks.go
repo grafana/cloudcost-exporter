@@ -3,14 +3,15 @@ package aks
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
+	"github.com/robfig/cron/v3"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 )
@@ -82,9 +83,9 @@ type Collector struct {
 	context context.Context
 	logger  *slog.Logger
 
-	PriceStore *PriceStore
-
-	MachineStore *MachineStore
+	PopulationCron *cron.Cron
+	PriceStore     *PriceStore
+	MachineStore   *MachineStore
 }
 
 type Config struct {
@@ -106,12 +107,25 @@ func New(ctx context.Context, cfg *Config) (*Collector, error) {
 		return nil, err
 	}
 
+	populationCron := cron.New()
+	_, err = populationCron.AddFunc(fmt.Sprintf("@every %s", priceRefreshInterval), priceStore.PopulatePriceStore)
+	if err != nil {
+		return nil, err
+	}
+	_, err = populationCron.AddFunc(fmt.Sprintf("@every %s", machineRefreshInterval), machineStore.PopulateMachineStore)
+	if err != nil {
+		return nil, err
+	}
+
+	populationCron.Start()
+
 	return &Collector{
 		context: ctx,
 		logger:  logger,
 
-		PriceStore:   priceStore,
-		MachineStore: machineStore,
+		PopulationCron: populationCron,
+		PriceStore:     priceStore,
+		MachineStore:   machineStore,
 	}, nil
 }
 
@@ -144,31 +158,13 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	c.logger.Info("collecting metrics")
 	now := time.Now()
 
-	eg, egCtx := errgroup.WithContext(c.context)
-	eg.Go(func() error {
-		err := c.MachineStore.PopulateMachineStore(egCtx)
-		if err != nil {
-			return ErrMachineStorePopulationFailure
-		}
-		return nil
-	})
-
-	eg.Go(func() error {
-		err := c.PriceStore.PopulatePriceStore(egCtx)
-		if err != nil {
-			return ErrPriceStorePopulationFailure
-		}
-		return nil
-	})
-
-	err := eg.Wait()
+	machineList, err := c.MachineStore.GetListOfVmsForSubscription()
 	if err != nil {
 		return err
 	}
 
-	c.MachineStore.machineMapLock.RLock()
-	defer c.MachineStore.machineMapLock.RUnlock()
-	for vmId, vmInfo := range c.MachineStore.MachineMap {
+	for _, vmInfo := range machineList {
+		vmId := vmInfo.Id
 		price, err := c.getMachinePrices(vmId)
 		if err != nil {
 			return err
