@@ -19,6 +19,8 @@ import (
 
 const (
 	ConcurrentGoroutineLimit = 10
+
+	machineRefreshInterval = 5 * time.Minute
 )
 
 var (
@@ -107,14 +109,8 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 		machineMapLock: &sync.RWMutex{},
 	}
 
-	go func() {
-		// populate the store before it is used
-		err := ms.PopulateMachineStore(ms.context)
-		if err != nil {
-			// if it fails, subsequent calls to Collect() will populate the store
-			ms.logger.LogAttrs(ms.context, slog.LevelError, "error populating initial machine store", slog.String("error", err.Error()))
-		}
-	}()
+	// Populate before using
+	go ms.PopulateMachineStore(parentCtx)
 
 	return ms, nil
 }
@@ -269,16 +265,30 @@ func (m *MachineStore) getMachineTypesByLocation(ctx context.Context, location s
 }
 
 func (m *MachineStore) CheckReadiness() bool {
-	return m.machineSizeMapLock.TryRLock() && m.machineMapLock.TryRLock()
+	// TODO - implement
+	return true
 }
 
-func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
+func (m *MachineStore) GetListOfVmsForSubscription() ([]*VirtualMachineInfo, error) {
+	m.machineMapLock.RLock()
+	defer m.machineMapLock.RUnlock()
+
+	vmi := make([]*VirtualMachineInfo, 0, len(m.MachineMap))
+	for _, vmInfo := range m.MachineMap {
+		vmi = append(vmi, vmInfo)
+	}
+
+	return vmi, nil
+}
+
+func (m *MachineStore) PopulateMachineStore(ctx context.Context) {
 	startTime := time.Now()
+
 	m.logger.Info("populating machine store")
 
 	clusterList, err := m.getClustersInSubscription(ctx)
 	if err != nil {
-		return err
+		return
 	}
 
 	locationSet := make(map[string]bool)
@@ -288,13 +298,12 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
 
 	m.machineMapLock.Lock()
 	defer m.machineMapLock.Unlock()
-
 	clear(m.MachineMap)
 
-	// Note that this needs to be immediately unlocked because it will be re-locked
-	// and repopulated below
 	m.machineSizeMapLock.Lock()
 	clear(m.MachineSizeMap)
+	// Note that this needs to be immediately unlocked because it will be re-locked
+	// and repopulated below
 	m.machineSizeMapLock.Unlock()
 
 	vmInfoMap := make(map[string]*VirtualMachineInfo)
@@ -358,12 +367,12 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) error {
 
 	err = eg.Wait()
 	if err != nil {
-		return err
+		m.logger.LogAttrs(m.context, slog.LevelError, "Error populating Machine Store", slog.String("err", err.Error()))
+		return
 	}
 
 	m.MachineMap = vmInfoMap
 	m.logger.LogAttrs(m.context, slog.LevelInfo, "machine store populated", slog.Duration("duration", time.Since(startTime)))
-	return nil
 }
 
 func (m *MachineStore) getMachineName(vm *armcompute.VirtualMachineScaleSetVM) (string, error) {

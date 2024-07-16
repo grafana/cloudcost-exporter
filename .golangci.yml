@@ -1,9 +1,12 @@
 output:
-  format: line-number
+  formats: 
+    - format: colored-line-number
 
 linters:
+  disable-all: true
   enable:
     - goimports
     - gofmt
     - misspell
     - errorlint
+    - unused

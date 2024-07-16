@@ -8,7 +8,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 
@@ -18,9 +17,6 @@ import (
 const (
 	subsystem             = "azure_aks"
 	AZ_API_VERSION string = "2023-01-01-preview" // using latest API Version https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
-
-	priceRefreshInterval   = 24 * time.Hour
-	machineRefreshInterval = 5 * time.Minute
 )
 
 type MachineOperatingSystem int
@@ -85,11 +81,8 @@ type Collector struct {
 	context context.Context
 	logger  *slog.Logger
 
-	PriceStore                   *PriceStore
-	priceStoreNextPopulationTime time.Time
-
-	MachineStore                   *MachineStore
-	machineStoreNextPopulationTime time.Time
+	PriceStore   *PriceStore
+	MachineStore *MachineStore
 }
 
 type Config struct {
@@ -101,8 +94,6 @@ type Config struct {
 
 func New(ctx context.Context, cfg *Config) (*Collector, error) {
 	logger := cfg.Logger.With("collector", "aks")
-	now := time.Now()
-
 	priceStore, err := NewPricingStore(ctx, logger, cfg.SubscriptionId)
 	if err != nil {
 		return nil, err
@@ -113,15 +104,36 @@ func New(ctx context.Context, cfg *Config) (*Collector, error) {
 		return nil, err
 	}
 
+	priceTicker := time.NewTicker(priceRefreshInterval)
+	machineTicker := time.NewTicker(machineRefreshInterval)
+
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-priceTicker.C:
+				priceStore.PopulatePriceStore(ctx)
+			}
+		}
+	}(ctx)
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-machineTicker.C:
+				machineStore.PopulateMachineStore(ctx)
+			}
+		}
+	}(ctx)
+
 	return &Collector{
 		context: ctx,
 		logger:  logger,
 
-		PriceStore:                   priceStore,
-		priceStoreNextPopulationTime: now.Add(priceRefreshInterval),
-
-		MachineStore:                   machineStore,
-		machineStoreNextPopulationTime: now.Add(machineRefreshInterval),
+		PriceStore:   priceStore,
+		MachineStore: machineStore,
 	}, nil
 }
 
@@ -154,41 +166,13 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	c.logger.Info("collecting metrics")
 	now := time.Now()
 
-	eg, egCtx := errgroup.WithContext(c.context)
-	if now.After(c.machineStoreNextPopulationTime) {
-		eg.Go(func() error {
-			err := c.MachineStore.PopulateMachineStore(egCtx)
-			if err != nil {
-				return ErrMachineStorePopulationFailure
-			}
-
-			c.machineStoreNextPopulationTime = time.Now().Add(machineRefreshInterval)
-			c.logger.LogAttrs(c.context, slog.LevelInfo, "repopulated machine store", slog.Time("nextPopulationTime", c.machineStoreNextPopulationTime))
-			return nil
-		})
-	}
-
-	if now.After(c.priceStoreNextPopulationTime) {
-		eg.Go(func() error {
-			err := c.PriceStore.PopulatePriceStore(egCtx)
-			if err != nil {
-				return ErrPriceStorePopulationFailure
-			}
-
-			c.priceStoreNextPopulationTime = time.Now().Add(priceRefreshInterval)
-			c.logger.LogAttrs(c.context, slog.LevelInfo, "repopulated price store", slog.Time("nextPopulationTime", c.priceStoreNextPopulationTime))
-			return nil
-		})
-	}
-
-	err := eg.Wait()
+	machineList, err := c.MachineStore.GetListOfVmsForSubscription()
 	if err != nil {
 		return err
 	}
 
-	c.MachineStore.machineMapLock.RLock()
-	defer c.MachineStore.machineMapLock.RUnlock()
-	for vmId, vmInfo := range c.MachineStore.MachineMap {
+	for _, vmInfo := range machineList {
+		vmId := vmInfo.Id
 		price, err := c.getMachinePrices(vmId)
 		if err != nil {
 			return err

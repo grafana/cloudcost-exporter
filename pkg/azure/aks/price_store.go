@@ -18,7 +18,8 @@ const (
 	AzureMeterRegion       = `'primary'`
 	DefaultInstanceFamily  = "General purpose"
 
-	MiBsToGiB = 1024
+	MiBsToGiB            = 1024
+	priceRefreshInterval = 24 * time.Hour
 )
 
 var (
@@ -85,20 +86,15 @@ func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, s
 		RegionMap:     make(map[string]PriceByPriority),
 	}
 
-	go func() {
-		// populate the store before it is used
-		err := p.PopulatePriceStore(p.context)
-		if err != nil {
-			// if it fails, subsequent calls to Collect() will populate the store
-			p.logger.LogAttrs(p.context, slog.LevelError, "error populating initial price store", slog.String("error", err.Error()))
-		}
-	}()
+	// populate the store before it is used
+	go p.PopulatePriceStore(parentContext)
 
 	return p, err
 }
 
 func (p *PriceStore) CheckReadiness() bool {
-	return p.regionMapLock.TryRLock()
+	// TODO - implement
+	return true
 }
 
 func (p *PriceStore) getPriceBreakdownFromVmInfo(vmInfo *VirtualMachineInfo, price float64) *MachinePrices {
@@ -190,14 +186,14 @@ func (p *PriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, 
 	return true
 }
 
-func (p *PriceStore) PopulatePriceStore(ctx context.Context) error {
+func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
 	startTime := time.Now()
-	p.logger.Info("populating price store")
 
 	p.regionMapLock.Lock()
 	defer p.regionMapLock.Unlock()
-
 	clear(p.RegionMap)
+
+	p.logger.Info("populating price store")
 
 	opts := &retailPriceSdk.RetailPricesClientListOptions{
 		APIVersion:  to.StringPtr(AZ_API_VERSION),
@@ -210,7 +206,7 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) error {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			p.logger.LogAttrs(ctx, slog.LevelError, "error paging through retail prices")
-			return ErrPageAdvanceFailure
+			return
 		}
 
 		p.logger.Debug("new page")
@@ -248,7 +244,6 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) error {
 	}
 
 	p.logger.LogAttrs(ctx, slog.LevelInfo, "price store populated", slog.Duration("duration", time.Since(startTime)))
-	return nil
 }
 
 func getMachineOperatingSystemFromSku(sku retailPriceSdk.ResourceSKU) MachineOperatingSystem {

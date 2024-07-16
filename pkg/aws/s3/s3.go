@@ -277,7 +277,8 @@ func (s *BillingData) AddMetricGroup(region string, component string, group type
 }
 
 func (c *Collector) CheckReadiness() bool {
-	return c.m.TryRLock()
+	// TODO - implement
+	return true
 }
 
 // getBillingData is responsible for making the API call to the AWS Cost Explorer API and parsing the response
