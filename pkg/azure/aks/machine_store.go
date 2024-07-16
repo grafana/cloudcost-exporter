@@ -368,7 +368,7 @@ func (m *MachineStore) PopulateMachineStore() {
 
 	err = eg.Wait()
 	if err != nil {
-		m.logger.Error("BIG ERROR YO")
+		m.logger.LogAttrs(m.context, slog.LevelError, "Error populating Machine Store", slog.String("err", err.Error()))
 		return
 	}
 

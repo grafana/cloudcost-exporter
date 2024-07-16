@@ -3,7 +3,6 @@ package aks
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
-	"github.com/robfig/cron/v3"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 )
@@ -83,9 +81,8 @@ type Collector struct {
 	context context.Context
 	logger  *slog.Logger
 
-	PopulationCron *cron.Cron
-	PriceStore     *PriceStore
-	MachineStore   *MachineStore
+	PriceStore   *PriceStore
+	MachineStore *MachineStore
 }
 
 type Config struct {
@@ -107,25 +104,36 @@ func New(ctx context.Context, cfg *Config) (*Collector, error) {
 		return nil, err
 	}
 
-	populationCron := cron.New()
-	_, err = populationCron.AddFunc(fmt.Sprintf("@every %s", priceRefreshInterval), priceStore.PopulatePriceStore)
-	if err != nil {
-		return nil, err
-	}
-	_, err = populationCron.AddFunc(fmt.Sprintf("@every %s", machineRefreshInterval), machineStore.PopulateMachineStore)
-	if err != nil {
-		return nil, err
-	}
+	priceTicker := time.NewTicker(priceRefreshInterval)
+	machineTicker := time.NewTicker(machineRefreshInterval)
 
-	populationCron.Start()
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-priceTicker.C:
+				priceStore.PopulatePriceStore()
+			}
+		}
+	}(ctx)
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-machineTicker.C:
+				machineStore.PopulateMachineStore()
+			}
+		}
+	}(ctx)
 
 	return &Collector{
 		context: ctx,
 		logger:  logger,
 
-		PopulationCron: populationCron,
-		PriceStore:     priceStore,
-		MachineStore:   machineStore,
+		PriceStore:   priceStore,
+		MachineStore: machineStore,
 	}, nil
 }
 
