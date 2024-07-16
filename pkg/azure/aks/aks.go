@@ -113,7 +113,7 @@ func New(ctx context.Context, cfg *Config) (*Collector, error) {
 			case <-ctx.Done():
 				return
 			case <-priceTicker.C:
-				priceStore.PopulatePriceStore()
+				priceStore.PopulatePriceStore(ctx)
 			}
 		}
 	}(ctx)
@@ -123,7 +123,7 @@ func New(ctx context.Context, cfg *Config) (*Collector, error) {
 			case <-ctx.Done():
 				return
 			case <-machineTicker.C:
-				machineStore.PopulateMachineStore()
+				machineStore.PopulateMachineStore(ctx)
 			}
 		}
 	}(ctx)

@@ -87,7 +87,7 @@ func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, s
 	}
 
 	// populate the store before it is used
-	go p.PopulatePriceStore()
+	go p.PopulatePriceStore(parentContext)
 
 	return p, err
 }
@@ -186,9 +186,8 @@ func (p *PriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, 
 	return true
 }
 
-func (p *PriceStore) PopulatePriceStore() {
+func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
 	startTime := time.Now()
-	ctx := context.TODO()
 
 	p.regionMapLock.Lock()
 	defer p.regionMapLock.Unlock()

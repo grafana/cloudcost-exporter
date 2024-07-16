@@ -110,7 +110,7 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subsc
 	}
 
 	// Populate before using
-	go ms.PopulateMachineStore()
+	go ms.PopulateMachineStore(parentCtx)
 
 	return ms, nil
 }
@@ -281,9 +281,8 @@ func (m *MachineStore) GetListOfVmsForSubscription() ([]*VirtualMachineInfo, err
 	return vmi, nil
 }
 
-func (m *MachineStore) PopulateMachineStore() {
+func (m *MachineStore) PopulateMachineStore(ctx context.Context) {
 	startTime := time.Now()
-	ctx := context.TODO()
 
 	m.logger.Info("populating machine store")
 
