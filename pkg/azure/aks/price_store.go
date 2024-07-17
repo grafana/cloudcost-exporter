@@ -209,8 +209,6 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
 			return
 		}
 
-		p.logger.Debug("new page")
-
 		for _, v := range page.Items {
 			regionName := v.ArmRegionName
 			if regionName == "" {
