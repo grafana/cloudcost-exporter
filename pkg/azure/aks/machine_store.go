@@ -166,18 +166,31 @@ func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, 
 			}
 
 			if v.Properties == nil || v.Properties.VMID == nil {
-				m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM ID found", slog.String("machineName", vmName))
+				m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM ID found",
+					slog.String("machineName", vmName),
+					slog.String("region", vmRegion),
+					slog.String("sku", vmSku),
+				)
 				continue
 			}
 			vmId := to.String(v.Properties.VMID)
 
 			vmSizeInfo, ok := m.MachineSizeMap[vmRegion][vmSku]
 			if !ok {
-				m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM sizing info found", slog.String("machineName", vmName))
+				m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM sizing info found",
+					slog.String("machineName", vmName),
+					slog.String("region", vmRegion),
+					slog.String("sku", vmSku),
+				)
 				continue
 			}
 
-			m.logger.LogAttrs(ctx, slog.LevelDebug, "found machine information", slog.String("machineName", vmName))
+			m.logger.LogAttrs(ctx, slog.LevelDebug, "found machine information",
+				slog.String("machineName", vmName),
+				slog.String("machineId", vmId),
+				slog.String("vmssName", vmssName),
+				slog.String("vmssClusterName", cluster),
+			)
 			vmInfo[vmId] = &VirtualMachineInfo{
 				Name:            vmName,
 				Id:              vmId,
@@ -196,6 +209,12 @@ func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, 
 		}
 	}
 
+	m.logger.LogAttrs(ctx, slog.LevelDebug, "finished collecting machine info for VMSS",
+		slog.String("vmssName", vmssName),
+		slog.String("cluster", cluster),
+		slog.String("resourceGroup", rgName),
+		slog.Int("machinesFound", len(vmInfo)),
+	)
 	return vmInfo, nil
 }
 
@@ -219,9 +238,21 @@ func (m *MachineStore) getVMSSInfoFromResourceGroup(ctx context.Context, rgName,
 			}
 
 			vmssInfo[vmssName] = v
+			m.logger.LogAttrs(m.context, slog.LevelDebug, "found VMSS",
+				slog.String("vmssName", vmssName),
+				slog.String("vmssSku", to.String(v.SKU.Name)),
+				slog.String("resourceGroup", rgName),
+				slog.String("cluster", clusterName),
+				slog.String("region", to.String(v.Location)),
+			)
 		}
 	}
 
+	m.logger.LogAttrs(m.context, slog.LevelDebug, "finished collecting VMSS",
+		slog.Int("numOfVmss", len(vmssInfo)),
+		slog.String("resourceGroup", rgName),
+		slog.String("cluster", clusterName),
+	)
 	return vmssInfo, nil
 }
 
@@ -238,6 +269,9 @@ func (m *MachineStore) getClustersInSubscription(ctx context.Context) ([]*armcon
 		clusterList = append(clusterList, page.Value...)
 	}
 
+	m.logger.LogAttrs(m.context, slog.LevelDebug, "found clusters",
+		slog.Int("numOfClusters", len(clusterList)),
+	)
 	return clusterList, nil
 }
 
@@ -259,8 +293,18 @@ func (m *MachineStore) getMachineTypesByLocation(ctx context.Context, location s
 			sizeId := to.String(v.Name)
 
 			m.MachineSizeMap[location][sizeId] = v
+			m.logger.LogAttrs(m.context, slog.LevelDebug, "found machine size",
+				slog.String("machineSizeMapRegion", location),
+				slog.String("sizeId", sizeId),
+			)
 		}
+
+		m.logger.LogAttrs(m.context, slog.LevelDebug, "populated region with machine sizes",
+			slog.String("machineSizeMapRegion", location),
+			slog.Int("numOfSizes", len(m.MachineSizeMap[location])),
+		)
 	}
+
 	return nil
 }
 
@@ -309,15 +353,24 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) {
 	vmInfoMap := make(map[string]*VirtualMachineInfo)
 	vmInfoLock := sync.Mutex{}
 
-	eg, nestedCtx := errgroup.WithContext(ctx)
-	eg.SetLimit(ConcurrentGoroutineLimit)
+	machineSizesEg, nestedCtx := errgroup.WithContext(ctx)
+	machineSizesEg.SetLimit(ConcurrentGoroutineLimit)
 
 	// Populate Machine Types
 	for location := range locationSet {
-		eg.Go(func() error {
+		machineSizesEg.Go(func() error {
 			return m.getMachineTypesByLocation(nestedCtx, location)
 		})
 	}
+
+	err = machineSizesEg.Wait()
+	if err != nil {
+		m.logger.LogAttrs(m.context, slog.LevelError, "Error populating machine sizes", slog.String("err", err.Error()))
+		return
+	}
+
+	machineInstancesEg, nestedCtx := errgroup.WithContext(ctx)
+	machineInstancesEg.SetLimit(ConcurrentGoroutineLimit)
 
 	// Populate Machines
 	for _, cluster := range clusterList {
@@ -334,14 +387,14 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) {
 			continue
 		}
 
-		eg.Go(func() error {
+		machineInstancesEg.Go(func() error {
 			vmssMap, err := m.getVMSSInfoFromResourceGroup(nestedCtx, rgName, clusterName)
 			if err != nil {
 				return err
 			}
 
 			for vmssName, vmssInfo := range vmssMap {
-				eg.Go(func() error {
+				machineInstancesEg.Go(func() error {
 					vmssPriority := getMachineScaleSetPriority(vmssInfo)
 					vmssOperatingSystem := getMachineScaleSetOperatingSystem(vmssInfo)
 					if err != nil {
@@ -365,14 +418,18 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) {
 		})
 	}
 
-	err = eg.Wait()
+	err = machineInstancesEg.Wait()
 	if err != nil {
 		m.logger.LogAttrs(m.context, slog.LevelError, "Error populating Machine Store", slog.String("err", err.Error()))
 		return
 	}
 
 	m.MachineMap = vmInfoMap
-	m.logger.LogAttrs(m.context, slog.LevelInfo, "machine store populated", slog.Duration("duration", time.Since(startTime)))
+	m.logger.LogAttrs(m.context, slog.LevelInfo, "machine store populated",
+		slog.Duration("duration", time.Since(startTime)),
+		slog.Int("numOfMachines", len(m.MachineMap)),
+		slog.Int("numOfClusters", len(clusterList)),
+	)
 }
 
 func (m *MachineStore) getMachineName(vm *armcompute.VirtualMachineScaleSetVM) (string, error) {
