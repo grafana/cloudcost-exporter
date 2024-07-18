@@ -39,7 +39,7 @@ const (
 	Spot
 )
 
-var machinePriorityNames [2]string = [2]string{"OnDemand", "Spot"}
+var machinePriorityNames [2]string = [2]string{"ondemand", "spot"}
 
 func (mp MachinePriority) String() string {
 	return machinePriorityNames[mp]

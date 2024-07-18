@@ -61,7 +61,7 @@ func TestGetVmInfoByName(t *testing.T) {
 func TestGetMachineScaleSetPriority(t *testing.T) {
 	testTable := map[string]struct {
 		vmssObject       *armcompute.VirtualMachineScaleSet
-		expectedPriority MachinePriority
+		expectedPriority string
 	}{
 		"spot": {
 			vmssObject: &armcompute.VirtualMachineScaleSet{
@@ -71,7 +71,7 @@ func TestGetMachineScaleSetPriority(t *testing.T) {
 					},
 				},
 			},
-			expectedPriority: Spot,
+			expectedPriority: "spot",
 		},
 		"on demand": {
 			vmssObject: &armcompute.VirtualMachineScaleSet{
@@ -81,14 +81,14 @@ func TestGetMachineScaleSetPriority(t *testing.T) {
 					},
 				},
 			},
-			expectedPriority: OnDemand,
+			expectedPriority: "ondemand",
 		},
 	}
 
 	for name, tc := range testTable {
 		t.Run(name, func(t *testing.T) {
 			priority := getMachineScaleSetPriority(tc.vmssObject)
-			assert.Equal(t, tc.expectedPriority, priority)
+			assert.Equal(t, tc.expectedPriority, priority.String())
 		})
 	}
 }
