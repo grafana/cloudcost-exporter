@@ -6,7 +6,9 @@ COPY ["go.mod", "go.sum", "./"]
 RUN go mod download
 
 COPY . .
-RUN make build-binary
+
+ENV GOCACHE=/go/pkg/mod/
+RUN  --mount=type=cache,target="/go/pkg/mod/" make build-binary
 
 # Build Image
 FROM scratch
