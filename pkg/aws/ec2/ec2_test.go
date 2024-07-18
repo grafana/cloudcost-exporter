@@ -26,92 +26,6 @@ var (
 	logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
-func TestCollector_ListOnDemandPrices(t *testing.T) {
-	tests := map[string]struct {
-		ctx           context.Context
-		region        string
-		err           error
-		GetProducts   func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error)
-		want          []string
-		expectedCalls int
-	}{
-		"No products should return nothing": {
-			ctx:    context.Background(),
-			region: "us-east-1",
-			err:    nil,
-			want:   nil,
-			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
-				return &pricing.GetProductsOutput{
-					PriceList: []string{},
-				}, nil
-			},
-		},
-		"Single product should return a single product": {
-			ctx:    context.Background(),
-			region: "us-east-1",
-			err:    nil,
-			want: []string{
-				"This is definitely an accurate test",
-			},
-			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
-				return &pricing.GetProductsOutput{
-					PriceList: []string{
-						"This is definitely an accurate test",
-					},
-				}, nil
-			},
-		},
-		"Ensure errors propagate": {
-			ctx:    context.Background(),
-			region: "us-east-1",
-			err:    assert.AnError,
-			want:   nil,
-			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
-				return nil, assert.AnError
-			},
-		},
-		"NextToken should return multiple products": {
-			ctx:    context.Background(),
-			region: "us-east-1",
-			err:    nil,
-			want: []string{
-				"This is definitely an accurate test",
-				"This is definitely an accurate test",
-			},
-			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
-				if input.NextToken == nil {
-					return &pricing.GetProductsOutput{
-						NextToken: aws.String("token"),
-						PriceList: []string{
-							"This is definitely an accurate test",
-						},
-					}, nil
-				}
-				return &pricing.GetProductsOutput{
-					PriceList: []string{
-						"This is definitely an accurate test",
-					},
-				}, nil
-			},
-			expectedCalls: 2,
-		},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			client := mockpricing.NewPricing(t)
-			client.EXPECT().
-				GetProducts(mock.Anything, mock.Anything, mock.Anything).
-				RunAndReturn(tt.GetProducts).
-				Times(tt.expectedCalls)
-			got, err := ListOnDemandPrices(tt.ctx, tt.region, client)
-			if tt.err != nil {
-				assert.Equal(t, tt.err, err)
-			}
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
 func TestNewCollector(t *testing.T) {
 	tests := map[string]struct {
 		region         string
@@ -204,7 +118,7 @@ func TestCollector_Collect(t *testing.T) {
 		close(ch)
 		assert.ErrorIs(t, err, ErrClientNotFound)
 	})
-	t.Run("Collect should return an error if ListComputeInstances returns an error", func(t *testing.T) {
+	t.Run("Collect should return an error if ListSpotPrices returns an error", func(t *testing.T) {
 		ec2s := mockec2.NewEC2(t)
 		ec2s.EXPECT().DescribeSpotPriceHistory(mock.Anything, mock.Anything, mock.Anything).
 			RunAndReturn(
@@ -233,7 +147,7 @@ func TestCollector_Collect(t *testing.T) {
 		close(ch)
 		assert.ErrorIs(t, err, ErrListSpotPrices)
 	})
-	t.Run("Collect should return an error if GeneratePricingMap returns an error", func(t *testing.T) {
+	t.Run("Collect should return an error if GenerateComputePricingMap returns an error", func(t *testing.T) {
 		ec2s := mockec2.NewEC2(t)
 		ec2s.EXPECT().DescribeSpotPriceHistory(mock.Anything, mock.Anything, mock.Anything).
 			RunAndReturn(
@@ -271,7 +185,7 @@ func TestCollector_Collect(t *testing.T) {
 		defer close(ch)
 		assert.ErrorIs(t, collector.Collect(ch), ErrGeneratePricingMap)
 	})
-	t.Run("Collect should return an error if GeneratePricingMap returns an error", func(t *testing.T) {
+	t.Run("Collect should return an error if GenerateComputePricingMap returns an error", func(t *testing.T) {
 		ec2s := mockec2.NewEC2(t)
 		ec2s.EXPECT().DescribeSpotPriceHistory(mock.Anything, mock.Anything, mock.Anything).
 			RunAndReturn(

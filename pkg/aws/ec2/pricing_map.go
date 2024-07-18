@@ -43,13 +43,13 @@ var cpuToCostRatio = map[string]float64{
 	"Storage optimized": 0.48,
 }
 
-// StructuredPricingMap collects a map of FamilyPricing structs where the key is the region
-type StructuredPricingMap struct {
+// ComputePricingMap collects a map of FamilyPricing structs where the key is the region
+type ComputePricingMap struct {
 	// Regions is a map of region code to FamilyPricing
 	// key is the region
 	// value is a map of instance type to PriceTiers
 	Regions         map[string]*FamilyPricing
-	InstanceDetails map[string]Attributes
+	InstanceDetails map[string]InstanceAttributes
 	m               sync.RWMutex
 }
 
@@ -65,21 +65,21 @@ type Prices struct {
 	Total float64
 }
 
-func NewStructuredPricingMap() *StructuredPricingMap {
-	return &StructuredPricingMap{
+func NewComputePricingMap() *ComputePricingMap {
+	return &ComputePricingMap{
 		Regions:         make(map[string]*FamilyPricing),
-		InstanceDetails: make(map[string]Attributes),
+		InstanceDetails: make(map[string]InstanceAttributes),
 		m:               sync.RWMutex{},
 	}
 }
 
-// GeneratePricingMap accepts a list of ondemand prices and a list of spot prices.
+// GenerateComputePricingMap accepts a list of ondemand prices and a list of spot prices.
 // The method needs to
 // 1. Parse out the ondemand prices and generate a productTerm map for each instance type
 // 2. Parse out spot prices and use the productTerm map to generate a spot price map
-func (spm *StructuredPricingMap) GeneratePricingMap(ondemandPrices []string, spotPrices []ec2Types.SpotPrice) error {
+func (cpm *ComputePricingMap) GenerateComputePricingMap(ondemandPrices []string, spotPrices []ec2Types.SpotPrice) error {
 	for _, product := range ondemandPrices {
-		var productInfo productTerm
+		var productInfo computeProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
 			return err
 		}
@@ -94,23 +94,23 @@ func (spm *StructuredPricingMap) GeneratePricingMap(ondemandPrices []string, spo
 					log.Printf("error parsing price: %s, skipping", err)
 					continue
 				}
-				err = spm.AddToPricingMap(price, productInfo.Product.Attributes)
+				err = cpm.AddToComputePricingMap(price, productInfo.Product.Attributes)
 				if err != nil {
 					log.Printf("error adding to pricing map: %s", err)
 					continue
 				}
-				spm.AddInstanceDetails(productInfo.Product.Attributes)
+				cpm.AddInstanceDetails(productInfo.Product.Attributes)
 			}
 		}
 	}
 	for _, spotPrice := range spotPrices {
 		region := *spotPrice.AvailabilityZone
 		instanceType := string(spotPrice.InstanceType)
-		if _, ok := spm.InstanceDetails[instanceType]; !ok {
+		if _, ok := cpm.InstanceDetails[instanceType]; !ok {
 			log.Printf("no instance details found for instance type %s", instanceType)
 			continue
 		}
-		spotProductTerm := spm.InstanceDetails[instanceType]
+		spotProductTerm := cpm.InstanceDetails[instanceType]
 		// Override the region with the availability zone
 		spotProductTerm.Region = region
 		price, err := strconv.ParseFloat(*spotPrice.SpotPrice, 64)
@@ -118,7 +118,7 @@ func (spm *StructuredPricingMap) GeneratePricingMap(ondemandPrices []string, spo
 			log.Printf("error parsing spot price: %s, skipping", err)
 			continue
 		}
-		err = spm.AddToPricingMap(price, spotProductTerm)
+		err = cpm.AddToComputePricingMap(price, spotProductTerm)
 		if err != nil {
 			log.Printf("error adding to pricing map: %s", err)
 			continue
@@ -127,16 +127,16 @@ func (spm *StructuredPricingMap) GeneratePricingMap(ondemandPrices []string, spo
 	return nil
 }
 
-// AddToPricingMap adds a price to the pricing map. The price is weighted based upon the instance type's CPU and RAM.
-func (spm *StructuredPricingMap) AddToPricingMap(price float64, attribute Attributes) error {
-	spm.m.Lock()
-	defer spm.m.Unlock()
-	if spm.Regions[attribute.Region] == nil {
-		spm.Regions[attribute.Region] = &FamilyPricing{}
-		spm.Regions[attribute.Region].Family = make(map[string]*Prices)
+// AddToComputePricingMap adds a price to the compute pricing map. The price is weighted based upon the instance type's CPU and RAM.
+func (cpm *ComputePricingMap) AddToComputePricingMap(price float64, attribute InstanceAttributes) error {
+	cpm.m.Lock()
+	defer cpm.m.Unlock()
+	if cpm.Regions[attribute.Region] == nil {
+		cpm.Regions[attribute.Region] = &FamilyPricing{}
+		cpm.Regions[attribute.Region].Family = make(map[string]*Prices)
 	}
 
-	if spm.Regions[attribute.Region].Family[attribute.InstanceType] != nil {
+	if cpm.Regions[attribute.Region].Family[attribute.InstanceType] != nil {
 		return ErrInstanceTypeAlreadyExists
 	}
 
@@ -144,7 +144,7 @@ func (spm *StructuredPricingMap) AddToPricingMap(price float64, attribute Attrib
 	if err != nil {
 		return err
 	}
-	spm.Regions[attribute.Region].Family[attribute.InstanceType] = &Prices{
+	cpm.Regions[attribute.Region].Family[attribute.InstanceType] = &Prices{
 		Cpu:   weightedPrice.Cpu,
 		Ram:   weightedPrice.Ram,
 		Total: price,
@@ -152,15 +152,15 @@ func (spm *StructuredPricingMap) AddToPricingMap(price float64, attribute Attrib
 	return nil
 }
 
-func (spm *StructuredPricingMap) AddInstanceDetails(attributes Attributes) {
-	spm.m.Lock()
-	defer spm.m.Unlock()
-	if _, ok := spm.InstanceDetails[attributes.InstanceType]; !ok {
-		spm.InstanceDetails[attributes.InstanceType] = attributes
+func (cpm *ComputePricingMap) AddInstanceDetails(attributes InstanceAttributes) {
+	cpm.m.Lock()
+	defer cpm.m.Unlock()
+	if _, ok := cpm.InstanceDetails[attributes.InstanceType]; !ok {
+		cpm.InstanceDetails[attributes.InstanceType] = attributes
 	}
 }
 
-func weightedPriceForInstance(price float64, attributes Attributes) (*Prices, error) {
+func weightedPriceForInstance(price float64, attributes InstanceAttributes) (*Prices, error) {
 	cpus, err := strconv.ParseFloat(attributes.VCPU, 64)
 	if err != nil {
 		return nil, fmt.Errorf("%w %w", ErrParseAttributes, err)
@@ -184,27 +184,27 @@ func weightedPriceForInstance(price float64, attributes Attributes) (*Prices, er
 	}, nil
 }
 
-func (spm *StructuredPricingMap) GetPriceForInstanceType(region string, instanceType string) (*Prices, error) {
-	spm.m.RLock()
-	defer spm.m.RUnlock()
-	if _, ok := spm.Regions[region]; !ok {
+func (cpm *ComputePricingMap) GetPriceForInstanceType(region string, instanceType string) (*Prices, error) {
+	cpm.m.RLock()
+	defer cpm.m.RUnlock()
+	if _, ok := cpm.Regions[region]; !ok {
 		return nil, ErrRegionNotFound
 	}
-	price := spm.Regions[region].Family[instanceType]
+	price := cpm.Regions[region].Family[instanceType]
 	if price == nil {
 		return nil, ErrInstanceTypeNotFound
 	}
-	return spm.Regions[region].Family[instanceType], nil
+	return cpm.Regions[region].Family[instanceType], nil
 }
 
-func (spm *StructuredPricingMap) CheckReadiness() bool {
+func (cpm *ComputePricingMap) CheckReadiness() bool {
 	// TODO - implement
 	return true
 }
 
-// Attributes represents ec2 instance attributes that are pulled from AWS api's describing instances.
+// InstanceAttributes represents ec2 instance attributes that are pulled from AWS api's describing instances.
 // It's specifically pulled out of productTerm to enable usage during tests.
-type Attributes struct {
+type InstanceAttributes struct {
 	Region            string `json:"regionCode"`
 	InstanceType      string `json:"instanceType"`
 	VCPU              string `json:"vcpu"`
@@ -218,10 +218,10 @@ type Attributes struct {
 	UsageType         string `json:"usageType"`
 }
 
-// productTerm represents the nested json response returned by the AWS pricing API.
-type productTerm struct {
+// computeProduct represents the nested json response returned by the AWS pricing API EC2
+type computeProduct struct {
 	Product struct {
-		Attributes Attributes
+		Attributes InstanceAttributes
 	}
 	Terms struct {
 		OnDemand map[string]struct {

@@ -52,13 +52,13 @@ var (
 
 // Collector is a prometheus collector that collects metrics from AWS EKS clusters.
 type Collector struct {
-	Regions          []ec2Types.Region
-	ScrapeInterval   time.Duration
-	pricingMap       *StructuredPricingMap
-	pricingService   pricingClient.Pricing
-	NextScrape       time.Time
-	ec2RegionClients map[string]ec2client.EC2
-	logger           *slog.Logger
+	Regions                 []ec2Types.Region
+	ScrapeInterval          time.Duration
+	computePricingMap       *ComputePricingMap
+	pricingService          pricingClient.Pricing
+	ComputeScrapingInterval time.Time
+	ec2RegionClients        map[string]ec2client.EC2
+	logger                  *slog.Logger
 }
 
 type Config struct {
@@ -72,12 +72,12 @@ type Config struct {
 func New(config *Config, ps pricingClient.Pricing) *Collector {
 	logger := config.Logger.With("logger", "ec2")
 	return &Collector{
-		ScrapeInterval:   config.ScrapeInterval,
-		Regions:          config.Regions,
-		ec2RegionClients: config.RegionClients,
-		logger:           logger,
-		pricingService:   ps,
-		pricingMap:       NewStructuredPricingMap(),
+		ScrapeInterval:    config.ScrapeInterval,
+		Regions:           config.Regions,
+		ec2RegionClients:  config.RegionClients,
+		logger:            logger,
+		pricingService:    ps,
+		computePricingMap: NewComputePricingMap(),
 	}
 }
 
@@ -91,83 +91,98 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	start := time.Now()
 	c.logger.LogAttrs(context.TODO(), slog.LevelInfo, "calling collect")
-	if c.pricingMap == nil || time.Now().After(c.NextScrape) {
-		c.logger.LogAttrs(context.Background(), slog.LevelInfo, "Refreshing pricing map")
-		var prices []string
-		var spotPrices []ec2Types.SpotPrice
-		eg := new(errgroup.Group)
-		eg.SetLimit(5)
-		m := sync.Mutex{}
-		for _, region := range c.Regions {
-			eg.Go(func() error {
-				ctx := context.Background()
-				c.logger.LogAttrs(ctx, slog.LevelDebug, "fetching pricing info", slog.String("region", *region.RegionName))
-				priceList, err := ListOnDemandPrices(context.Background(), *region.RegionName, c.pricingService)
-				if err != nil {
-					return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
-				}
 
-				if c.ec2RegionClients[*region.RegionName] == nil {
-					return ErrClientNotFound
-				}
-				client := c.ec2RegionClients[*region.RegionName]
-				spotPriceList, err := ListSpotPrices(context.Background(), client)
-				if err != nil {
-					return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
-				}
-				m.Lock()
-				spotPrices = append(spotPrices, spotPriceList...)
-				prices = append(prices, priceList...)
-				m.Unlock()
-				return nil
-			})
-		}
-		err := eg.Wait()
+	// TODO: make both maps scraping run async in the background
+	if c.computePricingMap == nil || time.Now().After(c.ComputeScrapingInterval) {
+		err := c.populateComputePricingMap()
 		if err != nil {
 			return err
 		}
-		c.pricingMap = NewStructuredPricingMap()
-		if err := c.pricingMap.GeneratePricingMap(prices, spotPrices); err != nil {
-			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
-		}
-		c.NextScrape = time.Now().Add(c.ScrapeInterval)
 	}
 
-	wg := sync.WaitGroup{}
-	wg.Add(len(c.Regions))
+
+	wgInstances := sync.WaitGroup{}
+	wgInstances.Add(len(c.Regions))
 	instanceCh := make(chan []ec2Types.Reservation, len(c.Regions))
+
 	for _, region := range c.Regions {
-		go func(region ec2Types.Region) {
-			ctx := context.Background()
-			now := time.Now()
-			c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching instances", slog.String("region", *region.RegionName))
-			defer wg.Done()
-			client := c.ec2RegionClients[*region.RegionName]
-			reservations, err := ListComputeInstances(context.Background(), client)
-			if err != nil {
-				c.logger.LogAttrs(ctx, slog.LevelError, "Could not list compute instances",
-					slog.String("region", *region.RegionName),
-					slog.String("message", err.Error()))
-				return
-			}
-			c.logger.LogAttrs(ctx, slog.LevelInfo, "Successfully listed instances",
-				slog.String("region", *region.RegionName),
-				slog.Int("instances", len(reservations)),
-				slog.Duration("duration", time.Since(now)),
-			)
-			instanceCh <- reservations
-		}(region)
+
+		go c.fetchInstancesData(region, &wgInstances, instanceCh)
 	}
 	go func() {
-		wg.Wait()
+		wgInstances.Wait()
 		close(instanceCh)
 	}()
-	c.emitMetricsFromChannel(instanceCh, ch)
+	c.emitMetricsFromReservationsChannel(instanceCh, ch)
 	c.logger.LogAttrs(context.TODO(), slog.LevelInfo, "Finished collect", slog.Duration("duration", time.Since(start)))
 	return nil
 }
 
-func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reservation, ch chan<- prometheus.Metric) {
+func (c *Collector) populateComputePricingMap() error {
+	c.logger.LogAttrs(context.Background(), slog.LevelInfo, "Refreshing compute pricing map")
+	var prices []string
+	var spotPrices []ec2Types.SpotPrice
+	eg := new(errgroup.Group)
+	eg.SetLimit(5)
+	m := sync.Mutex{}
+	for _, region := range c.Regions {
+		eg.Go(func() error {
+			ctx := context.Background()
+			c.logger.LogAttrs(ctx, slog.LevelDebug, "fetching compute pricing info", slog.String("region", *region.RegionName))
+			priceList, err := ListOnDemandPrices(context.Background(), *region.RegionName, c.pricingService)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
+			}
+
+			if c.ec2RegionClients[*region.RegionName] == nil {
+				return ErrClientNotFound
+			}
+			client := c.ec2RegionClients[*region.RegionName]
+			spotPriceList, err := ListSpotPrices(context.Background(), client)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
+			}
+			m.Lock()
+			spotPrices = append(spotPrices, spotPriceList...)
+			prices = append(prices, priceList...)
+			m.Unlock()
+			return nil
+		})
+	}
+	err := eg.Wait()
+	if err != nil {
+		return err
+	}
+	c.computePricingMap = NewComputePricingMap()
+	if err := c.computePricingMap.GenerateComputePricingMap(prices, spotPrices); err != nil {
+		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
+	}
+	c.ComputeScrapingInterval = time.Now().Add(c.ScrapeInterval)
+	return nil
+}
+
+func (c *Collector) fetchInstancesData(region ec2Types.Region, wg *sync.WaitGroup, instanceCh chan []ec2Types.Reservation) {
+	ctx := context.Background()
+	now := time.Now()
+	c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching instances", slog.String("region", *region.RegionName))
+	defer wg.Done()
+	client := c.ec2RegionClients[*region.RegionName]
+	reservations, err := ListComputeInstances(context.Background(), client)
+	if err != nil {
+		c.logger.LogAttrs(ctx, slog.LevelError, "Could not list compute instances",
+			slog.String("region", *region.RegionName),
+			slog.String("message", err.Error()))
+		return
+	}
+	c.logger.LogAttrs(ctx, slog.LevelInfo, "Successfully listed instances",
+		slog.String("region", *region.RegionName),
+		slog.Int("instances", len(reservations)),
+		slog.Duration("duration", time.Since(now)),
+	)
+	instanceCh <- reservations
+}
+
+func (c *Collector) emitMetricsFromReservationsChannel(reservationsCh chan []ec2Types.Reservation, ch chan<- prometheus.Metric) {
 	for reservations := range reservationsCh {
 		for _, reservation := range reservations {
 			for _, instance := range reservation.Instances {
@@ -189,7 +204,7 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 					// Ondemand instances are keyed based upon their Region, so we need to remove the availability zone
 					region = region[:len(region)-1]
 				}
-				price, err := c.pricingMap.GetPriceForInstanceType(region, string(instance.InstanceType))
+				price, err := c.computePricingMap.GetPriceForInstanceType(region, string(instance.InstanceType))
 				if err != nil {
 					log.Printf("error getting price for instance type %s: %s", instance.InstanceType, err)
 					continue
@@ -197,7 +212,7 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 				labelValues := []string{
 					*instance.PrivateDnsName,
 					region,
-					c.pricingMap.InstanceDetails[string(instance.InstanceType)].InstanceFamily,
+					c.computePricingMap.InstanceDetails[string(instance.InstanceType)].InstanceFamily,
 					string(instance.InstanceType),
 					clusterName,
 					pricetier,
@@ -211,7 +226,7 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 }
 
 func (c *Collector) CheckReadiness() bool {
-	return c.pricingMap.CheckReadiness()
+	return c.computePricingMap.CheckReadiness()
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {

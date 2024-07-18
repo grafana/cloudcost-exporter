@@ -7,6 +7,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/pricing"
+	mockpricing "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/pricing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -14,21 +16,21 @@ import (
 	ec22 "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/ec2"
 )
 
-func TestStructuredPricingMap_AddToPricingMap(t *testing.T) {
+func TestComputePricingMap_AddToComputePricingMap(t *testing.T) {
 	tests := map[string]struct {
-		spm        *StructuredPricingMap
-		Attributes []Attributes
+		cpm        *ComputePricingMap
+		Attributes []InstanceAttributes
 		Prices     []float64
-		want       *StructuredPricingMap
+		want       *ComputePricingMap
 	}{
 		"No attributes": {
-			spm:        &StructuredPricingMap{},
-			Attributes: []Attributes{},
-			want:       &StructuredPricingMap{},
+			cpm:        &ComputePricingMap{},
+			Attributes: []InstanceAttributes{},
+			want:       &ComputePricingMap{},
 		},
 		"Single attribute": {
-			spm: NewStructuredPricingMap(),
-			Attributes: []Attributes{
+			cpm: NewComputePricingMap(),
+			Attributes: []InstanceAttributes{
 				{
 					Region:         "us-east-1a",
 					InstanceType:   "m5.large",
@@ -38,7 +40,7 @@ func TestStructuredPricingMap_AddToPricingMap(t *testing.T) {
 				},
 			},
 			Prices: []float64{1},
-			want: &StructuredPricingMap{
+			want: &ComputePricingMap{
 				Regions: map[string]*FamilyPricing{
 					"us-east-1a": {
 						Family: map[string]*Prices{
@@ -50,41 +52,41 @@ func TestStructuredPricingMap_AddToPricingMap(t *testing.T) {
 						},
 					},
 				},
-				InstanceDetails: make(map[string]Attributes),
+				InstanceDetails: make(map[string]InstanceAttributes),
 			},
 		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			for i, attr := range tt.Attributes {
-				err := tt.spm.AddToPricingMap(tt.Prices[i], attr)
+				err := tt.cpm.AddToComputePricingMap(tt.Prices[i], attr)
 				assert.NoError(t, err)
 			}
-			assert.Equal(t, tt.want, tt.spm)
+			assert.Equal(t, tt.want, tt.cpm)
 		})
 	}
 }
 
-func TestStructuredPricingMap_GeneratePricingMap(t *testing.T) {
+func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 	tests := map[string]struct {
-		smp        *StructuredPricingMap
+		csmp       *ComputePricingMap
 		prices     []string
 		spotPrices []ec2Types.SpotPrice
-		want       *StructuredPricingMap
+		want       *ComputePricingMap
 	}{
 		"No prices input": {
-			smp:        NewStructuredPricingMap(),
+			csmp:       NewComputePricingMap(),
 			prices:     []string{},
 			spotPrices: []ec2Types.SpotPrice{},
-			want:       NewStructuredPricingMap(),
+			want:       NewComputePricingMap(),
 		},
 		"Just prices as input": {
-			smp: NewStructuredPricingMap(),
+			csmp: NewComputePricingMap(),
 			prices: []string{
 				`{"product":{"productFamily":"Compute Instance","attributes":{"enhancedNetworkingSupported":"Yes","intelTurboAvailable":"No","memory":"16 GiB","dedicatedEbsThroughput":"Up to 3170 Mbps","vcpu":"8","classicnetworkingsupport":"false","capacitystatus":"UnusedCapacityReservation","locationType":"AWS Region","storage":"1 x 300 NVMe SSD","instanceFamily":"Compute optimized","operatingSystem":"Linux","intelAvx2Available":"No","regionCode":"af-south-1","physicalProcessor":"AMD EPYC 7R32","clockSpeed":"3.3 GHz","ecu":"NA","networkPerformance":"Up to 10 Gigabit","servicename":"Amazon Elastic Compute Cloud","instancesku":"Q7GDF95MM7MZ7Y5Q","gpuMemory":"NA","vpcnetworkingsupport":"true","instanceType":"c5ad.2xlarge","tenancy":"Shared","usagetype":"AFS1-UnusedBox:c5ad.2xlarge","normalizationSizeFactor":"16","intelAvxAvailable":"No","processorFeatures":"AMD Turbo; AVX; AVX2","servicecode":"AmazonEC2","licenseModel":"No License required","currentGeneration":"Yes","preInstalledSw":"NA","location":"Africa (Cape Town)","processorArchitecture":"64-bit","marketoption":"OnDemand","operation":"RunInstances","availabilityzone":"NA"},"sku":"2257YY4K7BWZ4F46"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"2257YY4K7BWZ4F46.JRTCKXETXF":{"priceDimensions":{"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","endRange":"Inf","description":"$0.468 per Unused Reservation Linux c5ad.2xlarge Instance Hour","appliesTo":[],"rateCode":"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.4680000000"}}},"sku":"2257YY4K7BWZ4F46","effectiveDate":"2024-04-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240508191027","publicationDate":"2024-05-08T19:10:27Z"}`,
 			},
 			spotPrices: []ec2Types.SpotPrice{},
-			want: &StructuredPricingMap{
+			want: &ComputePricingMap{
 				Regions: map[string]*FamilyPricing{
 					"af-south-1": {
 						Family: map[string]*Prices{
@@ -96,7 +98,7 @@ func TestStructuredPricingMap_GeneratePricingMap(t *testing.T) {
 						},
 					},
 				},
-				InstanceDetails: map[string]Attributes{
+				InstanceDetails: map[string]InstanceAttributes{
 					"c5ad.2xlarge": {
 						Region:            "af-south-1",
 						InstanceType:      "c5ad.2xlarge",
@@ -114,7 +116,7 @@ func TestStructuredPricingMap_GeneratePricingMap(t *testing.T) {
 			},
 		},
 		"Price and a spot price": {
-			smp: NewStructuredPricingMap(),
+			csmp: NewComputePricingMap(),
 			prices: []string{
 				`{"product":{"productFamily":"Compute Instance","attributes":{"enhancedNetworkingSupported":"Yes","intelTurboAvailable":"No","memory":"16 GiB","dedicatedEbsThroughput":"Up to 3170 Mbps","vcpu":"8","classicnetworkingsupport":"false","capacitystatus":"UnusedCapacityReservation","locationType":"AWS Region","storage":"1 x 300 NVMe SSD","instanceFamily":"Compute optimized","operatingSystem":"Linux","intelAvx2Available":"No","regionCode":"af-south-1","physicalProcessor":"AMD EPYC 7R32","clockSpeed":"3.3 GHz","ecu":"NA","networkPerformance":"Up to 10 Gigabit","servicename":"Amazon Elastic Compute Cloud","instancesku":"Q7GDF95MM7MZ7Y5Q","gpuMemory":"NA","vpcnetworkingsupport":"true","instanceType":"c5ad.2xlarge","tenancy":"Shared","usagetype":"AFS1-UnusedBox:c5ad.2xlarge","normalizationSizeFactor":"16","intelAvxAvailable":"No","processorFeatures":"AMD Turbo; AVX; AVX2","servicecode":"AmazonEC2","licenseModel":"No License required","currentGeneration":"Yes","preInstalledSw":"NA","location":"Africa (Cape Town)","processorArchitecture":"64-bit","marketoption":"OnDemand","operation":"RunInstances","availabilityzone":"NA"},"sku":"2257YY4K7BWZ4F46"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"2257YY4K7BWZ4F46.JRTCKXETXF":{"priceDimensions":{"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","endRange":"Inf","description":"$0.468 per Unused Reservation Linux c5ad.2xlarge Instance Hour","appliesTo":[],"rateCode":"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.4680000000"}}},"sku":"2257YY4K7BWZ4F46","effectiveDate":"2024-04-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240508191027","publicationDate":"2024-05-08T19:10:27Z"}`,
 			},
@@ -125,7 +127,7 @@ func TestStructuredPricingMap_GeneratePricingMap(t *testing.T) {
 					SpotPrice:        aws.String("0.4680000000"),
 				},
 			},
-			want: &StructuredPricingMap{
+			want: &ComputePricingMap{
 				Regions: map[string]*FamilyPricing{
 					"af-south-1": {
 						Family: map[string]*Prices{
@@ -146,7 +148,7 @@ func TestStructuredPricingMap_GeneratePricingMap(t *testing.T) {
 						},
 					},
 				},
-				InstanceDetails: map[string]Attributes{
+				InstanceDetails: map[string]InstanceAttributes{
 					"c5ad.2xlarge": {
 						Region:            "af-south-1",
 						InstanceType:      "c5ad.2xlarge",
@@ -166,29 +168,29 @@ func TestStructuredPricingMap_GeneratePricingMap(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := tt.smp.GeneratePricingMap(tt.prices, tt.spotPrices)
+			err := tt.csmp.GenerateComputePricingMap(tt.prices, tt.spotPrices)
 			assert.NoError(t, err)
-			assert.Equal(t, tt.want, tt.smp)
+			assert.Equal(t, tt.want, tt.csmp)
 		})
 	}
 }
 
 func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 	tests := map[string]struct {
-		spm          *StructuredPricingMap
+		cpm          *ComputePricingMap
 		region       string
 		instanceType string
 		err          error
 		want         *Prices
 	}{
 		"An empty structured pricing map should return a no region found error": {
-			spm:          NewStructuredPricingMap(),
+			cpm:          NewComputePricingMap(),
 			region:       "us-east-1",
 			instanceType: "m5.large",
 			err:          ErrRegionNotFound,
 		},
 		"An empty region should return a no instance type found error": {
-			spm: &StructuredPricingMap{
+			cpm: &ComputePricingMap{
 				Regions: map[string]*FamilyPricing{
 					"us-east-1": {
 						Family: map[string]*Prices{},
@@ -200,7 +202,7 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 			err:          ErrInstanceTypeNotFound,
 		},
 		"A region with an instance type should return the price": {
-			spm: &StructuredPricingMap{
+			cpm: &ComputePricingMap{
 				Regions: map[string]*FamilyPricing{
 					"us-east-1": {
 						Family: map[string]*Prices{
@@ -222,7 +224,7 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			price, err := tt.spm.GetPriceForInstanceType(tt.region, tt.instanceType)
+			price, err := tt.cpm.GetPriceForInstanceType(tt.region, tt.instanceType)
 			if tt.err != nil {
 				require.ErrorIs(t, tt.err, err)
 				return
@@ -236,25 +238,25 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 func Test_weightedPriceForInstance(t *testing.T) {
 	tests := map[string]struct {
 		price      float64
-		attributes Attributes
+		attributes InstanceAttributes
 		err        error
 		want       *Prices
 	}{
 		"No attributes should return a parse error": {
 			price:      0.65,
-			attributes: Attributes{},
+			attributes: InstanceAttributes{},
 			err:        ErrParseAttributes,
 		},
 		"No memory should return a parse error": {
 			price: 0.65,
-			attributes: Attributes{
+			attributes: InstanceAttributes{
 				VCPU: "1",
 			},
 			err: ErrParseAttributes,
 		},
 		"Handle a machine that's general purpose": {
 			price: 1.0,
-			attributes: Attributes{
+			attributes: InstanceAttributes{
 				VCPU:           "1",
 				Memory:         "1 GiB",
 				InstanceFamily: "General purpose",
@@ -266,7 +268,7 @@ func Test_weightedPriceForInstance(t *testing.T) {
 		},
 		"Handle a machine that's compute optimized": {
 			price: 1.0,
-			attributes: Attributes{
+			attributes: InstanceAttributes{
 				VCPU:           "1",
 				Memory:         "1 GiB",
 				InstanceFamily: "Compute optimized",
@@ -278,7 +280,7 @@ func Test_weightedPriceForInstance(t *testing.T) {
 		},
 		"Handle a machine that's memory optimized": {
 			price: 1.0,
-			attributes: Attributes{
+			attributes: InstanceAttributes{
 				VCPU:           "1",
 				Memory:         "1 GiB",
 				InstanceFamily: "Memory optimized",
@@ -290,7 +292,7 @@ func Test_weightedPriceForInstance(t *testing.T) {
 		},
 		"Handle a machine that's storage optimized": {
 			price: 1.0,
-			attributes: Attributes{
+			attributes: InstanceAttributes{
 				VCPU:           "1",
 				Memory:         "1 GiB",
 				InstanceFamily: "Storage optimized",
@@ -302,7 +304,7 @@ func Test_weightedPriceForInstance(t *testing.T) {
 		},
 		"Handle a machine that doesn't have an instance family": {
 			price: 1.0,
-			attributes: Attributes{
+			attributes: InstanceAttributes{
 				VCPU:   "1",
 				Memory: "1 GiB",
 			},
@@ -313,7 +315,7 @@ func Test_weightedPriceForInstance(t *testing.T) {
 		},
 		"Handle a machine that has a family that doesn't exist": {
 			price: 1.0,
-			attributes: Attributes{
+			attributes: InstanceAttributes{
 				VCPU:           "1",
 				Memory:         "1 GiB",
 				InstanceFamily: "Totally a real instance family",
@@ -332,6 +334,92 @@ func Test_weightedPriceForInstance(t *testing.T) {
 				return
 			}
 			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_ListOnDemandPrices(t *testing.T) {
+	tests := map[string]struct {
+		ctx           context.Context
+		region        string
+		err           error
+		GetProducts   func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error)
+		want          []string
+		expectedCalls int
+	}{
+		"No products should return nothing": {
+			ctx:    context.Background(),
+			region: "us-east-1",
+			err:    nil,
+			want:   nil,
+			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
+				return &pricing.GetProductsOutput{
+					PriceList: []string{},
+				}, nil
+			},
+		},
+		"Single product should return a single product": {
+			ctx:    context.Background(),
+			region: "us-east-1",
+			err:    nil,
+			want: []string{
+				"This is definitely an accurate test",
+			},
+			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
+				return &pricing.GetProductsOutput{
+					PriceList: []string{
+						"This is definitely an accurate test",
+					},
+				}, nil
+			},
+		},
+		"Ensure errors propagate": {
+			ctx:    context.Background(),
+			region: "us-east-1",
+			err:    assert.AnError,
+			want:   nil,
+			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
+				return nil, assert.AnError
+			},
+		},
+		"NextToken should return multiple products": {
+			ctx:    context.Background(),
+			region: "us-east-1",
+			err:    nil,
+			want: []string{
+				"This is definitely an accurate test",
+				"This is definitely an accurate test",
+			},
+			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
+				if input.NextToken == nil {
+					return &pricing.GetProductsOutput{
+						NextToken: aws.String("token"),
+						PriceList: []string{
+							"This is definitely an accurate test",
+						},
+					}, nil
+				}
+				return &pricing.GetProductsOutput{
+					PriceList: []string{
+						"This is definitely an accurate test",
+					},
+				}, nil
+			},
+			expectedCalls: 2,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			client := mockpricing.NewPricing(t)
+			client.EXPECT().
+				GetProducts(mock.Anything, mock.Anything, mock.Anything).
+				RunAndReturn(tt.GetProducts).
+				Times(tt.expectedCalls)
+			got, err := ListOnDemandPrices(tt.ctx, tt.region, client)
+			if tt.err != nil {
+				assert.Equal(t, tt.err, err)
+			}
 			assert.Equal(t, tt.want, got)
 		})
 	}
