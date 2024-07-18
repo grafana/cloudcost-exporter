@@ -175,6 +175,38 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 	}
 }
 
+func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
+	tests := map[string]struct {
+		spm      *StoragePricingMap
+		prices   []string
+		expected *StoragePricingMap
+	}{
+		"Empty if AWS returns no volume prices": {},
+		"Parses AWS volume prices response": {
+			spm: NewStoragePricingMap(),
+			prices: []string{
+				`{"product":{"productFamily":"Storage","attributes":{"maxThroughputvolume":"1000 MiB/s","volumeType":"General Purpose","maxIopsvolume":"16000","usagetype":"AFS1-EBS:VolumeUsage.gp3","locationType":"AWS Region","maxVolumeSize":"16 TiB","storageMedia":"SSD-backed","regionCode":"af-south-1","servicecode":"AmazonEC2","volumeApiName":"gp3","location":"Africa (Cape Town)","servicename":"Amazon Elastic Compute Cloud","operation":""},"sku":"XWCTMRRUJM7TGYST"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"XWCTMRRUJM7TGYST.JRTCKXETXF":{"priceDimensions":{"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7":{"unit":"GB-Mo","endRange":"Inf","description":"$0.1047 per GB-month of General Purpose (gp3) provisioned storage - Africa (Cape Town)","appliesTo":[],"rateCode":"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.1047000000"}}},"sku":"XWCTMRRUJM7TGYST","effectiveDate":"2024-07-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240705013454","publicationDate":"2024-07-05T01:34:54Z"}`,
+			},
+			expected: &StoragePricingMap{
+				Regions: map[string]*StoragePricing{
+					"af-south-1": {
+						Storage: map[string]float64{
+							"gp3": 0.1047,
+						},
+					},
+				},
+			},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := tt.spm.GenerateStoragePricingMap(tt.prices)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, tt.spm)
+		})
+	}
+}
+
 func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 	tests := map[string]struct {
 		cpm          *ComputePricingMap
@@ -231,6 +263,63 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 			}
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want, price)
+		})
+	}
+}
+
+func TestStoragePricingMap_GetPriceForVolumeType(t *testing.T) {
+	tests := map[string]struct {
+		spm        *StoragePricingMap
+		region     string
+		volumeType string
+		size       int32
+		err        error
+		expected   float64
+	}{
+		"an empty map should return a no region found error": {
+			spm:        NewStoragePricingMap(),
+			region:     "us-east-1",
+			volumeType: "gp3",
+			size:       100,
+			err:        ErrRegionNotFound,
+		},
+		"volume not found in region should return an error": {
+			spm: &StoragePricingMap{
+				Regions: map[string]*StoragePricing{
+					"us-east-1": {},
+				},
+			},
+			region:     "us-east-1",
+			volumeType: "gp3",
+			size:       100,
+			err:        ErrVolumeTypeNotFound,
+		},
+		"price should be equal to price per unit times the size of the disk": {
+			spm: &StoragePricingMap{
+				Regions: map[string]*StoragePricing{
+					"us-east-1": {
+						Storage: map[string]float64{
+							"gp3": .4,
+						},
+					},
+				},
+			},
+			region:     "us-east-1",
+			volumeType: "gp3",
+			size:       100,
+			expected:   40,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			price, err := tt.spm.GetPriceForVolumeType(tt.region, tt.volumeType, tt.size)
+			if tt.err != nil {
+				require.ErrorIs(t, tt.err, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, price)
 		})
 	}
 }
@@ -528,6 +617,91 @@ func TestListSpotPrices(t *testing.T) {
 				assert.Equal(t, tt.err, err)
 			}
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestListStoragePrices(t *testing.T) {
+	tests := map[string]struct {
+		ctx           context.Context
+		region        string
+		GetProducts   func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error)
+		expected      []string
+		expectedCalls int
+		err           error
+	}{
+		"Ensure errors propagate": {
+			ctx:      context.Background(),
+			region:   "us-east-1",
+			err:      assert.AnError,
+			expected: nil,
+			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
+				return nil, assert.AnError
+			},
+		},
+		"No volume prices for that region should return empty": {
+			ctx:    context.Background(),
+			region: "us-east-1",
+			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
+				return &pricing.GetProductsOutput{
+					PriceList: []string{},
+				}, nil
+			},
+		},
+		"Single product should return a single product": {
+			ctx:    context.Background(),
+			region: "us-east-1",
+			expected: []string{
+				"product 1 json response",
+			},
+			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
+				return &pricing.GetProductsOutput{
+					PriceList: []string{
+						"product 1 json response",
+					},
+				}, nil
+			},
+		},
+		"multiple products should return same length array": {
+			ctx:    context.Background(),
+			region: "us-east-1",
+			err:    nil,
+			expected: []string{
+				"product 1 json response",
+				"product 2 json response",
+			},
+			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
+				if input.NextToken == nil {
+					return &pricing.GetProductsOutput{
+						NextToken: aws.String("token"),
+						PriceList: []string{
+							"product 1 json response",
+						},
+					}, nil
+				}
+				return &pricing.GetProductsOutput{
+					PriceList: []string{
+						"product 2 json response",
+					},
+				}, nil
+			},
+			expectedCalls: 2,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			client := mockpricing.NewPricing(t)
+			client.EXPECT().
+				GetProducts(mock.Anything, mock.Anything, mock.Anything).
+				RunAndReturn(tt.GetProducts).
+				Times(tt.expectedCalls)
+
+			resp, err := ListStoragePrices(tt.ctx, tt.region, client)
+			if tt.err != nil {
+				assert.Equal(t, tt.err, err)
+			}
+			assert.Equal(t, tt.expected, resp)
 		})
 	}
 }

@@ -6,6 +6,13 @@
 | cloudcost_aws_ec2_instance_memory_usd_per_gib_hour | Gauge       | The memory cost of a EC2 Compute Instance in USD/(GiB*h)       | `cluster_name`=&lt;name of the cluster the instance is associated with, if it exists. Can be empty&gt; <br/> `instance`=&lt;name of the compute instance&gt; <br/> `region`=&lt;AWS region code&gt; <br/> `family`=&lt;broader compute family (General Purpose, Compute Optimized, Memory Optimized, ...)  &gt; <br/> `machine_type`=&lt;specific machine type, e.g.: m7a.large&gt; <br/>  `price_tier`=&lt;spot\|ondemand&gt;  |
 | cloudcost_aws_ec2_instance_total_usd_per_hour      | Gauge       | The total cost of an EC2 Compute Instance in USD/*h)           | `cluster_name`=&lt;name of the cluster the instance is associated with, if it exists. Can be empty&gt; <br/> `instance`=&lt;name of the compute instance&gt; <br/> `region`=&lt;AWS region code&gt; <br/> `family`=&lt;broader compute family (General Purpose, Compute Optimized, Memory Optimized, ...)  &gt; <br/> `machine_type`=&lt;specific machine type, e.g.: m7a.large&gt; <br/>  `price_tier`=&lt;spot\|ondemand&gt; |
 
+## EBS Metrics
+
+| Metric name                                        | Metric type | Description                                                                                  | Labels                                                                                                                                                                                                                                                                                                                                                                                                                          |
+|----------------------------------------------------|-------------|----------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| cloudcost_aws_ec2_persistent_volume_usd_per_hour   | Gauge       | The cost of an EBS Volume in USD | `availability_zone`=&lt;AWS AZ code&gt; <br/> `disk`=&lt;EBS volume ID&gt; <br/> `persistent_volume`=&lt;k8s persistent volume ID&gt; <br/> `region`=&lt;AWS region code&gt; <br/> `size_gib`=&lt;volume size in GiB, can always be parsed to an integer&gt; <br/> `state`=&lt;volume state, eg: available, in-use; <br/>  `type`=&lt;volume type, eg: gp2, gp3&gt;   |
+
+
 ## Pricing Source
 
 The pricing data is sourced from the [AWS Pricing API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_pricing_GetProducts.html) and is updated every 24 hours.
@@ -13,4 +20,3 @@ There are a few assumptions that we're making specific to Grafana Labs:
 1. All costs are in USD
 2. Only consider Linux based instances
 3. `cloudcost-exporter` emits the list price and does not take into account any discounts or savings plans
-
