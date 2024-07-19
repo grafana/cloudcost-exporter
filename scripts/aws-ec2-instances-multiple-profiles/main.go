@@ -33,7 +33,7 @@ func main() {
 		fmt.Printf("Role: %s\n", role)
 	}
 	options := []func(*config.LoadOptions) error{config.WithEC2IMDSRegion()}
-	options = append(options, config.WithRegion("us-east-1"))
+	options = append(options, config.WithRegion("us-east-2"))
 	if c.profile != "" {
 		options = append(options, config.WithSharedConfigProfile(c.profile))
 	}
