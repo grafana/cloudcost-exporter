@@ -178,7 +178,9 @@ func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 		prices   []string
 		expected map[string]*StoragePricing
 	}{
-		"Empty if AWS returns no volume prices": {},
+		"Empty if AWS returns no volume prices": {
+			spm: NewStoragePricingMap(logger),
+		},
 		"Parses AWS volume prices response": {
 			spm: NewStoragePricingMap(logger),
 			prices: []string{

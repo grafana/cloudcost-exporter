@@ -158,6 +158,9 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ondemandPrices []string,
 // GenerateStoragePricingMap receives a json with all the prices of the available storage options
 // It iterates over the storage classes and parses the price for each one.
 func (spm *StoragePricingMap) GenerateStoragePricingMap(storagePrices []string) error {
+	spm.m.Lock()
+	defer spm.m.Unlock()
+
 	for _, product := range storagePrices {
 		var productInfo storageProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
