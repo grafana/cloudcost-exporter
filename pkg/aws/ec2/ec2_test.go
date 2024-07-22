@@ -87,6 +87,19 @@ func TestCollector_Collect(t *testing.T) {
 	})
 
 	t.Run("Collect should return an error if ListOnDemandPrices returns an error", func(t *testing.T) {
+		ec2s := mockec2.NewEC2(t)
+		ec2s.EXPECT().DescribeSpotPriceHistory(mock.Anything, mock.Anything, mock.Anything).
+			RunAndReturn(
+				func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
+					return &ec2.DescribeSpotPriceHistoryOutput{
+						SpotPriceHistory: []ec2Types.SpotPrice{},
+					}, nil
+				}).Times(1)
+		regionClientMap := make(map[string]ec2client.EC2)
+		for _, r := range regions {
+			regionClientMap[*r.RegionName] = ec2s
+		}
+
 		ps := mockpricing.NewPricing(t)
 		ps.EXPECT().GetProducts(mock.Anything, mock.Anything, mock.Anything).
 			RunAndReturn(
@@ -94,8 +107,9 @@ func TestCollector_Collect(t *testing.T) {
 					return nil, assert.AnError
 				}).Times(1)
 		collector := New(&Config{
-			Regions: regions,
-			Logger:  logger,
+			Regions:       regions,
+			Logger:        logger,
+			RegionClients: regionClientMap,
 		}, ps)
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
@@ -104,13 +118,6 @@ func TestCollector_Collect(t *testing.T) {
 	})
 	t.Run("Collect should return a ClientNotFound Error if the ec2 client is nil", func(t *testing.T) {
 		ps := mockpricing.NewPricing(t)
-		ps.EXPECT().GetProducts(mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(
-				func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
-					return &pricing.GetProductsOutput{
-						PriceList: []string{},
-					}, nil
-				}).Times(1)
 		collector := New(&Config{
 			Regions: regions,
 			Logger:  logger,
@@ -128,13 +135,6 @@ func TestCollector_Collect(t *testing.T) {
 					return nil, assert.AnError
 				}).Times(1)
 		ps := mockpricing.NewPricing(t)
-		ps.EXPECT().GetProducts(mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(
-				func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
-					return &pricing.GetProductsOutput{
-						PriceList: []string{},
-					}, nil
-				}).Times(1)
 		regionClientMap := make(map[string]ec2client.EC2)
 		for _, r := range regions {
 			regionClientMap[*r.RegionName] = ec2s

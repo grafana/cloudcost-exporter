@@ -164,10 +164,6 @@ func (c *Collector) populateComputePricingMap(ctx context.Context) error {
 	for _, region := range c.Regions {
 		eg.Go(func() error {
 			c.logger.LogAttrs(ctx, slog.LevelDebug, "fetching compute pricing info", slog.String("region", *region.RegionName))
-			priceList, err := ListOnDemandPrices(ctx, *region.RegionName, c.pricingService)
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
-			}
 
 			if c.ec2RegionClients[*region.RegionName] == nil {
 				return ErrClientNotFound
@@ -177,6 +173,12 @@ func (c *Collector) populateComputePricingMap(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
 			}
+
+			priceList, err := ListOnDemandPrices(ctx, *region.RegionName, c.pricingService)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
+			}
+
 			m.Lock()
 			spotPrices = append(spotPrices, spotPriceList...)
 			prices = append(prices, priceList...)
