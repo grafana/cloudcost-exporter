@@ -1,17 +1,101 @@
 package aks
 
 import (
+	"context"
 	"log/slog"
+	"os"
+	"reflect"
 	"sync"
 	"testing"
 
+	"github.com/Azure/go-autorest/autorest/to"
+	mock_az_client "github.com/grafana/cloudcost-exporter/mocks/pkg/azure/azureClientWrapper"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
+)
+
+var (
+	parentCtx  context.Context = context.TODO()
+	testLogger *slog.Logger    = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
 func TestPriceStoreMapCreation(t *testing.T) {
 	// TODO - mock
 	t.Skip()
+}
+
+func TestPopulatePriceStore(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	listOpts := &retailPriceSdk.RetailPricesClientListOptions{
+		APIVersion:  to.StringPtr(AZ_API_VERSION),
+		Filter:      to.StringPtr(AzurePriceSearchFilter),
+		MeterRegion: to.StringPtr(AzureMeterRegion),
+	}
+
+	mockAzureClient := mock_az_client.NewMockAzureClient(ctrl)
+
+	p := NewPricingStore(parentCtx, testLogger, mockAzureClient)
+
+	testTable := map[string]struct {
+		expectedErr      error
+		apiReturns       []*retailPriceSdk.ResourceSKU
+		expectedPriceMap map[string]PriceByPriority
+	}{
+		"base case": {
+			expectedErr: nil,
+			expectedPriceMap: map[string]PriceByPriority{
+				"westus": {
+					OnDemand: PriceByOperatingSystem{
+						Linux: PriceBySku{
+							"Standard_D4s_16": &MachineSku{
+								RetailPrice: 0.1,
+							},
+						},
+					},
+					Spot: PriceByOperatingSystem{},
+				},
+				"centraleurope": {
+					OnDemand: PriceByOperatingSystem{
+						Linux: PriceBySku{
+							"Standard_D4s_8": &MachineSku{
+								RetailPrice: 0.1,
+							},
+						},
+					},
+					Spot: PriceByOperatingSystem{
+						Linux: PriceBySku{
+							"Standard_D4s_8": &MachineSku{
+								RetailPrice: 0.01,
+							},
+						},
+					},
+				},
+			},
+
+			apiReturns: []*retailPriceSdk.ResourceSKU{
+				{ArmSkuName: "Standard_D4s_16", SkuName: "Standard_D4s_16", ArmRegionName: "westus", ProductName: "Virtual Machines Linux", RetailPrice: 0.1},
+				{ArmSkuName: "Standard_D4s_8", SkuName: "Standard_D4s_8", ArmRegionName: "centraleurope", ProductName: "Virtual Machines Linux", RetailPrice: 0.1},
+				{ArmSkuName: "Standard_D4s_8", SkuName: "Standard_D4s_8 Spot", ArmRegionName: "centraleurope", ProductName: "Virtual Machines Linux", RetailPrice: 0.01},
+			},
+		},
+	}
+
+	for name, tc := range testTable {
+		t.Run(name, func(t *testing.T) {
+			call := mockAzureClient.EXPECT().ListPrices(parentCtx, listOpts).AnyTimes()
+			call.Return(tc.apiReturns, tc.expectedErr)
+
+			p.PopulatePriceStore(parentCtx)
+
+			assert.True(t, p.regionMapLock.TryRLock())
+
+			mapEq := reflect.DeepEqual(tc.expectedPriceMap, p.RegionMap)
+			assert.True(t, mapEq)
+		})
+	}
 }
 
 func TestGetPriceInfoFromVmInfo(t *testing.T) {
