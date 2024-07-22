@@ -308,7 +308,7 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 		GetProducts               func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error)
 		expectedCalls             int
 		err                       error
-		expected                  *StoragePricingMap
+		expected                  map[string]*StoragePricing
 		expectedScrapeTimeCompare int
 	}{
 		"can populate storage pricing map": {
@@ -326,12 +326,10 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 				}, nil
 			},
 			expectedCalls: 1,
-			expected: &StoragePricingMap{
-				Regions: map[string]*StoragePricing{
-					"af-south-1": {
-						Storage: map[string]float64{
-							"gp3": 0.1047,
-						},
+			expected: map[string]*StoragePricing{
+				"af-south-1": {
+					Storage: map[string]float64{
+						"gp3": 0.1047,
 					},
 				},
 			},
@@ -347,9 +345,7 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 			},
 			expectedCalls: 1,
 			err:           ErrListStoragePrices,
-			expected: &StoragePricingMap{
-				Regions: map[string]*StoragePricing{},
-			},
+			expected:      map[string]*StoragePricing{},
 		},
 		"errors generating the map from listed prices propagate too": {
 			ctx: context.Background(),
@@ -366,10 +362,8 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 				}, nil
 			},
 			expectedCalls: 1,
-			expected: &StoragePricingMap{
-				Regions: map[string]*StoragePricing{},
-			},
-			err: ErrGeneratePricingMap,
+			expected:      map[string]*StoragePricing{},
+			err:           ErrGeneratePricingMap,
 		},
 	}
 
@@ -392,7 +386,7 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 			if tt.err != nil {
 				assert.ErrorIs(t, err, tt.err)
 			}
-			assert.Equal(t, tt.expected, collector.storagePricingMap)
+			assert.Equal(t, tt.expected, collector.storagePricingMap.Regions)
 			assert.Equal(t, tt.expectedScrapeTimeCompare, collector.StorageScrapingInterval.Compare(scrapingTimeAtCreation))
 		})
 	}

@@ -88,7 +88,7 @@ func New(config *Config, ps pricingClient.Pricing) *Collector {
 		logger:            logger,
 		pricingService:    ps,
 		computePricingMap: NewComputePricingMap(),
-		storagePricingMap: NewStoragePricingMap(),
+		storagePricingMap: NewStoragePricingMap(logger),
 	}
 }
 
@@ -220,7 +220,7 @@ func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	c.storagePricingMap = NewStoragePricingMap()
+	c.storagePricingMap = NewStoragePricingMap(c.logger)
 	if err := c.storagePricingMap.GenerateStoragePricingMap(storagePrices); err != nil {
 		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 	}

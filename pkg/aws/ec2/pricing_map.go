@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -74,6 +75,7 @@ type StoragePricingMap struct {
 	// value is a map of storage classes to prices
 	Regions map[string]*StoragePricing
 	m       sync.RWMutex
+	logger  *slog.Logger
 }
 
 // StoragePricing is a map where the key is the storage type and the value is the price
@@ -89,10 +91,11 @@ func NewComputePricingMap() *ComputePricingMap {
 	}
 }
 
-func NewStoragePricingMap() *StoragePricingMap {
+func NewStoragePricingMap(l *slog.Logger) *StoragePricingMap {
 	return &StoragePricingMap{
 		Regions: make(map[string]*StoragePricing),
 		m:       sync.RWMutex{},
+		logger:  l.With("subsystem", "storagePricing"),
 	}
 }
 

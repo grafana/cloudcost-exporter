@@ -179,20 +179,18 @@ func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 	tests := map[string]struct {
 		spm      *StoragePricingMap
 		prices   []string
-		expected *StoragePricingMap
+		expected map[string]*StoragePricing
 	}{
 		"Empty if AWS returns no volume prices": {},
 		"Parses AWS volume prices response": {
-			spm: NewStoragePricingMap(),
+			spm: NewStoragePricingMap(logger),
 			prices: []string{
 				`{"product":{"productFamily":"Storage","attributes":{"maxThroughputvolume":"1000 MiB/s","volumeType":"General Purpose","maxIopsvolume":"16000","usagetype":"AFS1-EBS:VolumeUsage.gp3","locationType":"AWS Region","maxVolumeSize":"16 TiB","storageMedia":"SSD-backed","regionCode":"af-south-1","servicecode":"AmazonEC2","volumeApiName":"gp3","location":"Africa (Cape Town)","servicename":"Amazon Elastic Compute Cloud","operation":""},"sku":"XWCTMRRUJM7TGYST"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"XWCTMRRUJM7TGYST.JRTCKXETXF":{"priceDimensions":{"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7":{"unit":"GB-Mo","endRange":"Inf","description":"$0.1047 per GB-month of General Purpose (gp3) provisioned storage - Africa (Cape Town)","appliesTo":[],"rateCode":"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.1047000000"}}},"sku":"XWCTMRRUJM7TGYST","effectiveDate":"2024-07-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240705013454","publicationDate":"2024-07-05T01:34:54Z"}`,
 			},
-			expected: &StoragePricingMap{
-				Regions: map[string]*StoragePricing{
-					"af-south-1": {
-						Storage: map[string]float64{
-							"gp3": 0.1047,
-						},
+			expected: map[string]*StoragePricing{
+				"af-south-1": {
+					Storage: map[string]float64{
+						"gp3": 0.1047,
 					},
 				},
 			},
@@ -202,7 +200,9 @@ func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			err := tt.spm.GenerateStoragePricingMap(tt.prices)
 			assert.NoError(t, err)
-			assert.Equal(t, tt.expected, tt.spm)
+			if tt.expected != nil {
+				assert.Equal(t, tt.expected, tt.spm.Regions)
+			}
 		})
 	}
 }
@@ -277,7 +277,7 @@ func TestStoragePricingMap_GetPriceForVolumeType(t *testing.T) {
 		expected   float64
 	}{
 		"an empty map should return a no region found error": {
-			spm:        NewStoragePricingMap(),
+			spm:        NewStoragePricingMap(logger),
 			region:     "us-east-1",
 			volumeType: "gp3",
 			size:       100,
