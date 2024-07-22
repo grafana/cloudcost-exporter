@@ -151,7 +151,7 @@ func (c *Collector) populateComputePricingMap(ctx context.Context) error {
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing compute pricing map")
 	var prices []string
 	var spotPrices []ec2Types.SpotPrice
-	eg := new(errgroup.Group)
+	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(5)
 	m := sync.Mutex{}
 	for _, region := range c.Regions {
@@ -192,7 +192,7 @@ func (c *Collector) populateComputePricingMap(ctx context.Context) error {
 func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing storage pricing map")
 	var storagePrices []string
-	eg := new(errgroup.Group)
+	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(5)
 	m := sync.Mutex{}
 	for _, region := range c.Regions {
