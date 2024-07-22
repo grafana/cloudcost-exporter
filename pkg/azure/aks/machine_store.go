@@ -113,7 +113,7 @@ func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, 
 	m.machineSizeMapLock.RLock()
 	defer m.machineSizeMapLock.RUnlock()
 
-	vmsInVmssList, err := m.azClientWrapper.ListVirtualMachineScaleSetsVm(ctx, rgName, vmssName)
+	vmsInVmssList, err := m.azClientWrapper.ListVirtualMachineScaleSetsOwnedVms(ctx, rgName, vmssName)
 	if err != nil {
 		m.logger.LogAttrs(ctx, slog.LevelError, "failed to get VMs from VMSS from client", slog.String("error", err.Error()))
 		return nil, err

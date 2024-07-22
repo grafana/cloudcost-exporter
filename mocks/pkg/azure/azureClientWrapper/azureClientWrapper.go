@@ -102,17 +102,17 @@ func (mr *MockAzureClientMockRecorder) ListVirtualMachineScaleSetsFromResourceGr
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListVirtualMachineScaleSetsFromResourceGroup", reflect.TypeOf((*MockAzureClient)(nil).ListVirtualMachineScaleSetsFromResourceGroup), arg0, arg1)
 }
 
-// ListVirtualMachineScaleSetsVm mocks base method.
-func (m *MockAzureClient) ListVirtualMachineScaleSetsVm(arg0 context.Context, arg1, arg2 string) ([]*armcompute.VirtualMachineScaleSetVM, error) {
+// ListVirtualMachineScaleSetsOwnedVms mocks base method.
+func (m *MockAzureClient) ListVirtualMachineScaleSetsOwnedVms(arg0 context.Context, arg1, arg2 string) ([]*armcompute.VirtualMachineScaleSetVM, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListVirtualMachineScaleSetsVm", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "ListVirtualMachineScaleSetsOwnedVms", arg0, arg1, arg2)
 	ret0, _ := ret[0].([]*armcompute.VirtualMachineScaleSetVM)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// ListVirtualMachineScaleSetsVm indicates an expected call of ListVirtualMachineScaleSetsVm.
-func (mr *MockAzureClientMockRecorder) ListVirtualMachineScaleSetsVm(arg0, arg1, arg2 any) *gomock.Call {
+// ListVirtualMachineScaleSetsOwnedVms indicates an expected call of ListVirtualMachineScaleSetsOwnedVms.
+func (mr *MockAzureClientMockRecorder) ListVirtualMachineScaleSetsOwnedVms(arg0, arg1, arg2 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListVirtualMachineScaleSetsVm", reflect.TypeOf((*MockAzureClient)(nil).ListVirtualMachineScaleSetsVm), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListVirtualMachineScaleSetsOwnedVms", reflect.TypeOf((*MockAzureClient)(nil).ListVirtualMachineScaleSetsOwnedVms), arg0, arg1, arg2)
 }

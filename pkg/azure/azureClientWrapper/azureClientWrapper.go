@@ -19,7 +19,7 @@ var ErrClientCreationFailure = errors.New("failed to create client")
 type AzureClient interface {
 	// Machine Store
 	ListClustersInSubscription(context.Context) ([]*armcontainerservice.ManagedCluster, error)
-	ListVirtualMachineScaleSetsVm(context.Context, string, string) ([]*armcompute.VirtualMachineScaleSetVM, error)
+	ListVirtualMachineScaleSetsOwnedVms(context.Context, string, string) ([]*armcompute.VirtualMachineScaleSetVM, error)
 	ListVirtualMachineScaleSetsFromResourceGroup(context.Context, string) ([]*armcompute.VirtualMachineScaleSet, error)
 	ListMachineTypesByLocation(context.Context, string) ([]*armcompute.VirtualMachineSize, error)
 
@@ -72,7 +72,7 @@ func NewAzureClientWrapper(logger *slog.Logger, subscriptionId string, credentia
 
 var ErrPageAdvanceFailure = errors.New("failed to advance page")
 
-func (a *AzClientWrapper) ListVirtualMachineScaleSetsVm(ctx context.Context, rgName, vmssName string) ([]*armcompute.VirtualMachineScaleSetVM, error) {
+func (a *AzClientWrapper) ListVirtualMachineScaleSetsOwnedVms(ctx context.Context, rgName, vmssName string) ([]*armcompute.VirtualMachineScaleSetVM, error) {
 	vmList := []*armcompute.VirtualMachineScaleSetVM{}
 
 	opts := &armcompute.VirtualMachineScaleSetVMsClientListOptions{
