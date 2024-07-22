@@ -9,6 +9,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
@@ -92,14 +93,10 @@ type Config struct {
 	SubscriptionId string
 }
 
-func New(ctx context.Context, cfg *Config) (*Collector, error) {
+func New(ctx context.Context, cfg *Config, azClientWrapper azureClientWrapper.AzureClient) (*Collector, error) {
 	logger := cfg.Logger.With("collector", "aks")
-	priceStore, err := NewPricingStore(ctx, logger, cfg.SubscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	machineStore, err := NewMachineStore(ctx, logger, priceStore.subscriptionId, cfg.Credentials)
+	priceStore := NewPricingStore(ctx, logger, azClientWrapper)
+	machineStore, err := NewMachineStore(ctx, logger, azClientWrapper)
 	if err != nil {
 		return nil, err
 	}

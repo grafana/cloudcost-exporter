@@ -114,17 +114,17 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 
 func TestDetermineMachineOperatingSystem(t *testing.T) {
 	testTable := map[string]struct {
-		sku             retailPriceSdk.ResourceSKU
+		sku             *retailPriceSdk.ResourceSKU
 		expectedMachine MachineOperatingSystem
 	}{
 		"Linux": {
-			sku: retailPriceSdk.ResourceSKU{
+			sku: &retailPriceSdk.ResourceSKU{
 				ProductName: "Virtual Machines Esv4 Series",
 			},
 			expectedMachine: Linux,
 		},
 		"Windows": {
-			sku: retailPriceSdk.ResourceSKU{
+			sku: &retailPriceSdk.ResourceSKU{
 				ProductName: "Virtual Machines D Series Windows",
 			},
 			expectedMachine: Windows,
@@ -141,17 +141,17 @@ func TestDetermineMachineOperatingSystem(t *testing.T) {
 
 func TestDetermineMachinePriority(t *testing.T) {
 	testTable := map[string]struct {
-		sku              retailPriceSdk.ResourceSKU
+		sku              *retailPriceSdk.ResourceSKU
 		expectedPriority MachinePriority
 	}{
 		"OnDemand": {
-			sku: retailPriceSdk.ResourceSKU{
+			sku: &retailPriceSdk.ResourceSKU{
 				SkuName: "Standard_E16pds_v5 Low Priority",
 			},
 			expectedPriority: OnDemand,
 		},
 		"Spot": {
-			sku: retailPriceSdk.ResourceSKU{
+			sku: &retailPriceSdk.ResourceSKU{
 				SkuName: "B4ls v2 Spot",
 			},
 			expectedPriority: Spot,

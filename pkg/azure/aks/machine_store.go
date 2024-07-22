@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v5"
+	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/Azure/go-autorest/autorest/to"
@@ -66,10 +66,7 @@ type MachineStore struct {
 	context context.Context
 	logger  *slog.Logger
 
-	azVMSizesClient *armcompute.VirtualMachineSizesClient
-	azVMSSClient    *armcompute.VirtualMachineScaleSetsClient
-	azVMSSVmClient  *armcompute.VirtualMachineScaleSetVMsClient
-	azAksClient     *armcontainerservice.ManagedClustersClient
+	azClientWrapper azureClientWrapper.AzureClient
 
 	MachineSizeMap     map[string]map[string]*armcompute.VirtualMachineSize
 	machineSizeMapLock *sync.RWMutex
@@ -78,29 +75,14 @@ type MachineStore struct {
 	machineMapLock *sync.RWMutex
 }
 
-func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, subscriptionId string, credentials *azidentity.DefaultAzureCredential) (*MachineStore, error) {
+func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, azClientWrapper azureClientWrapper.AzureClient) (*MachineStore, error) {
 	logger := parentLogger.With("subsystem", "machineStore")
-
-	computeClientFactory, err := armcompute.NewClientFactory(subscriptionId, credentials, nil)
-	if err != nil {
-		logger.LogAttrs(parentCtx, slog.LevelError, "unable to create compute client factory", slog.String("err", err.Error()))
-		return nil, ErrClientCreationFailure
-	}
-
-	containerClientFactory, err := armcontainerservice.NewClientFactory(subscriptionId, credentials, nil)
-	if err != nil {
-		logger.LogAttrs(parentCtx, slog.LevelError, "unable to create container client factory", slog.String("err", err.Error()))
-		return nil, ErrClientCreationFailure
-	}
 
 	ms := &MachineStore{
 		context: parentCtx,
 		logger:  logger,
 
-		azVMSizesClient: computeClientFactory.NewVirtualMachineSizesClient(),
-		azVMSSClient:    computeClientFactory.NewVirtualMachineScaleSetsClient(),
-		azVMSSVmClient:  computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
-		azAksClient:     containerClientFactory.NewManagedClustersClient(),
+		azClientWrapper: azClientWrapper,
 
 		MachineSizeMap:     make(map[string]map[string]*armcompute.VirtualMachineSize),
 		machineSizeMapLock: &sync.RWMutex{},
@@ -131,81 +113,75 @@ func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, 
 	m.machineSizeMapLock.RLock()
 	defer m.machineSizeMapLock.RUnlock()
 
-	opts := &armcompute.VirtualMachineScaleSetVMsClientListOptions{
-		Expand: to.StringPtr("instanceView"),
+	vmsInVmssList, err := m.azClientWrapper.ListVirtualMachineScaleSetsVm(ctx, rgName, vmssName)
+	if err != nil {
+		m.logger.LogAttrs(ctx, slog.LevelError, "failed to get VMs from VMSS from client", slog.String("error", err.Error()))
+		return nil, err
 	}
-	pager := m.azVMSSVmClient.NewListPager(rgName, vmssName, opts)
-	for pager.More() {
-		nextResult, err := pager.NextPage(ctx)
+
+	for _, v := range vmsInVmssList {
+		vmName, err := m.getMachineName(v)
 		if err != nil {
-			m.logger.LogAttrs(ctx, slog.LevelError, "unable to advance page in VMSS VM Client", slog.String("err", err.Error()))
-			return nil, ErrPageAdvanceFailure
+			continue
 		}
 
-		for _, v := range nextResult.Value {
-			vmName, err := m.getMachineName(v)
-			if err != nil {
-				continue
-			}
+		if v.SKU == nil || v.SKU.Name == nil {
+			m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM Sku found", slog.String("machineName", vmName))
+			continue
+		}
+		vmSku := to.String(v.SKU.Name)
 
-			if v.SKU == nil || v.SKU.Name == nil {
-				m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM Sku found", slog.String("machineName", vmName))
-				continue
-			}
-			vmSku := to.String(v.SKU.Name)
+		vmFamily, err := m.getMachineFamilyFromSku(vmSku)
+		if err != nil {
+			continue
+		}
 
-			vmFamily, err := m.getMachineFamilyFromSku(vmSku)
-			if err != nil {
-				continue
-			}
+		vmRegion := to.String(v.Location)
+		if len(vmRegion) == 0 {
+			m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM region found", slog.String("machineName", vmName))
+			continue
+		}
 
-			vmRegion := to.String(v.Location)
-			if len(vmRegion) == 0 {
-				m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM region found", slog.String("machineName", vmName))
-				continue
-			}
-
-			if v.Properties == nil || v.Properties.VMID == nil {
-				m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM ID found",
-					slog.String("machineName", vmName),
-					slog.String("region", vmRegion),
-					slog.String("sku", vmSku),
-				)
-				continue
-			}
-			vmId := to.String(v.Properties.VMID)
-
-			vmSizeInfo, ok := m.MachineSizeMap[vmRegion][vmSku]
-			if !ok {
-				m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM sizing info found",
-					slog.String("machineName", vmName),
-					slog.String("region", vmRegion),
-					slog.String("sku", vmSku),
-				)
-				continue
-			}
-
-			m.logger.LogAttrs(ctx, slog.LevelDebug, "found machine information",
+		if v.Properties == nil || v.Properties.VMID == nil {
+			m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM ID found",
 				slog.String("machineName", vmName),
-				slog.String("machineId", vmId),
-				slog.String("vmssName", vmssName),
-				slog.String("vmssClusterName", cluster),
+				slog.String("region", vmRegion),
+				slog.String("sku", vmSku),
 			)
-			vmInfo[vmId] = &VirtualMachineInfo{
-				Name:            vmName,
-				Id:              vmId,
-				Region:          vmRegion,
-				OwningVMSS:      vmssName,
-				OwningCluster:   cluster,
-				MachineTypeSku:  vmSku,
-				MachineFamily:   vmFamily,
-				Priority:        priority,
-				OperatingSystem: osInfo,
+			continue
+		}
+		vmId := to.String(v.Properties.VMID)
 
-				NumOfCores:     float64(to.Int32(vmSizeInfo.NumberOfCores)),
-				MemoryInMiB:    float64(to.Int32(vmSizeInfo.MemoryInMB)),
-				OsDiskSizeInMB: float64(to.Int32(vmSizeInfo.OSDiskSizeInMB)),
-			}
+		vmSizeInfo, ok := m.MachineSizeMap[vmRegion][vmSku]
+		if !ok {
+			m.logger.LogAttrs(ctx, slog.LevelDebug, "no VM sizing info found",
+				slog.String("machineName", vmName),
+				slog.String("region", vmRegion),
+				slog.String("sku", vmSku),
+			)
+			continue
+		}
+
+		m.logger.LogAttrs(ctx, slog.LevelDebug, "found machine information",
+			slog.String("machineName", vmName),
+			slog.String("machineId", vmId),
+			slog.String("vmssName", vmssName),
+			slog.String("vmssClusterName", cluster),
+		)
+		vmInfo[vmId] = &VirtualMachineInfo{
+			Name:            vmName,
+			Id:              vmId,
+			Region:          vmRegion,
+			OwningVMSS:      vmssName,
+			OwningCluster:   cluster,
+			MachineTypeSku:  vmSku,
+			MachineFamily:   vmFamily,
+			Priority:        priority,
+			OperatingSystem: osInfo,
+
+			NumOfCores:     float64(to.Int32(vmSizeInfo.NumberOfCores)),
+			MemoryInMiB:    float64(to.Int32(vmSizeInfo.MemoryInMB)),
+			OsDiskSizeInMB: float64(to.Int32(vmSizeInfo.OSDiskSizeInMB)),
 		}
 	}
 
@@ -220,32 +196,21 @@ func (m *MachineStore) getVmInfoFromVmss(ctx context.Context, rgName, vmssName, 
 
 func (m *MachineStore) getVMSSInfoFromResourceGroup(ctx context.Context, rgName, clusterName string) (map[string]*armcompute.VirtualMachineScaleSet, error) {
 	m.logger.LogAttrs(ctx, slog.LevelInfo, "getting VMSS info from resource group of cluster", slog.String("resourceGroup", rgName), slog.String("cluster", clusterName))
+
+	vmssList, err := m.azClientWrapper.ListVirtualMachineScaleSetsFromResourceGroup(ctx, rgName)
+	if err != nil {
+		return nil, err
+	}
+
 	vmssInfo := make(map[string]*armcompute.VirtualMachineScaleSet)
-
-	pager := m.azVMSSClient.NewListPager(rgName, nil)
-	for pager.More() {
-		nextResult, err := pager.NextPage(ctx)
-		if err != nil {
-			m.logger.LogAttrs(ctx, slog.LevelError, "unable to advance page in VMSS Client", slog.String("err", err.Error()))
-			return nil, ErrPageAdvanceFailure
+	for _, vmss := range vmssList {
+		vmssName := to.String(vmss.Name)
+		if len(vmssName) == 0 {
+			m.logger.Error(fmt.Sprintf("unable to determine VMSS name: %+v", vmss))
+			continue
 		}
 
-		for _, v := range nextResult.Value {
-			vmssName := to.String(v.Name)
-			if len(vmssName) == 0 {
-				m.logger.Error(fmt.Sprintf("unable to determine VMSS name: %+v", v))
-				continue
-			}
-
-			vmssInfo[vmssName] = v
-			m.logger.LogAttrs(m.context, slog.LevelDebug, "found VMSS",
-				slog.String("vmssName", vmssName),
-				slog.String("vmssSku", to.String(v.SKU.Name)),
-				slog.String("resourceGroup", rgName),
-				slog.String("cluster", clusterName),
-				slog.String("region", to.String(v.Location)),
-			)
-		}
+		vmssInfo[vmssName] = vmss
 	}
 
 	m.logger.LogAttrs(m.context, slog.LevelDebug, "finished collecting VMSS",
@@ -257,51 +222,38 @@ func (m *MachineStore) getVMSSInfoFromResourceGroup(ctx context.Context, rgName,
 }
 
 func (m *MachineStore) getClustersInSubscription(ctx context.Context) ([]*armcontainerservice.ManagedCluster, error) {
-	clusterList := []*armcontainerservice.ManagedCluster{}
+	m.logger.Info("fetching cluster list from subscription")
 
-	pager := m.azAksClient.NewListPager(nil)
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			m.logger.LogAttrs(ctx, slog.LevelError, "unable to advance page in AKS Client", slog.String("err", err.Error()))
-			return nil, ErrPageAdvanceFailure
-		}
-		clusterList = append(clusterList, page.Value...)
+	clusterList, err := m.azClientWrapper.ListClustersInSubscription(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	m.logger.LogAttrs(m.context, slog.LevelDebug, "found clusters",
-		slog.Int("numOfClusters", len(clusterList)),
-	)
+	m.logger.LogAttrs(m.context, slog.LevelDebug, "found clusters", slog.Int("numOfClusters", len(clusterList)))
 	return clusterList, nil
 }
 
 func (m *MachineStore) getMachineTypesByLocation(ctx context.Context, location string) error {
+	m.logger.LogAttrs(ctx, slog.LevelInfo, "fetching machine types in location", slog.String("location", location))
+
+	machineSizeList, err := m.azClientWrapper.ListMachineTypesByLocation(ctx, location)
+	if err != nil {
+		return err
+	}
+
 	m.machineSizeMapLock.Lock()
 	defer m.machineSizeMapLock.Unlock()
 
+	clear(m.MachineSizeMap[location])
 	m.MachineSizeMap[location] = make(map[string]*armcompute.VirtualMachineSize)
 
-	pager := m.azVMSizesClient.NewListPager(location, nil)
-	for pager.More() {
-		nextResult, err := pager.NextPage(ctx)
-		if err != nil {
-			m.logger.LogAttrs(ctx, slog.LevelError, "unable to advance page in VM Sizes Client", slog.String("err", err.Error()))
-			return ErrPageAdvanceFailure
-		}
+	for _, v := range machineSizeList {
+		sizeId := to.String(v.Name)
 
-		for _, v := range nextResult.Value {
-			sizeId := to.String(v.Name)
-
-			m.MachineSizeMap[location][sizeId] = v
-			m.logger.LogAttrs(m.context, slog.LevelDebug, "found machine size",
-				slog.String("machineSizeMapRegion", location),
-				slog.String("sizeId", sizeId),
-			)
-		}
-
-		m.logger.LogAttrs(m.context, slog.LevelDebug, "populated region with machine sizes",
+		m.MachineSizeMap[location][sizeId] = v
+		m.logger.LogAttrs(m.context, slog.LevelDebug, "found machine size",
 			slog.String("machineSizeMapRegion", location),
-			slog.Int("numOfSizes", len(m.MachineSizeMap[location])),
+			slog.String("sizeId", sizeId),
 		)
 	}
 
