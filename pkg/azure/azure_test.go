@@ -94,7 +94,7 @@ func Test_CollectMetrics(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	fakePromCh := make(chan prometheus.Metric)
+	ch := make(chan prometheus.Metric)
 	testCases := map[string]struct {
 		mockCollectors []*mock_provider.MockCollector
 		expectedErr    error
@@ -109,9 +109,9 @@ func Test_CollectMetrics(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			go func() {
-				for range fakePromCh {
-					// no metrics are generated here, so loop through to avoid
-					// process hang waiting on metrics that will never come
+				// no metrics are generated here, so loop through to avoid
+				// process hang waiting on metrics that will never come
+				for range ch {
 				}
 			}()
 
@@ -126,7 +126,7 @@ func Test_CollectMetrics(t *testing.T) {
 				azProvider.collectors = append(azProvider.collectors, c)
 			}
 
-			azProvider.Collect(fakePromCh)
+			azProvider.Collect(ch)
 		})
 	}
 }
