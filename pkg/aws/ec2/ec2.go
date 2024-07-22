@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"strconv"
 	"sync"
@@ -278,11 +277,11 @@ func (c *Collector) emitMetricsFromReservationsChannel(reservationsCh chan []ec2
 			for _, instance := range reservation.Instances {
 				clusterName := ClusterNameFromInstance(instance)
 				if instance.PrivateDnsName == nil || *instance.PrivateDnsName == "" {
-					log.Printf("no private dns name found for instance %s", *instance.InstanceId)
+					c.logger.Debug(fmt.Sprintf("no private dns name found for instance %s", *instance.InstanceId))
 					continue
 				}
 				if instance.Placement == nil || instance.Placement.AvailabilityZone == nil {
-					log.Printf("no availability zone found for instance %s", *instance.InstanceId)
+					c.logger.Debug(fmt.Sprintf("no availability zone found for instance %s", *instance.InstanceId))
 					continue
 				}
 
@@ -296,7 +295,7 @@ func (c *Collector) emitMetricsFromReservationsChannel(reservationsCh chan []ec2
 				}
 				price, err := c.computePricingMap.GetPriceForInstanceType(region, string(instance.InstanceType))
 				if err != nil {
-					log.Printf("error getting price for instance type %s: %s", instance.InstanceType, err)
+					c.logger.Error(fmt.Sprintf("error getting price for instance type %s: %s", instance.InstanceType, err))
 					continue
 				}
 				labelValues := []string{
@@ -324,7 +323,7 @@ func (c *Collector) emitMetricsFromVolumesChannel(volumesCh chan []ec2Types.Volu
 
 			price, err := c.storagePricingMap.GetPriceForVolumeType(region, string(volume.VolumeType), *volume.Size)
 			if err != nil {
-				log.Printf("error getting price for volume type %s in region %s: %s", volume.VolumeType, region, err)
+				c.logger.Error(fmt.Sprintf("error getting price for volume type %s in region %s: %s", volume.VolumeType, region, err))
 				continue
 			}
 
