@@ -317,9 +317,19 @@ func (c *Collector) emitMetricsFromReservationsChannel(reservationsCh chan []ec2
 func (c *Collector) emitMetricsFromVolumesChannel(volumesCh chan []ec2Types.Volume, ch chan<- prometheus.Metric) {
 	for volumes := range volumesCh {
 		for _, volume := range volumes {
+			if volume.AvailabilityZone == nil {
+				c.logger.Error("Volume's Availability Zone unknown: skipping")
+				continue
+			}
+
 			az := *volume.AvailabilityZone
 			// Might not be accurate every case, but it's not worth another API call to get the exact region of an AZ
 			region := az[0 : len(az)-1]
+
+			if volume.Size == nil {
+				c.logger.Error("Volume's size unknown: skipping")
+				continue
+			}
 
 			price, err := c.storagePricingMap.GetPriceForVolumeType(region, string(volume.VolumeType), *volume.Size)
 			if err != nil {
