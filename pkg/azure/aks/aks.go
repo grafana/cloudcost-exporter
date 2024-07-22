@@ -166,10 +166,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	c.logger.Info("collecting metrics")
 	now := time.Now()
 
-	machineList, err := c.MachineStore.GetListOfVmsForSubscription()
-	if err != nil {
-		return err
-	}
+	machineList := c.MachineStore.GetListOfVmsForSubscription()
 
 	for _, vmInfo := range machineList {
 		vmId := vmInfo.Id

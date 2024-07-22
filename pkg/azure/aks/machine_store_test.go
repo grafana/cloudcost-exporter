@@ -15,6 +15,40 @@ func TestMachineStoreMapCreation(t *testing.T) {
 	t.Skip()
 }
 
+func TestGetListOfVmsForSubscription(t *testing.T) {
+	fakeMachineStore := &MachineStore{
+		MachineMap:     make(map[string]*VirtualMachineInfo),
+		machineMapLock: &sync.RWMutex{},
+	}
+	fakeMachineStore.MachineMap["vm1"] = &VirtualMachineInfo{
+		Name: "vm1",
+	}
+	fakeMachineStore.MachineMap["vm2"] = &VirtualMachineInfo{
+		Name: "vm2",
+	}
+
+	testTable := map[string]struct {
+		expectedNames []string
+	}{
+		"base_case": {
+			expectedNames: []string{"vm1", "vm2"},
+		},
+	}
+
+	for name, tc := range testTable {
+		t.Run(name, func(t *testing.T) {
+			vmList := fakeMachineStore.GetListOfVmsForSubscription()
+			var vmNameList []string
+
+			for _, v := range vmList {
+				vmNameList = append(vmNameList, v.Name)
+			}
+
+			assert.ElementsMatch(t, tc.expectedNames, vmNameList)
+		})
+	}
+}
+
 func TestGetVmInfoByName(t *testing.T) {
 	fakeMachineStore := &MachineStore{
 		MachineMap:     make(map[string]*VirtualMachineInfo),
