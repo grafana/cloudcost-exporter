@@ -388,7 +388,7 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 				RunAndReturn(tt.GetProducts).
 				Times(tt.expectedCalls)
 
-			err := collector.populateStoragePricingMap()
+			err := collector.populateStoragePricingMap(tt.ctx)
 			if tt.err != nil {
 				assert.ErrorIs(t, err, tt.err)
 			}
@@ -430,7 +430,7 @@ func Test_FetchVolumesData(t *testing.T) {
 		wg := sync.WaitGroup{}
 		wg.Add(len(collector.Regions))
 		ch := make(chan []ec2Types.Volume)
-		go collector.fetchVolumesData(client, regionName, &wg, ch)
+		go collector.fetchVolumesData(context.Background(), client, regionName, &wg, ch)
 		go func() {
 			wg.Wait()
 			close(ch)
