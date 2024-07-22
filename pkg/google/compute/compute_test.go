@@ -56,7 +56,7 @@ func TestNewMachineSpec(t *testing.T) {
 		instance *compute.Instance
 		want     *MachineSpec
 	}{
-		"basic instance": {
+		"basic node": {
 			instance: &compute.Instance{
 				Name:        "test",
 				MachineType: "abc/abc-def",
@@ -94,7 +94,7 @@ func TestNewMachineSpec(t *testing.T) {
 				PriceTier:    "ondemand",
 			},
 		},
-		"spot instance": {
+		"spot node": {
 			instance: &compute.Instance{
 				Name:        "test",
 				MachineType: "abc/abc-def",
@@ -151,7 +151,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1",
+						"node":         "test-n1",
 						"machine_type": "n1-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing",
@@ -164,7 +164,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1",
+						"node":         "test-n1",
 						"machine_type": "n1-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing",
@@ -177,7 +177,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2",
+						"node":         "test-n2",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing",
@@ -190,7 +190,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2",
+						"node":         "test-n2",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing",
@@ -203,7 +203,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1-spot",
+						"node":         "test-n1-spot",
 						"machine_type": "n1-slim",
 						"price_tier":   "spot",
 						"project":      "testing",
@@ -216,7 +216,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1-spot",
+						"node":         "test-n1-spot",
 						"machine_type": "n1-slim",
 						"price_tier":   "spot",
 						"project":      "testing",
@@ -229,7 +229,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2-us-east1",
+						"node":         "test-n2-us-east1",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing",
@@ -242,7 +242,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2-us-east1",
+						"node":         "test-n2-us-east1",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing",
@@ -255,7 +255,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1",
+						"node":         "test-n1",
 						"machine_type": "n1-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing-1",
@@ -268,7 +268,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1",
+						"node":         "test-n1",
 						"machine_type": "n1-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing-1",
@@ -281,7 +281,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2",
+						"node":         "test-n2",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing-1",
@@ -294,7 +294,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2",
+						"node":         "test-n2",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing-1",
@@ -307,7 +307,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1-spot",
+						"node":         "test-n1-spot",
 						"machine_type": "n1-slim",
 						"price_tier":   "spot",
 						"project":      "testing-1",
@@ -320,7 +320,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1-spot",
+						"node":         "test-n1-spot",
 						"machine_type": "n1-slim",
 						"price_tier":   "spot",
 						"project":      "testing-1",
@@ -333,7 +333,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2-us-east1",
+						"node":         "test-n2-us-east1",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing-1",
@@ -346,7 +346,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_compute_instance_ram_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2-us-east1",
+						"node":         "test-n2-us-east1",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing-1",
