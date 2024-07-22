@@ -263,7 +263,9 @@ func (spm *StoragePricingMap) GetPriceForVolumeType(region string, volumeType st
 		return 0, ErrVolumeTypeNotFound
 	}
 
-	return spm.Regions[region].Storage[volumeType] * float64(size), nil
+	// Prices are listed in GB-Mo units (Gib/month, considering 30 day months).
+	// Divide by 30 and 24 to get the hourly price.
+	return spm.Regions[region].Storage[volumeType] * float64(size) / 30 / 24, nil
 }
 
 func (cpm *ComputePricingMap) CheckReadiness() bool {

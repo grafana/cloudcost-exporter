@@ -52,7 +52,7 @@ var (
 	)
 	PersistentVolumeHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "persistent_volume_usd_per_hour"),
-		"The cost of an AWS EBS Volume in USD.",
+		"The cost of an AWS EBS Volume in USD/h.",
 		[]string{"persistent_volume", "region", "availability_zone", "disk", "type", "size_gib", "state"},
 		nil,
 	)

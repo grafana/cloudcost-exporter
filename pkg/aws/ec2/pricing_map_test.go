@@ -294,7 +294,7 @@ func TestStoragePricingMap_GetPriceForVolumeType(t *testing.T) {
 			size:       100,
 			err:        ErrVolumeTypeNotFound,
 		},
-		"price should be equal to price per unit times the size of the disk": {
+		"price should account for volum size and monthly to hourly price conversion": {
 			spm: &StoragePricingMap{
 				Regions: map[string]*StoragePricing{
 					"us-east-1": {
@@ -307,7 +307,7 @@ func TestStoragePricingMap_GetPriceForVolumeType(t *testing.T) {
 			region:     "us-east-1",
 			volumeType: "gp3",
 			size:       100,
-			expected:   40,
+			expected:   .4 / 30 / 24 * 100,
 		},
 	}
 
