@@ -50,7 +50,7 @@ func TestPopulatePriceStore(t *testing.T) {
 				"westus": {
 					OnDemand: PriceByOperatingSystem{
 						Linux: PriceBySku{
-							"Standard_D4s_16": &MachineSku{
+							"Standard_D4s_v3": &MachineSku{
 								RetailPrice: 0.1,
 							},
 						},
@@ -60,14 +60,14 @@ func TestPopulatePriceStore(t *testing.T) {
 				"centraleurope": {
 					OnDemand: PriceByOperatingSystem{
 						Linux: PriceBySku{
-							"Standard_D4s_8": &MachineSku{
+							"Standard_D8s_v3": &MachineSku{
 								RetailPrice: 0.1,
 							},
 						},
 					},
 					Spot: PriceByOperatingSystem{
 						Linux: PriceBySku{
-							"Standard_D4s_8": &MachineSku{
+							"Standard_D16s_v3": &MachineSku{
 								RetailPrice: 0.01,
 							},
 						},
@@ -76,9 +76,10 @@ func TestPopulatePriceStore(t *testing.T) {
 			},
 
 			apiReturns: []*retailPriceSdk.ResourceSKU{
-				{ArmSkuName: "Standard_D4s_16", SkuName: "Standard_D4s_16", ArmRegionName: "westus", ProductName: "Virtual Machines Linux", RetailPrice: 0.1},
-				{ArmSkuName: "Standard_D4s_8", SkuName: "Standard_D4s_8", ArmRegionName: "centraleurope", ProductName: "Virtual Machines Linux", RetailPrice: 0.1},
-				{ArmSkuName: "Standard_D4s_8", SkuName: "Standard_D4s_8 Spot", ArmRegionName: "centraleurope", ProductName: "Virtual Machines Linux", RetailPrice: 0.01},
+				{ArmSkuName: "Standard_D4s_v3", SkuName: "D4s v3", ArmRegionName: "westus", ProductName: "Virtual Machines D Series", RetailPrice: 0.1},
+				{ArmSkuName: "Standard_D8s_v3", SkuName: "D8s v3", ArmRegionName: "centraleurope", ProductName: "Virtual Machines D Series", RetailPrice: 0.1},
+				{ArmSkuName: "Standard_D16s_v3", SkuName: "D16s v3 Spot", ArmRegionName: "centraleurope", ProductName: "Virtual Machines D Series", RetailPrice: 0.01},
+				{ArmSkuName: "Standard_D4s_v3", SkuName: "D4s v3 Low Priority", ArmRegionName: "centraleurope", ProductName: "Virtual Machines D Series", RetailPrice: 0.01}, // low priority machines are disregarded
 			},
 		},
 	}
