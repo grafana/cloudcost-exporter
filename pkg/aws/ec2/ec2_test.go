@@ -303,13 +303,12 @@ func TestCollector_Collect(t *testing.T) {
 
 func Test_PopulateStoragePricingMap(t *testing.T) {
 	tests := map[string]struct {
-		ctx                       context.Context
-		regions                   []ec2Types.Region
-		GetProducts               func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error)
-		expectedCalls             int
-		err                       error
-		expected                  map[string]*StoragePricing
-		expectedScrapeTimeCompare int
+		ctx           context.Context
+		regions       []ec2Types.Region
+		GetProducts   func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error)
+		expectedCalls int
+		err           error
+		expected      map[string]*StoragePricing
 	}{
 		"can populate storage pricing map": {
 			ctx: context.Background(),
@@ -333,7 +332,6 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 					},
 				},
 			},
-			expectedScrapeTimeCompare: 1,
 		},
 		"errors listing storage prices propagate": {
 			ctx: context.Background(),
@@ -375,8 +373,6 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 				Logger:  logger,
 			}, ps)
 
-			scrapingTimeAtCreation := collector.StorageScrapingInterval
-
 			ps.EXPECT().
 				GetProducts(mock.Anything, mock.Anything, mock.Anything).
 				RunAndReturn(tt.GetProducts).
@@ -387,7 +383,6 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 				assert.ErrorIs(t, err, tt.err)
 			}
 			assert.Equal(t, tt.expected, collector.storagePricingMap.Regions)
-			assert.Equal(t, tt.expectedScrapeTimeCompare, collector.StorageScrapingInterval.Compare(scrapingTimeAtCreation))
 		})
 	}
 }

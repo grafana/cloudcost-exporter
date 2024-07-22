@@ -60,15 +60,15 @@ var (
 
 // Collector is a prometheus collector that collects metrics from AWS EKS clusters.
 type Collector struct {
-	Regions                 []ec2Types.Region
-	ScrapeInterval          time.Duration
-	computePricingMap       *ComputePricingMap
-	storagePricingMap       *StoragePricingMap
-	pricingService          pricingClient.Pricing
-	ComputeScrapingInterval time.Time
-	StorageScrapingInterval time.Time
-	ec2RegionClients        map[string]ec2client.EC2
-	logger                  *slog.Logger
+	Regions           []ec2Types.Region
+	ScrapeInterval    time.Duration
+	computePricingMap *ComputePricingMap
+	storagePricingMap *StoragePricingMap
+	pricingService    pricingClient.Pricing
+	NextComputeScrape time.Time
+	NextStorageScrape time.Time
+	ec2RegionClients  map[string]ec2client.EC2
+	logger            *slog.Logger
 }
 
 type Config struct {
@@ -105,18 +105,20 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	ctx := context.Background()
 
 	// TODO: make both maps scraping run async in the background
-	if c.computePricingMap == nil || time.Now().After(c.ComputeScrapingInterval) {
+	if c.computePricingMap == nil || time.Now().After(c.NextComputeScrape) {
 		err := c.populateComputePricingMap(ctx)
 		if err != nil {
 			return err
 		}
+		c.NextComputeScrape = time.Now().Add(c.ScrapeInterval)
 	}
 
-	if c.storagePricingMap == nil || time.Now().After(c.StorageScrapingInterval) {
+	if c.storagePricingMap == nil || time.Now().After(c.NextStorageScrape) {
 		err := c.populateStoragePricingMap(ctx)
 		if err != nil {
 			return err
 		}
+		c.NextStorageScrape = time.Now().Add(c.ScrapeInterval)
 	}
 
 	wgInstances := sync.WaitGroup{}
@@ -194,7 +196,7 @@ func (c *Collector) populateComputePricingMap(ctx context.Context) error {
 	if err := c.computePricingMap.GenerateComputePricingMap(prices, spotPrices); err != nil {
 		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 	}
-	c.ComputeScrapingInterval = time.Now().Add(c.ScrapeInterval)
+
 	return nil
 }
 
@@ -226,7 +228,7 @@ func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
 	if err := c.storagePricingMap.GenerateStoragePricingMap(storagePrices); err != nil {
 		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 	}
-	c.StorageScrapingInterval = time.Now().Add(c.ScrapeInterval)
+
 	return nil
 }
 
