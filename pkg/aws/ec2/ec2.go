@@ -22,6 +22,8 @@ import (
 
 const (
 	subsystem = "aws_ec2"
+
+	errGroupLimit = 5
 )
 
 var (
@@ -152,7 +154,7 @@ func (c *Collector) populateComputePricingMap(ctx context.Context) error {
 	var prices []string
 	var spotPrices []ec2Types.SpotPrice
 	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(5)
+	eg.SetLimit(errGroupLimit)
 	m := sync.Mutex{}
 	for _, region := range c.Regions {
 		eg.Go(func() error {
@@ -193,7 +195,7 @@ func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing storage pricing map")
 	var storagePrices []string
 	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(5)
+	eg.SetLimit(errGroupLimit)
 	m := sync.Mutex{}
 	for _, region := range c.Regions {
 		eg.Go(func() error {
