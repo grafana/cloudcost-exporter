@@ -313,7 +313,7 @@ func (m *MachineStore) CheckReadiness() bool {
 	return true
 }
 
-func (m *MachineStore) GetListOfVmsForSubscription() ([]*VirtualMachineInfo, error) {
+func (m *MachineStore) GetListOfVmsForSubscription() []*VirtualMachineInfo {
 	m.machineMapLock.RLock()
 	defer m.machineMapLock.RUnlock()
 
@@ -322,7 +322,7 @@ func (m *MachineStore) GetListOfVmsForSubscription() ([]*VirtualMachineInfo, err
 		vmi = append(vmi, vmInfo)
 	}
 
-	return vmi, nil
+	return vmi
 }
 
 func (m *MachineStore) PopulateMachineStore(ctx context.Context) {
