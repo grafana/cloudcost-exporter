@@ -87,7 +87,7 @@ func New(config *Config, ps pricingClient.Pricing) *Collector {
 		ec2RegionClients:  config.RegionClients,
 		logger:            logger,
 		pricingService:    ps,
-		computePricingMap: NewComputePricingMap(),
+		computePricingMap: NewComputePricingMap(logger),
 		storagePricingMap: NewStoragePricingMap(logger),
 	}
 }
@@ -188,7 +188,7 @@ func (c *Collector) populateComputePricingMap(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	c.computePricingMap = NewComputePricingMap()
+	c.computePricingMap = NewComputePricingMap(c.logger)
 	if err := c.computePricingMap.GenerateComputePricingMap(prices, spotPrices); err != nil {
 		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 	}

@@ -54,6 +54,7 @@ type ComputePricingMap struct {
 	Regions         map[string]*FamilyPricing
 	InstanceDetails map[string]InstanceAttributes
 	m               sync.RWMutex
+	logger          *slog.Logger
 }
 
 // FamilyPricing is a map of instance type to a list of PriceTiers where the key is the ec2 compute instance type
@@ -83,11 +84,12 @@ type StoragePricing struct {
 	Storage map[string]float64
 }
 
-func NewComputePricingMap() *ComputePricingMap {
+func NewComputePricingMap(l *slog.Logger) *ComputePricingMap {
 	return &ComputePricingMap{
 		Regions:         make(map[string]*FamilyPricing),
 		InstanceDetails: make(map[string]InstanceAttributes),
 		m:               sync.RWMutex{},
+		logger:          l.With("subsystem", "computePricing"),
 	}
 }
 
