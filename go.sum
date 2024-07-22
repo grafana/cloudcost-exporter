@@ -7,8 +7,8 @@ cloud.google.com/go/auth/oauth2adapt v0.2.2 h1:+TTV8aXpjeChS9M+aTtN/TjdQnzJvmzKF
 cloud.google.com/go/auth/oauth2adapt v0.2.2/go.mod h1:wcYjgpZI9+Yu7LyYBg4pqSiaRkfEK3GQcpb7C/uyF1Q=
 cloud.google.com/go/billing v1.18.8 h1:F0QnYXQ/o86zkuLMwJe+yLlPj/kgfrNCukH+bOhAT2I=
 cloud.google.com/go/billing v1.18.8/go.mod h1:oFsuKhKiuxK7dDQ4a8tt5/1cScEo4IzhssWj6TTdi6k=
-cloud.google.com/go/compute v1.27.2 h1:5cE5hdrwJV/92ravlwIFRGnyH9CpLGhh4N0ZDVTU+BA=
-cloud.google.com/go/compute v1.27.2/go.mod h1:YQuHkNEwP3bIz4LBYQqf4DIMfFtTDtnEgnwG0mJQQ9I=
+cloud.google.com/go/compute v1.27.3 h1:GFfoejA5qGeFYpKAfgoVzvgJ3D8upFKI/UR7MdiPdS0=
+cloud.google.com/go/compute v1.27.3/go.mod h1:5GuDo3l1k9CFhfIHK1sXqlqOW/iWX4/eBlO5FtxDhvQ=
 cloud.google.com/go/compute/metadata v0.4.0 h1:vHzJCWaM4g8XIcm8kopr3XmDA4Gy/lblD3EhhSux05c=
 cloud.google.com/go/compute/metadata v0.4.0/go.mod h1:SIQh1Kkb4ZJ8zJ874fqVkslA29PRXuleyj6vOzlbK7M=
 cloud.google.com/go/iam v1.1.10 h1:ZSAr64oEhQSClwBL670MsJAW5/RLiC6kfw3Bqmd5ZDI=
