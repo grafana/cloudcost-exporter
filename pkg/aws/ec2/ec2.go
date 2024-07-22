@@ -51,7 +51,7 @@ var (
 		[]string{"instance", "region", "family", "machine_type", "cluster_name", "price_tier"},
 		nil,
 	)
-	persistentVolumeHourlyCostDesc = prometheus.NewDesc(
+	PersistentVolumeHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "persistent_volume_usd_per_hour"),
 		"The cost of an AWS EBS Volume in USD.",
 		[]string{"persistent_volume", "region", "availability_zone", "disk", "type", "size_gib", "state"},
@@ -329,7 +329,7 @@ func (c *Collector) emitMetricsFromVolumesChannel(volumesCh chan []ec2Types.Volu
 				string(volume.State),
 			}
 
-			ch <- prometheus.MustNewConstMetric(persistentVolumeHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
+			ch <- prometheus.MustNewConstMetric(PersistentVolumeHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
 		}
 	}
 }
@@ -343,7 +343,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- InstanceCPUHourlyCostDesc
 	ch <- InstanceMemoryHourlyCostDesc
 	ch <- InstanceTotalHourlyCostDesc
-	ch <- persistentVolumeHourlyCostDesc
+	ch <- PersistentVolumeHourlyCostDesc
 	return nil
 }
 
