@@ -29,7 +29,7 @@ func TestPopulatePriceStore(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	listOpts := &retailPriceSdk.RetailPricesClientListOptions{
+	defaultListOpts := &retailPriceSdk.RetailPricesClientListOptions{
 		APIVersion:  to.StringPtr(AZ_API_VERSION),
 		Filter:      to.StringPtr(AzurePriceSearchFilter),
 		MeterRegion: to.StringPtr(AzureMeterRegion),
@@ -41,11 +41,13 @@ func TestPopulatePriceStore(t *testing.T) {
 
 	testTable := map[string]struct {
 		expectedErr      error
+		listOpts         *retailPriceSdk.RetailPricesClientListOptions
 		apiReturns       []*retailPriceSdk.ResourceSKU
 		expectedPriceMap map[string]PriceByPriority
 	}{
 		"base case": {
 			expectedErr: nil,
+			listOpts:    defaultListOpts,
 			expectedPriceMap: map[string]PriceByPriority{
 				"westus": {
 					OnDemand: PriceByOperatingSystem{
@@ -86,7 +88,7 @@ func TestPopulatePriceStore(t *testing.T) {
 
 	for name, tc := range testTable {
 		t.Run(name, func(t *testing.T) {
-			call := mockAzureClient.EXPECT().ListPrices(parentCtx, listOpts).AnyTimes()
+			call := mockAzureClient.EXPECT().ListPrices(parentCtx, tc.listOpts).AnyTimes()
 			call.Return(tc.apiReturns, tc.expectedErr)
 
 			p.PopulatePriceStore(parentCtx)
