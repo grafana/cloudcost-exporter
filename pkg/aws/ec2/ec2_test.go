@@ -430,7 +430,7 @@ func Test_FetchVolumesData(t *testing.T) {
 		wg := sync.WaitGroup{}
 		wg.Add(len(collector.Regions))
 		ch := make(chan []ec2Types.Volume)
-		go collector.fetchVolumesData(context.Background(), client, regionName, &wg, ch)
+		go collector.fetchVolumesData(context.Background(), client, regionName, ch)
 		go func() {
 			wg.Wait()
 			close(ch)

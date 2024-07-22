@@ -132,8 +132,14 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		regionName := *region.RegionName
 		client := c.ec2RegionClients[regionName]
 
-		go c.fetchInstancesData(ctx, region, &wgInstances, instanceCh)
-		go c.fetchVolumesData(ctx, client, regionName, &wgVolumes, volumeCh)
+		go func() {
+			c.fetchInstancesData(ctx, region, instanceCh)
+			wgInstances.Done()
+		}()
+		go func() {
+			c.fetchVolumesData(ctx, client, regionName, volumeCh)
+			wgVolumes.Done()
+		}()
 	}
 	go func() {
 		wgInstances.Wait()
@@ -223,11 +229,11 @@ func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
 	return nil
 }
 
-func (c *Collector) fetchInstancesData(ctx context.Context, region ec2Types.Region, wg *sync.WaitGroup, instanceCh chan []ec2Types.Reservation) {
+func (c *Collector) fetchInstancesData(ctx context.Context, region ec2Types.Region, instanceCh chan []ec2Types.Reservation) {
 	now := time.Now()
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching instances", slog.String("region", *region.RegionName))
-	defer wg.Done()
 	client := c.ec2RegionClients[*region.RegionName]
+
 	reservations, err := ListComputeInstances(ctx, client)
 	if err != nil {
 		c.logger.LogAttrs(ctx, slog.LevelError, "Could not list compute instances",
@@ -235,18 +241,19 @@ func (c *Collector) fetchInstancesData(ctx context.Context, region ec2Types.Regi
 			slog.String("message", err.Error()))
 		return
 	}
+
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Successfully listed instances",
 		slog.String("region", *region.RegionName),
 		slog.Int("instances", len(reservations)),
 		slog.Duration("duration", time.Since(now)),
 	)
+
 	instanceCh <- reservations
 }
 
-func (c *Collector) fetchVolumesData(ctx context.Context, client ec2client.EC2, region string, wg *sync.WaitGroup, volumeCh chan []ec2Types.Volume) {
+func (c *Collector) fetchVolumesData(ctx context.Context, client ec2client.EC2, region string, volumeCh chan []ec2Types.Volume) {
 	now := time.Now()
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching volumes", slog.String("region", region))
-	defer wg.Done()
 
 	volumes, err := ListEBSVolumes(ctx, client)
 	if err != nil {
@@ -255,11 +262,13 @@ func (c *Collector) fetchVolumesData(ctx context.Context, client ec2client.EC2, 
 			slog.String("message", err.Error()))
 		return
 	}
+
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Successfully listed volumes",
 		slog.String("region", region),
 		slog.Int("volumes", len(volumes)),
 		slog.Duration("duration", time.Since(now)),
 	)
+
 	volumeCh <- volumes
 }
 
