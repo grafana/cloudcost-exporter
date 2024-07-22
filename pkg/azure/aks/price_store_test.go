@@ -2,6 +2,7 @@ package aks
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"reflect"
@@ -20,11 +21,6 @@ var (
 	testLogger *slog.Logger    = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
-func TestPriceStoreMapCreation(t *testing.T) {
-	// TODO - mock
-	t.Skip()
-}
-
 func TestPopulatePriceStore(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -37,7 +33,14 @@ func TestPopulatePriceStore(t *testing.T) {
 
 	mockAzureClient := mock_az_client.NewMockAzureClient(ctrl)
 
-	p := NewPricingStore(parentCtx, testLogger, mockAzureClient)
+	p := &PriceStore{
+		logger:             testLogger,
+		context:            parentCtx,
+		azureClientWrapper: mockAzureClient,
+
+		regionMapLock: &sync.RWMutex{},
+		RegionMap:     make(map[string]PriceByPriority),
+	}
 
 	testTable := map[string]struct {
 		expectedErr      error
@@ -84,16 +87,20 @@ func TestPopulatePriceStore(t *testing.T) {
 				{ArmSkuName: "Standard_D4s_v3", SkuName: "D4s v3 Low Priority", ArmRegionName: "centraleurope", ProductName: "Virtual Machines D Series", RetailPrice: 0.01}, // low priority machines are disregarded
 			},
 		},
+		"err case": {
+			expectedErr:      errors.New(""),
+			listOpts:         defaultListOpts,
+			expectedPriceMap: map[string]PriceByPriority{},
+			apiReturns:       nil,
+		},
 	}
 
 	for name, tc := range testTable {
 		t.Run(name, func(t *testing.T) {
-			call := mockAzureClient.EXPECT().ListPrices(parentCtx, tc.listOpts).AnyTimes()
+			call := mockAzureClient.EXPECT().ListPrices(parentCtx, tc.listOpts).Times(1)
 			call.Return(tc.apiReturns, tc.expectedErr)
 
 			p.PopulatePriceStore(parentCtx)
-
-			assert.True(t, p.regionMapLock.TryRLock())
 
 			mapEq := reflect.DeepEqual(tc.expectedPriceMap, p.RegionMap)
 			assert.True(t, mapEq)
