@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
+	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	mockec2 "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/ec2"
 	mockpricing "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/pricing"
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
@@ -114,6 +115,7 @@ func TestCollector_ListOnDemandPrices(t *testing.T) {
 
 func TestNewCollector(t *testing.T) {
 	tests := map[string]struct {
+		instanceLabel  string
 		region         string
 		profile        string
 		scrapeInternal time.Duration
@@ -121,12 +123,14 @@ func TestNewCollector(t *testing.T) {
 		ec2s           ec2client.EC2
 	}{
 		"Empty Region and profile should return a collector": {
+			instanceLabel:  "instance",
 			region:         "",
 			profile:        "",
 			scrapeInternal: 0,
 			ps:             nil,
 		},
 		"Region and profile should return a collector": {
+			instanceLabel:  "instance",
 			region:         "us-east-1",
 			profile:        "default",
 			scrapeInternal: 0,
@@ -136,7 +140,8 @@ func TestNewCollector(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			collector := New(&Config{
-				Logger: logger,
+				CommonConfig: &config.CommonConfig{ComputeInstanceLabel: tt.instanceLabel},
+				Logger:       logger,
 			}, tt.ps)
 			assert.NotNil(t, collector)
 		})
@@ -146,13 +151,15 @@ func TestNewCollector(t *testing.T) {
 func TestCollector_Name(t *testing.T) {
 	t.Run("Name should return the same name as the subsystem const", func(t *testing.T) {
 		collector := New(&Config{
-			Logger: logger,
+			CommonConfig: &config.CommonConfig{ComputeInstanceLabel: "instance"},
+			Logger:       logger,
 		}, nil)
 		assert.Equal(t, subsystem, collector.Name())
 	})
 }
 
 func TestCollector_Collect(t *testing.T) {
+	commonConfig := &config.CommonConfig{ComputeInstanceLabel: "node"}
 	regions := []ec2Types.Region{
 		{
 			RegionName: aws.String("us-east-1"),
@@ -160,7 +167,8 @@ func TestCollector_Collect(t *testing.T) {
 	}
 	t.Run("Collect should return no error", func(t *testing.T) {
 		collector := New(&Config{
-			Logger: logger,
+			CommonConfig: commonConfig,
+			Logger:       logger,
 		}, nil)
 		ch := make(chan prometheus.Metric)
 		go func() {
@@ -178,8 +186,9 @@ func TestCollector_Collect(t *testing.T) {
 					return nil, assert.AnError
 				}).Times(1)
 		collector := New(&Config{
-			Regions: regions,
-			Logger:  logger,
+			CommonConfig: commonConfig,
+			Regions:      regions,
+			Logger:       logger,
 		}, ps)
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
@@ -196,8 +205,9 @@ func TestCollector_Collect(t *testing.T) {
 					}, nil
 				}).Times(1)
 		collector := New(&Config{
-			Regions: regions,
-			Logger:  logger,
+			CommonConfig: commonConfig,
+			Regions:      regions,
+			Logger:       logger,
 		}, ps)
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
@@ -224,6 +234,7 @@ func TestCollector_Collect(t *testing.T) {
 			regionClientMap[*r.RegionName] = ec2s
 		}
 		collector := New(&Config{
+			CommonConfig:  commonConfig,
 			Regions:       regions,
 			RegionClients: regionClientMap,
 			Logger:        logger,
@@ -263,6 +274,7 @@ func TestCollector_Collect(t *testing.T) {
 			regionClientMap[*r.RegionName] = ec2s
 		}
 		collector := New(&Config{
+			CommonConfig:  commonConfig,
 			Regions:       regions,
 			RegionClients: regionClientMap,
 			Logger:        logger,
@@ -358,6 +370,7 @@ func TestCollector_Collect(t *testing.T) {
 			regionClientMap[*r.RegionName] = ec2s
 		}
 		collector := New(&Config{
+			CommonConfig:  commonConfig,
 			Regions:       regions,
 			RegionClients: regionClientMap,
 			Logger:        logger,
@@ -377,5 +390,8 @@ func TestCollector_Collect(t *testing.T) {
 			metrics = append(metrics, utils.ReadMetrics(metric))
 		}
 		assert.Len(t, metrics, 6)
+		// Assert we properly set the instanceLabel
+		assert.Equal(t, "ip-172-31-0-1.ec2.internal", metrics[0].Labels["node"])
+		assert.Equal(t, "", metrics[0].Labels["instance"])
 	})
 }

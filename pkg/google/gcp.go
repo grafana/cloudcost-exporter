@@ -15,6 +15,7 @@ import (
 	computev1 "google.golang.org/api/compute/v1"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
+	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	"github.com/grafana/cloudcost-exporter/pkg/google/compute"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
@@ -91,6 +92,7 @@ type Config struct {
 	Services        []string
 	ScrapeInterval  time.Duration
 	DefaultDiscount int
+	CommonConfig    *config.CommonConfig
 	Logger          *slog.Logger
 }
 
@@ -143,11 +145,13 @@ func New(config *Config) (*GCP, error) {
 			}
 		case "COMPUTE":
 			collector = compute.New(&compute.Config{
+				CommonConfig:   config.CommonConfig,
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
 			}, computeService, cloudCatalogClient)
 		case "GKE":
 			collector = gke.New(&gke.Config{
+				CommonConfig:   config.CommonConfig,
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
 			}, computeService, cloudCatalogClient)

@@ -18,12 +18,15 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	"github.com/grafana/cloudcost-exporter/pkg/google/billing"
 	"github.com/grafana/cloudcost-exporter/pkg/google/compute"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 func TestCollector_Collect(t *testing.T) {
+	instanceLabel := "node"
+	commonConfig := &config.CommonConfig{ComputeInstanceLabel: instanceLabel}
 	tests := map[string]struct {
 		config          *Config
 		testServer      *httptest.Server
@@ -33,7 +36,8 @@ func TestCollector_Collect(t *testing.T) {
 	}{
 		"Handle http error": {
 			config: &Config{
-				Projects: "testing",
+				CommonConfig: commonConfig,
+				Projects:     "testing",
 			},
 			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -44,7 +48,8 @@ func TestCollector_Collect(t *testing.T) {
 		},
 		"Parse our regular response": {
 			config: &Config{
-				Projects: "testing,testing-1",
+				CommonConfig: commonConfig,
+				Projects:     "testing,testing-1",
 			},
 			collectResponse: 1.0,
 			expectedMetrics: []*utils.MetricResult{
@@ -53,7 +58,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1",
+						instanceLabel:  "test-n1",
 						"machine_type": "n1-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing",
@@ -67,7 +72,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_memory_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1",
+						instanceLabel:  "test-n1",
 						"machine_type": "n1-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing",
@@ -81,7 +86,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2",
+						instanceLabel:  "test-n2",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing",
@@ -95,7 +100,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_memory_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2",
+						instanceLabel:  "test-n2",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing",
@@ -109,7 +114,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1-spot",
+						instanceLabel:  "test-n1-spot",
 						"machine_type": "n1-slim",
 						"price_tier":   "spot",
 						"project":      "testing",
@@ -123,7 +128,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_memory_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1-spot",
+						instanceLabel:  "test-n1-spot",
 						"machine_type": "n1-slim",
 						"price_tier":   "spot",
 						"project":      "testing",
@@ -137,7 +142,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2-us-east1",
+						instanceLabel:  "test-n2-us-east1",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing",
@@ -151,7 +156,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_memory_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2-us-east1",
+						instanceLabel:  "test-n2-us-east1",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing",
@@ -194,7 +199,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1",
+						instanceLabel:  "test-n1",
 						"machine_type": "n1-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing-1",
@@ -208,7 +213,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_memory_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1",
+						instanceLabel:  "test-n1",
 						"machine_type": "n1-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing-1",
@@ -222,7 +227,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2",
+						instanceLabel:  "test-n2",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing-1",
@@ -236,7 +241,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_memory_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2",
+						instanceLabel:  "test-n2",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing-1",
@@ -250,7 +255,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1-spot",
+						instanceLabel:  "test-n1-spot",
 						"machine_type": "n1-slim",
 						"price_tier":   "spot",
 						"project":      "testing-1",
@@ -264,7 +269,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_memory_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n1",
-						"instance":     "test-n1-spot",
+						instanceLabel:  "test-n1-spot",
 						"machine_type": "n1-slim",
 						"price_tier":   "spot",
 						"project":      "testing-1",
@@ -278,7 +283,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_cpu_usd_per_core_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2-us-east1",
+						instanceLabel:  "test-n2-us-east1",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing-1",
@@ -292,7 +297,7 @@ func TestCollector_Collect(t *testing.T) {
 					FqName: "cloudcost_gcp_gke_instance_memory_usd_per_gib_hour",
 					Labels: map[string]string{
 						"family":       "n2",
-						"instance":     "test-n2-us-east1",
+						instanceLabel:  "test-n2-us-east1",
 						"machine_type": "n2-slim",
 						"price_tier":   "ondemand",
 						"project":      "testing-1",

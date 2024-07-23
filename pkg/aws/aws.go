@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
@@ -28,6 +29,7 @@ type Config struct {
 	Region         string
 	Profile        string
 	ScrapeInterval time.Duration
+	CommonConfig   *config.CommonConfig
 	Logger         *slog.Logger
 }
 
@@ -144,6 +146,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 				regionClientMap[*r.RegionName] = client
 			}
 			collector := ec2Collector.New(&ec2Collector.Config{
+				CommonConfig:   config.CommonConfig,
 				Regions:        regions.Regions,
 				RegionClients:  regionClientMap,
 				Logger:         logger,

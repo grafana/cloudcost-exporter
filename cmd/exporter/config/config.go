@@ -5,10 +5,15 @@ import (
 	"time"
 )
 
+type CommonConfig struct {
+	ComputeInstanceLabel string
+}
+
 type Config struct {
-	Provider  string
-	ProjectID string
-	Providers struct {
+	Provider     string
+	ProjectID    string
+	CommonConfig CommonConfig
+	Providers    struct {
 		AWS struct {
 			Profile  string
 			Region   string

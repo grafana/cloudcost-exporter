@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/aks"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 
@@ -96,7 +97,8 @@ type Azure struct {
 }
 
 type Config struct {
-	Logger *slog.Logger
+	Logger       *slog.Logger
+	CommonConfig *config.CommonConfig
 
 	SubscriptionId string
 
@@ -126,6 +128,7 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 			collector, err := aks.New(ctx, &aks.Config{
 				Credentials:    creds,
 				SubscriptionId: config.SubscriptionId,
+				CommonConfig:   config.CommonConfig,
 				Logger:         logger,
 			})
 			if err != nil {
