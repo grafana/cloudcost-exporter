@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
+	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -29,26 +30,11 @@ var (
 	ErrGeneratePricingMap = errors.New("error generating pricing map")
 )
 
-var (
-	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
-		"The cpu cost a ec2 instance in USD/(core*h)",
-		[]string{"instance", "region", "family", "machine_type", "cluster_name", "price_tier"},
-		nil,
-	)
-	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
-		"The memory cost of a ec2 instance in USD/(GiB*h)",
-		[]string{"instance", "region", "family", "machine_type", "cluster_name", "price_tier"},
-		nil,
-	)
-	InstanceTotalHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_total_usd_per_hour"),
-		"The total cost of the ec2 instance in USD/h",
-		[]string{"instance", "region", "family", "machine_type", "cluster_name", "price_tier"},
-		nil,
-	)
-)
+type CollectorMetrics struct {
+	InstanceCPUHourlyCostDesc    *prometheus.Desc
+	InstanceMemoryHourlyCostDesc *prometheus.Desc
+	InstanceTotalHourlyCostDesc  *prometheus.Desc
+}
 
 // Collector is a prometheus collector that collects metrics from AWS EKS clusters.
 type Collector struct {
@@ -58,14 +44,39 @@ type Collector struct {
 	pricingService   pricingClient.Pricing
 	NextScrape       time.Time
 	ec2RegionClients map[string]ec2client.EC2
+	metrics          *CollectorMetrics
 	logger           *slog.Logger
 }
 
 type Config struct {
+	CommonConfig   *config.CommonConfig
 	ScrapeInterval time.Duration
 	Regions        []ec2Types.Region
 	RegionClients  map[string]ec2client.EC2
 	Logger         *slog.Logger
+}
+
+func newCollectorMetrics(instanceLabel string) *CollectorMetrics {
+	return &CollectorMetrics{
+		InstanceCPUHourlyCostDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
+			"The cpu cost a ec2 instance in USD/(core*h)",
+			[]string{instanceLabel, "region", "family", "machine_type", "cluster_name", "price_tier"},
+			nil,
+		),
+		InstanceMemoryHourlyCostDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
+			"The memory cost of a ec2 instance in USD/(GiB*h)",
+			[]string{instanceLabel, "region", "family", "machine_type", "cluster_name", "price_tier"},
+			nil,
+		),
+		InstanceTotalHourlyCostDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_total_usd_per_hour"),
+			"The total cost of the ec2 instance in USD/h",
+			[]string{instanceLabel, "region", "family", "machine_type", "cluster_name", "price_tier"},
+			nil,
+		),
+	}
 }
 
 // New creates an ec2 collector
@@ -75,6 +86,7 @@ func New(config *Config, ps pricingClient.Pricing) *Collector {
 		ScrapeInterval:   config.ScrapeInterval,
 		Regions:          config.Regions,
 		ec2RegionClients: config.RegionClients,
+		metrics:          newCollectorMetrics(config.CommonConfig.ComputeInstanceLabel),
 		logger:           logger,
 		pricingService:   ps,
 		pricingMap:       NewStructuredPricingMap(),
@@ -202,9 +214,9 @@ func (c *Collector) emitMetricsFromChannel(reservationsCh chan []ec2Types.Reserv
 					clusterName,
 					pricetier,
 				}
-				ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.Cpu, labelValues...)
-				ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.Ram, labelValues...)
-				ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.Total, labelValues...)
+				ch <- prometheus.MustNewConstMetric(c.metrics.InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.Cpu, labelValues...)
+				ch <- prometheus.MustNewConstMetric(c.metrics.InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.Ram, labelValues...)
+				ch <- prometheus.MustNewConstMetric(c.metrics.InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.Total, labelValues...)
 			}
 		}
 	}
@@ -215,9 +227,9 @@ func (c *Collector) CheckReadiness() bool {
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
-	ch <- InstanceCPUHourlyCostDesc
-	ch <- InstanceMemoryHourlyCostDesc
-	ch <- InstanceTotalHourlyCostDesc
+	ch <- c.metrics.InstanceCPUHourlyCostDesc
+	ch <- c.metrics.InstanceMemoryHourlyCostDesc
+	ch <- c.metrics.InstanceTotalHourlyCostDesc
 	return nil
 }
 

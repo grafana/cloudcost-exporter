@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -19,6 +20,7 @@ var (
 )
 
 func Test_New(t *testing.T) {
+	commonConfig := &config.CommonConfig{ComputeInstanceLabel: "instance"}
 	for _, tc := range []struct {
 		name           string
 		expectedError  error
@@ -32,6 +34,7 @@ func Test_New(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a, err := New(parentCtx, &Config{
 				Logger:         testLogger,
+				CommonConfig:   commonConfig,
 				SubscriptionId: tc.subscriptionId,
 			})
 			if tc.expectedError != nil {

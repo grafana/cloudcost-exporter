@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/compute/v1"
 
+	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	"github.com/grafana/cloudcost-exporter/pkg/google/billing"
 	gcpCompute "github.com/grafana/cloudcost-exporter/pkg/google/compute"
 
@@ -23,31 +24,14 @@ const (
 	subsystem = "gcp_gke"
 )
 
-var (
-	gkeNodeMemoryHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
-
-		"The cpu cost a GKE Instance in USD/(core*h)",
-		// Cannot simply do cluster because many metric scrapers will add a label for cluster and would interfere with the label we want to add
-		[]string{"cluster_name", "instance", "region", "family", "machine_type", "project", "price_tier"},
-		nil,
-	)
-	gkeNodeCPUHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
-		"The memory cost of a GKE Instance in USD/(GiB*h)",
-		// Cannot simply do cluster because many metric scrapers will add a label for cluster and would interfere with the label we want to add
-		[]string{"cluster_name", "instance", "region", "family", "machine_type", "project", "price_tier"},
-		nil,
-	)
-	persistentVolumeHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "persistent_volume_usd_per_hour"),
-		"The cost of a GKE Persistent Volume in USD.",
-		[]string{"cluster_name", "namespace", "persistentvolume", "region", "project", "storage_class", "disk_type"},
-		nil,
-	)
-)
+type CollectorMetrics struct {
+	gkeNodeMemoryHourlyCostDesc    *prometheus.Desc
+	gkeNodeCPUHourlyCostDesc       *prometheus.Desc
+	persistentVolumeHourlyCostDesc *prometheus.Desc
+}
 
 type Config struct {
+	CommonConfig   *config.CommonConfig
 	Projects       string
 	ScrapeInterval time.Duration
 }
@@ -58,9 +42,35 @@ type Collector struct {
 	config            *Config
 	Projects          []string
 	ComputePricingMap *gcpCompute.StructuredPricingMap
+	metrics           *CollectorMetrics
 	NextScrape        time.Time
 }
 
+func newCollectorMetrics(instanceLabel string) *CollectorMetrics {
+	return &CollectorMetrics{
+		gkeNodeMemoryHourlyCostDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
+
+			"The cpu cost a GKE Instance in USD/(core*h)",
+			// Cannot simply do cluster because many metric scrapers will add a label for cluster and would interfere with the label we want to add
+			[]string{"cluster_name", instanceLabel, "region", "family", "machine_type", "project", "price_tier"},
+			nil,
+		),
+		gkeNodeCPUHourlyCostDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
+			"The memory cost of a GKE Instance in USD/(GiB*h)",
+			// Cannot simply do cluster because many metric scrapers will add a label for cluster and would interfere with the label we want to add
+			[]string{"cluster_name", instanceLabel, "region", "family", "machine_type", "project", "price_tier"},
+			nil,
+		),
+		persistentVolumeHourlyCostDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "persistent_volume_usd_per_hour"),
+			"The cost of a GKE Persistent Volume in USD.",
+			[]string{"cluster_name", "namespace", "persistentvolume", "region", "project", "storage_class", "disk_type"},
+			nil,
+		),
+	}
+}
 func (c *Collector) Register(_ provider.Registry) error {
 	return nil
 }
@@ -156,13 +166,13 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					return err
 				}
 				ch <- prometheus.MustNewConstMetric(
-					gkeNodeCPUHourlyCostDesc,
+					c.metrics.gkeNodeCPUHourlyCostDesc,
 					prometheus.GaugeValue,
 					cpuCost,
 					labelValues...,
 				)
 				ch <- prometheus.MustNewConstMetric(
-					gkeNodeMemoryHourlyCostDesc,
+					c.metrics.gkeNodeMemoryHourlyCostDesc,
 					prometheus.GaugeValue,
 					ramCost,
 					labelValues...,
@@ -196,7 +206,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					continue
 				}
 				ch <- prometheus.MustNewConstMetric(
-					persistentVolumeHourlyCostDesc,
+					c.metrics.persistentVolumeHourlyCostDesc,
 					prometheus.GaugeValue,
 					float64(d.Size)*price,
 					labelValues...,
@@ -214,6 +224,7 @@ func New(config *Config, computeService *compute.Service, billingService *billin
 		billingService: billingService,
 		config:         config,
 		Projects:       projects,
+		metrics:        newCollectorMetrics(config.CommonConfig.ComputeInstanceLabel),
 	}
 }
 
@@ -222,8 +233,8 @@ func (c *Collector) Name() string {
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
-	ch <- gkeNodeCPUHourlyCostDesc
-	ch <- gkeNodeMemoryHourlyCostDesc
+	ch <- c.metrics.gkeNodeCPUHourlyCostDesc
+	ch <- c.metrics.gkeNodeMemoryHourlyCostDesc
 	return nil
 }
 

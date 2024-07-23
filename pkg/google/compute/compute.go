@@ -14,6 +14,7 @@ import (
 	"google.golang.org/api/compute/v1"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
+	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	"github.com/grafana/cloudcost-exporter/pkg/google/billing"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
@@ -26,30 +27,16 @@ var (
 	ListInstancesError = errors.New("no list price was found for the sku")
 )
 
-var (
-	NextScrapeDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "next_scrape"),
-		"Next time GCP's compute submodule pricing map will be refreshed as unix timestamp",
-		nil,
-		nil,
-	)
-	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
-		"The cpu cost a GCP Compute Instance in USD/(core*h)",
-		[]string{"instance", "region", "family", "machine_type", "project", "price_tier"},
-		nil,
-	)
-	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_ram_usd_per_gib_hour"),
-		"The memory cost of a GCP Compute Instance in USD/(GiB*h)",
-		[]string{"instance", "region", "family", "machine_type", "project", "price_tier"},
-		nil,
-	)
-)
-
 type Config struct {
+	CommonConfig   *config.CommonConfig
 	Projects       string
 	ScrapeInterval time.Duration
+}
+
+type CollectorMetrics struct {
+	NextScrapeDesc               *prometheus.Desc
+	InstanceCPUHourlyCostDesc    *prometheus.Desc
+	InstanceMemoryHourlyCostDesc *prometheus.Desc
 }
 
 // Collector implements the Collector interface for compute services in Compute.
@@ -59,13 +46,37 @@ type Collector struct {
 	PricingMap     *StructuredPricingMap
 	config         *Config
 	Projects       []string
+	metrics        *CollectorMetrics
 	NextScrape     time.Time
 }
 
+func newCollectorMetrics(instanceLabel string) *CollectorMetrics {
+	return &CollectorMetrics{
+		NextScrapeDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "next_scrape"),
+			"Next time GCP's compute submodule pricing map will be refreshed as unix timestamp",
+			nil,
+			nil,
+		),
+		InstanceCPUHourlyCostDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
+			"The cpu cost a GCP Compute Instance in USD/(core*h)",
+			[]string{instanceLabel, "region", "family", "machine_type", "project", "price_tier"},
+			nil,
+		),
+		InstanceMemoryHourlyCostDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_ram_usd_per_gib_hour"),
+			"The memory cost of a GCP Compute Instance in USD/(GiB*h)",
+			[]string{instanceLabel, "region", "family", "machine_type", "project", "price_tier"},
+			nil,
+		),
+	}
+}
+
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
-	ch <- NextScrapeDesc
-	ch <- InstanceCPUHourlyCostDesc
-	ch <- InstanceMemoryHourlyCostDesc
+	ch <- c.metrics.NextScrapeDesc
+	ch <- c.metrics.InstanceCPUHourlyCostDesc
+	ch <- c.metrics.InstanceMemoryHourlyCostDesc
 	return nil
 }
 
@@ -89,6 +100,7 @@ func New(config *Config, computeService *compute.Service, billingService *billin
 		billingService: billingService,
 		config:         config,
 		Projects:       projects,
+		metrics:        newCollectorMetrics(config.CommonConfig.ComputeInstanceLabel),
 	}
 }
 
@@ -152,7 +164,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 		c.NextScrape = time.Now().Add(c.config.ScrapeInterval)
 		log.Printf("Finished refreshing pricing map in %s", time.Since(start))
 	}
-	ch <- prometheus.MustNewConstMetric(NextScrapeDesc, prometheus.GaugeValue, float64(c.NextScrape.Unix()))
+	ch <- prometheus.MustNewConstMetric(c.metrics.NextScrapeDesc, prometheus.GaugeValue, float64(c.NextScrape.Unix()))
 	for _, project := range c.Projects {
 		zones, err := c.computeService.Zones.List(project).Do()
 		if err != nil {
@@ -190,7 +202,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 					continue
 				}
 				ch <- prometheus.MustNewConstMetric(
-					InstanceCPUHourlyCostDesc,
+					c.metrics.InstanceCPUHourlyCostDesc,
 					prometheus.GaugeValue,
 					cpuCost,
 					instance.Instance,
@@ -199,7 +211,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 					instance.MachineType,
 					project,
 					instance.PriceTier)
-				ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc,
+				ch <- prometheus.MustNewConstMetric(c.metrics.InstanceMemoryHourlyCostDesc,
 					prometheus.GaugeValue,
 					ramCost,
 					instance.Instance,

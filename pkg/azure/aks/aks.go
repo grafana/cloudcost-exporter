@@ -9,6 +9,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
@@ -55,39 +56,50 @@ var (
 )
 
 // Prometheus Metrics
-var (
-	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
-		"The cpu cost a compute instance in USD/(core*h)",
-		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
-		nil,
-	)
-	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
-		"The memory cost of a compute instance in USD/(GiB*h)",
-		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
-		nil,
-	)
-	InstanceTotalHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_total_usd_per_hour"),
-		"The total cost of an compute instance in USD/h",
-		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
-		nil,
-	)
-)
+
+type CollectorMetrics struct {
+	InstanceCPUHourlyCostDesc    *prometheus.Desc
+	InstanceMemoryHourlyCostDesc *prometheus.Desc
+	InstanceTotalHourlyCostDesc  *prometheus.Desc
+}
+
+func newCollectorMetrics(instanceLabel string) *CollectorMetrics {
+	return &CollectorMetrics{
+		InstanceCPUHourlyCostDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
+			"The cpu cost a compute instance in USD/(core*h)",
+			[]string{instanceLabel, "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
+			nil,
+		),
+		InstanceMemoryHourlyCostDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
+			"The memory cost of a compute instance in USD/(GiB*h)",
+			[]string{instanceLabel, "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
+			nil,
+		),
+		InstanceTotalHourlyCostDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_total_usd_per_hour"),
+			"The total cost of an compute instance in USD/h",
+			[]string{instanceLabel, "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
+			nil,
+		),
+	}
+}
 
 // Collector is a prometheus collector that collects metrics from AKS clusters.
 type Collector struct {
 	context context.Context
 	logger  *slog.Logger
+	metrics *CollectorMetrics
 
 	PriceStore   *PriceStore
 	MachineStore *MachineStore
 }
 
 type Config struct {
-	Logger      *slog.Logger
-	Credentials *azidentity.DefaultAzureCredential
+	CommonConfig *config.CommonConfig
+	Logger       *slog.Logger
+	Credentials  *azidentity.DefaultAzureCredential
 
 	SubscriptionId string
 }
@@ -131,6 +143,7 @@ func New(ctx context.Context, cfg *Config) (*Collector, error) {
 	return &Collector{
 		context: ctx,
 		logger:  logger,
+		metrics: newCollectorMetrics(cfg.CommonConfig.ComputeInstanceLabel),
 
 		PriceStore:   priceStore,
 		MachineStore: machineStore,
@@ -185,9 +198,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			vmInfo.OperatingSystem.String(),
 		}
 
-		ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerCore, labelValues...)
-		ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerGiB, labelValues...)
-		ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.RetailPrice, labelValues...)
+		ch <- prometheus.MustNewConstMetric(c.metrics.InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerCore, labelValues...)
+		ch <- prometheus.MustNewConstMetric(c.metrics.InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerGiB, labelValues...)
+		ch <- prometheus.MustNewConstMetric(c.metrics.InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.RetailPrice, labelValues...)
 	}
 
 	c.logger.LogAttrs(c.context, slog.LevelInfo, "metrics collected", slog.Duration("duration", time.Since(now)))
@@ -195,9 +208,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
-	ch <- InstanceCPUHourlyCostDesc
-	ch <- InstanceMemoryHourlyCostDesc
-	ch <- InstanceTotalHourlyCostDesc
+	ch <- c.metrics.InstanceCPUHourlyCostDesc
+	ch <- c.metrics.InstanceMemoryHourlyCostDesc
+	ch <- c.metrics.InstanceTotalHourlyCostDesc
 	return nil
 }
 

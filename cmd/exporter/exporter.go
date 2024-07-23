@@ -31,6 +31,7 @@ import (
 
 func main() {
 	var cfg config.Config
+	commonFlags(&cfg)
 	providerFlags(flag.CommandLine, &cfg)
 	operationalFlags(&cfg)
 	flag.Parse()
@@ -76,6 +77,10 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.StringVar(&cfg.ProjectID, "project-id", "ops-tools-1203", "Project ID to target.")
 	flag.StringVar(&cfg.Providers.Azure.SubscriptionId, "azure.subscription-id", "", "Azure subscription ID to pull data from.")
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
+}
+
+func commonFlags(cfg *config.Config) {
+	flag.StringVar(&cfg.CommonConfig.ComputeInstanceLabel, "compute.instance-label", "instance", "instance label name")
 }
 
 // operationalFlags is a helper method that is responsible for setting up the flags that are used to configure the operational aspects of the application.
@@ -169,6 +174,7 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 	switch cfg.Provider {
 	case "azure":
 		return azure.New(ctx, &azure.Config{
+			CommonConfig:     &cfg.CommonConfig,
 			Logger:           cfg.Logger,
 			SubscriptionId:   cfg.Providers.Azure.SubscriptionId,
 			Services:         cfg.Providers.Azure.Services,
@@ -176,6 +182,7 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 		})
 	case "aws":
 		return aws.New(ctx, &aws.Config{
+			CommonConfig:   &cfg.CommonConfig,
 			Logger:         cfg.Logger,
 			Region:         cfg.Providers.AWS.Region,
 			Profile:        cfg.Providers.AWS.Profile,
@@ -185,6 +192,7 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 
 	case "gcp":
 		return google.New(&google.Config{
+			CommonConfig:    &cfg.CommonConfig,
 			Logger:          cfg.Logger,
 			ProjectId:       cfg.ProjectID,
 			Region:          cfg.Providers.GCP.Region,
