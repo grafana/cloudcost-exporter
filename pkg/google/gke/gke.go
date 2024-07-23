@@ -24,7 +24,7 @@ const (
 	subsystem = "gcp_gke"
 )
 
-type CollectorMetrics struct {
+type collectorMetrics struct {
 	gkeNodeMemoryHourlyCostDesc    *prometheus.Desc
 	gkeNodeCPUHourlyCostDesc       *prometheus.Desc
 	persistentVolumeHourlyCostDesc *prometheus.Desc
@@ -42,12 +42,12 @@ type Collector struct {
 	config            *Config
 	Projects          []string
 	ComputePricingMap *gcpCompute.StructuredPricingMap
-	metrics           *CollectorMetrics
+	metrics           *collectorMetrics
 	NextScrape        time.Time
 }
 
-func newCollectorMetrics(instanceLabel string) *CollectorMetrics {
-	return &CollectorMetrics{
+func newCollectorMetrics(instanceLabel string) *collectorMetrics {
+	return &collectorMetrics{
 		gkeNodeMemoryHourlyCostDesc: prometheus.NewDesc(
 			prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
 

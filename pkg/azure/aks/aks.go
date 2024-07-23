@@ -57,14 +57,14 @@ var (
 
 // Prometheus Metrics
 
-type CollectorMetrics struct {
+type collectorMetrics struct {
 	InstanceCPUHourlyCostDesc    *prometheus.Desc
 	InstanceMemoryHourlyCostDesc *prometheus.Desc
 	InstanceTotalHourlyCostDesc  *prometheus.Desc
 }
 
-func newCollectorMetrics(instanceLabel string) *CollectorMetrics {
-	return &CollectorMetrics{
+func newCollectorMetrics(instanceLabel string) *collectorMetrics {
+	return &collectorMetrics{
 		InstanceCPUHourlyCostDesc: prometheus.NewDesc(
 			prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
 			"The cpu cost a compute instance in USD/(core*h)",
@@ -90,7 +90,7 @@ func newCollectorMetrics(instanceLabel string) *CollectorMetrics {
 type Collector struct {
 	context context.Context
 	logger  *slog.Logger
-	metrics *CollectorMetrics
+	metrics *collectorMetrics
 
 	PriceStore   *PriceStore
 	MachineStore *MachineStore

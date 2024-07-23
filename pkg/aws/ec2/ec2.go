@@ -30,7 +30,7 @@ var (
 	ErrGeneratePricingMap = errors.New("error generating pricing map")
 )
 
-type CollectorMetrics struct {
+type collectorMetrics struct {
 	InstanceCPUHourlyCostDesc    *prometheus.Desc
 	InstanceMemoryHourlyCostDesc *prometheus.Desc
 	InstanceTotalHourlyCostDesc  *prometheus.Desc
@@ -44,7 +44,7 @@ type Collector struct {
 	pricingService   pricingClient.Pricing
 	NextScrape       time.Time
 	ec2RegionClients map[string]ec2client.EC2
-	metrics          *CollectorMetrics
+	metrics          *collectorMetrics
 	logger           *slog.Logger
 }
 
@@ -56,8 +56,8 @@ type Config struct {
 	Logger         *slog.Logger
 }
 
-func newCollectorMetrics(instanceLabel string) *CollectorMetrics {
-	return &CollectorMetrics{
+func newCollectorMetrics(instanceLabel string) *collectorMetrics {
+	return &collectorMetrics{
 		InstanceCPUHourlyCostDesc: prometheus.NewDesc(
 			prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
 			"The cpu cost a ec2 instance in USD/(core*h)",

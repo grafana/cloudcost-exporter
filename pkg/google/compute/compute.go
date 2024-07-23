@@ -33,7 +33,7 @@ type Config struct {
 	ScrapeInterval time.Duration
 }
 
-type CollectorMetrics struct {
+type collectorMetrics struct {
 	NextScrapeDesc               *prometheus.Desc
 	InstanceCPUHourlyCostDesc    *prometheus.Desc
 	InstanceMemoryHourlyCostDesc *prometheus.Desc
@@ -46,12 +46,12 @@ type Collector struct {
 	PricingMap     *StructuredPricingMap
 	config         *Config
 	Projects       []string
-	metrics        *CollectorMetrics
+	metrics        *collectorMetrics
 	NextScrape     time.Time
 }
 
-func newCollectorMetrics(instanceLabel string) *CollectorMetrics {
-	return &CollectorMetrics{
+func newCollectorMetrics(instanceLabel string) *collectorMetrics {
+	return &collectorMetrics{
 		NextScrapeDesc: prometheus.NewDesc(
 			prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "next_scrape"),
 			"Next time GCP's compute submodule pricing map will be refreshed as unix timestamp",
