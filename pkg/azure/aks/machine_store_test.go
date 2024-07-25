@@ -1,18 +1,316 @@
 package aks
 
 import (
+	"context"
+	"errors"
 	"log/slog"
+	"os"
+	"reflect"
 	"sync"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v5"
 	"github.com/Azure/go-autorest/autorest/to"
+	mock_azureClientWrapper "github.com/grafana/cloudcost-exporter/mocks/pkg/azure/azureClientWrapper"
+	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 )
 
-func TestMachineStoreMapCreation(t *testing.T) {
-	// TODO - mock
-	t.Skip()
+var (
+	machineStoreCtx        context.Context = context.TODO()
+	machineStoreTestLogger *slog.Logger    = slog.New(slog.NewTextHandler(os.Stdout, nil))
+)
+
+func TestPopulateMachineStore(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	newFakeMachineStore := func(cli azureClientWrapper.AzureClient) *MachineStore {
+		return &MachineStore{
+			context: machineStoreCtx,
+			logger:  machineStoreTestLogger,
+
+			azClientWrapper: cli,
+
+			MachineSizeMap:     make(map[string]map[string]*armcompute.VirtualMachineSize),
+			machineSizeMapLock: &sync.RWMutex{},
+
+			MachineMap:     make(map[string]*VirtualMachineInfo),
+			machineMapLock: &sync.RWMutex{},
+		}
+	}
+
+	testTable := map[string]struct {
+		fakeMachineStore *MachineStore
+
+		listClustersReturn        []*armcontainerservice.ManagedCluster
+		listClustersExpectedError error
+
+		listMachineTypesReturn        []*armcompute.VirtualMachineSize
+		listMachineTypesExpectedError error
+
+		listVMSSFromRgExpectedReturn []*armcompute.VirtualMachineScaleSet
+		listVMSSFromRgExpectedErr    error
+
+		ListVirtualMachineScaleSetsOwnedVmsExpectedReturn []*armcompute.VirtualMachineScaleSetVM
+		ListVirtualMachineScaleSetsOwnedVmsExpectedErr    error
+
+		expectedMachineMap      map[string]*VirtualMachineInfo
+		expectedMachineSizesMap map[string]map[string]*armcompute.VirtualMachineSize
+	}{
+		"list clusters error": {
+			listClustersReturn:        nil,
+			listClustersExpectedError: errors.New("bad list clusters"),
+			expectedMachineMap:        map[string]*VirtualMachineInfo{},
+			expectedMachineSizesMap:   map[string]map[string]*armcompute.VirtualMachineSize{},
+		},
+
+		"cluster does not contain resource group": {
+			listClustersReturn: []*armcontainerservice.ManagedCluster{
+				{
+					Name:       to.StringPtr("clusterName"),
+					Location:   to.StringPtr("centralus"),
+					Properties: &armcontainerservice.ManagedClusterProperties{},
+				},
+			},
+			listClustersExpectedError: nil,
+
+			listMachineTypesReturn: []*armcompute.VirtualMachineSize{
+				{
+					Name:           to.StringPtr("Standard_D4s_v3"),
+					MemoryInMB:     to.Int32Ptr(100),
+					NumberOfCores:  to.Int32Ptr(10),
+					OSDiskSizeInMB: to.Int32Ptr(100),
+				},
+			},
+			listMachineTypesExpectedError: nil,
+
+			listVMSSFromRgExpectedReturn: nil,
+			listVMSSFromRgExpectedErr:    nil,
+
+			ListVirtualMachineScaleSetsOwnedVmsExpectedReturn: nil,
+			ListVirtualMachineScaleSetsOwnedVmsExpectedErr:    nil,
+
+			expectedMachineMap: map[string]*VirtualMachineInfo{},
+			expectedMachineSizesMap: map[string]map[string]*armcompute.VirtualMachineSize{
+				"centralus": {
+					"Standard_D4s_v3": {
+						Name:           to.StringPtr("Standard_D4s_v3"),
+						MemoryInMB:     to.Int32Ptr(100),
+						NumberOfCores:  to.Int32Ptr(10),
+						OSDiskSizeInMB: to.Int32Ptr(100),
+					},
+				},
+			},
+		},
+
+		"error getting machine types": {
+			listClustersReturn: []*armcontainerservice.ManagedCluster{
+				{
+					Name:       to.StringPtr("clusterName"),
+					Location:   to.StringPtr("centralus"),
+					Properties: &armcontainerservice.ManagedClusterProperties{NodeResourceGroup: to.StringPtr("rg1")},
+				},
+			},
+			listClustersExpectedError: nil,
+
+			listMachineTypesReturn:        nil,
+			listMachineTypesExpectedError: errors.New("bad list machine types"),
+
+			expectedMachineMap:      map[string]*VirtualMachineInfo{},
+			expectedMachineSizesMap: map[string]map[string]*armcompute.VirtualMachineSize{},
+		},
+
+		"error getting scale sets from resource group": {
+			listClustersReturn: []*armcontainerservice.ManagedCluster{
+				{
+					Name:       to.StringPtr("clusterName"),
+					Location:   to.StringPtr("centralus"),
+					Properties: &armcontainerservice.ManagedClusterProperties{NodeResourceGroup: to.StringPtr("rg1")},
+				},
+			},
+			listClustersExpectedError: nil,
+
+			listMachineTypesReturn: []*armcompute.VirtualMachineSize{
+				{
+					Name:           to.StringPtr("Standard_D4s_v3"),
+					MemoryInMB:     to.Int32Ptr(100),
+					NumberOfCores:  to.Int32Ptr(10),
+					OSDiskSizeInMB: to.Int32Ptr(100),
+				},
+			},
+			listMachineTypesExpectedError: nil,
+
+			listVMSSFromRgExpectedReturn: nil,
+			listVMSSFromRgExpectedErr:    errors.New("bad vmss from rg"),
+
+			expectedMachineMap: map[string]*VirtualMachineInfo{},
+			expectedMachineSizesMap: map[string]map[string]*armcompute.VirtualMachineSize{
+				"centralus": {
+					"Standard_D4s_v3": {
+						Name:           to.StringPtr("Standard_D4s_v3"),
+						MemoryInMB:     to.Int32Ptr(100),
+						NumberOfCores:  to.Int32Ptr(10),
+						OSDiskSizeInMB: to.Int32Ptr(100),
+					},
+				},
+			},
+		},
+
+		"error getting vm info from scale sets": {
+			listClustersReturn: []*armcontainerservice.ManagedCluster{
+				{
+					Name:       to.StringPtr("clusterName"),
+					Location:   to.StringPtr("centralus"),
+					Properties: &armcontainerservice.ManagedClusterProperties{NodeResourceGroup: to.StringPtr("rg1")},
+				},
+			},
+			listClustersExpectedError: nil,
+
+			listMachineTypesReturn: []*armcompute.VirtualMachineSize{
+				{
+					Name:           to.StringPtr("Standard_D4s_v3"),
+					MemoryInMB:     to.Int32Ptr(100),
+					NumberOfCores:  to.Int32Ptr(10),
+					OSDiskSizeInMB: to.Int32Ptr(100),
+				},
+			},
+			listMachineTypesExpectedError: nil,
+
+			listVMSSFromRgExpectedReturn: []*armcompute.VirtualMachineScaleSet{
+				{
+					Name:     to.StringPtr("vmssName"),
+					Location: to.StringPtr("centralus"),
+					Properties: &armcompute.VirtualMachineScaleSetProperties{
+						VirtualMachineProfile: &armcompute.VirtualMachineScaleSetVMProfile{
+							Priority: (*armcompute.VirtualMachinePriorityTypes)(to.StringPtr("Regular")),
+							OSProfile: &armcompute.VirtualMachineScaleSetOSProfile{
+								LinuxConfiguration: &armcompute.LinuxConfiguration{},
+							},
+						},
+					},
+				},
+			},
+			listVMSSFromRgExpectedErr: nil,
+
+			ListVirtualMachineScaleSetsOwnedVmsExpectedReturn: nil,
+			ListVirtualMachineScaleSetsOwnedVmsExpectedErr:    errors.New("bad vmss owned VMs"),
+
+			expectedMachineMap: map[string]*VirtualMachineInfo{},
+			expectedMachineSizesMap: map[string]map[string]*armcompute.VirtualMachineSize{
+				"centralus": {
+					"Standard_D4s_v3": {
+						Name:           to.StringPtr("Standard_D4s_v3"),
+						MemoryInMB:     to.Int32Ptr(100),
+						NumberOfCores:  to.Int32Ptr(10),
+						OSDiskSizeInMB: to.Int32Ptr(100),
+					},
+				},
+			},
+		},
+
+		"base case": {
+			listClustersReturn: []*armcontainerservice.ManagedCluster{
+				{
+					Name:       to.StringPtr("clusterName"),
+					Location:   to.StringPtr("centralus"),
+					Properties: &armcontainerservice.ManagedClusterProperties{NodeResourceGroup: to.StringPtr("rg1")},
+				},
+			},
+			listClustersExpectedError: nil,
+
+			listMachineTypesReturn: []*armcompute.VirtualMachineSize{
+				{
+					Name:           to.StringPtr("Standard_D4s_v3"),
+					MemoryInMB:     to.Int32Ptr(100),
+					NumberOfCores:  to.Int32Ptr(10),
+					OSDiskSizeInMB: to.Int32Ptr(100),
+				},
+			},
+			listMachineTypesExpectedError: nil,
+
+			listVMSSFromRgExpectedReturn: []*armcompute.VirtualMachineScaleSet{
+				{
+					Name:     to.StringPtr("vmssName"),
+					Location: to.StringPtr("centralus"),
+					Properties: &armcompute.VirtualMachineScaleSetProperties{
+						VirtualMachineProfile: &armcompute.VirtualMachineScaleSetVMProfile{
+							Priority: (*armcompute.VirtualMachinePriorityTypes)(to.StringPtr("Regular")),
+							OSProfile: &armcompute.VirtualMachineScaleSetOSProfile{
+								LinuxConfiguration: &armcompute.LinuxConfiguration{},
+							},
+						},
+					},
+				},
+			},
+			listVMSSFromRgExpectedErr: nil,
+
+			ListVirtualMachineScaleSetsOwnedVmsExpectedReturn: []*armcompute.VirtualMachineScaleSetVM{
+				{
+					Location: to.StringPtr("centralus"),
+					Properties: &armcompute.VirtualMachineScaleSetVMProperties{
+						InstanceView: &armcompute.VirtualMachineScaleSetVMInstanceView{
+							ComputerName: to.StringPtr("vmName"),
+						},
+						VMID: to.StringPtr("vmId"),
+					},
+					SKU: &armcompute.SKU{
+						Name: to.StringPtr("Standard_D4s_v3"),
+					},
+				},
+			},
+			ListVirtualMachineScaleSetsOwnedVmsExpectedErr: nil,
+
+			expectedMachineMap: map[string]*VirtualMachineInfo{
+				"vmId": {
+					Name:           "vmName",
+					Id:             "vmId",
+					Region:         "centralus",
+					OwningVMSS:     "vmssName",
+					OwningCluster:  "clusterName",
+					MachineTypeSku: "Standard_D4s_v3",
+					MachineFamily:  "General purpose",
+					Priority:       OnDemand,
+					NumOfCores:     10,
+					MemoryInMiB:    100,
+					OsDiskSizeInMB: 100,
+				},
+			},
+			expectedMachineSizesMap: map[string]map[string]*armcompute.VirtualMachineSize{
+				"centralus": {
+					"Standard_D4s_v3": {
+						Name:           to.StringPtr("Standard_D4s_v3"),
+						MemoryInMB:     to.Int32Ptr(100),
+						NumberOfCores:  to.Int32Ptr(10),
+						OSDiskSizeInMB: to.Int32Ptr(100),
+					},
+				},
+			},
+		},
+	}
+
+	for name, tc := range testTable {
+		t.Run(name, func(t *testing.T) {
+			azClientWrapper := mock_azureClientWrapper.NewMockAzureClient(ctrl)
+
+			ms := newFakeMachineStore(azClientWrapper)
+
+			azClientWrapper.EXPECT().ListClustersInSubscription(gomock.Any()).AnyTimes().Return(tc.listClustersReturn, tc.listClustersExpectedError)
+			azClientWrapper.EXPECT().ListMachineTypesByLocation(gomock.Any(), gomock.Any()).AnyTimes().Return(tc.listMachineTypesReturn, tc.listMachineTypesExpectedError)
+			azClientWrapper.EXPECT().ListVirtualMachineScaleSetsFromResourceGroup(gomock.Any(), gomock.Any()).AnyTimes().Return(tc.listVMSSFromRgExpectedReturn, tc.listVMSSFromRgExpectedErr)
+			azClientWrapper.EXPECT().ListVirtualMachineScaleSetsOwnedVms(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(tc.ListVirtualMachineScaleSetsOwnedVmsExpectedReturn, tc.ListVirtualMachineScaleSetsOwnedVmsExpectedErr)
+
+			ms.PopulateMachineStore(context.TODO())
+
+			machineMapEq := reflect.DeepEqual(tc.expectedMachineMap, ms.MachineMap)
+			machineSizeMapEq := reflect.DeepEqual(tc.expectedMachineSizesMap, ms.MachineSizeMap)
+			assert.True(t, machineMapEq)
+			assert.True(t, machineSizeMapEq)
+		})
+	}
+
 }
 
 func TestGetListOfVmsForSubscription(t *testing.T) {

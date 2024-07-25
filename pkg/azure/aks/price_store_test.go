@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	parentCtx  context.Context = context.TODO()
-	testLogger *slog.Logger    = slog.New(slog.NewTextHandler(os.Stdout, nil))
+	priceStoreCtx        context.Context = context.TODO()
+	priceStoreTestLogger *slog.Logger    = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
 func TestPopulatePriceStore(t *testing.T) {
@@ -34,8 +34,8 @@ func TestPopulatePriceStore(t *testing.T) {
 	mockAzureClient := mock_az_client.NewMockAzureClient(ctrl)
 
 	p := &PriceStore{
-		logger:             testLogger,
-		context:            parentCtx,
+		logger:             priceStoreTestLogger,
+		context:            priceStoreCtx,
 		azureClientWrapper: mockAzureClient,
 
 		regionMapLock: &sync.RWMutex{},
@@ -97,10 +97,10 @@ func TestPopulatePriceStore(t *testing.T) {
 
 	for name, tc := range testTable {
 		t.Run(name, func(t *testing.T) {
-			call := mockAzureClient.EXPECT().ListPrices(parentCtx, tc.listOpts).Times(1)
+			call := mockAzureClient.EXPECT().ListPrices(priceStoreCtx, tc.listOpts).Times(1)
 			call.Return(tc.apiReturns, tc.expectedErr)
 
-			p.PopulatePriceStore(parentCtx)
+			p.PopulatePriceStore(priceStoreCtx)
 
 			mapEq := reflect.DeepEqual(tc.expectedPriceMap, p.RegionMap)
 			assert.True(t, mapEq)
