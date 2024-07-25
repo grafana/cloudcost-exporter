@@ -1,17 +1,111 @@
 package aks
 
 import (
+	"context"
+	"errors"
 	"log/slog"
+	"os"
+	"reflect"
 	"sync"
 	"testing"
 
+	"github.com/Azure/go-autorest/autorest/to"
+	mock_az_client "github.com/grafana/cloudcost-exporter/mocks/pkg/azure/azureClientWrapper"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
 
-func TestPriceStoreMapCreation(t *testing.T) {
-	// TODO - mock
-	t.Skip()
+var (
+	parentCtx  context.Context = context.TODO()
+	testLogger *slog.Logger    = slog.New(slog.NewTextHandler(os.Stdout, nil))
+)
+
+func TestPopulatePriceStore(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	defaultListOpts := &retailPriceSdk.RetailPricesClientListOptions{
+		APIVersion:  to.StringPtr(AZ_API_VERSION),
+		Filter:      to.StringPtr(AzurePriceSearchFilter),
+		MeterRegion: to.StringPtr(AzureMeterRegion),
+	}
+
+	mockAzureClient := mock_az_client.NewMockAzureClient(ctrl)
+
+	p := &PriceStore{
+		logger:             testLogger,
+		context:            parentCtx,
+		azureClientWrapper: mockAzureClient,
+
+		regionMapLock: &sync.RWMutex{},
+		RegionMap:     make(map[string]PriceByPriority),
+	}
+
+	testTable := map[string]struct {
+		expectedErr      error
+		listOpts         *retailPriceSdk.RetailPricesClientListOptions
+		apiReturns       []*retailPriceSdk.ResourceSKU
+		expectedPriceMap map[string]PriceByPriority
+	}{
+		"base case": {
+			expectedErr: nil,
+			listOpts:    defaultListOpts,
+			expectedPriceMap: map[string]PriceByPriority{
+				"westus": {
+					OnDemand: PriceByOperatingSystem{
+						Linux: PriceBySku{
+							"Standard_D4s_v3": &MachineSku{
+								RetailPrice: 0.1,
+							},
+						},
+					},
+					Spot: PriceByOperatingSystem{},
+				},
+				"centraleurope": {
+					OnDemand: PriceByOperatingSystem{
+						Linux: PriceBySku{
+							"Standard_D8s_v3": &MachineSku{
+								RetailPrice: 0.1,
+							},
+						},
+					},
+					Spot: PriceByOperatingSystem{
+						Linux: PriceBySku{
+							"Standard_D16s_v3": &MachineSku{
+								RetailPrice: 0.01,
+							},
+						},
+					},
+				},
+			},
+
+			apiReturns: []*retailPriceSdk.ResourceSKU{
+				{ArmSkuName: "Standard_D4s_v3", SkuName: "D4s v3", ArmRegionName: "westus", ProductName: "Virtual Machines D Series", RetailPrice: 0.1},
+				{ArmSkuName: "Standard_D8s_v3", SkuName: "D8s v3", ArmRegionName: "centraleurope", ProductName: "Virtual Machines D Series", RetailPrice: 0.1},
+				{ArmSkuName: "Standard_D16s_v3", SkuName: "D16s v3 Spot", ArmRegionName: "centraleurope", ProductName: "Virtual Machines D Series", RetailPrice: 0.01},
+				{ArmSkuName: "Standard_D4s_v3", SkuName: "D4s v3 Low Priority", ArmRegionName: "centraleurope", ProductName: "Virtual Machines D Series", RetailPrice: 0.01}, // low priority machines are disregarded
+			},
+		},
+		"err case": {
+			expectedErr:      errors.New(""),
+			listOpts:         defaultListOpts,
+			expectedPriceMap: map[string]PriceByPriority{},
+			apiReturns:       nil,
+		},
+	}
+
+	for name, tc := range testTable {
+		t.Run(name, func(t *testing.T) {
+			call := mockAzureClient.EXPECT().ListPrices(parentCtx, tc.listOpts).Times(1)
+			call.Return(tc.apiReturns, tc.expectedErr)
+
+			p.PopulatePriceStore(parentCtx)
+
+			mapEq := reflect.DeepEqual(tc.expectedPriceMap, p.RegionMap)
+			assert.True(t, mapEq)
+		})
+	}
 }
 
 func TestGetPriceInfoFromVmInfo(t *testing.T) {
@@ -114,17 +208,17 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 
 func TestDetermineMachineOperatingSystem(t *testing.T) {
 	testTable := map[string]struct {
-		sku             retailPriceSdk.ResourceSKU
+		sku             *retailPriceSdk.ResourceSKU
 		expectedMachine MachineOperatingSystem
 	}{
 		"Linux": {
-			sku: retailPriceSdk.ResourceSKU{
+			sku: &retailPriceSdk.ResourceSKU{
 				ProductName: "Virtual Machines Esv4 Series",
 			},
 			expectedMachine: Linux,
 		},
 		"Windows": {
-			sku: retailPriceSdk.ResourceSKU{
+			sku: &retailPriceSdk.ResourceSKU{
 				ProductName: "Virtual Machines D Series Windows",
 			},
 			expectedMachine: Windows,
@@ -141,17 +235,17 @@ func TestDetermineMachineOperatingSystem(t *testing.T) {
 
 func TestDetermineMachinePriority(t *testing.T) {
 	testTable := map[string]struct {
-		sku              retailPriceSdk.ResourceSKU
+		sku              *retailPriceSdk.ResourceSKU
 		expectedPriority MachinePriority
 	}{
 		"OnDemand": {
-			sku: retailPriceSdk.ResourceSKU{
+			sku: &retailPriceSdk.ResourceSKU{
 				SkuName: "Standard_E16pds_v5 Low Priority",
 			},
 			expectedPriority: OnDemand,
 		},
 		"Spot": {
-			sku: retailPriceSdk.ResourceSKU{
+			sku: &retailPriceSdk.ResourceSKU{
 				SkuName: "B4ls v2 Spot",
 			},
 			expectedPriority: Spot,

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Azure/go-autorest/autorest/to"
+	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
 	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
 
@@ -58,38 +59,31 @@ type PriceByOperatingSystem map[MachineOperatingSystem]PriceBySku
 type PriceByPriority map[MachinePriority]PriceByOperatingSystem
 
 type PriceStore struct {
-	subscriptionId    string
-	logger            *slog.Logger
-	context           context.Context
-	retailPriceClient *retailPriceSdk.RetailPricesClient
+	logger  *slog.Logger
+	context context.Context
+
+	azureClientWrapper azureClientWrapper.AzureClient
 
 	regionMapLock *sync.RWMutex
 	RegionMap     map[string]PriceByPriority
 }
 
-func NewPricingStore(parentContext context.Context, parentLogger *slog.Logger, subId string) (*PriceStore, error) {
+func NewPricingStore(ctx context.Context, parentLogger *slog.Logger, azClientWrapper azureClientWrapper.AzureClient) *PriceStore {
 	logger := parentLogger.With("subsystem", "priceStore")
 
-	retailPricesClient, err := retailPriceSdk.NewRetailPricesClient(nil)
-	if err != nil {
-		logger.LogAttrs(parentContext, slog.LevelError, "failed to create retail prices client", slog.String("err", err.Error()))
-		return nil, ErrClientCreationFailure
-	}
-
 	p := &PriceStore{
-		logger:            logger,
-		context:           parentContext,
-		subscriptionId:    subId,
-		retailPriceClient: retailPricesClient,
+		logger:             logger,
+		context:            ctx,
+		azureClientWrapper: azClientWrapper,
 
 		regionMapLock: &sync.RWMutex{},
 		RegionMap:     make(map[string]PriceByPriority),
 	}
 
 	// populate the store before it is used
-	go p.PopulatePriceStore(parentContext)
+	go p.PopulatePriceStore(ctx)
 
-	return p, err
+	return p
 }
 
 func (p *PriceStore) CheckReadiness() bool {
@@ -170,7 +164,7 @@ func (p *PriceStore) getPriceInfoFromVmInfo(vmInfo *VirtualMachineInfo) (*Machin
 //
 // We have observed that, in practice, this is _much_ slower than
 // filtering client-side.  :(
-func (p *PriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, sku retailPriceSdk.ResourceSKU) bool {
+func (p *PriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, sku *retailPriceSdk.ResourceSKU) bool {
 	productName := sku.ProductName
 	if len(productName) == 0 || !strings.Contains(productName, "Virtual Machines") {
 		p.logger.LogAttrs(ctx, slog.LevelDebug, "product is not a virtual machine", slog.String("sku", sku.SkuName))
@@ -201,50 +195,49 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
 		MeterRegion: to.StringPtr(AzureMeterRegion),
 	}
 
-	pager := p.retailPriceClient.NewListPager(opts)
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			p.logger.LogAttrs(ctx, slog.LevelError, "error paging through retail prices")
-			return
+	prices, err := p.azureClientWrapper.ListPrices(ctx, opts)
+	if err != nil {
+		p.logger.LogAttrs(ctx, slog.LevelError, "error populating prices")
+		return
+	}
+
+	p.logger.LogAttrs(ctx, slog.LevelDebug, "found prices", slog.Int("numOfPrices", len(prices)))
+
+	for _, price := range prices {
+		regionName := price.ArmRegionName
+		if regionName == "" {
+			p.logger.LogAttrs(ctx, slog.LevelDebug, "region name for price not found", slog.String("sku", price.SkuName))
+			continue
 		}
 
-		for _, v := range page.Items {
-			regionName := v.ArmRegionName
-			if regionName == "" {
-				p.logger.LogAttrs(ctx, slog.LevelDebug, "region name for price not found", slog.String("sku", v.SkuName))
-				continue
-			}
-
-			if !p.validateMachinePriceIsRelevantFromSku(ctx, v) {
-				continue
-			}
-
-			if _, ok := p.RegionMap[regionName]; !ok {
-				p.logger.LogAttrs(ctx, slog.LevelDebug, "populating machine prices for region", slog.String("region", regionName))
-				p.RegionMap[regionName] = make(PriceByPriority)
-				p.RegionMap[regionName][Spot] = make(PriceByOperatingSystem)
-				p.RegionMap[regionName][OnDemand] = make(PriceByOperatingSystem)
-			}
-
-			machineOperatingSystem := getMachineOperatingSystemFromSku(v)
-			machinePriority := getMachinePriorityFromSku(v)
-
-			if _, ok := p.RegionMap[regionName][machinePriority][machineOperatingSystem]; !ok {
-				p.RegionMap[regionName][machinePriority][machineOperatingSystem] = make(PriceBySku)
-			}
-
-			machinePrices := &MachineSku{
-				RetailPrice: v.RetailPrice,
-			}
-			p.RegionMap[regionName][machinePriority][machineOperatingSystem][v.ArmSkuName] = machinePrices
+		if !p.validateMachinePriceIsRelevantFromSku(ctx, price) {
+			continue
 		}
+
+		if _, ok := p.RegionMap[regionName]; !ok {
+			p.logger.LogAttrs(ctx, slog.LevelDebug, "populating machine prices for region", slog.String("region", regionName))
+			p.RegionMap[regionName] = make(PriceByPriority)
+			p.RegionMap[regionName][Spot] = make(PriceByOperatingSystem)
+			p.RegionMap[regionName][OnDemand] = make(PriceByOperatingSystem)
+		}
+
+		machineOperatingSystem := getMachineOperatingSystemFromSku(price)
+		machinePriority := getMachinePriorityFromSku(price)
+
+		if _, ok := p.RegionMap[regionName][machinePriority][machineOperatingSystem]; !ok {
+			p.RegionMap[regionName][machinePriority][machineOperatingSystem] = make(PriceBySku)
+		}
+
+		machinePrices := &MachineSku{
+			RetailPrice: price.RetailPrice,
+		}
+		p.RegionMap[regionName][machinePriority][machineOperatingSystem][price.ArmSkuName] = machinePrices
 	}
 
 	p.logger.LogAttrs(ctx, slog.LevelInfo, "price store populated", slog.Duration("duration", time.Since(startTime)))
 }
 
-func getMachineOperatingSystemFromSku(sku retailPriceSdk.ResourceSKU) MachineOperatingSystem {
+func getMachineOperatingSystemFromSku(sku *retailPriceSdk.ResourceSKU) MachineOperatingSystem {
 	switch {
 	case strings.Contains(sku.ProductName, "Windows"):
 		return Windows
@@ -253,7 +246,7 @@ func getMachineOperatingSystemFromSku(sku retailPriceSdk.ResourceSKU) MachineOpe
 	}
 }
 
-func getMachinePriorityFromSku(sku retailPriceSdk.ResourceSKU) MachinePriority {
+func getMachinePriorityFromSku(sku *retailPriceSdk.ResourceSKU) MachinePriority {
 	switch {
 	case strings.Contains(sku.SkuName, "Spot"):
 		return Spot
