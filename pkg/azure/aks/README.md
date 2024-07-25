@@ -46,10 +46,16 @@ root -> {
 }
 ```
 
-The information contained on the VM Information is enough to uniquely identify both the machine itself and the price that accompanies it.
+In parallel, machine types and their relevant info are collected, stored in a map with the following structure:
 
-# Future Work 
+```
+root -> {
+  region -> {
+    sizeIdentifier -> sizingInformation
+  }
+}
 
-- (Pricing Map) - implement background job to populate pricing map every 24 hours
-- (Pricing Map) - implement retry mechanism to pricing map, crash program if it doesn't populate after 5 tries
-- Prometheus metrics - CPU and Memory
+
+```
+
+The information contained on the VM Information is enough to uniquely identify both the machine itself and the price that accompanies it.  The sizing information allows CPU and Memory price calculation.
