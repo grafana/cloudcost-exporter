@@ -121,13 +121,15 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		c.NextStorageScrape = time.Now().Add(c.ScrapeInterval)
 	}
 
+	numOfRegions := len(c.Regions)
+
 	wgInstances := sync.WaitGroup{}
-	wgInstances.Add(len(c.Regions))
-	instanceCh := make(chan []ec2Types.Reservation, len(c.Regions))
+	wgInstances.Add(numOfRegions)
+	instanceCh := make(chan []ec2Types.Reservation, numOfRegions)
 
 	wgVolumes := sync.WaitGroup{}
-	wgVolumes.Add(len(c.Regions))
-	volumeCh := make(chan []ec2Types.Volume, len(c.Regions))
+	wgVolumes.Add(numOfRegions)
+	volumeCh := make(chan []ec2Types.Volume, numOfRegions)
 
 	for _, region := range c.Regions {
 		regionName := *region.RegionName
