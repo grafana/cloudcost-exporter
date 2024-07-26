@@ -32,8 +32,7 @@ Non Goals:
 
 - AWS
 - GCP
-
-Azure support is planned but not yet implemented.
+- Azure
 
 ## Usage
 
@@ -45,6 +44,7 @@ Cloud Cost Exporter has an opinionated way of authenticating against each cloud 
 |-|-|
 | GCP | Depends on [default credentials](https://cloud.google.com/docs/authentication/application-default-credentials) |
 | AWS | Uses profile names from your [credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) or `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` env variables |
+| Azure | Uses the [default azure credential chain](https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication?tabs=bash), e.g. enviornment variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_CLIENT_SECRET` |
 
 When running in a kubernetes cluster, it is recommended to use a service account with the necessary permissions for the cloud provider.
 - [ ] TODO: Document the necessary permissions for each cloud provider.
@@ -59,6 +59,8 @@ Check out the follow docs for metrics:
   - [gcs](docs/metrics/gcp/gcs.md)
 - aws
   - [s3](docs/metrics/aws/s3.md)
+- azure
+  - [aks](docs/metrics/azure/aks.md)
 
 ## Contributing
 
