@@ -135,8 +135,12 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		regionName := *region.RegionName
 		client := c.ec2RegionClients[regionName]
 
+		if client == nil {
+			return ErrClientNotFound
+		}
+
 		go func() {
-			c.fetchInstancesData(ctx, region, instanceCh)
+			c.fetchInstancesData(ctx, client, regionName, instanceCh)
 			wgInstances.Done()
 		}()
 		go func() {
@@ -234,21 +238,20 @@ func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
 	return nil
 }
 
-func (c *Collector) fetchInstancesData(ctx context.Context, region ec2Types.Region, instanceCh chan []ec2Types.Reservation) {
+func (c *Collector) fetchInstancesData(ctx context.Context, client ec2client.EC2, region string, instanceCh chan []ec2Types.Reservation) {
 	now := time.Now()
-	c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching instances", slog.String("region", *region.RegionName))
-	client := c.ec2RegionClients[*region.RegionName]
+	c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching instances", slog.String("region", region))
 
 	reservations, err := ListComputeInstances(ctx, client)
 	if err != nil {
 		c.logger.LogAttrs(ctx, slog.LevelError, "Could not list compute instances",
-			slog.String("region", *region.RegionName),
+			slog.String("region", region),
 			slog.String("message", err.Error()))
 		return
 	}
 
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Successfully listed instances",
-		slog.String("region", *region.RegionName),
+		slog.String("region", region),
 		slog.Int("instances", len(reservations)),
 		slog.Duration("duration", time.Since(now)),
 	)
