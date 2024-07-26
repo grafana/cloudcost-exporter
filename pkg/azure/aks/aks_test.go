@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/mock/gomock"
 )
 
 var (
@@ -23,10 +23,125 @@ func TestNew(t *testing.T) {
 	// be wrapping those tests.
 }
 
-func TestGetMachinePrices(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+func TestCollect(t *testing.T) {
+	// Note, this will not test a ton of the underlying functionality of the
+	// Machine Store and the Pricing Store, as those are individually tested
+	// in their respective *_test.go files
+	testTable := map[string]struct {
+		machineStore *MachineStore
+		priceStore   *PriceStore
 
+		expectedErr error
+	}{
+		"error getting machine prices": {
+			machineStore: &MachineStore{
+				logger:         aksTestLogger,
+				machineMapLock: &sync.RWMutex{},
+				MachineMap: map[string]*VirtualMachineInfo{
+					"vmId": {
+						Name:            "vmId",
+						Id:              "vmId",
+						Region:          "centralus",
+						MachineTypeSku:  "Standard_D4s_v3",
+						MachineFamily:   "General purpose",
+						OwningCluster:   "cluster",
+						OperatingSystem: Linux,
+						Priority:        OnDemand,
+					},
+				},
+			},
+			priceStore: &PriceStore{
+				logger:        aksTestLogger,
+				regionMapLock: &sync.RWMutex{},
+				RegionMap: map[string]PriceByPriority{
+					"westus": {
+						OnDemand: {
+							Linux: {
+								"Standard_D4s_v3": {
+									RetailPrice: 0.1,
+									MachinePricesBreakdown: &MachinePrices{
+										PricePerCore: 0.1,
+										PricePerGiB:  0.1,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+
+			expectedErr: ErrPriceInformationNotFound,
+		},
+
+		"base case": {
+			machineStore: &MachineStore{
+				logger:         aksTestLogger,
+				machineMapLock: &sync.RWMutex{},
+				MachineMap: map[string]*VirtualMachineInfo{
+					"vmId": {
+						Name:            "vmId",
+						Id:              "vmId",
+						Region:          "centralus",
+						MachineTypeSku:  "Standard_D4s_v3",
+						MachineFamily:   "General purpose",
+						OwningCluster:   "cluster",
+						OperatingSystem: Linux,
+						Priority:        OnDemand,
+					},
+				},
+			},
+			priceStore: &PriceStore{
+				logger:        aksTestLogger,
+				regionMapLock: &sync.RWMutex{},
+				RegionMap: map[string]PriceByPriority{
+					"centralus": {
+						OnDemand: {
+							Linux: {
+								"Standard_D4s_v3": {
+									RetailPrice: 0.1,
+									MachinePricesBreakdown: &MachinePrices{
+										PricePerCore: 0.1,
+										PricePerGiB:  0.1,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+
+			expectedErr: nil,
+		},
+	}
+
+	for name, tc := range testTable {
+		t.Run(name, func(t *testing.T) {
+			fakeAksCollector := &Collector{
+				logger: aksTestLogger,
+			}
+			fakeAksCollector.MachineStore = tc.machineStore
+			fakeAksCollector.PriceStore = tc.priceStore
+
+			promCh := make(chan prometheus.Metric)
+
+			go func() {
+				err := fakeAksCollector.Collect(promCh)
+				if tc.expectedErr != nil {
+					assert.ErrorIs(t, err, tc.expectedErr)
+				}
+				close(promCh)
+			}()
+
+			for metric := range promCh {
+				assert.NotNil(t, metric)
+				assert.Contains(t, metric.Desc().String(), "cloudcost_azure_aks")
+			}
+		})
+	}
+
+}
+
+func TestGetMachinePrices(t *testing.T) {
 	testTable := map[string]struct {
 		machineStore *MachineStore
 		priceStore   *PriceStore
