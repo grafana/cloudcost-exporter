@@ -119,12 +119,12 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ondemandPrices []string,
 			for _, priceDimension := range term.PriceDimensions {
 				price, err := strconv.ParseFloat(priceDimension.PricePerUnit["USD"], 64)
 				if err != nil {
-					log.Printf("error parsing price: %s, skipping", err)
+					cpm.logger.Error(fmt.Sprintf("error parsing price: %s, skipping", err))
 					continue
 				}
 				err = cpm.AddToComputePricingMap(price, productInfo.Product.Attributes)
 				if err != nil {
-					log.Printf("error adding to pricing map: %s", err)
+					cpm.logger.Error(fmt.Sprintf("error adding to pricing map: %s", err))
 					continue
 				}
 				cpm.AddInstanceDetails(productInfo.Product.Attributes)
@@ -135,7 +135,7 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ondemandPrices []string,
 		region := *spotPrice.AvailabilityZone
 		instanceType := string(spotPrice.InstanceType)
 		if _, ok := cpm.InstanceDetails[instanceType]; !ok {
-			log.Printf("no instance details found for instance type %s", instanceType)
+			cpm.logger.Error(fmt.Sprintf("no instance details found for instance type %s", instanceType))
 			continue
 		}
 		spotProductTerm := cpm.InstanceDetails[instanceType]
@@ -143,12 +143,12 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ondemandPrices []string,
 		spotProductTerm.Region = region
 		price, err := strconv.ParseFloat(*spotPrice.SpotPrice, 64)
 		if err != nil {
-			log.Printf("error parsing spot price: %s, skipping", err)
+			cpm.logger.Error(fmt.Sprintf("error parsing spot price: %s, skipping", err))
 			continue
 		}
 		err = cpm.AddToComputePricingMap(price, spotProductTerm)
 		if err != nil {
-			log.Printf("error adding to pricing map: %s", err)
+			cpm.logger.Error(fmt.Sprintf("error adding to pricing map: %s", err))
 			continue
 		}
 	}
@@ -178,7 +178,7 @@ func (spm *StoragePricingMap) GenerateStoragePricingMap(storagePrices []string) 
 			for _, priceDimension := range term.PriceDimensions {
 				price, err := strconv.ParseFloat(priceDimension.PricePerUnit["USD"], 64)
 				if err != nil {
-					log.Printf("error parsing price: %s, skipping", err)
+					spm.logger.Error(fmt.Sprintf("error parsing price: %s, skipping", err))
 					continue
 				}
 				spm.Regions[region].Storage[storageClass] = price
