@@ -101,8 +101,8 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 // Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	start := time.Now()
-	c.logger.LogAttrs(context.TODO(), slog.LevelInfo, "calling collect")
 	ctx := context.Background()
+	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
 
 	// TODO: make both maps scraping run async in the background
 	if c.computePricingMap == nil || time.Now().After(c.NextComputeScrape) {
@@ -158,7 +158,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	}()
 	c.emitMetricsFromReservationsChannel(instanceCh, ch)
 	c.emitMetricsFromVolumesChannel(volumeCh, ch)
-	c.logger.LogAttrs(context.TODO(), slog.LevelInfo, "Finished collect", slog.Duration("duration", time.Since(start)))
+	c.logger.LogAttrs(ctx, slog.LevelInfo, "Finished collect", slog.Duration("duration", time.Since(start)))
 	return nil
 }
 
