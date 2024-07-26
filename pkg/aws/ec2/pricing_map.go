@@ -339,44 +339,43 @@ func ListOnDemandPrices(ctx context.Context, region string, client pricingClient
 		Filters: []types.Filter{
 			{
 				Field: aws.String("regionCode"),
-				// TODO: Use the defined enum for this once I figure out how I can import it
-				Type:  "TERM_MATCH",
+				Type:  types.FilterTypeTermMatch,
 				Value: aws.String(region),
 			},
 			{
 				// Limit output to only base installs
 				Field: aws.String("preInstalledSw"),
-				Type:  "TERM_MATCH",
+				Type:  types.FilterTypeTermMatch,
 				Value: aws.String("NA"),
 			},
 			{
 				// Limit to shared tenancy machines
 				Field: aws.String("tenancy"),
-				Type:  "TERM_MATCH",
+				Type:  types.FilterTypeTermMatch,
 				Value: aws.String("shared"),
 			},
 			{
 				// Limit to ec2 instances(ie, not bare metal)
 				Field: aws.String("productFamily"),
-				Type:  "TERM_MATCH",
+				Type:  types.FilterTypeTermMatch,
 				Value: aws.String("Compute Instance"),
 			},
 			{
 				// RunInstances is the operation that we're interested in.
 				Field: aws.String("operation"),
-				Type:  "TERM_MATCH",
+				Type:  types.FilterTypeTermMatch,
 				Value: aws.String("RunInstances"),
 			},
 			{
 				// This effectively filters only for ondemand pricing
 				Field: aws.String("capacitystatus"),
-				Type:  "TERM_MATCH",
+				Type:  types.FilterTypeTermMatch,
 				Value: aws.String("UnusedCapacityReservation"),
 			},
 			{
 				// Only care about Linux. If there's a request for windows, remove this flag and expand the pricing map to include a key for operating system
 				Field: aws.String("operatingSystem"),
-				Type:  "TERM_MATCH",
+				Type:  types.FilterTypeTermMatch,
 				Value: aws.String("Linux"),
 			},
 		},
@@ -418,13 +417,13 @@ func ListStoragePrices(ctx context.Context, region string, client pricingClient.
 		Filters: []types.Filter{
 			{
 				Field: aws.String("regionCode"),
-				Type:  "TERM_MATCH",
+				Type:  types.FilterTypeTermMatch,
 				Value: aws.String(region),
 			},
 			// Get prices for EBS Volumes
 			{
 				Field: aws.String("productFamily"),
-				Type:  "TERM_MATCH",
+				Type:  types.FilterTypeTermMatch,
 				Value: aws.String("Storage"),
 			},
 		},
