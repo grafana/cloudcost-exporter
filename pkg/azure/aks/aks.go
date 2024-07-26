@@ -3,6 +3,7 @@ package aks
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -152,7 +153,7 @@ func (c *Collector) getMachinePrices(vmId string) (*MachineSku, error) {
 
 	prices, err := c.PriceStore.getPriceInfoFromVmInfo(vmInfo)
 	if err != nil {
-		return nil, ErrVmPriceRetrievalFailure
+		return nil, fmt.Errorf("%w: %w", err, ErrVmPriceRetrievalFailure)
 	}
 
 	return prices, nil
