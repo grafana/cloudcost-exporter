@@ -293,7 +293,7 @@ func TestStoragePricingMap_GetPriceForVolumeType(t *testing.T) {
 			size:       100,
 			err:        ErrVolumeTypeNotFound,
 		},
-		"price should account for volum size and monthly to hourly price conversion": {
+		"price should account for volume size and monthly to hourly price conversion": {
 			spm: &StoragePricingMap{
 				Regions: map[string]*StoragePricing{
 					"us-east-1": {
