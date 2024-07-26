@@ -162,27 +162,27 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func (c *Collector) populateComputePricingMap(ctx context.Context) error {
-	c.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing compute pricing map")
+func (c *Collector) populateComputePricingMap(errGroupCtx context.Context) error {
+	c.logger.LogAttrs(errGroupCtx, slog.LevelInfo, "Refreshing compute pricing map")
 	var prices []string
 	var spotPrices []ec2Types.SpotPrice
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, errGroupCtx := errgroup.WithContext(errGroupCtx)
 	eg.SetLimit(errGroupLimit)
 	m := sync.Mutex{}
 	for _, region := range c.Regions {
 		eg.Go(func() error {
-			c.logger.LogAttrs(ctx, slog.LevelDebug, "fetching compute pricing info", slog.String("region", *region.RegionName))
+			c.logger.LogAttrs(errGroupCtx, slog.LevelDebug, "fetching compute pricing info", slog.String("region", *region.RegionName))
 
 			if c.ec2RegionClients[*region.RegionName] == nil {
 				return ErrClientNotFound
 			}
 			client := c.ec2RegionClients[*region.RegionName]
-			spotPriceList, err := ListSpotPrices(ctx, client)
+			spotPriceList, err := ListSpotPrices(errGroupCtx, client)
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
 			}
 
-			priceList, err := ListOnDemandPrices(ctx, *region.RegionName, c.pricingService)
+			priceList, err := ListOnDemandPrices(errGroupCtx, *region.RegionName, c.pricingService)
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
 			}
