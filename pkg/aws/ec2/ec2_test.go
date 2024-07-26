@@ -187,7 +187,7 @@ func TestCollector_Collect(t *testing.T) {
 		defer close(ch)
 		assert.ErrorIs(t, collector.Collect(ch), ErrGeneratePricingMap)
 	})
-	t.Run("Collect should return an error if GenerateComputePricingMap returns an error", func(t *testing.T) {
+	t.Run("Test cpu, memory and total cost metrics emitted for each valid instance", func(t *testing.T) {
 		ec2s := mockec2.NewEC2(t)
 		ec2s.EXPECT().DescribeSpotPriceHistory(mock.Anything, mock.Anything, mock.Anything).
 			RunAndReturn(
