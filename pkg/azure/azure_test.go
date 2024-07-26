@@ -9,7 +9,6 @@ import (
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -19,27 +18,33 @@ var (
 )
 
 func Test_New(t *testing.T) {
-	for _, tc := range []struct {
-		name           string
-		expectedError  error
-		subscriptionId string
+	testTable := map[string]struct {
+		expectedErr error
+		subId       string
 	}{
-		{
-			subscriptionId: "1234-asdf-adsf-adsf",
-			name:           "no error",
+		"no subscription ID": {
+			expectedErr: InvalidSubscriptionId,
+			subId:       "",
 		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+
+		"base case": {
+			expectedErr: nil,
+			subId:       "asdf-1234",
+		},
+	}
+
+	for name, tc := range testTable {
+		t.Run(name, func(t *testing.T) {
 			a, err := New(parentCtx, &Config{
 				Logger:         testLogger,
-				SubscriptionId: tc.subscriptionId,
+				SubscriptionId: tc.subId,
 			})
-			if tc.expectedError != nil {
-				require.EqualError(t, err, tc.expectedError.Error())
+			if tc.expectedErr != nil {
+				assert.ErrorIs(t, err, tc.expectedErr)
 				return
 			}
-			require.NoError(t, err)
-			require.NotNil(t, a)
+			assert.NoError(t, err)
+			assert.NotNil(t, a)
 		})
 	}
 }
