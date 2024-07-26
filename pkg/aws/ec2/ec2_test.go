@@ -468,23 +468,13 @@ func Test_EmitMetricsFromVolumesChannel(t *testing.T) {
 			},
 		}
 
-		// fill volumes channel with data from the above volume
-		wg := sync.WaitGroup{}
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
-			volumesCh <- originMsg
-			wg.Wait()
-			close(volumesCh)
+			collector.emitMetricsFromVolumesChannel(volumesCh, promCh)
 		}()
 
-		wg2 := sync.WaitGroup{}
-		wg2.Add(1)
-		go func() {
-			defer wg2.Done()
-			collector.emitMetricsFromVolumesChannel(volumesCh, promCh)
-			wg2.Wait()
-		}()
+		// fill volumes channel with data from the above volume
+		volumesCh <- originMsg
+		close(volumesCh)
 
 		receivedMsg, ok := <-promCh
 		close(promCh)
