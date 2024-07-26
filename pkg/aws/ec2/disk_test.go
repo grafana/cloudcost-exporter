@@ -15,21 +15,18 @@ import (
 
 func TestListEBSVolumes(t *testing.T) {
 	tests := map[string]struct {
-		ctx             context.Context
 		DescribeVolumes func(ctx context.Context, e *ec2.DescribeVolumesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVolumesOutput, error)
 		err             error
 		expected        []types.Volume
 		expectedCalls   int
 	}{
 		"no volumes should return empty": {
-			ctx: context.Background(),
 			DescribeVolumes: func(ctx context.Context, e *ec2.DescribeVolumesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVolumesOutput, error) {
 				return &ec2.DescribeVolumesOutput{}, nil
 			},
 			expectedCalls: 1,
 		},
 		"ensure errors propagate": {
-			ctx: context.Background(),
 			DescribeVolumes: func(ctx context.Context, e *ec2.DescribeVolumesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVolumesOutput, error) {
 				return nil, assert.AnError
 			},
@@ -37,7 +34,6 @@ func TestListEBSVolumes(t *testing.T) {
 			expectedCalls: 1,
 		},
 		"returns volumes": {
-			ctx: context.Background(),
 			DescribeVolumes: func(ctx context.Context, e *ec2.DescribeVolumesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVolumesOutput, error) {
 				return &ec2.DescribeVolumesOutput{
 					Volumes: []types.Volume{
@@ -55,7 +51,6 @@ func TestListEBSVolumes(t *testing.T) {
 			expectedCalls: 1,
 		},
 		"paginator iterates over pages": {
-			ctx: context.Background(),
 			DescribeVolumes: func(ctx context.Context, e *ec2.DescribeVolumesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVolumesOutput, error) {
 				if e.NextToken == nil {
 					return &ec2.DescribeVolumesOutput{
@@ -94,8 +89,9 @@ func TestListEBSVolumes(t *testing.T) {
 				DescribeVolumes(mock.Anything, mock.Anything, mock.Anything).
 				RunAndReturn(tt.DescribeVolumes).
 				Times(tt.expectedCalls)
+			ctx := context.Background()
 
-			resp, err := ListEBSVolumes(tt.ctx, client)
+			resp, err := ListEBSVolumes(ctx, client)
 			assert.Equal(t, tt.err, err)
 			assert.Equal(t, tt.expected, resp)
 		})
