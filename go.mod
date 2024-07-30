@@ -85,5 +85,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20240701130421-f6361c86f094 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240708141625-4ad9e859172b // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
+	gopkg.in/matryer/try.v1 v1.0.0-20150601225556-312d2599e12e // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

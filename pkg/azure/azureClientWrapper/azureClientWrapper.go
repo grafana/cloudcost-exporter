@@ -14,7 +14,10 @@ import (
 	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
 
-var ErrClientCreationFailure = errors.New("failed to create client")
+var (
+	ErrClientCreationFailure = errors.New("failed to create client")
+	ErrPageAdvanceFailure    = errors.New("failed to advance page")
+)
 
 type AzureClient interface {
 	// Machine Store
@@ -70,9 +73,9 @@ func NewAzureClientWrapper(logger *slog.Logger, subscriptionId string, credentia
 	}, nil
 }
 
-var ErrPageAdvanceFailure = errors.New("failed to advance page")
-
 func (a *AzClientWrapper) ListVirtualMachineScaleSetsOwnedVms(ctx context.Context, rgName, vmssName string) ([]*armcompute.VirtualMachineScaleSetVM, error) {
+	listLogger := a.logger.With("pager", "listVirtualMachineScaleSetsOwnedVms")
+
 	vmList := []*armcompute.VirtualMachineScaleSetVM{}
 
 	opts := &armcompute.VirtualMachineScaleSetVMsClientListOptions{
@@ -82,7 +85,8 @@ func (a *AzClientWrapper) ListVirtualMachineScaleSetsOwnedVms(ctx context.Contex
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, ErrPageAdvanceFailure
+			listLogger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
+			return nil, fmt.Errorf("%w: %w", ErrPageAdvanceFailure, err)
 		}
 
 		vmList = append(vmList, nextResult.Value...)
@@ -92,14 +96,16 @@ func (a *AzClientWrapper) ListVirtualMachineScaleSetsOwnedVms(ctx context.Contex
 }
 
 func (a *AzClientWrapper) ListVirtualMachineScaleSetsFromResourceGroup(ctx context.Context, rgName string) ([]*armcompute.VirtualMachineScaleSet, error) {
+	listLogger := a.logger.With("pager", "listVirtualMachineScaleSetsFromResourceGroup")
+
 	vmssList := []*armcompute.VirtualMachineScaleSet{}
 
 	pager := a.azVMSSClient.NewListPager(rgName, nil)
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
-			a.logger.LogAttrs(ctx, slog.LevelError, "unable to advance page in VMSS Client", slog.String("err", err.Error()))
-			return nil, ErrPageAdvanceFailure
+			listLogger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
+			return nil, fmt.Errorf("%w: %w", ErrPageAdvanceFailure, err)
 		}
 
 		vmssList = append(vmssList, nextResult.Value...)
@@ -109,14 +115,16 @@ func (a *AzClientWrapper) ListVirtualMachineScaleSetsFromResourceGroup(ctx conte
 }
 
 func (a *AzClientWrapper) ListClustersInSubscription(ctx context.Context) ([]*armcontainerservice.ManagedCluster, error) {
+	listLogger := a.logger.With("pager", "listClustersInSubscription")
+
 	clusterList := []*armcontainerservice.ManagedCluster{}
 
 	pager := a.azAksClient.NewListPager(nil)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			a.logger.LogAttrs(ctx, slog.LevelError, "unable to advance page in AKS Client", slog.String("err", err.Error()))
-			return nil, ErrPageAdvanceFailure
+			listLogger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
+			return nil, fmt.Errorf("%w: %w", ErrPageAdvanceFailure, err)
 		}
 		clusterList = append(clusterList, page.Value...)
 	}
@@ -125,14 +133,16 @@ func (a *AzClientWrapper) ListClustersInSubscription(ctx context.Context) ([]*ar
 }
 
 func (a *AzClientWrapper) ListMachineTypesByLocation(ctx context.Context, region string) ([]*armcompute.VirtualMachineSize, error) {
+	listLogger := a.logger.With("pager", "listMachineTypesByLocation")
+
 	machineList := []*armcompute.VirtualMachineSize{}
 
 	pager := a.azVMSizesClient.NewListPager(region, nil)
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
-			a.logger.LogAttrs(ctx, slog.LevelError, "unable to advance page in VM Sizes Client", slog.String("err", err.Error()))
-			return nil, ErrPageAdvanceFailure
+			listLogger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
+			return nil, fmt.Errorf("%w: %w", ErrPageAdvanceFailure, err)
 		}
 
 		machineList = append(machineList, nextResult.Value...)
@@ -142,15 +152,17 @@ func (a *AzClientWrapper) ListMachineTypesByLocation(ctx context.Context, region
 }
 
 func (a *AzClientWrapper) ListPrices(ctx context.Context, searchOptions *retailPriceSdk.RetailPricesClientListOptions) ([]*retailPriceSdk.ResourceSKU, error) {
-	a.logger.LogAttrs(ctx, slog.LevelDebug, "populating prices with opts", slog.String("opts", fmt.Sprintf("%+v", searchOptions)))
+	listLogger := a.logger.With("pager", "listPrices")
+
+	listLogger.LogAttrs(ctx, slog.LevelDebug, "populating prices with opts", slog.String("opts", fmt.Sprintf("%+v", searchOptions)))
 	prices := []*retailPriceSdk.ResourceSKU{}
 
 	pager := a.retailPricesClient.NewListPager(searchOptions)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			a.logger.LogAttrs(ctx, slog.LevelError, "error paging through retail prices")
-			return nil, err
+			listLogger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
+			return nil, fmt.Errorf("%w: %w", ErrPageAdvanceFailure, err)
 		}
 
 		for _, v := range page.Items {

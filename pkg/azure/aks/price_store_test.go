@@ -33,20 +33,12 @@ func TestPopulatePriceStore(t *testing.T) {
 
 	mockAzureClient := mock_az_client.NewMockAzureClient(ctrl)
 
-	p := &PriceStore{
-		logger:             priceStoreTestLogger,
-		context:            priceStoreCtx,
-		azureClientWrapper: mockAzureClient,
-
-		regionMapLock: &sync.RWMutex{},
-		RegionMap:     make(map[string]PriceByPriority),
-	}
-
 	testTable := map[string]struct {
-		expectedErr      error
-		listOpts         *retailPriceSdk.RetailPricesClientListOptions
-		apiReturns       []*retailPriceSdk.ResourceSKU
-		expectedPriceMap map[string]PriceByPriority
+		expectedErr           error
+		listOpts              *retailPriceSdk.RetailPricesClientListOptions
+		apiReturns            []*retailPriceSdk.ResourceSKU
+		expectedPriceMap      map[string]PriceByPriority
+		timesToCallListPrices int
 	}{
 		"base case": {
 			expectedErr: nil,
@@ -86,19 +78,31 @@ func TestPopulatePriceStore(t *testing.T) {
 				{ArmSkuName: "Standard_D16s_v3", SkuName: "D16s v3 Spot", ArmRegionName: "centraleurope", ProductName: "Virtual Machines D Series", RetailPrice: 0.01},
 				{ArmSkuName: "Standard_D4s_v3", SkuName: "D4s v3 Low Priority", ArmRegionName: "centraleurope", ProductName: "Virtual Machines D Series", RetailPrice: 0.01}, // low priority machines are disregarded
 			},
+
+			timesToCallListPrices: 1,
 		},
 		"err case": {
-			expectedErr:      errors.New(""),
-			listOpts:         defaultListOpts,
-			expectedPriceMap: map[string]PriceByPriority{},
-			apiReturns:       nil,
+			expectedErr:           errors.New("error paging through retail prices"),
+			listOpts:              defaultListOpts,
+			expectedPriceMap:      map[string]PriceByPriority{},
+			apiReturns:            nil,
+			timesToCallListPrices: 5,
 		},
 	}
 
 	for name, tc := range testTable {
 		t.Run(name, func(t *testing.T) {
-			call := mockAzureClient.EXPECT().ListPrices(priceStoreCtx, tc.listOpts).Times(1)
-			call.Return(tc.apiReturns, tc.expectedErr)
+			call := mockAzureClient.EXPECT().ListPrices(priceStoreCtx, tc.listOpts)
+			call.Times(tc.timesToCallListPrices).Return(tc.apiReturns, tc.expectedErr)
+
+			p := &PriceStore{
+				logger:             priceStoreTestLogger,
+				context:            priceStoreCtx,
+				azureClientWrapper: mockAzureClient,
+
+				regionMapLock: &sync.RWMutex{},
+				RegionMap:     make(map[string]PriceByPriority),
+			}
 
 			p.PopulatePriceStore(priceStoreCtx)
 
