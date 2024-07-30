@@ -74,7 +74,7 @@ func NewAzureClientWrapper(logger *slog.Logger, subscriptionId string, credentia
 }
 
 func (a *AzClientWrapper) ListVirtualMachineScaleSetsOwnedVms(ctx context.Context, rgName, vmssName string) ([]*armcompute.VirtualMachineScaleSetVM, error) {
-	listLogger := a.logger.With("pager", "listVirtualMachineScaleSetsOwnedVms")
+	logger := a.logger.With("pager", "listVirtualMachineScaleSetsOwnedVms")
 
 	vmList := []*armcompute.VirtualMachineScaleSetVM{}
 
@@ -85,7 +85,7 @@ func (a *AzClientWrapper) ListVirtualMachineScaleSetsOwnedVms(ctx context.Contex
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
-			listLogger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
+			logger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
 			return nil, fmt.Errorf("%w: %w", ErrPageAdvanceFailure, err)
 		}
 
@@ -96,7 +96,7 @@ func (a *AzClientWrapper) ListVirtualMachineScaleSetsOwnedVms(ctx context.Contex
 }
 
 func (a *AzClientWrapper) ListVirtualMachineScaleSetsFromResourceGroup(ctx context.Context, rgName string) ([]*armcompute.VirtualMachineScaleSet, error) {
-	listLogger := a.logger.With("pager", "listVirtualMachineScaleSetsFromResourceGroup")
+	logger := a.logger.With("pager", "listVirtualMachineScaleSetsFromResourceGroup")
 
 	vmssList := []*armcompute.VirtualMachineScaleSet{}
 
@@ -104,7 +104,7 @@ func (a *AzClientWrapper) ListVirtualMachineScaleSetsFromResourceGroup(ctx conte
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
-			listLogger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
+			logger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
 			return nil, fmt.Errorf("%w: %w", ErrPageAdvanceFailure, err)
 		}
 
@@ -115,7 +115,7 @@ func (a *AzClientWrapper) ListVirtualMachineScaleSetsFromResourceGroup(ctx conte
 }
 
 func (a *AzClientWrapper) ListClustersInSubscription(ctx context.Context) ([]*armcontainerservice.ManagedCluster, error) {
-	listLogger := a.logger.With("pager", "listClustersInSubscription")
+	logger := a.logger.With("pager", "listClustersInSubscription")
 
 	clusterList := []*armcontainerservice.ManagedCluster{}
 
@@ -123,7 +123,7 @@ func (a *AzClientWrapper) ListClustersInSubscription(ctx context.Context) ([]*ar
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			listLogger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
+			logger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
 			return nil, fmt.Errorf("%w: %w", ErrPageAdvanceFailure, err)
 		}
 		clusterList = append(clusterList, page.Value...)
@@ -133,7 +133,7 @@ func (a *AzClientWrapper) ListClustersInSubscription(ctx context.Context) ([]*ar
 }
 
 func (a *AzClientWrapper) ListMachineTypesByLocation(ctx context.Context, region string) ([]*armcompute.VirtualMachineSize, error) {
-	listLogger := a.logger.With("pager", "listMachineTypesByLocation")
+	logger := a.logger.With("pager", "listMachineTypesByLocation")
 
 	machineList := []*armcompute.VirtualMachineSize{}
 
@@ -141,7 +141,7 @@ func (a *AzClientWrapper) ListMachineTypesByLocation(ctx context.Context, region
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
-			listLogger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
+			logger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
 			return nil, fmt.Errorf("%w: %w", ErrPageAdvanceFailure, err)
 		}
 
@@ -152,16 +152,16 @@ func (a *AzClientWrapper) ListMachineTypesByLocation(ctx context.Context, region
 }
 
 func (a *AzClientWrapper) ListPrices(ctx context.Context, searchOptions *retailPriceSdk.RetailPricesClientListOptions) ([]*retailPriceSdk.ResourceSKU, error) {
-	listLogger := a.logger.With("pager", "listPrices")
+	logger := a.logger.With("pager", "listPrices")
 
-	listLogger.LogAttrs(ctx, slog.LevelDebug, "populating prices with opts", slog.String("opts", fmt.Sprintf("%+v", searchOptions)))
+	logger.LogAttrs(ctx, slog.LevelDebug, "populating prices with opts", slog.String("opts", fmt.Sprintf("%+v", searchOptions)))
 	prices := []*retailPriceSdk.ResourceSKU{}
 
 	pager := a.retailPricesClient.NewListPager(searchOptions)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			listLogger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
+			logger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
 			return nil, fmt.Errorf("%w: %w", ErrPageAdvanceFailure, err)
 		}
 
