@@ -1,5 +1,5 @@
 # Build Go Binary
-FROM golang:1.22.5 AS build
+FROM golang:1.23.0 AS build
 
 WORKDIR /app
 COPY ["go.mod", "go.sum", "./"]
