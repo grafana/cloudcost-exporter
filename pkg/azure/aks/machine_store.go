@@ -396,7 +396,7 @@ func (m *MachineStore) getMachineName(vm *armcompute.VirtualMachineScaleSetVM) (
 		return "", fmt.Errorf("unable to determine machine name: %+v", vm)
 	}
 
-	return computerName, nil
+	return strings.ToLower(computerName), nil
 }
 
 // Based on this logic https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
