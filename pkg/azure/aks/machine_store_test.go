@@ -265,7 +265,7 @@ func TestPopulateMachineStore(t *testing.T) {
 
 			expectedMachineMap: map[string]*VirtualMachineInfo{
 				"vmId": {
-					Name:           "vmName",
+					Name:           "vmname",
 					Id:             "vmId",
 					Region:         "centralus",
 					OwningVMSS:     "vmssName",
@@ -478,6 +478,17 @@ func TestGetMachineName(t *testing.T) {
 				Properties: &armcompute.VirtualMachineScaleSetVMProperties{
 					InstanceView: &armcompute.VirtualMachineScaleSetVMInstanceView{
 						ComputerName: to.StringPtr("aks-vmss-machine"),
+					},
+				},
+			},
+			expectedName: "aks-vmss-machine",
+			expectedErr:  false,
+		},
+		"name is uppercase": {
+			vmObject: &armcompute.VirtualMachineScaleSetVM{
+				Properties: &armcompute.VirtualMachineScaleSetVMProperties{
+					InstanceView: &armcompute.VirtualMachineScaleSetVMInstanceView{
+						ComputerName: to.StringPtr("AKS-VMSS-machine"),
 					},
 				},
 			},
