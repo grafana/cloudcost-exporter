@@ -59,6 +59,7 @@ Check out the follow docs for metrics:
   - [gcs](docs/metrics/gcp/gcs.md)
 - aws
   - [s3](docs/metrics/aws/s3.md)
+  - [ec2](docs/metrics/aws/ec2.md)
 - azure
   - [aks](docs/metrics/azure/aks.md)
 
