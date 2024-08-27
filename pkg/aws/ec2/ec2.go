@@ -35,19 +35,19 @@ var (
 	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
 		"The cpu cost a ec2 instance in USD/(core*h)",
-		[]string{"instance", "name", "region", "family", "machine_type", "cluster_name", "price_tier"},
+		[]string{"instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier"},
 		nil,
 	)
 	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
 		"The memory cost of a ec2 instance in USD/(GiB*h)",
-		[]string{"instance", "name", "region", "family", "machine_type", "cluster_name", "price_tier"},
+		[]string{"instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier"},
 		nil,
 	)
 	InstanceTotalHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_total_usd_per_hour"),
 		"The total cost of the ec2 instance in USD/h",
-		[]string{"instance", "name", "region", "family", "machine_type", "cluster_name", "price_tier"},
+		[]string{"instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier"},
 		nil,
 	)
 	PersistentVolumeHourlyCostDesc = prometheus.NewDesc(
@@ -300,7 +300,6 @@ func (c *Collector) emitMetricsFromReservationsChannel(reservationsCh chan []ec2
 				if instance.InstanceLifecycle != ec2Types.InstanceLifecycleTypeSpot {
 					pricetier = "ondemand"
 					// Ondemand instances are keyed based upon their Region, so we need to remove the availability zone
-					// TODO: This doesn't actually work. Convert this into a method and add unit tests
 					region = region[:len(region)-1]
 				}
 
@@ -310,10 +309,9 @@ func (c *Collector) emitMetricsFromReservationsChannel(reservationsCh chan []ec2
 					continue
 				}
 
-				name := fmt.Sprintf("arn:aws:ec2:%s:%s:instance/%s", region, *reservation.OwnerId, *instance.InstanceId)
 				labelValues := []string{
 					*instance.PrivateDnsName,
-					name,
+					*instance.InstanceId,
 					region,
 					c.computePricingMap.InstanceDetails[string(instance.InstanceType)].InstanceFamily,
 					string(instance.InstanceType),
