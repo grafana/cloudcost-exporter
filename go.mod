@@ -3,7 +3,7 @@ module github.com/grafana/cloudcost-exporter
 go 1.22
 
 require (
-	cloud.google.com/go/billing v1.18.10
+	cloud.google.com/go/billing v1.19.0
 	cloud.google.com/go/compute v1.28.0
 	cloud.google.com/go/storage v1.43.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.7.0
