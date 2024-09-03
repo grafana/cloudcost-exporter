@@ -234,7 +234,10 @@ func TestCollector_Collect(t *testing.T) {
 			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 				return &awscostexplorer.GetCostAndUsageOutput{}, nil
 			},
-			metricNames: withoutNextScrape,
+			metricNames: []string{
+				"cloudcost_exporter_aws_s3_cost_api_requests_total",
+				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
+			},
 			expectedExposition: `
 # HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
 # TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
@@ -258,7 +261,10 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 1
 					}},
 				}, nil
 			},
-			metricNames: withoutNextScrape,
+			metricNames: []string{
+				"cloudcost_exporter_aws_s3_cost_api_requests_total",
+				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
+			},
 			expectedExposition: `
 # HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
 # TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
@@ -281,7 +287,10 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 1
 					}},
 				}, nil
 			},
-			metricNames: withoutNextScrape,
+			metricNames: []string{
+				"cloudcost_exporter_aws_s3_cost_api_requests_total",
+				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
+			},
 			expectedExposition: `
 # HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
 # TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
@@ -304,7 +313,10 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 1
 					}},
 				}, nil
 			},
-			metricNames: withoutNextScrape,
+			metricNames: []string{
+				"cloudcost_exporter_aws_s3_cost_api_requests_total",
+				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
+			},
 			expectedExposition: `
 # HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
 # TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
@@ -329,7 +341,10 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 1
 					}},
 				}, nil
 			},
-			metricNames: withoutNextScrape,
+			metricNames: []string{
+				"cloudcost_exporter_aws_s3_cost_api_requests_total",
+				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
+			},
 			expectedExposition: `
 # HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
 # TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
@@ -405,7 +420,11 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 1
 					}},
 				}, nil
 			},
-			metricNames: withoutNextScrape,
+			metricNames: []string{
+				"cloudcost_aws_s3_operation_by_location_usd_per_krequest",
+				"cloudcost_exporter_aws_s3_cost_api_requests_total",
+				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
+			},
 			expectedExposition: `
 # HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
@@ -436,7 +455,11 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 2
 					}},
 				}, nil
 			},
-			metricNames: withoutNextScrape,
+			metricNames: []string{
+				"cloudcost_aws_s3_operation_by_location_usd_per_krequest",
+				"cloudcost_exporter_aws_s3_cost_api_requests_total",
+				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
+			},
 			expectedExposition: `
 # HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
@@ -467,7 +490,11 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 1
 					}},
 				}, nil
 			},
-			metricNames: withoutNextScrape,
+			metricNames: []string{
+				"cloudcost_aws_s3_operation_by_location_usd_per_krequest",
+				"cloudcost_exporter_aws_s3_cost_api_requests_total",
+				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
+			},
 			expectedExposition: `
 # HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
@@ -498,7 +525,11 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 1
 					}},
 				}, nil
 			},
-			metricNames: withoutNextScrape,
+			metricNames: []string{
+				"cloudcost_aws_s3_operation_by_location_usd_per_krequest",
+				"cloudcost_exporter_aws_s3_cost_api_requests_total",
+				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
+			},
 			expectedExposition: `
 # HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
