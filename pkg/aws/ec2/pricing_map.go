@@ -191,6 +191,36 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ondemandPrices []string,
 	return nil
 }
 
+func (spm *StoragePricingMap) ToCSV(path string) error {
+	csvWriter, err := pricingcsv.NewCSVWriter(path)
+	if err != nil {
+		return err
+	}
+	defer csvWriter.Close()
+
+	for region, regionData := range spm.Regions {
+		for storageType, price := range regionData.Storage {
+			regionName := region
+			lastRegionChar := region[len(region)-1:]
+			if lastRegionChar >= "a" && lastRegionChar <= "z" {
+				regionName = region[:len(region)-1]
+			}
+
+			record := pricingcsv.Entry{
+				Provider:    "aws",
+				Service:     "storage",
+				Region:      regionName,
+				Zone:        region,
+				StorageType: storageType,
+				Price:       price,
+			}
+
+			csvWriter.AddEntry(&record)
+		}
+	}
+	return nil
+}
+
 // GenerateStoragePricingMap receives a json with all the prices of the available storage options
 // It iterates over the storage classes and parses the price for each one.
 func (spm *StoragePricingMap) GenerateStoragePricingMap(storagePrices []string) error {

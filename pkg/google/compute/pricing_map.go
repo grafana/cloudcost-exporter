@@ -175,6 +175,8 @@ func (m *StructuredPricingMap) ToCSV(path string) error {
 	}
 	defer csvWriter.Close()
 
+	fmt.Println("Exporting compute pricing map to CSV")
+
 	for region, computePrices := range m.Compute {
 		for instanceType, prices := range computePrices.Family {
 			spotRecord := pricingcsv.Entry{
@@ -205,6 +207,23 @@ func (m *StructuredPricingMap) ToCSV(path string) error {
 			csvWriter.AddEntry(&onDemandRecord)
 		}
 	}
+
+	fmt.Println("Exporting storage pricing map to CSV")
+
+	for region, storagePrices := range m.Storage {
+		for storageClass, price := range storagePrices.Storage {
+			record := pricingcsv.Entry{
+				Provider:    "gcp",
+				Service:     "storage",
+				Region:      region,
+				Zone:        region,
+				StorageType: storageClass,
+				Price:       price,
+			}
+			csvWriter.AddEntry(&record)
+		}
+	}
+
 	return nil
 }
 

@@ -98,10 +98,27 @@ func (c *Collector) DumpPricingMapsToCSV() {
 	if err != nil {
 		c.logger.Error(fmt.Sprintf("error updating compute pricing map: %s", err))
 	}
+
+	c.logger.Info("Dumping compute prices to CSV")
+	err = c.computePricingMap.ToCSV("prices.csv")
+	if err != nil {
+		c.logger.Error(fmt.Sprintf("error writing pricing map to CSV: %s", err))
+	}
+
+	c.logger.Info("Compute prices dumped to CSV")
+
 	err = c.populateStoragePricingMap(ctx)
 	if err != nil {
 		c.logger.Error(fmt.Sprintf("error updating storage pricing map: %s", err))
 	}
+
+	c.logger.Info("Dumping storage prices to CSV")
+	err = c.storagePricingMap.ToCSV("prices.csv")
+	if err != nil {
+		c.logger.Error(fmt.Sprintf("error writing pricing map to CSV: %s", err))
+	}
+
+	c.logger.Info("Storage prices dumped to CSV")
 }
 
 // CollectMetrics is a no-op function that satisfies the provider.Collector interface.
@@ -214,14 +231,6 @@ func (c *Collector) populateComputePricingMap(errGroupCtx context.Context) error
 	if err := c.computePricingMap.GenerateComputePricingMap(prices, spotPrices); err != nil {
 		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 	}
-
-	c.logger.Info("Dumping prices to CSV")
-	err = c.computePricingMap.ToCSV("prices.csv")
-	if err != nil {
-		c.logger.Error(fmt.Sprintf("error writing pricing map to CSV: %s", err))
-	}
-
-	c.logger.Info("Prices dumped to CSV")
 
 	return nil
 }
