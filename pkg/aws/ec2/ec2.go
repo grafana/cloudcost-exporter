@@ -92,6 +92,18 @@ func New(config *Config, ps pricingClient.Pricing) *Collector {
 	}
 }
 
+func (c *Collector) DumpPricingMapsToCSV() {
+	ctx := context.Background()
+	err := c.populateComputePricingMap(ctx)
+	if err != nil {
+		c.logger.Error(fmt.Sprintf("error updating compute pricing map: %s", err))
+	}
+	err = c.populateStoragePricingMap(ctx)
+	if err != nil {
+		c.logger.Error(fmt.Sprintf("error updating storage pricing map: %s", err))
+	}
+}
+
 // CollectMetrics is a no-op function that satisfies the provider.Collector interface.
 // Deprecated: CollectMetrics is deprecated and will be removed in a future release.
 func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
@@ -202,6 +214,14 @@ func (c *Collector) populateComputePricingMap(errGroupCtx context.Context) error
 	if err := c.computePricingMap.GenerateComputePricingMap(prices, spotPrices); err != nil {
 		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 	}
+
+	c.logger.Info("Dumping prices to CSV")
+	err = c.computePricingMap.ToCSV("prices.csv")
+	if err != nil {
+		c.logger.Error(fmt.Sprintf("error writing pricing map to CSV: %s", err))
+	}
+
+	c.logger.Info("Prices dumped to CSV")
 
 	return nil
 }

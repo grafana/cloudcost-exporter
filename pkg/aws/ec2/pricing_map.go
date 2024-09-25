@@ -20,6 +20,7 @@ import (
 
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
+	"github.com/grafana/cloudcost-exporter/pkg/pricingcsv"
 )
 
 const (
@@ -99,6 +100,41 @@ func NewStoragePricingMap(l *slog.Logger) *StoragePricingMap {
 		m:       sync.RWMutex{},
 		logger:  l.With("subsystem", "storagePricing"),
 	}
+}
+
+func (cpm *ComputePricingMap) ToCSV(path string) error {
+	csvWriter, err := pricingcsv.NewCSVWriter(path)
+	if err != nil {
+		return err
+	}
+	defer csvWriter.Close()
+
+	for region, regionData := range cpm.Regions {
+		for instanceType, instanceData := range regionData.Family {
+			regionName := region
+			capacityType := "on_demand"
+			lastRegionChar := region[len(region)-1:]
+			if lastRegionChar >= "a" && lastRegionChar <= "z" {
+				regionName = region[:len(region)-1]
+				capacityType = "spot"
+			}
+
+			record := pricingcsv.Entry{
+				Provider:     "aws",
+				Service:      "compute",
+				Region:       regionName,
+				Zone:         region,
+				InstanceType: instanceType,
+				CapacityType: capacityType,
+				Price:        instanceData.Total,
+				PricePerCore: instanceData.Cpu,
+				PricePerGiB:  instanceData.Ram,
+			}
+
+			csvWriter.AddEntry(&record)
+		}
+	}
+	return nil
 }
 
 // GenerateComputePricingMap accepts a list of ondemand prices and a list of spot prices.

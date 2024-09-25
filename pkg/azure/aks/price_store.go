@@ -11,6 +11,7 @@ import (
 
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
+	"github.com/grafana/cloudcost-exporter/pkg/pricingcsv"
 	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 
 	"gopkg.in/matryer/try.v1"
@@ -86,7 +87,7 @@ func NewPricingStore(ctx context.Context, parentLogger *slog.Logger, azClientWra
 	}
 
 	// populate the store before it is used
-	go p.PopulatePriceStore(ctx)
+	//go p.PopulatePriceStore(ctx)
 
 	return p
 }
@@ -185,10 +186,48 @@ func (p *PriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, 
 	return true
 }
 
+func (p *PriceStore) ToCSV(path string) error {
+	p.logger.Info("Dumping prices to CSV")
+
+	csvWriter, err := pricingcsv.NewCSVWriter(path)
+	if err != nil {
+		return err
+	}
+	defer csvWriter.Close()
+
+	for region, regionMap := range p.RegionMap {
+		for priority, priorityMap := range regionMap {
+			for _, osMap := range priorityMap {
+				for sku, skuMap := range osMap {
+					pricePerCore := float64(0)
+					pricePerGiB := float64(0)
+					if skuMap.MachinePricesBreakdown != nil {
+						pricePerCore = skuMap.MachinePricesBreakdown.PricePerCore
+						pricePerGiB = skuMap.MachinePricesBreakdown.PricePerGiB
+					}
+
+					record := pricingcsv.Entry{
+						Provider:     "azure",
+						Service:      "compute",
+						Region:       region,
+						Zone:         region,
+						InstanceType: sku,
+						CapacityType: priority.String(),
+						Price:        skuMap.RetailPrice,
+						PricePerCore: pricePerCore,
+						PricePerGiB:  pricePerGiB,
+					}
+
+					csvWriter.AddEntry(&record)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
 	startTime := time.Now()
-
-	p.logger.Info("populating price store")
 
 	opts := &retailPriceSdk.RetailPricesClientListOptions{
 		APIVersion:  to.StringPtr(AZ_API_VERSION),

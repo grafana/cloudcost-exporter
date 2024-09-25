@@ -142,10 +142,14 @@ func New(config *Config) (*GCP, error) {
 				continue
 			}
 		case "COMPUTE":
-			collector = compute.New(&compute.Config{
+			// GC CODE //
+			computeCollector := compute.New(&compute.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
 			}, computeService, cloudCatalogClient)
+			computeCollector.DumpPricingMapsToCSV()
+			// END OF GC CODE //
+			collector = computeCollector
 		case "GKE":
 			collector = gke.New(&gke.Config{
 				Projects:       config.Projects,

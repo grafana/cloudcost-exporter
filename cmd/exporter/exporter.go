@@ -45,7 +45,7 @@ func main() {
 	)
 	cfg.Logger = logs
 
-	csp, err := selectProvider(ctx, &cfg)
+	_, err := selectProvider(ctx, &cfg)
 	if err != nil {
 		logs.LogAttrs(ctx, slog.LevelError, "Error selecting provider",
 			slog.String("message", err.Error()),
@@ -54,11 +54,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = runServer(ctx, &cfg, csp, logs)
-	if err != nil {
-		logs.LogAttrs(ctx, slog.LevelError, "Error running server", slog.String("message", err.Error()))
-		os.Exit(1)
-	}
+	/*
+
+		err = runServer(ctx, &cfg, csp, logs)
+		if err != nil {
+			logs.LogAttrs(ctx, slog.LevelError, "Error running server", slog.String("message", err.Error()))
+			os.Exit(1)
+		}
+	*/
 }
 
 // providerFlags is a helper method that is responsible for setting up the flags that are used to configure the provider.

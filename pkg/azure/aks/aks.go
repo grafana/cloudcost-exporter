@@ -145,6 +145,18 @@ func (c *Collector) CheckReadiness() bool {
 	return c.PriceStore.CheckReadiness() && c.MachineStore.CheckReadiness()
 }
 
+func (c *Collector) DumpPricingMapsToCSV() {
+	c.logger.Info("populating price store")
+	c.PriceStore.PopulatePriceStore(c.context)
+
+	err := c.PriceStore.ToCSV("prices.csv")
+	if err != nil {
+		c.logger.LogAttrs(c.context, slog.LevelError, "error dumping prices to CSV", slog.String("err", err.Error()))
+	}
+	c.logger.Info("Prices dumped to CSV")
+
+}
+
 func (c *Collector) getMachinePrices(vmId string) (*MachineSku, error) {
 	vmInfo, err := c.MachineStore.getVmInfoByVmId(vmId)
 	if err != nil {

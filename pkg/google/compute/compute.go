@@ -130,6 +130,35 @@ func (c *Collector) Register(registry provider.Registry) error {
 	return nil
 }
 
+func (c *Collector) DumpPricingMapsToCSV() {
+	start := time.Now()
+	log.Printf("Collecting %s metrics", c.Name())
+	ctx := context.TODO()
+	log.Println("Refreshing pricing map")
+	serviceName, err := billing.GetServiceName(ctx, c.billingService, "Compute Engine")
+	if err != nil {
+		log.Printf("Error getting service name: %s", err)
+		return
+	}
+	skus := billing.GetPricing(ctx, c.billingService, serviceName)
+	pricingMap, err := GeneratePricingMap(skus)
+	if err != nil {
+		log.Printf("Error generating pricing map: %s", err)
+		return
+	}
+
+	c.PricingMap = pricingMap
+	c.NextScrape = time.Now().Add(c.config.ScrapeInterval)
+	log.Printf("Finished refreshing pricing map in %s", time.Since(start))
+
+	err = c.PricingMap.ToCSV("prices.csv")
+	if err != nil {
+		log.Printf("Error writing pricing map to CSV: %s", err)
+	}
+
+	log.Print("Exported pricing map to CSV")
+}
+
 func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	start := time.Now()
 	log.Printf("Collecting %s metrics", c.Name())
@@ -152,6 +181,16 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 		c.NextScrape = time.Now().Add(c.config.ScrapeInterval)
 		log.Printf("Finished refreshing pricing map in %s", time.Since(start))
 	}
+
+	err := c.PricingMap.ToCSV("prices.csv")
+	if err != nil {
+		log.Printf("Error writing pricing map to CSV: %s", err)
+	}
+
+	log.Print("Exporting pricing map to CSV")
+
+	return 0
+
 	ch <- prometheus.MustNewConstMetric(NextScrapeDesc, prometheus.GaugeValue, float64(c.NextScrape.Unix()))
 	for _, project := range c.Projects {
 		zones, err := c.computeService.Zones.List(project).Do()

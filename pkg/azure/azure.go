@@ -137,6 +137,9 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 			if err != nil {
 				return nil, err
 			}
+			// GC CODE //
+			collector.DumpPricingMapsToCSV()
+			// END OF GC CODE //
 			collectors = append(collectors, collector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelInfo, "unknown service", slog.String("service", svc))

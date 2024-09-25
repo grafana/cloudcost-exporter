@@ -149,6 +149,10 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 				Logger:         logger,
 				ScrapeInterval: config.ScrapeInterval,
 			}, pricingService)
+
+			// gc code
+			collector.DumpPricingMapsToCSV()
+			// end of gc code
 			collectors = append(collectors, collector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",
