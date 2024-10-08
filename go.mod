@@ -19,7 +19,7 @@ require (
 	github.com/googleapis/gax-go/v2 v2.13.0
 	github.com/prometheus/client_golang v1.20.4
 	github.com/prometheus/client_model v0.6.1
-	github.com/prometheus/common v0.59.1
+	github.com/prometheus/common v0.60.0
 	github.com/stretchr/testify v1.9.0
 	go.uber.org/mock v0.4.0
 	golang.org/x/sync v0.8.0
