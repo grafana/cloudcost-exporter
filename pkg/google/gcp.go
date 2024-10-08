@@ -150,6 +150,7 @@ func New(config *Config) (*GCP, error) {
 			collector = gke.New(&gke.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
+				Logger:         config.Logger,
 			}, computeService, cloudCatalogClient)
 		default:
 			logger.LogAttrs(ctx, slog.LevelError, "Error creating service, does not exist",

@@ -3,7 +3,7 @@ package gke
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +50,7 @@ var (
 type Config struct {
 	Projects       string
 	ScrapeInterval time.Duration
+	Logger         *slog.Logger
 }
 
 type Collector struct {
@@ -59,6 +60,7 @@ type Collector struct {
 	Projects          []string
 	ComputePricingMap *gcpCompute.StructuredPricingMap
 	NextScrape        time.Time
+	logger            *slog.Logger
 }
 
 func (c *Collector) Register(_ provider.Registry) error {
@@ -73,7 +75,7 @@ func (c *Collector) CheckReadiness() bool {
 func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	err := c.Collect(ch)
 	if err != nil {
-		log.Printf("failed to collect metrics: %v", err)
+		c.logger.Error("failed to collect metrics: %v", err)
 		return 0
 	}
 	return 1
@@ -109,7 +111,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				defer wg.Done()
 				results, err := gcpCompute.ListInstancesInZone(project, zone.Name, c.computeService)
 				if err != nil {
-					log.Printf("error listing instances in zone %s: %v", zone.Name, err)
+					c.logger.Error("error listing instances in zone %s: %v", zone.Name, err)
 					instances <- nil
 					return
 				}
@@ -119,7 +121,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				defer wg.Done()
 				results, err := ListDisks(project, zone.Name, c.computeService)
 				if err != nil {
-					log.Printf("error listing disks in zone %s: %v", zone.Name, err)
+					c.logger.Error("error listing disks in zone %s: %v", zone.Name, err)
 					return
 				}
 				disks <- results
@@ -209,11 +211,14 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 
 func New(config *Config, computeService *compute.Service, billingService *billingv1.CloudCatalogClient) *Collector {
 	projects := strings.Split(config.Projects, ",")
+	logger := config.Logger.With("collector", "gke")
+
 	return &Collector{
 		computeService: computeService,
 		billingService: billingService,
 		config:         config,
 		Projects:       projects,
+		logger:         logger,
 	}
 }
 
