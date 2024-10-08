@@ -94,21 +94,21 @@ func NewPriceTiers() *PriceTiers {
 	}
 }
 
-// StructuredPricingMap is a map of regions to a map of family to price tiers
-type StructuredPricingMap struct {
+// PricingMap is a map of regions to a map of family to price tiers
+type PricingMap struct {
 	Compute map[string]*FamilyPricing
 	Storage map[string]*StoragePricing
 }
 
-// NewStructuredPricingMap returns a new StructuredPricingMap in a way that can be used afterwards.
-func NewStructuredPricingMap() *StructuredPricingMap {
-	return &StructuredPricingMap{
+// NewPricingMap returns a new PricingMap in a way that can be used afterwards.
+func NewPricingMap() *PricingMap {
+	return &PricingMap{
 		Compute: map[string]*FamilyPricing{},
 		Storage: map[string]*StoragePricing{},
 	}
 }
 
-func (spm *StructuredPricingMap) CheckReadiness() bool {
+func (pm *PricingMap) CheckReadiness() bool {
 	// TODO - implement locking on the pricing map
 	return true
 }
@@ -135,7 +135,7 @@ func NewStoragePricing() *StoragePricing {
 	}
 }
 
-func (m StructuredPricingMap) GetCostOfInstance(instance *MachineSpec) (float64, float64, error) {
+func (m PricingMap) GetCostOfInstance(instance *MachineSpec) (float64, float64, error) {
 	if len(m.Compute) == 0 || instance == nil {
 		return 0, 0, RegionNotFound
 	}
@@ -154,7 +154,7 @@ func (m StructuredPricingMap) GetCostOfInstance(instance *MachineSpec) (float64,
 	return computePrices.Cpu, computePrices.Ram, nil
 }
 
-func (m StructuredPricingMap) GetCostOfStorage(region, storageClass string) (float64, error) {
+func (m PricingMap) GetCostOfStorage(region, storageClass string) (float64, error) {
 	if len(m.Storage) == 0 {
 		return 0, RegionNotFound
 	}
@@ -176,11 +176,11 @@ var (
 	}
 )
 
-func GeneratePricingMap(skus []*billingpb.Sku) (*StructuredPricingMap, error) {
+func GeneratePricingMap(skus []*billingpb.Sku) (*PricingMap, error) {
 	if len(skus) == 0 {
-		return &StructuredPricingMap{}, SkuNotFound
+		return &PricingMap{}, SkuNotFound
 	}
-	pricingMap := NewStructuredPricingMap()
+	pricingMap := NewPricingMap()
 	for _, sku := range skus {
 		rawData, err := getDataFromSku(sku)
 

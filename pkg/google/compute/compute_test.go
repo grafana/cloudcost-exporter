@@ -516,7 +516,7 @@ func TestCollector_GetPricing(t *testing.T) {
 		Projects: "testing",
 	}, computeService, nil)
 
-	var pricingMap *StructuredPricingMap
+	var pricingMap *PricingMap
 	t.Run("Test that the pricing map is cached", func(t *testing.T) {
 		l, err := net.Listen("tcp", "localhost:0")
 		require.NoError(t, err)

@@ -58,7 +58,7 @@ type Collector struct {
 	billingService    *billingv1.CloudCatalogClient
 	config            *Config
 	Projects          []string
-	ComputePricingMap *gcpCompute.StructuredPricingMap
+	ComputePricingMap *gcpCompute.PricingMap
 	NextScrape        time.Time
 	logger            *slog.Logger
 }
