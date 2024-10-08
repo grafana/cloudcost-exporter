@@ -2,6 +2,7 @@ package gke
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -11,8 +12,6 @@ import (
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/compute/v1"
-
-	gcpCompute "github.com/grafana/cloudcost-exporter/pkg/google/compute"
 
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -46,6 +45,10 @@ var (
 	)
 )
 
+var (
+	ErrListInstances = errors.New("no list price was found for the sku")
+)
+
 type Config struct {
 	Projects       string
 	ScrapeInterval time.Duration
@@ -57,7 +60,7 @@ type Collector struct {
 	billingService *billingv1.CloudCatalogClient
 	config         *Config
 	Projects       []string
-	PricingMap     *gcpCompute.PricingMap
+	PricingMap     *PricingMap
 	NextScrape     time.Time
 	logger         *slog.Logger
 }
@@ -81,6 +84,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 }
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+	ctx := context.Background()
 	for _, project := range c.Projects {
 		zones, err := c.computeService.Zones.List(project).Do()
 		if err != nil {
@@ -89,19 +93,34 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		wg := sync.WaitGroup{}
 		// Multiply by 2 because we are making two requests per zone
 		wg.Add(len(zones.Items) * 2)
-		instances := make(chan []*gcpCompute.MachineSpec, len(zones.Items))
+		instances := make(chan []*MachineSpec, len(zones.Items))
 		disks := make(chan []*compute.Disk, len(zones.Items))
 		for _, zone := range zones.Items {
 			go func(zone *compute.Zone) {
 				defer wg.Done()
-				results, err := gcpCompute.ListInstancesInZone(project, zone.Name, c.computeService)
+				now := time.Now()
+				c.logger.LogAttrs(ctx, slog.LevelInfo,
+					"Listing instances for project %s in zone %s",
+					slog.String("project", project),
+					slog.String("zone", zone.Name))
+
+				results, err := ListInstancesInZone(project, zone.Name, c.computeService)
 				if err != nil {
-					c.logger.Error("error listing instances in zone",
+					c.logger.LogAttrs(ctx, slog.LevelError,
+						"error listing instances in zone",
+						slog.String("project", project),
 						slog.String("zone", zone.Name),
+						slog.Duration("duration", time.Since(now)),
 						slog.String("msg", err.Error()))
+
 					instances <- nil
 					return
 				}
+				c.logger.LogAttrs(ctx, slog.LevelInfo,
+					"finished listing instances in zone",
+					slog.String("project", project),
+					slog.String("zone", zone.Name),
+					slog.Duration("duration", time.Since(now)))
 				instances <- results
 			}(zone)
 			go func(zone *compute.Zone) {
@@ -202,12 +221,12 @@ func New(config *Config, computeService *compute.Service, billingService *billin
 	logger := config.Logger.With("collector", "gke")
 	ctx := context.TODO()
 
-	pm, err := gcpCompute.NewPricingMap(ctx, billingService)
+	pm, err := NewPricingMap(ctx, billingService)
 	if err != nil {
 		return nil, err
 	}
 
-	priceTicker := time.NewTicker(gcpCompute.PriceRefreshInterval)
+	priceTicker := time.NewTicker(PriceRefreshInterval)
 
 	go func(ctx context.Context, billingService *billingv1.CloudCatalogClient) {
 		for {
@@ -258,4 +277,27 @@ func ListDisks(project string, zone string, service *compute.Service) ([]*comput
 		return nil, err
 	}
 	return disks, nil
+}
+
+// ListInstancesInZone will list all instances in a given zone and return a slice of MachineSpecs
+func ListInstancesInZone(projectID, zone string, c *compute.Service) ([]*MachineSpec, error) {
+	var allInstances []*MachineSpec
+	var nextPageToken string
+
+	for {
+		instances, err := c.Instances.List(projectID, zone).
+			PageToken(nextPageToken).
+			Do()
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s", ErrListInstances, err.Error())
+		}
+		for _, instance := range instances.Items {
+			allInstances = append(allInstances, NewMachineSpec(instance))
+		}
+		nextPageToken = instances.NextPageToken
+		if nextPageToken == "" {
+			break
+		}
+	}
+	return allInstances, nil
 }

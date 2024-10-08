@@ -6,8 +6,6 @@ import (
 	"strings"
 
 	"google.golang.org/api/compute/v1"
-
-	gcpCompute "github.com/grafana/cloudcost-exporter/pkg/google/compute"
 )
 
 const (
@@ -31,7 +29,7 @@ type Disk struct {
 }
 
 func NewDisk(disk *compute.Disk, project string) *Disk {
-	clusterName := disk.Labels[gcpCompute.GkeClusterLabel]
+	clusterName := disk.Labels[GkeClusterLabel]
 	d := &Disk{
 		Cluster:     clusterName,
 		Project:     project,
@@ -58,7 +56,7 @@ func (d Disk) Namespace() string {
 // Region will return the region of the disk by search through the zone field and returning the region. If the region can't be determined
 // It will return an empty string
 func (d Disk) Region() string {
-	zone := d.labels[gcpCompute.GkeRegionLabel]
+	zone := d.labels[GkeRegionLabel]
 	if zone == "" {
 		// This would be a case where the disk is no longer mounted _or_ the disk is associated with a Compute instance
 		zone = d.zone[strings.LastIndex(d.zone, "/")+1:]

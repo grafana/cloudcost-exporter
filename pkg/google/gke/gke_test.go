@@ -21,7 +21,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/billing"
-	"github.com/grafana/cloudcost-exporter/pkg/google/compute"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
@@ -43,7 +42,7 @@ func TestCollector_Collect(t *testing.T) {
 			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			})),
-			err:             compute.ListInstancesError,
+			err:             ErrListInstances,
 			collectResponse: 0,
 			expectedMetrics: []*utils.MetricResult{},
 		},
@@ -324,7 +323,7 @@ func TestCollector_Collect(t *testing.T) {
 									ProvisioningModel: "test",
 								},
 								Labels: map[string]string{
-									compute.GkeClusterLabel: "test",
+									GkeClusterLabel: "test",
 								},
 							},
 							{
@@ -335,7 +334,7 @@ func TestCollector_Collect(t *testing.T) {
 									ProvisioningModel: "test",
 								},
 								Labels: map[string]string{
-									compute.GkeClusterLabel: "test",
+									GkeClusterLabel: "test",
 								},
 							},
 							{
@@ -346,7 +345,7 @@ func TestCollector_Collect(t *testing.T) {
 									ProvisioningModel: "SPOT",
 								},
 								Labels: map[string]string{
-									compute.GkeClusterLabel: "test",
+									GkeClusterLabel: "test",
 								},
 							},
 							{
@@ -357,7 +356,7 @@ func TestCollector_Collect(t *testing.T) {
 									ProvisioningModel: "test",
 								},
 								Labels: map[string]string{
-									compute.GkeClusterLabel: "test",
+									GkeClusterLabel: "test",
 								},
 							},
 						},
@@ -376,8 +375,8 @@ func TestCollector_Collect(t *testing.T) {
 								Name: "test-disk",
 								Zone: "testing/us-central1-a",
 								Labels: map[string]string{
-									compute.GkeClusterLabel: "test",
-									BootDiskLabel:           "",
+									GkeClusterLabel: "test",
+									BootDiskLabel:   "",
 								},
 								Description: `{"kubernetes.io/created-for/pvc/namespace":"cloudcost-exporter"}`,
 								Type:        "pd-standard",
@@ -386,7 +385,7 @@ func TestCollector_Collect(t *testing.T) {
 								Name: "test-ssd-disk",
 								Zone: "testing/us-east4",
 								Labels: map[string]string{
-									compute.GkeClusterLabel: "test",
+									GkeClusterLabel: "test",
 								},
 								Description: `{"kubernetes.io/created-for/pvc/namespace":"cloudcost-exporter"}`,
 								Type:        "pd-ssd",
@@ -397,8 +396,8 @@ func TestCollector_Collect(t *testing.T) {
 								Name: "test-ssd-disk",
 								Zone: "testing/us-east4",
 								Labels: map[string]string{
-									compute.GkeClusterLabel: "test",
-									BootDiskLabel:           "",
+									GkeClusterLabel: "test",
+									BootDiskLabel:   "",
 								},
 								Description: `{"kubernetes.io/created-for/pvc/namespace":"cloudcost-exporter"}`,
 								Type:        "pd-ssd",

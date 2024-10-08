@@ -54,7 +54,6 @@ There is no helm chart available at this time, but one is planned.
 Check out the follow docs for metrics:
 - [provider level](docs/metrics/providers.md)
 - gcp
-  - [compute](docs/metrics/gcp/compute.md)
   - [gke](docs/metrics/gcp/gke.md)
   - [gcs](docs/metrics/gcp/gcs.md)
 - aws
