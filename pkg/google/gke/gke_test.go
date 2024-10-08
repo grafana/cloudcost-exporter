@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
@@ -23,6 +25,8 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
+var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+
 func TestCollector_Collect(t *testing.T) {
 	tests := map[string]struct {
 		config          *Config
@@ -34,6 +38,7 @@ func TestCollector_Collect(t *testing.T) {
 		"Handle http error": {
 			config: &Config{
 				Projects: "testing",
+				Logger:   logger,
 			},
 			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -45,6 +50,8 @@ func TestCollector_Collect(t *testing.T) {
 		"Parse our regular response": {
 			config: &Config{
 				Projects: "testing,testing-1",
+
+				Logger: logger,
 			},
 			collectResponse: 1.0,
 			expectedMetrics: []*utils.MetricResult{
@@ -427,7 +434,7 @@ func TestCollector_Collect(t *testing.T) {
 				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
 			)
 			require.NoError(t, err)
-			collector := New(test.config, computeService, cloudCatalogClient)
+			collector, _ := New(test.config, computeService, cloudCatalogClient)
 			require.NotNil(t, collector)
 			ch := make(chan prometheus.Metric)
 			go func() {

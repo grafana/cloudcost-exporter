@@ -56,7 +56,7 @@ type Config struct {
 type Collector struct {
 	computeService *compute.Service
 	billingService *billingv1.CloudCatalogClient
-	PricingMap     *StructuredPricingMap
+	PricingMap     *PricingMap
 	config         *Config
 	Projects       []string
 	NextScrape     time.Time

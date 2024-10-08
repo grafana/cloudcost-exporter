@@ -19,7 +19,7 @@ import (
 func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
-		pm               StructuredPricingMap
+		pm               PricingMap
 		ms               *MachineSpec
 		expectedCPUPrice float64
 		expectedRAMPRice float64
@@ -27,28 +27,28 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 	}{
 		{
 			name:          "regions is nil",
-			expectedError: RegionNotFound,
+			expectedError: ErrRegionNotFound,
 		},
 		{
 			name:          "nil machine spec",
-			pm:            StructuredPricingMap{Compute: map[string]*FamilyPricing{"": {}}},
-			expectedError: RegionNotFound,
+			pm:            PricingMap{Compute: map[string]*FamilyPricing{"": {}}},
+			expectedError: ErrRegionNotFound,
 		},
 		{
 			name:          "region not found",
-			pm:            StructuredPricingMap{Compute: map[string]*FamilyPricing{"": {}}},
+			pm:            PricingMap{Compute: map[string]*FamilyPricing{"": {}}},
 			ms:            &MachineSpec{Region: "missing region"},
-			expectedError: RegionNotFound,
+			expectedError: ErrRegionNotFound,
 		},
 		{
 			name:          "family type not found",
-			pm:            StructuredPricingMap{Compute: map[string]*FamilyPricing{"region": {}}},
+			pm:            PricingMap{Compute: map[string]*FamilyPricing{"region": {}}},
 			ms:            &MachineSpec{Region: "region"},
-			expectedError: FamilyTypeNotFound,
+			expectedError: ErrFamilyTypeNotFound,
 		},
 		{
 			name: "on-demand",
-			pm: StructuredPricingMap{
+			pm: PricingMap{
 				Compute: map[string]*FamilyPricing{
 					"region": {
 						Family: map[string]*PriceTiers{
@@ -71,7 +71,7 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 		},
 		{
 			name: "spot",
-			pm: StructuredPricingMap{
+			pm: PricingMap{
 				Compute: map[string]*FamilyPricing{
 					"region": {
 						Family: map[string]*PriceTiers{
@@ -111,17 +111,17 @@ func TestGeneratePricingMap(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
 		skus               []*billingpb.Sku
-		expectedPricingMap *StructuredPricingMap
+		expectedPricingMap *PricingMap
 		expectedError      error
 	}{
 		{
 			name:          "no skus",
-			expectedError: SkuNotFound,
+			expectedError: ErrSkuNotFound,
 		},
 		{
 			name: "empty sku, empty pricing map",
 			skus: []*billingpb.Sku{{}},
-			expectedPricingMap: &StructuredPricingMap{
+			expectedPricingMap: &PricingMap{
 				Compute: map[string]*FamilyPricing{},
 				Storage: map[string]*StoragePricing{},
 			},
@@ -129,7 +129,7 @@ func TestGeneratePricingMap(t *testing.T) {
 		{
 			name:          "nil sku, bubble-up error",
 			skus:          []*billingpb.Sku{nil},
-			expectedError: SkuIsNil,
+			expectedError: ErrSkuIsNil,
 		},
 		{
 			name: "sku not relevant",
@@ -145,7 +145,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					},
 				}},
 			}},
-			expectedPricingMap: &StructuredPricingMap{
+			expectedPricingMap: &PricingMap{
 				Compute: map[string]*FamilyPricing{},
 				Storage: map[string]*StoragePricing{},
 			},
@@ -164,7 +164,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					},
 				}},
 			}},
-			expectedPricingMap: &StructuredPricingMap{
+			expectedPricingMap: &PricingMap{
 				Compute: map[string]*FamilyPricing{},
 				Storage: map[string]*StoragePricing{},
 			},
@@ -184,7 +184,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					},
 				}},
 			}},
-			expectedPricingMap: &StructuredPricingMap{
+			expectedPricingMap: &PricingMap{
 				Compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
@@ -214,7 +214,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					},
 				}},
 			}},
-			expectedPricingMap: &StructuredPricingMap{
+			expectedPricingMap: &PricingMap{
 				Compute: map[string]*FamilyPricing{
 					"us-central1": {
 						Family: map[string]*PriceTiers{
@@ -253,7 +253,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					},
 				}},
 			}},
-			expectedPricingMap: &StructuredPricingMap{
+			expectedPricingMap: &PricingMap{
 				Compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
@@ -283,7 +283,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					},
 				}},
 			}},
-			expectedPricingMap: &StructuredPricingMap{
+			expectedPricingMap: &PricingMap{
 				Compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
@@ -318,7 +318,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					},
 				}},
 			}},
-			expectedPricingMap: &StructuredPricingMap{
+			expectedPricingMap: &PricingMap{
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]float64{
@@ -345,7 +345,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					},
 				}},
 			}},
-			expectedPricingMap: &StructuredPricingMap{
+			expectedPricingMap: &PricingMap{
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]float64{
@@ -385,7 +385,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					},
 				}},
 			}},
-			expectedPricingMap: &StructuredPricingMap{
+			expectedPricingMap: &PricingMap{
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]float64{
@@ -412,7 +412,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					},
 				}},
 			}},
-			expectedPricingMap: &StructuredPricingMap{
+			expectedPricingMap: &PricingMap{
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]float64{
@@ -454,7 +454,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					}},
 				},
 			},
-			expectedPricingMap: &StructuredPricingMap{
+			expectedPricingMap: &PricingMap{
 				Storage: map[string]*StoragePricing{
 					"us-east4": {
 						Storage: map[string]float64{
@@ -480,7 +480,7 @@ func TestGeneratePricingMap(t *testing.T) {
 					},
 				}},
 			}},
-			expectedPricingMap: &StructuredPricingMap{
+			expectedPricingMap: &PricingMap{
 				Compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
@@ -510,15 +510,15 @@ func TestGeneratePricingMap(t *testing.T) {
 
 func Test_getDataFromSku_sadPaths(t *testing.T) {
 	_, err := getDataFromSku(nil)
-	require.ErrorIs(t, err, SkuIsNil)
+	require.ErrorIs(t, err, ErrSkuIsNil)
 
 	_, err = getDataFromSku(&billingpb.Sku{})
-	require.ErrorIs(t, err, SkuNotParsable)
+	require.ErrorIs(t, err, ErrSkuNotParsable)
 
 	_, err = getDataFromSku(&billingpb.Sku{
 		Description: "Nvidia L4 GPU attached to Spot Preemptible VMs running in Hong Kong",
 	})
-	require.ErrorIs(t, err, SkuNotRelevant)
+	require.ErrorIs(t, err, ErrSkuNotRelevant)
 }
 
 func Test_getDataFromSku(t *testing.T) {
@@ -583,67 +583,67 @@ func Test_getDataFromSku(t *testing.T) {
 			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
-			wantError:         SkuNotRelevant,
+			wantError:         ErrSkuNotRelevant,
 		},
 		"Ignore Network": {
 			description:       "Network Internet Egress from Israel to South America",
 			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
-			wantError:         SkuNotRelevant,
+			wantError:         ErrSkuNotRelevant,
 		},
 		"Ignore Sole Tenancy": {
 			description:       "C3 Sole Tenancy Instance Ram running in Turin",
 			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
-			wantError:         SkuNotRelevant,
+			wantError:         ErrSkuNotRelevant,
 		},
 		"Ignore Cloud Interconnect": {
 			description:       "Cloud Interconnect - Egress traffic Asia Pacific",
 			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
-			wantError:         SkuNotRelevant,
+			wantError:         ErrSkuNotRelevant,
 		},
 		"Ignore Commitment": {
 			description:       "Commitment v1: Cpu in Montreal for 1 Year",
 			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
-			wantError:         SkuNotRelevant,
+			wantError:         ErrSkuNotRelevant,
 		},
 		"Ignore Custom": {
 			description:       "Spot Preemptible Custom Instance Core running in Dammam",
 			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
-			wantError:         SkuNotRelevant,
+			wantError:         ErrSkuNotRelevant,
 		},
 		"Ignore Micro": {
 			description:       "Spot Preemptible Micro Instance with burstable CPU running in EMEA",
 			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
-			wantError:         SkuNotRelevant,
+			wantError:         ErrSkuNotRelevant,
 		},
 		"Ignore Small": {
 			description:       "Spot Preemptible Small Instance with 1 VCPU running in Paris",
 			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
-			wantError:         SkuNotRelevant,
+			wantError:         ErrSkuNotRelevant,
 		},
 		"Memory Optimized": {
 			description:       "Memory-optimized Instance Core running in Zurich",
 			serviceCompute:    []string{"europe-west1"},
 			price:             12,
 			wantParsedSkuData: nil,
-			wantError:         SkuNotRelevant,
+			wantError:         ErrSkuNotRelevant,
 		},
 		"Not parsable": {
 			description: "No more guava's allowed in the codebase",
-			wantError:   SkuNotParsable,
+			wantError:   ErrSkuNotParsable,
 		},
 	}
 	for name, tt := range tests {
@@ -687,11 +687,11 @@ func Test_parseAllProducts(t *testing.T) {
 	counter := 0
 	for _, sku := range pricing {
 		_, err := getDataFromSku(sku)
-		if errors.Is(SkuNotParsable, err) {
+		if errors.Is(ErrSkuNotParsable, err) {
 			fmt.Printf("Not parsable yet: %v\n", sku.Description)
 			counter++
 		}
-		if errors.Is(PricingDataIsOff, err) {
+		if errors.Is(ErrPricingDataIsOff, err) {
 			fmt.Printf("Pricing is off: %v\n", sku.Description)
 		}
 	}
