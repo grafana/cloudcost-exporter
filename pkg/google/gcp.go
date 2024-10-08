@@ -15,7 +15,6 @@ import (
 	computev1 "google.golang.org/api/compute/v1"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
-	"github.com/grafana/cloudcost-exporter/pkg/google/compute"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -141,11 +140,6 @@ func New(config *Config) (*GCP, error) {
 					slog.String("message", err.Error()))
 				continue
 			}
-		case "COMPUTE":
-			collector = compute.New(&compute.Config{
-				Projects:       config.Projects,
-				ScrapeInterval: config.ScrapeInterval,
-			}, computeService, cloudCatalogClient)
 		case "GKE":
 			collector, err = gke.New(&gke.Config{
 				Projects:       config.Projects,

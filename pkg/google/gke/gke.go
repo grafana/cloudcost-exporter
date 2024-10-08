@@ -2,7 +2,9 @@ package gke
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 	"strings"
 	"sync"
@@ -11,8 +13,6 @@ import (
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/compute/v1"
-
-	gcpCompute "github.com/grafana/cloudcost-exporter/pkg/google/compute"
 
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -46,6 +46,10 @@ var (
 	)
 )
 
+var (
+	ErrListInstances = errors.New("no list price was found for the sku")
+)
+
 type Config struct {
 	Projects       string
 	ScrapeInterval time.Duration
@@ -57,7 +61,7 @@ type Collector struct {
 	billingService *billingv1.CloudCatalogClient
 	config         *Config
 	Projects       []string
-	PricingMap     *gcpCompute.PricingMap
+	PricingMap     *PricingMap
 	NextScrape     time.Time
 	logger         *slog.Logger
 }
@@ -89,12 +93,12 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		wg := sync.WaitGroup{}
 		// Multiply by 2 because we are making two requests per zone
 		wg.Add(len(zones.Items) * 2)
-		instances := make(chan []*gcpCompute.MachineSpec, len(zones.Items))
+		instances := make(chan []*MachineSpec, len(zones.Items))
 		disks := make(chan []*compute.Disk, len(zones.Items))
 		for _, zone := range zones.Items {
 			go func(zone *compute.Zone) {
 				defer wg.Done()
-				results, err := gcpCompute.ListInstancesInZone(project, zone.Name, c.computeService)
+				results, err := ListInstancesInZone(project, zone.Name, c.computeService)
 				if err != nil {
 					c.logger.Error("error listing instances in zone",
 						slog.String("zone", zone.Name),
@@ -202,12 +206,12 @@ func New(config *Config, computeService *compute.Service, billingService *billin
 	logger := config.Logger.With("collector", "gke")
 	ctx := context.TODO()
 
-	pm, err := gcpCompute.NewPricingMap(ctx, billingService)
+	pm, err := NewPricingMap(ctx, billingService)
 	if err != nil {
 		return nil, err
 	}
 
-	priceTicker := time.NewTicker(gcpCompute.PriceRefreshInterval)
+	priceTicker := time.NewTicker(PriceRefreshInterval)
 
 	go func(ctx context.Context, billingService *billingv1.CloudCatalogClient) {
 		for {
@@ -258,4 +262,32 @@ func ListDisks(project string, zone string, service *compute.Service) ([]*comput
 		return nil, err
 	}
 	return disks, nil
+}
+
+// ListInstancesInZone will list all instances in a given zone and return a slice of MachineSpecs
+func ListInstancesInZone(projectID, zone string, c *compute.Service) ([]*MachineSpec, error) {
+	var allInstances []*MachineSpec
+	var nextPageToken string
+	log.Printf("Listing instances for project %s in zone %s", projectID, zone)
+	now := time.Now()
+
+	for {
+		instances, err := c.Instances.List(projectID, zone).
+			PageToken(nextPageToken).
+			Do()
+		if err != nil {
+			log.Printf("Error listing instances in zone %s: %s", zone, err)
+			return nil, fmt.Errorf("%w: %s", ErrListInstances, err.Error())
+		}
+		for _, instance := range instances.Items {
+			allInstances = append(allInstances, NewMachineSpec(instance))
+		}
+		nextPageToken = instances.NextPageToken
+		if nextPageToken == "" {
+			break
+		}
+	}
+	log.Printf("Finished listing instances in zone %s in %s", zone, time.Since(now))
+
+	return allInstances, nil
 }

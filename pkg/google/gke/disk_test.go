@@ -5,8 +5,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	computev1 "google.golang.org/api/compute/v1"
-
-	"github.com/grafana/cloudcost-exporter/pkg/google/compute"
 )
 
 func Test_extractLabelsFromDesc(t *testing.T) {
@@ -113,7 +111,7 @@ func Test_getRegionFromDisk(t *testing.T) {
 		"Disk with zone as label should return the region parsed properly": {
 			disk: NewDisk(&computev1.Disk{
 				Labels: map[string]string{
-					compute.GkeRegionLabel: "us-central1-f",
+					GkeRegionLabel: "us-central1-f",
 				},
 			}, ""),
 			want: "us-central1",
@@ -121,7 +119,7 @@ func Test_getRegionFromDisk(t *testing.T) {
 		"Disk with a label doesn't belong to a specific zone should return the full label": {
 			disk: NewDisk(&computev1.Disk{
 				Labels: map[string]string{
-					compute.GkeRegionLabel: "us-central1",
+					GkeRegionLabel: "us-central1",
 				},
 			}, ""),
 			want: "us-central1",

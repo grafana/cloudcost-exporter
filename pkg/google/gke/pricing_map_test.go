@@ -1,4 +1,4 @@
-package compute
+package gke
 
 import (
 	"encoding/json"
