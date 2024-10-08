@@ -74,7 +74,7 @@ func (c *Collector) CheckReadiness() bool {
 func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	err := c.Collect(ch)
 	if err != nil {
-		c.logger.Error("failed to collect metrics: %v", err)
+		c.logger.Error("failed to collect metrics", slog.String("msg", err.Error()))
 		return 0
 	}
 	return 1
@@ -96,7 +96,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				defer wg.Done()
 				results, err := gcpCompute.ListInstancesInZone(project, zone.Name, c.computeService)
 				if err != nil {
-					c.logger.Error("error listing instances in zone %s: %v", zone.Name, err)
+					c.logger.Error("error listing instances in zone",
+						slog.String("zone", zone.Name),
+						slog.String("msg", err.Error()))
 					instances <- nil
 					return
 				}
@@ -106,7 +108,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				defer wg.Done()
 				results, err := ListDisks(project, zone.Name, c.computeService)
 				if err != nil {
-					c.logger.Error("error listing disks in zone %s: %v", zone.Name, err)
+					c.logger.Error("error listing disks in zone %s: %v",
+						slog.String("zone", zone.Name),
+						slog.String("msg", err.Error()))
 					return
 				}
 				disks <- results
