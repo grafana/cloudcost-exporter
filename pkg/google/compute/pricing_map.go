@@ -13,21 +13,21 @@ import (
 )
 
 var (
-	SkuNotFound        = errors.New("no sku was interested in us")
-	SkuIsNil           = errors.New("sku is nil")
-	SkuNotParsable     = errors.New("can't parse sku")
-	SkuNotRelevant     = errors.New("sku isn't relevant for the current use cases")
-	PricingDataIsOff   = errors.New("pricing data in sku isn't parsable")
-	RegionNotFound     = errors.New("region wasn't found in pricing map")
-	FamilyTypeNotFound = errors.New("family wasn't found in pricing map for this region")
-	spotRegex          = `(?P<spot>Spot Preemptible )`
-	machineTypeRegex   = `(?P<machineType>\w{1,3})`
-	amd                = `(?P<amd> AMD)`
-	n1Suffix           = `(?: Predefined)`
-	resource           = `(?P<resource>Core|Ram)`
-	regionRegex        = `\w+(?: \w+){0,2}`
-	computeOptimized   = `(?P<optimized> ?Compute optimized)`
-	onDemandString     = fmt.Sprintf(`^%v?(?:%v|%v)%v?%v?(?: Instance)? %v running in %v$`,
+	ErrSkuNotFound        = errors.New("no sku was interested in us")
+	ErrSkuIsNil           = errors.New("sku is nil")
+	ErrSkuNotParsable     = errors.New("can't parse sku")
+	ErrSkuNotRelevant     = errors.New("sku isn't relevant for the current use cases")
+	ErrPricingDataIsOff   = errors.New("pricing data in sku isn't parsable")
+	ErrRegionNotFound     = errors.New("region wasn't found in pricing map")
+	ErrFamilyTypeNotFound = errors.New("family wasn't found in pricing map for this region")
+	spotRegex             = `(?P<spot>Spot Preemptible )`
+	machineTypeRegex      = `(?P<machineType>\w{1,3})`
+	amd                   = `(?P<amd> AMD)`
+	n1Suffix              = `(?: Predefined)`
+	resource              = `(?P<resource>Core|Ram)`
+	regionRegex           = `\w+(?: \w+){0,2}`
+	computeOptimized      = `(?P<optimized> ?Compute optimized)`
+	onDemandString        = fmt.Sprintf(`^%v?(?:%v|%v)%v?%v?(?: Instance)? %v running in %v$`,
 		spotRegex,
 		machineTypeRegex,
 		computeOptimized,
@@ -137,13 +137,13 @@ func NewStoragePricing() *StoragePricing {
 
 func (m PricingMap) GetCostOfInstance(instance *MachineSpec) (float64, float64, error) {
 	if len(m.Compute) == 0 || instance == nil {
-		return 0, 0, RegionNotFound
+		return 0, 0, ErrRegionNotFound
 	}
 	if _, ok := m.Compute[instance.Region]; !ok {
-		return 0, 0, fmt.Errorf("%w: %s", RegionNotFound, instance.Region)
+		return 0, 0, fmt.Errorf("%w: %s", ErrRegionNotFound, instance.Region)
 	}
 	if _, ok := m.Compute[instance.Region].Family[instance.Family]; !ok {
-		return 0, 0, fmt.Errorf("%w: %s", FamilyTypeNotFound, instance.Family)
+		return 0, 0, fmt.Errorf("%w: %s", ErrFamilyTypeNotFound, instance.Family)
 	}
 	priceTiers := m.Compute[instance.Region].Family[instance.Family]
 	computePrices := priceTiers.OnDemand
@@ -156,13 +156,13 @@ func (m PricingMap) GetCostOfInstance(instance *MachineSpec) (float64, float64, 
 
 func (m PricingMap) GetCostOfStorage(region, storageClass string) (float64, error) {
 	if len(m.Storage) == 0 {
-		return 0, RegionNotFound
+		return 0, ErrRegionNotFound
 	}
 	if _, ok := m.Storage[region]; !ok {
-		return 0, fmt.Errorf("%w: %s", RegionNotFound, region)
+		return 0, fmt.Errorf("%w: %s", ErrRegionNotFound, region)
 	}
 	if _, ok := m.Storage[region].Storage[storageClass]; !ok {
-		return 0, fmt.Errorf("%w: %s", FamilyTypeNotFound, storageClass)
+		return 0, fmt.Errorf("%w: %s", ErrFamilyTypeNotFound, storageClass)
 	}
 	return m.Storage[region].Storage[storageClass], nil
 }
@@ -178,19 +178,19 @@ var (
 
 func GeneratePricingMap(skus []*billingpb.Sku) (*PricingMap, error) {
 	if len(skus) == 0 {
-		return &PricingMap{}, SkuNotFound
+		return &PricingMap{}, ErrSkuNotFound
 	}
 	pricingMap := NewPricingMap()
 	for _, sku := range skus {
 		rawData, err := getDataFromSku(sku)
 
-		if errors.Is(err, SkuNotRelevant) {
+		if errors.Is(err, ErrSkuNotRelevant) {
 			continue
 		}
-		if errors.Is(err, PricingDataIsOff) {
+		if errors.Is(err, ErrPricingDataIsOff) {
 			continue
 		}
-		if errors.Is(err, SkuNotParsable) {
+		if errors.Is(err, ErrSkuNotParsable) {
 			continue
 		}
 		if err != nil {
@@ -271,19 +271,19 @@ func getDataFromSku(sku *billingpb.Sku) ([]*ParsedSkuData, error) {
 
 	var parsedSkus []*ParsedSkuData
 	if sku == nil {
-		return nil, SkuIsNil
+		return nil, ErrSkuIsNil
 	}
 
 	for _, ignoreString := range ignoreList {
 		if strings.Contains(sku.Description, ignoreString) {
-			return nil, SkuNotRelevant
+			return nil, ErrSkuNotRelevant
 		}
 	}
 
 	if matches := reOnDemand.FindStringSubmatch(sku.Description); len(matches) > 0 {
 		price, err := getPricingInfoFromSku(sku)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", PricingDataIsOff, err)
+			return nil, fmt.Errorf("%w: %w", ErrPricingDataIsOff, err)
 		}
 		matchMap := getMatchMap(reOnDemand, matches)
 		machineType := strings.ToLower(matchMap["machineType"])
@@ -319,7 +319,7 @@ func getDataFromSku(sku *billingpb.Sku) ([]*ParsedSkuData, error) {
 		return parsedSkus, nil
 	}
 
-	return nil, SkuNotParsable
+	return nil, ErrSkuNotParsable
 }
 
 // getResourceType will return the resource type for a given resource.
