@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/compute/v1"
 
-	"github.com/grafana/cloudcost-exporter/pkg/google/billing"
 	gcpCompute "github.com/grafana/cloudcost-exporter/pkg/google/compute"
 
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
@@ -54,13 +53,13 @@ type Config struct {
 }
 
 type Collector struct {
-	computeService    *compute.Service
-	billingService    *billingv1.CloudCatalogClient
-	config            *Config
-	Projects          []string
-	ComputePricingMap *gcpCompute.PricingMap
-	NextScrape        time.Time
-	logger            *slog.Logger
+	computeService *compute.Service
+	billingService *billingv1.CloudCatalogClient
+	config         *Config
+	Projects       []string
+	PricingMap     *gcpCompute.PricingMap
+	NextScrape     time.Time
+	logger         *slog.Logger
 }
 
 func (c *Collector) Register(_ provider.Registry) error {
@@ -82,20 +81,6 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 }
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	ctx := context.TODO()
-	if c.ComputePricingMap == nil || time.Now().After(c.NextScrape) {
-		serviceName, err := billing.GetServiceName(ctx, c.billingService, "Compute Engine")
-		if err != nil {
-			return err
-		}
-		skus := billing.GetPricing(ctx, c.billingService, serviceName)
-		c.ComputePricingMap, err = gcpCompute.GeneratePricingMap(skus)
-		if err != nil {
-			return err
-		}
-		c.NextScrape = time.Now().Add(c.config.ScrapeInterval)
-	}
-
 	for _, project := range c.Projects {
 		zones, err := c.computeService.Zones.List(project).Do()
 		if err != nil {
@@ -153,7 +138,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					project,
 					instance.PriceTier,
 				}
-				cpuCost, ramCost, err := c.ComputePricingMap.GetCostOfInstance(instance)
+				cpuCost, ramCost, err := c.PricingMap.GetCostOfInstance(instance)
 				if err != nil {
 					return err
 				}
@@ -192,7 +177,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					d.DiskType(),
 				}
 
-				price, err := c.ComputePricingMap.GetCostOfStorage(d.Region(), d.StorageClass())
+				price, err := c.PricingMap.GetCostOfStorage(d.Region(), d.StorageClass())
 				if err != nil {
 					fmt.Printf("%s error getting cost of storage: %v\n", disk.Name, err)
 					continue
@@ -209,17 +194,39 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func New(config *Config, computeService *compute.Service, billingService *billingv1.CloudCatalogClient) *Collector {
-	projects := strings.Split(config.Projects, ",")
+func New(config *Config, computeService *compute.Service, billingService *billingv1.CloudCatalogClient) (*Collector, error) {
 	logger := config.Logger.With("collector", "gke")
+	ctx := context.TODO()
+
+	pm, err := gcpCompute.NewPricingMap(ctx, billingService)
+	if err != nil {
+		return nil, err
+	}
+
+	priceTicker := time.NewTicker(gcpCompute.PriceRefreshInterval)
+
+	go func(ctx context.Context, billingService *billingv1.CloudCatalogClient) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-priceTicker.C:
+				err := pm.Populate(ctx, billingService)
+				if err != nil {
+					logger.Error(err.Error())
+				}
+			}
+		}
+	}(ctx, billingService)
 
 	return &Collector{
 		computeService: computeService,
 		billingService: billingService,
 		config:         config,
-		Projects:       projects,
+		Projects:       strings.Split(config.Projects, ","),
 		logger:         logger,
-	}
+		PricingMap:     pm,
+	}, nil
 }
 
 func (c *Collector) Name() string {

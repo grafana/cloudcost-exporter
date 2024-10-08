@@ -147,11 +147,17 @@ func New(config *Config) (*GCP, error) {
 				ScrapeInterval: config.ScrapeInterval,
 			}, computeService, cloudCatalogClient)
 		case "GKE":
-			collector = gke.New(&gke.Config{
+			collector, err = gke.New(&gke.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         config.Logger,
 			}, computeService, cloudCatalogClient)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
 		default:
 			logger.LogAttrs(ctx, slog.LevelError, "Error creating service, does not exist",
 				slog.String("service", service))
