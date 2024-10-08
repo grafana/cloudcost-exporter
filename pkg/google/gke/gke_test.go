@@ -14,6 +14,7 @@ import (
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	computev1 "google.golang.org/api/compute/v1"
 	"google.golang.org/api/option"
@@ -193,6 +194,34 @@ func TestCollector_Collect(t *testing.T) {
 						"disk_type":        "persistent_volume",
 					},
 					Value:      0.15359342915811086,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_gcp_gke_persistent_volume_usd_per_hour",
+					Labels: map[string]string{
+						"cluster_name":     "test",
+						"namespace":        "cloudcost-exporter",
+						"persistentvolume": "test-ssd-disk",
+						"region":           "us-east4",
+						"project":          "testing-1",
+						"storage_class":    "pd-ssd",
+						"disk_type":        "persistent_volume",
+					},
+					Value:      0.15359342915811086,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_gcp_gke_persistent_volume_usd_per_hour",
+					Labels: map[string]string{
+						"cluster_name":     "test",
+						"namespace":        "cloudcost-exporter",
+						"persistentvolume": "test-disk",
+						"region":           "us-central1",
+						"project":          "testing-1",
+						"storage_class":    "pd-standard",
+						"disk_type":        "boot_disk",
+					},
+					Value:      0,
 					MetricType: prometheus.GaugeValue,
 				},
 				{
@@ -450,10 +479,7 @@ func TestCollector_Collect(t *testing.T) {
 			if len(metrics) == 0 {
 				return
 			}
-
-			for i, expectedMetric := range test.expectedMetrics {
-				require.Equal(t, expectedMetric, metrics[i])
-			}
+			assert.ElementsMatch(t, metrics, test.expectedMetrics)
 		})
 	}
 }

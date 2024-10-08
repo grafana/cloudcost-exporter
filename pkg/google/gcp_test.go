@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -74,6 +75,14 @@ func TestGCP_CollectMetrics(t *testing.T) {
 	}{
 		"no error if no collectors": {
 			numCollectors: 0,
+			expectedMetrics: []*utils.MetricResult{
+				{
+					FqName:     "cloudcost_exporter_last_scrape_error",
+					Labels:     utils.LabelMap{"provider": "gcp"},
+					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				},
+			},
 		},
 		"bubble-up single collector error": {
 			numCollectors: 1,
@@ -88,27 +97,9 @@ func TestGCP_CollectMetrics(t *testing.T) {
 					MetricType: prometheus.GaugeValue,
 				},
 				{
-					FqName:     "cloudcost_exporter_collector_last_scrape_duration_seconds",
-					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
-					Value:      0,
-					MetricType: prometheus.GaugeValue,
-				},
-				{
-					FqName:     "cloudcost_exporter_collector_last_scrape_time",
-					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
-					Value:      0,
-					MetricType: prometheus.GaugeValue,
-				},
-				{
 					FqName:     "cloudcost_exporter_last_scrape_error",
 					Labels:     utils.LabelMap{"provider": "gcp"},
 					Value:      0,
-					MetricType: prometheus.GaugeValue,
-				},
-				{
-					FqName:     "cloudcost_exporter_last_scrape_duration_seconds",
-					Labels:     utils.LabelMap{"provider": "gcp"},
-					Value:      1,
 					MetricType: prometheus.GaugeValue,
 				},
 			},
@@ -122,16 +113,6 @@ func TestGCP_CollectMetrics(t *testing.T) {
 					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
 					Value:      0,
 					MetricType: prometheus.GaugeValue,
-				}, {
-					FqName:     "cloudcost_exporter_collector_last_scrape_duration_seconds",
-					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
-					Value:      0,
-					MetricType: prometheus.GaugeValue,
-				}, {
-					FqName:     "cloudcost_exporter_collector_last_scrape_time",
-					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
-					Value:      0,
-					MetricType: prometheus.GaugeValue,
 				},
 				{
 					FqName:     "cloudcost_exporter_collector_last_scrape_error",
@@ -140,26 +121,11 @@ func TestGCP_CollectMetrics(t *testing.T) {
 					MetricType: prometheus.GaugeValue,
 				},
 				{
-					FqName:     "cloudcost_exporter_collector_last_scrape_duration_seconds",
-					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
-					Value:      0,
-					MetricType: prometheus.GaugeValue,
-				},
-
-				{
-					FqName:     "cloudcost_exporter_collector_last_scrape_time",
-					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
-					Value:      0,
-					MetricType: prometheus.GaugeValue,
-				},
-
-				{
 					FqName:     "cloudcost_exporter_last_scrape_error",
 					Labels:     utils.LabelMap{"provider": "gcp"},
 					Value:      0,
 					MetricType: prometheus.GaugeValue,
-				},
-			},
+				}},
 		},
 	}
 	for name, tt := range tests {
@@ -196,22 +162,28 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			wg.Done()
 
 			wg.Wait()
-			ignoredMetricSuffix := []string{"duration_seconds", "last_scrape_time"}
-			// I don't love using a named loop, but this allows the inner loop to properly continue if the condition has been met.
-		metricsLoop:
-			for _, expectedMetric := range tt.expectedMetrics {
-				metric := utils.ReadMetrics(<-ch)
-				// We don't care about the value for the scrape durations, just that it exists and is returned in the order we expect.
+			var metrics []*utils.MetricResult
+			var ignoreMetric = func(metricName string) bool {
+				ignoredMetricSuffix := []string{
+					"duration_seconds",
+					"last_scrape_time",
+				}
 				for _, suffix := range ignoredMetricSuffix {
-					if strings.Contains(metric.FqName, suffix) {
-						require.Equal(t, expectedMetric.FqName, metric.FqName)
-						continue metricsLoop
+					if strings.Contains(metricName, suffix) {
+						return true
 					}
 				}
 
-				require.Equal(t, expectedMetric, metric)
+				return false
 			}
-
+			for m := range ch {
+				metric := utils.ReadMetrics(m)
+				if ignoreMetric(metric.FqName) {
+					continue
+				}
+				metrics = append(metrics, metric)
+			}
+			assert.ElementsMatch(t, metrics, tt.expectedMetrics)
 		})
 	}
 }
