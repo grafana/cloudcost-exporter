@@ -162,18 +162,25 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			wg.Done()
 
 			wg.Wait()
-			ignoredMetricSuffix := []string{"duration_seconds", "last_scrape_time"}
 			var metrics []*utils.MetricResult
-			// I don't love using a named loop, but this allows the inner loop to properly continue if the condition has been met.
-		metricsLoop:
-			for m := range ch {
-				metric := utils.ReadMetrics(m)
+			var ignoreMetric = func(metricName string) bool {
+				ignoredMetricSuffix := []string{
+					"duration_seconds",
+					"last_scrape_time",
+				}
 				for _, suffix := range ignoredMetricSuffix {
-					if strings.Contains(metric.FqName, suffix) {
-						continue metricsLoop
+					if strings.Contains(metricName, suffix) {
+						return true
 					}
 				}
 
+				return false
+			}
+			for m := range ch {
+				metric := utils.ReadMetrics(m)
+				if ignoreMetric(metric.FqName) {
+					continue
+				}
 				metrics = append(metrics, metric)
 			}
 			assert.ElementsMatch(t, metrics, tt.expectedMetrics)
