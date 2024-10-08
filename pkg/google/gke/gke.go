@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"strings"
 	"sync"
@@ -85,6 +84,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 }
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+	ctx := context.Background()
 	for _, project := range c.Projects {
 		zones, err := c.computeService.Zones.List(project).Do()
 		if err != nil {
@@ -98,14 +98,29 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		for _, zone := range zones.Items {
 			go func(zone *compute.Zone) {
 				defer wg.Done()
+				now := time.Now()
+				c.logger.LogAttrs(ctx, slog.LevelInfo,
+					"Listing instances for project %s in zone %s",
+					slog.String("project", project),
+					slog.String("zone", zone.Name))
+
 				results, err := ListInstancesInZone(project, zone.Name, c.computeService)
 				if err != nil {
-					c.logger.Error("error listing instances in zone",
+					c.logger.LogAttrs(ctx, slog.LevelError,
+						"error listing instances in zone",
+						slog.String("project", project),
 						slog.String("zone", zone.Name),
+						slog.Duration("duration", time.Since(now)),
 						slog.String("msg", err.Error()))
+
 					instances <- nil
 					return
 				}
+				c.logger.LogAttrs(ctx, slog.LevelInfo,
+					"finished listing instances in zone",
+					slog.String("project", project),
+					slog.String("zone", zone.Name),
+					slog.Duration("duration", time.Since(now)))
 				instances <- results
 			}(zone)
 			go func(zone *compute.Zone) {
@@ -268,15 +283,12 @@ func ListDisks(project string, zone string, service *compute.Service) ([]*comput
 func ListInstancesInZone(projectID, zone string, c *compute.Service) ([]*MachineSpec, error) {
 	var allInstances []*MachineSpec
 	var nextPageToken string
-	log.Printf("Listing instances for project %s in zone %s", projectID, zone)
-	now := time.Now()
 
 	for {
 		instances, err := c.Instances.List(projectID, zone).
 			PageToken(nextPageToken).
 			Do()
 		if err != nil {
-			log.Printf("Error listing instances in zone %s: %s", zone, err)
 			return nil, fmt.Errorf("%w: %s", ErrListInstances, err.Error())
 		}
 		for _, instance := range instances.Items {
@@ -287,7 +299,5 @@ func ListInstancesInZone(projectID, zone string, c *compute.Service) ([]*Machine
 			break
 		}
 	}
-	log.Printf("Finished listing instances in zone %s in %s", zone, time.Since(now))
-
 	return allInstances, nil
 }
