@@ -11,8 +11,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v5"
-	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
 
 	"github.com/Azure/go-autorest/autorest/to"
 )
@@ -258,11 +259,6 @@ func (m *MachineStore) getMachineTypesByLocation(ctx context.Context, location s
 	}
 
 	return nil
-}
-
-func (m *MachineStore) CheckReadiness() bool {
-	// TODO - implement
-	return true
 }
 
 func (m *MachineStore) GetListOfVmsForSubscription() []*VirtualMachineInfo {

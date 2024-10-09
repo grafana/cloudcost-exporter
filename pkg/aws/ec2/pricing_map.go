@@ -276,16 +276,6 @@ func (spm *StoragePricingMap) GetPriceForVolumeType(region string, volumeType st
 	return spm.Regions[region].Storage[volumeType] * float64(size) / 30 / 24, nil
 }
 
-func (cpm *ComputePricingMap) CheckReadiness() bool {
-	// TODO - implement
-	return true
-}
-
-func (spm *StoragePricingMap) CheckReadiness() bool {
-	// TODO - implement
-	return true
-}
-
 // InstanceAttributes represents ec2 instance attributes that are pulled from AWS api's describing instances.
 // It's specifically pulled out of productTerm to enable usage during tests.
 type InstanceAttributes struct {

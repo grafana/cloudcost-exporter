@@ -276,11 +276,6 @@ func (s *BillingData) AddMetricGroup(region string, component string, group type
 	componentsMap.UnitCost = unitCostForComponent(component, componentsMap)
 }
 
-func (c *Collector) CheckReadiness() bool {
-	// TODO - implement
-	return true
-}
-
 // getBillingData is responsible for making the API call to the AWS Cost Explorer API and parsing the response
 // into a S3BillingData struct
 func getBillingData(client costexplorer.CostExplorer, startDate time.Time, endDate time.Time, m Metrics) (*BillingData, error) {

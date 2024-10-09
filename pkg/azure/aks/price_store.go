@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"github.com/Azure/go-autorest/autorest/to"
-	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
 	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
+
+	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
 
 	"gopkg.in/matryer/try.v1"
 )
@@ -89,11 +90,6 @@ func NewPricingStore(ctx context.Context, parentLogger *slog.Logger, azClientWra
 	go p.PopulatePriceStore(ctx)
 
 	return p
-}
-
-func (p *PriceStore) CheckReadiness() bool {
-	// TODO - implement
-	return true
 }
 
 func (p *PriceStore) getPriceBreakdownFromVmInfo(vmInfo *VirtualMachineInfo, price float64) *MachinePrices {

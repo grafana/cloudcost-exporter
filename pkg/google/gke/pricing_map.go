@@ -132,11 +132,6 @@ func NewComputePricingMap() *PricingMap {
 	}
 }
 
-func (pm *PricingMap) CheckReadiness() bool {
-	// TODO - implement locking on the pricing map
-	return true
-}
-
 // FamilyPricing is a map where the key is the family and the value is the price tiers
 type FamilyPricing struct {
 	Family map[string]*PriceTiers
