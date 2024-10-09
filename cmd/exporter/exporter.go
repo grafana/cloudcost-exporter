@@ -102,15 +102,8 @@ func setupLogger(level string, output string, logtype string) *slog.Logger {
 func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, log *slog.Logger) error {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path))                // landing page
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) { // readiness probe
-		if !csp.CheckReadiness() {
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprint(w, "not ready to serve traffic")
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
+	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path)) // landing page
+
 	registryHandler, err := createPromRegistryHandler(csp) // prom metrics handler
 	if err != nil {
 		return err

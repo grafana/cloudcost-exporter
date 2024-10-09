@@ -5,7 +5,6 @@
 //
 //	mockgen -source=pkg/azure/azureClientWrapper/azureClientWrapper.go -destination mocks/pkg/azure/azureClientWrapper/azureClientWrapper.go
 //
-
 // Package mock_azureClientWrapper is a generated GoMock package.
 package mock_azureClientWrapper
 

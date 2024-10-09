@@ -14,7 +14,6 @@ type Registry interface {
 
 type Collector interface {
 	Register(r Registry) error
-	CheckReadiness() bool
 	CollectMetrics(chan<- prometheus.Metric) float64
 	Collect(chan<- prometheus.Metric) error
 	Describe(chan<- *prometheus.Desc) error
@@ -23,6 +22,5 @@ type Collector interface {
 
 type Provider interface {
 	prometheus.Collector
-	CheckReadiness() bool
 	RegisterCollectors(r Registry) error
 }

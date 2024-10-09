@@ -184,15 +184,6 @@ func (a *Azure) Describe(ch chan<- *prometheus.Desc) {
 	}
 }
 
-func (a *Azure) CheckReadiness() bool {
-	for _, c := range a.collectors {
-		if !c.CheckReadiness() {
-			return false
-		}
-	}
-	return true
-}
-
 func (a *Azure) Collect(ch chan<- prometheus.Metric) {
 	// TODO - implement collector context
 	_, cancel := context.WithTimeout(a.context, a.collectorTimeout)
