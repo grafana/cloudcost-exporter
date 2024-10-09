@@ -248,13 +248,13 @@ func Test_UseStatus(t *testing.T) {
 	}{
 		"Disk with no users returns idle": {
 			disk: NewDisk(&computev1.Disk{}, ""),
-			want: "idle",
+			want: idleDisk,
 		},
 		"Disk with users returns in-use": {
 			disk: NewDisk(&computev1.Disk{
 				Users: []string{"node-1", "node-2"},
 			}, ""),
-			want: "in-use",
+			want: inUseDisk,
 		},
 	}
 	for name, test := range tests {

@@ -14,6 +14,8 @@ const (
 	pvcNamespaceShortKey = "kubernetes.io-created-for/pvc-namespace"
 	pvNameKey            = "kubernetes.io/created-for/pv/name"
 	pvNameShortKey       = "kubernetes.io-created-for/pv-name"
+	idleDisk             = "idle"
+	inUseDisk            = "in-use"
 )
 
 type Disk struct {
@@ -129,8 +131,8 @@ func (d Disk) DiskType() string {
 
 func (d Disk) UseStatus() string {
 	if len(d.users) == 0 {
-		return "idle"
+		return idleDisk
 	}
 
-	return "in-use"
+	return inUseDisk
 }
