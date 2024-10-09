@@ -364,11 +364,6 @@ func (c *Collector) emitMetricsFromVolumesChannel(volumesCh chan []ec2Types.Volu
 	}
 }
 
-func (c *Collector) CheckReadiness() bool {
-	// TODO add storagePricingMap to the readiness check
-	return c.computePricingMap.CheckReadiness()
-}
-
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- InstanceCPUHourlyCostDesc
 	ch <- InstanceMemoryHourlyCostDesc

@@ -177,11 +177,6 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	return nil
 }
 
-func (c *Collector) CheckReadiness() bool {
-	// TODO - implement
-	return true
-}
-
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	c.CollectMetrics(ch)
 	return nil

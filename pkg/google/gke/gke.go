@@ -69,11 +69,6 @@ func (c *Collector) Register(_ provider.Registry) error {
 	return nil
 }
 
-func (c *Collector) CheckReadiness() bool {
-	// TODO - implement
-	return true
-}
-
 func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	err := c.Collect(ch)
 	if err != nil {

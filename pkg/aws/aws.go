@@ -227,15 +227,6 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	providerScrapesTotalCounter.WithLabelValues(subsystem).Inc()
 }
 
-func (a *AWS) CheckReadiness() bool {
-	for _, c := range a.collectors {
-		if !c.CheckReadiness() {
-			return false
-		}
-	}
-	return true
-}
-
 func newEc2Client(region, profile string) (*ec2.Client, error) {
 	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
 	options = append(options, awsconfig.WithRegion(region))

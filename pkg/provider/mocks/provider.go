@@ -5,7 +5,6 @@
 //
 //	mockgen -source=pkg/provider/provider.go -destination pkg/provider/mocks/provider.go
 //
-
 // Package mock_provider is a generated GoMock package.
 package mock_provider
 
@@ -147,20 +146,6 @@ func (m *MockCollector) EXPECT() *MockCollectorMockRecorder {
 	return m.recorder
 }
 
-// CheckReadiness mocks base method.
-func (m *MockCollector) CheckReadiness() bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CheckReadiness")
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// CheckReadiness indicates an expected call of CheckReadiness.
-func (mr *MockCollectorMockRecorder) CheckReadiness() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckReadiness", reflect.TypeOf((*MockCollector)(nil).CheckReadiness))
-}
-
 // Collect mocks base method.
 func (m *MockCollector) Collect(arg0 chan<- prometheus.Metric) error {
 	m.ctrl.T.Helper()
@@ -252,20 +237,6 @@ func NewMockProvider(ctrl *gomock.Controller) *MockProvider {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockProvider) EXPECT() *MockProviderMockRecorder {
 	return m.recorder
-}
-
-// CheckReadiness mocks base method.
-func (m *MockProvider) CheckReadiness() bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CheckReadiness")
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// CheckReadiness indicates an expected call of CheckReadiness.
-func (mr *MockProviderMockRecorder) CheckReadiness() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckReadiness", reflect.TypeOf((*MockProvider)(nil).CheckReadiness))
 }
 
 // Collect mocks base method.
