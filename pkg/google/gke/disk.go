@@ -26,6 +26,7 @@ type Disk struct {
 	description map[string]string
 	diskType    string // type is a reserved word, which is why we're using diskType
 	Size        int64
+	users       []string
 }
 
 func NewDisk(disk *compute.Disk, project string) *Disk {
@@ -39,6 +40,7 @@ func NewDisk(disk *compute.Disk, project string) *Disk {
 		labels:      disk.Labels,
 		description: make(map[string]string),
 		Size:        disk.SizeGb,
+		users:       disk.Users,
 	}
 	err := extractLabelsFromDesc(disk.Description, d.description)
 	if err != nil {
@@ -123,4 +125,12 @@ func (d Disk) DiskType() string {
 		return "boot_disk"
 	}
 	return "persistent_volume"
+}
+
+func (d Disk) UseStatus() string {
+	if len(d.users) == 0 {
+		return "idle"
+	}
+
+	return "in-use"
 }
