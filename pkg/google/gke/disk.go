@@ -129,6 +129,13 @@ func (d Disk) DiskType() string {
 	return "persistent_volume"
 }
 
+// UseStatus will return two constant strings to tell apart disks that are sitting idle from those that are mounted to a pod
+// It's named UseStatus and not just Status because the GCP API already has a field Status that holds a different concept that
+// we don't want to overwrite. From their docs:
+// Status: [Output Only] The status of disk creation. - CREATING: Disk is
+// provisioning. - RESTORING: Source data is being copied into the disk. -
+// FAILED: Disk creation failed. - READY: Disk is ready for use. - DELETING:
+// Disk is deleting. UNAVAILABLE - Disk is currently unavailable and cannot be accessed,
 func (d Disk) UseStatus() string {
 	if len(d.users) == 0 {
 		return idleDisk
