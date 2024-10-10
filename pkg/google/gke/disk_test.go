@@ -240,3 +240,28 @@ func Test_DiskType(t *testing.T) {
 		})
 	}
 }
+
+func Test_UseStatus(t *testing.T) {
+	tests := map[string]struct {
+		disk *Disk
+		want string
+	}{
+		"Disk with no users returns idle": {
+			disk: NewDisk(&computev1.Disk{}, ""),
+			want: idleDisk,
+		},
+		"Disk with users returns in-use": {
+			disk: NewDisk(&computev1.Disk{
+				Users: []string{"node-1", "node-2"},
+			}, ""),
+			want: inUseDisk,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := test.disk.UseStatus(); got != test.want {
+				t.Errorf("UseStatus() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}

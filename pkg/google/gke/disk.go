@@ -14,6 +14,8 @@ const (
 	pvcNamespaceShortKey = "kubernetes.io-created-for/pvc-namespace"
 	pvNameKey            = "kubernetes.io/created-for/pv/name"
 	pvNameShortKey       = "kubernetes.io-created-for/pv-name"
+	idleDisk             = "idle"
+	inUseDisk            = "in-use"
 )
 
 type Disk struct {
@@ -26,6 +28,7 @@ type Disk struct {
 	description map[string]string
 	diskType    string // type is a reserved word, which is why we're using diskType
 	Size        int64
+	users       []string
 }
 
 func NewDisk(disk *compute.Disk, project string) *Disk {
@@ -39,6 +42,7 @@ func NewDisk(disk *compute.Disk, project string) *Disk {
 		labels:      disk.Labels,
 		description: make(map[string]string),
 		Size:        disk.SizeGb,
+		users:       disk.Users,
 	}
 	err := extractLabelsFromDesc(disk.Description, d.description)
 	if err != nil {
@@ -123,4 +127,19 @@ func (d Disk) DiskType() string {
 		return "boot_disk"
 	}
 	return "persistent_volume"
+}
+
+// UseStatus will return two constant strings to tell apart disks that are sitting idle from those that are mounted to a pod
+// It's named UseStatus and not just Status because the GCP API already has a field Status that holds a different concept that
+// we don't want to overwrite. From their docs:
+// Status: [Output Only] The status of disk creation. - CREATING: Disk is
+// provisioning. - RESTORING: Source data is being copied into the disk. -
+// FAILED: Disk creation failed. - READY: Disk is ready for use. - DELETING:
+// Disk is deleting. UNAVAILABLE - Disk is currently unavailable and cannot be accessed,
+func (d Disk) UseStatus() string {
+	if len(d.users) == 0 {
+		return idleDisk
+	}
+
+	return inUseDisk
 }

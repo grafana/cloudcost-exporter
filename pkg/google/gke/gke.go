@@ -40,7 +40,7 @@ var (
 	persistentVolumeHourlyCostDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "persistent_volume_usd_per_hour"),
 		"The cost of a GKE Persistent Volume in USD.",
-		[]string{"cluster_name", "namespace", "persistentvolume", "region", "project", "storage_class", "disk_type"},
+		[]string{"cluster_name", "namespace", "persistentvolume", "region", "project", "storage_class", "disk_type", "use_status"},
 		nil,
 	)
 )
@@ -193,6 +193,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					d.Project,
 					d.StorageClass(),
 					d.DiskType(),
+					d.UseStatus(),
 				}
 
 				price, err := c.PricingMap.GetCostOfStorage(d.Region(), d.StorageClass())
