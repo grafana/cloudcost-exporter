@@ -26,7 +26,7 @@ require (
 	gomodules.xyz/azure-retail-prices-sdk-for-go v0.0.2
 	google.golang.org/api v0.199.0
 	google.golang.org/genproto v0.0.0-20240903143218-8af14fe29dc1
-	google.golang.org/grpc v1.67.0
+	google.golang.org/grpc v1.67.1
 	gopkg.in/matryer/try.v1 v1.0.0-20150601225556-312d2599e12e
 )
 
