@@ -145,6 +145,13 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				clusterName := instance.GetClusterName()
 				// We skip instances that do not have a clusterName because they are not associated with an GKE cluster
 				if clusterName == "" {
+					c.logger.LogAttrs(ctx,
+						slog.LevelDebug,
+						"instance does not have a clustername",
+						slog.String("region", instance.Region),
+						slog.String("machine_type", instance.MachineType),
+						slog.String("project", project),
+					)
 					continue
 				}
 				labelValues := []string{
@@ -158,7 +165,16 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				}
 				cpuCost, ramCost, err := c.PricingMap.GetCostOfInstance(instance)
 				if err != nil {
-					return err
+					// Log out the error and continue processing nodes
+					// TODO(@pokom): Should we set sane defaults here to emit _something_?
+					c.logger.LogAttrs(ctx,
+						slog.LevelError,
+						err.Error(),
+						slog.String("machine_type", instance.MachineType),
+						slog.String("region", instance.Region),
+						slog.String("project", project),
+					)
+					continue
 				}
 				ch <- prometheus.MustNewConstMetric(
 					gkeNodeCPUHourlyCostDesc,
@@ -198,6 +214,16 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 
 				price, err := c.PricingMap.GetCostOfStorage(d.Region(), d.StorageClass())
 				if err != nil {
+					c.logger.LogAttrs(ctx,
+						slog.LevelError,
+						err.Error(),
+						slog.String("disk_name", disk.Name),
+						slog.String("project", project),
+						slog.String("region", d.Region()),
+						slog.String("cluster_name", d.Cluster),
+						slog.String("storage_class", d.StorageClass()),
+					)
+
 					fmt.Printf("%s error getting cost of storage: %v\n", disk.Name, err)
 					continue
 				}
