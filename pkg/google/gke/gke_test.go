@@ -382,6 +382,19 @@ func TestCollector_Collect(t *testing.T) {
 								},
 							},
 							{
+								// Add in an instance that does not have a machine type that would exist in the pricing map.
+								// This test replicates and fixes https://github.com/grafana/cloudcost-exporter/issues/335
+								Name:        "test-n1-spot",
+								MachineType: "abc/n8-slim",
+								Zone:        "testing/us-central1-a",
+								Scheduling: &computev1.Scheduling{
+									ProvisioningModel: "SPOT",
+								},
+								Labels: map[string]string{
+									GkeClusterLabel: "test",
+								},
+							},
+							{
 								Name:        "test-n2-us-east1",
 								MachineType: "abc/n2-slim",
 								Zone:        "testing/us-east1-a",
