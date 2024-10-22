@@ -223,8 +223,6 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 						slog.String("cluster_name", d.Cluster),
 						slog.String("storage_class", d.StorageClass()),
 					)
-
-					fmt.Printf("%s error getting cost of storage: %v\n", disk.Name, err)
 					continue
 				}
 				ch <- prometheus.MustNewConstMetric(
