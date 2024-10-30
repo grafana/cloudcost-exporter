@@ -31,7 +31,6 @@ func TestGenerateDesc(t *testing.T) {
 	for _, label := range labels {
 		if !strings.Contains(desc.String(), label) {
 			t.Errorf("Expected label %s in desc, but got %s", label, desc.String())
-
 		}
 	}
 }
