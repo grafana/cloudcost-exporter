@@ -1,8 +1,6 @@
 package utils
 
-
 import (
-	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"strings"
 	"testing"
 
@@ -16,7 +14,7 @@ func TestGenerateDesc(t *testing.T) {
 	description := "This is a test description"
 	labels := []string{"label1", "label2"}
 
-	desc := utils.GenerateDesc(prefix, subsystem, suffix, description, labels)
+	desc := GenerateDesc(prefix, subsystem, suffix, description, labels)
 
 	// Expected values
 	expectedFQName := prometheus.BuildFQName(prefix, subsystem, suffix)

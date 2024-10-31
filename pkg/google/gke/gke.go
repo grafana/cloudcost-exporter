@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"github.com/prometheus/client_golang/prometheus"

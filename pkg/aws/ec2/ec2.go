@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"log/slog"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/prometheus/client_golang/prometheus"

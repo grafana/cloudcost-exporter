@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"log/slog"
 	"time"
+
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/prometheus/client_golang/prometheus"
