@@ -28,7 +28,7 @@ var (
 
 	spotRegex        = `(?P<spot>Spot Preemptible )`
 	machineTypeRegex = `(?P<machineType>\w{1,3})`
-	amd              = `(?P<amd> AMD)`
+	chipset          = `(?P<chipset> (Arm|AMD))` // note the space before core, it _must_ be set
 	n1Suffix         = `(?: Predefined)`
 	resource         = `(?P<resource>Core|Ram)`
 	regionRegex      = `\w+(?: \w+){0,2}`
@@ -38,7 +38,7 @@ var (
 		machineTypeRegex,
 		computeOptimized,
 		n1Suffix,
-		amd,
+		chipset,
 		resource,
 		regionRegex)
 	reOnDemand = regexp.MustCompile(onDemandString)
@@ -208,7 +208,6 @@ func (pm *PricingMap) Populate(ctx context.Context, billingService *billingv1.Cl
 
 	for _, sku := range skus {
 		rawData, err := getDataFromSku(sku)
-
 		if errors.Is(err, ErrSkuNotRelevant) {
 			continue
 		}
@@ -288,7 +287,6 @@ func GeneratePricingMap(skus []*billingpb.Sku) (*PricingMap, error) {
 	pricingMap := NewComputePricingMap()
 	for _, sku := range skus {
 		rawData, err := getDataFromSku(sku)
-
 		if errors.Is(err, ErrSkuNotRelevant) {
 			continue
 		}

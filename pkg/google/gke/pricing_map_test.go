@@ -239,6 +239,126 @@ func TestGeneratePricingMap(t *testing.T) {
 			},
 		},
 		{
+			name: "spot cpu c4a",
+			skus: []*billingpb.Sku{{
+				Description:    "Spot Preemptible C4A Arm Instance Core running in Belgium",
+				ServiceRegions: []string{"europe-west1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &PricingMap{
+				Compute: map[string]*FamilyPricing{
+					"europe-west1": {
+						Family: map[string]*PriceTiers{
+							"c4a": {
+								Spot: Prices{
+									Cpu: 1,
+								},
+							},
+						},
+					},
+				},
+				Storage: map[string]*StoragePricing{},
+			},
+		},
+		{
+			name: "spot c4a ram",
+			skus: []*billingpb.Sku{{
+				Description:    "Spot Preemptible C4A Arm Instance Ram running in Belgium",
+				ServiceRegions: []string{"europe-west1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &PricingMap{
+				Compute: map[string]*FamilyPricing{
+					"europe-west1": {
+						Family: map[string]*PriceTiers{
+							"c4a": {
+								Spot: Prices{
+									Ram: 1,
+								},
+							},
+						},
+					},
+				},
+				Storage: map[string]*StoragePricing{},
+			},
+		},
+		{
+			name: "on-demand cpu c4a",
+			skus: []*billingpb.Sku{{
+				Description:    "C4A Arm Instance Core running in Belgium",
+				ServiceRegions: []string{"europe-west1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &PricingMap{
+				Compute: map[string]*FamilyPricing{
+					"europe-west1": {
+						Family: map[string]*PriceTiers{
+							"c4a": {
+								OnDemand: Prices{
+									Cpu: 1,
+								},
+							},
+						},
+					},
+				},
+				Storage: map[string]*StoragePricing{},
+			},
+		},
+		{
+			name: "c4a ram",
+			skus: []*billingpb.Sku{{
+				Description:    "C4A Arm Instance Ram running in Belgium",
+				ServiceRegions: []string{"europe-west1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &PricingMap{
+				Compute: map[string]*FamilyPricing{
+					"europe-west1": {
+						Family: map[string]*PriceTiers{
+							"c4a": {
+								OnDemand: Prices{
+									Ram: 1,
+								},
+							},
+						},
+					},
+				},
+				Storage: map[string]*StoragePricing{},
+			},
+		},
+		{
 			name: "on-demand ram",
 			skus: []*billingpb.Sku{{
 				Description:    "G2 Instance Ram running in Belgium",
