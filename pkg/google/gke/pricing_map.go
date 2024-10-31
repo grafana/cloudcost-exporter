@@ -208,9 +208,6 @@ func (pm *PricingMap) Populate(ctx context.Context, billingService *billingv1.Cl
 
 	for _, sku := range skus {
 		rawData, err := getDataFromSku(sku)
-		if strings.Contains(sku.Description, "C4A") {
-			fmt.Printf("%v", sku)
-		}
 		if errors.Is(err, ErrSkuNotRelevant) {
 			continue
 		}
