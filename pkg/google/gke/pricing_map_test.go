@@ -546,7 +546,7 @@ func TestGeneratePricingMap(t *testing.T) {
 		{
 			name: "HyperDisk Pricing",
 			skus: []*billingpb.Sku{{
-				Description:    "Hyperdisk PD Capacity",
+				Description:    "Hyperdisk Balanced Capacity",
 				Category:       &billingpb.Category{ResourceFamily: "Storage"},
 				ServiceRegions: []string{"europe-west1"},
 				PricingInfo: []*billingpb.PricingInfo{{
