@@ -278,7 +278,7 @@ func (pm *PricingMap) Populate(ctx context.Context, billingService *billingv1.Cl
 					continue
 				}
 				// Switch statement must go here to handle hyperdisk cases, otherwise what's happening is
-				// The four dimenions get ignored. There is a sku for:
+				// The four dimensions get ignored. There is a sku for:
 				// 1. Standard IOPS( Hyperdisk Balanced Storage Pools Standard IOPS - Oregon)
 				// 2. Capacity (Hyperdisk Balanced Capacity in Milan)
 				// 3. Throughput (Hyperdisk Balanced Throughput in Columbus)
