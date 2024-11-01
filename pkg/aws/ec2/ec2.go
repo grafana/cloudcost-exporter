@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
+
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
@@ -32,29 +34,33 @@ var (
 )
 
 var (
-	InstanceCPUHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
+	InstanceCPUHourlyCostDesc = utils.GenerateDesc(
+		cloudcostexporter.MetricPrefix,
+		subsystem,
+		utils.InstanceCPUCostSuffix,
 		"The cpu cost a ec2 instance in USD/(core*h)",
 		[]string{"instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier"},
-		nil,
 	)
-	InstanceMemoryHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
+	InstanceMemoryHourlyCostDesc = utils.GenerateDesc(
+		cloudcostexporter.MetricPrefix,
+		subsystem,
+		utils.InstanceMemoryCostSuffix,
 		"The memory cost of a ec2 instance in USD/(GiB*h)",
 		[]string{"instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier"},
-		nil,
 	)
-	InstanceTotalHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_total_usd_per_hour"),
+	InstanceTotalHourlyCostDesc = utils.GenerateDesc(
+		cloudcostexporter.MetricPrefix,
+		subsystem,
+		utils.InstanceTotalCostSuffix,
 		"The total cost of the ec2 instance in USD/h",
 		[]string{"instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier"},
-		nil,
 	)
-	PersistentVolumeHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "persistent_volume_usd_per_hour"),
+	PersistentVolumeHourlyCostDesc = utils.GenerateDesc(
+		cloudcostexporter.MetricPrefix,
+		subsystem,
+		utils.PersistentVolumeCostSuffix,
 		"The cost of an AWS EBS Volume in USD/h.",
 		[]string{"persistentvolume", "region", "availability_zone", "disk", "type", "size_gib", "state"},
-		nil,
 	)
 )
 

@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
+
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/compute/v1"
@@ -22,26 +24,28 @@ const (
 )
 
 var (
-	gkeNodeMemoryHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_memory_usd_per_gib_hour"),
-
-		"The cpu cost a GKE Instance in USD/(core*h)",
-		// Cannot simply do cluster because many metric scrapers will add a label for cluster and would interfere with the label we want to add
-		[]string{"cluster_name", "instance", "region", "family", "machine_type", "project", "price_tier"},
-		nil,
-	)
-	gkeNodeCPUHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "instance_cpu_usd_per_core_hour"),
+	gkeNodeMemoryHourlyCostDesc = utils.GenerateDesc(
+		cloudcostexporter.MetricPrefix,
+		subsystem,
+		utils.InstanceMemoryCostSuffix,
 		"The memory cost of a GKE Instance in USD/(GiB*h)",
-		// Cannot simply do cluster because many metric scrapers will add a label for cluster and would interfere with the label we want to add
+		// Cannot simply use "cluster" because other metric scrapers may add a label for cluster, which would interfere
 		[]string{"cluster_name", "instance", "region", "family", "machine_type", "project", "price_tier"},
-		nil,
 	)
-	persistentVolumeHourlyCostDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcostexporter.MetricPrefix, subsystem, "persistent_volume_usd_per_hour"),
-		"The cost of a GKE Persistent Volume in USD.",
+	gkeNodeCPUHourlyCostDesc = utils.GenerateDesc(
+		cloudcostexporter.MetricPrefix,
+		subsystem,
+		utils.InstanceCPUCostSuffix,
+		"The CPU cost of a GKE Instance in USD/(core*h)",
+		// Cannot simply use "cluster" because other metric scrapers may add a label for cluster, which would interfere
+		[]string{"cluster_name", "instance", "region", "family", "machine_type", "project", "price_tier"},
+	)
+	persistentVolumeHourlyCostDesc = utils.GenerateDesc(
+		cloudcostexporter.MetricPrefix,
+		subsystem,
+		utils.PersistentVolumeCostSuffix,
+		"The cost of a GKE Persistent Volume in USD/h",
 		[]string{"cluster_name", "namespace", "persistentvolume", "region", "project", "storage_class", "disk_type", "use_status"},
-		nil,
 	)
 )
 
