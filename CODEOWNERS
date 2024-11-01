@@ -1,2 +1,2 @@
-# Default all reviews to be Grafana's Capacity squad
-* @grafana/platform-capacity
+# Default all reviews to be Grafana's Monitoring squad
+* @grafana/platform-monitoring
