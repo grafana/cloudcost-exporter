@@ -107,17 +107,13 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 	}
 }
 
-func TestGeneratePricingMap(t *testing.T) {
+func TestPricingMapParseSkus(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
 		skus               []*billingpb.Sku
 		expectedPricingMap *PricingMap
 		expectedError      error
 	}{
-		{
-			name:          "no skus",
-			expectedError: ErrSkuNotFound,
-		},
 		{
 			name: "empty sku, empty pricing map",
 			skus: []*billingpb.Sku{{}},
@@ -644,13 +640,17 @@ func TestGeneratePricingMap(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			pm, err := GeneratePricingMap(tc.skus)
+			pricingMap := &PricingMap{
+				Compute: make(map[string]*FamilyPricing),
+				Storage: make(map[string]*StoragePricing),
+			}
+			err := pricingMap.ParseSkus(tc.skus)
 			if tc.expectedError != nil {
 				require.EqualError(t, err, tc.expectedError.Error())
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tc.expectedPricingMap, pm)
+			require.Equal(t, tc.expectedPricingMap, pricingMap)
 		})
 	}
 }
