@@ -196,6 +196,8 @@ var (
 	}
 )
 
+// Populate is responsible for collecting skus related to Compute Engine, parsing out the response, and then populating the pricing map
+// with relevant skus.
 func (pm *PricingMap) Populate(ctx context.Context, billingService *billingv1.CloudCatalogClient) error {
 	serviceName, err := billing.GetServiceName(ctx, billingService, "Compute Engine")
 	if err != nil {
@@ -207,6 +209,11 @@ func (pm *PricingMap) Populate(ctx context.Context, billingService *billingv1.Cl
 		return ErrSkuNotFound
 	}
 
+	return pm.ParseSkus(skus)
+}
+
+// ParseSkus accepts a list of skus, parses their content, and updates the pricing map with the appropriate costs.
+func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 	for _, sku := range skus {
 		rawData, err := getDataFromSku(sku)
 		if errors.Is(err, ErrSkuNotRelevant) {
@@ -265,12 +272,12 @@ func (pm *PricingMap) Populate(ctx context.Context, billingService *billingv1.Cl
 						break
 					}
 				}
-				if strings.Contains(data.Description, "Confidential") {
-					log.Printf("Storage class contains Confidential: %s\n%s\n", storageClass, data.Description)
-					continue
-				}
 				if storageClass == "" {
 					log.Printf("Storage class not found for %s. Skipping", data.Description)
+					continue
+				}
+				if strings.Contains(data.Description, "Confidential") {
+					log.Printf("Storage class contains Confidential: %s\n%s\n", storageClass, data.Description)
 					continue
 				}
 				if pm.Storage[data.Region].Storage[storageClass] != 0 {
@@ -291,85 +298,6 @@ func (pm *PricingMap) Populate(ctx context.Context, billingService *billingv1.Cl
 		}
 	}
 	return nil
-}
-
-// Paula: deprecate this function in favour of func (pm *PricingMap) Populate(skus []*billingpb.Sku) (*PricingMap, error)
-func GeneratePricingMap(skus []*billingpb.Sku) (*PricingMap, error) {
-	if len(skus) == 0 {
-		return &PricingMap{}, ErrSkuNotFound
-	}
-	pricingMap := NewComputePricingMap()
-	for _, sku := range skus {
-		rawData, err := getDataFromSku(sku)
-		if errors.Is(err, ErrSkuNotRelevant) {
-			continue
-		}
-		if errors.Is(err, ErrPricingDataIsOff) {
-			continue
-		}
-		if errors.Is(err, ErrSkuNotParsable) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		for _, data := range rawData {
-			switch data.ComputeResource {
-			case Ram, Cpu:
-				if _, ok := pricingMap.Compute[data.Region]; !ok {
-					pricingMap.Compute[data.Region] = NewMachineTypePricing()
-				}
-				if _, ok := pricingMap.Compute[data.Region].Family[data.Description]; !ok {
-					pricingMap.Compute[data.Region].Family[data.Description] = NewPriceTiers()
-				}
-				floatPrice := float64(data.Price) * 1e-9
-				priceTier := pricingMap.Compute[data.Region].Family[data.Description]
-				if data.PriceTier == Spot {
-					if data.ComputeResource == Ram {
-						priceTier.Spot.Ram = floatPrice
-						continue
-					}
-					priceTier.Spot.Cpu = floatPrice
-					continue
-				}
-				if data.ComputeResource == Ram {
-					priceTier.OnDemand.Ram = floatPrice
-					continue
-				}
-				priceTier.OnDemand.Cpu = floatPrice
-			case Storage:
-				// Right now this is somewhat tightly coupled to GKE persistent volumes.
-				// In GKE you can only provision the following classes: https://cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/gce-pd-csi-driver#create_a_storageclass
-				// For extreme disks, we are ignoring the cost of IOPs, which would be a significant cost(could double cost of disk)
-				// TODO(pokom): Add support for other storage classes
-				// TODO(pokom): Add support for IOps operations
-				if _, ok := pricingMap.Storage[data.Region]; !ok {
-					pricingMap.Storage[data.Region] = NewStoragePricing()
-				}
-				storageClass := ""
-				for description, sc := range storageClasses {
-					// We check to see if the description starts with the storage class name
-					// This is primarily because this could return a false positive in cases of Regional storage which
-					// has a similar description.
-					if strings.Index(data.Description, description) == 0 {
-						storageClass = sc
-						// Break to prevent overwritting the storage class
-						break
-					}
-				}
-				if storageClass == "" {
-					log.Printf("Storage class not found for %s. Skipping", data.Description)
-					continue
-				}
-				if pricingMap.Storage[data.Region].Storage[storageClass] != 0 {
-					log.Printf("Storage class %s already exists in region %s", storageClass, data.Region)
-					continue
-				}
-				pricingMap.Storage[data.Region].Storage[storageClass] = float64(data.Price) * 1e-9 / utils.HoursInMonth
-			}
-		}
-	}
-	return pricingMap, nil
 }
 
 var ignoreList = []string{
