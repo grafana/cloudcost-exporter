@@ -188,10 +188,11 @@ func (m PricingMap) GetCostOfStorage(region, storageClass string) (float64, erro
 
 var (
 	storageClasses = map[string]string{
-		"Storage PD Capacity":    "pd-standard",
-		"SSD backed PD Capacity": "pd-ssd",
-		"Balanced PD Capacity":   "pd-balanced",
-		"Extreme PD Capacity":    "pd-extreme",
+		"Storage PD Capacity":         "pd-standard",
+		"SSD backed PD Capacity":      "pd-ssd",
+		"Balanced PD Capacity":        "pd-balanced",
+		"Extreme PD Capacity":         "pd-extreme",
+		"Hyperdisk Balanced Capacity": "hyperdisk-balanced",
 	}
 )
 
@@ -264,6 +265,10 @@ func (pm *PricingMap) Populate(ctx context.Context, billingService *billingv1.Cl
 						break
 					}
 				}
+				if strings.Contains(data.Description, "Confidential") {
+					log.Printf("Storage class contains Confidential: %s\n%s\n", storageClass, data.Description)
+					continue
+				}
 				if storageClass == "" {
 					log.Printf("Storage class not found for %s. Skipping", data.Description)
 					continue
@@ -272,6 +277,15 @@ func (pm *PricingMap) Populate(ctx context.Context, billingService *billingv1.Cl
 					log.Printf("Storage class %s already exists in region %s", storageClass, data.Region)
 					continue
 				}
+				// Switch statement must go here to handle hyperdisk cases, otherwise what's happening is
+				// The four dimensions get ignored. There is a sku for:
+				// 1. Standard IOPS( Hyperdisk Balanced Storage Pools Standard IOPS - Oregon)
+				// 2. Capacity (Hyperdisk Balanced Capacity in Milan)
+				// 3. Throughput (Hyperdisk Balanced Throughput in Columbus)
+				// 4. High Availability Iops(Hyperdisk Balanced High Availability Iops in Mexico)
+				// The current implementation specifically looks for `Hyperdisk Balanced Capacity` to avoid taking the last price that's found
+				// Then there is one variation of hyperdisks that are priced differently:
+				// 1. Storage Pools Advanced Capacity(Hyperdisk Balanced Storage Pools Advanced Capacity - Mexico)
 				pm.Storage[data.Region].Storage[storageClass] = float64(data.Price) * 1e-9 / utils.HoursInMonth
 			}
 		}

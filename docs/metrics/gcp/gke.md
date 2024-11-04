@@ -51,3 +51,17 @@ To map the sku to the disk type, we can use the following mapping:
 - SSD backed PD Capacity -> pd-ssd
 - Balanced PD Capacity -> pd-balanced
 - Extreme PD Capacity -> pd-extreme
+- Hyperdisk Balanced -> hyperdisk-balanced
+
+> [!WARNING]
+> The following storage classes are experimental
+
+## Experimental Storage Costs
+
+Cloudcost Exporter needs to support the following hyperdisk pricing dimensions:
+- [x] provisioned space
+- [ ] Network throughput
+- [ ] IOps
+- [ ] high availability
+
+[#344](https://github.com/grafana/cloudcost-exporter/pull/344) introduced experimental support for provisioned space for [hyperdisk class](https://cloud.google.com/compute/disks-image-pricing#persistentdisk) 

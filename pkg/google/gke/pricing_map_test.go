@@ -544,6 +544,33 @@ func TestGeneratePricingMap(t *testing.T) {
 			},
 		},
 		{
+			name: "HyperDisk Pricing",
+			skus: []*billingpb.Sku{{
+				Description:    "Hyperdisk Balanced Capacity",
+				Category:       &billingpb.Category{ResourceFamily: "Storage"},
+				ServiceRegions: []string{"europe-west1"},
+				PricingInfo: []*billingpb.PricingInfo{{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{{
+							UnitPrice: &money.Money{
+								Nanos: 1e9,
+							},
+						}},
+					},
+				}},
+			}},
+			expectedPricingMap: &PricingMap{
+				Storage: map[string]*StoragePricing{
+					"europe-west1": {
+						Storage: map[string]float64{
+							"hyperdisk-balanced": 1.0 / utils.HoursInMonth,
+						},
+					},
+				},
+				Compute: map[string]*FamilyPricing{},
+			},
+		},
+		{
 			name: "us-east-4 region with many skus",
 			skus: []*billingpb.Sku{{
 				Description:    "SSD backed PD Capacity",
