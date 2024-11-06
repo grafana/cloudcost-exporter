@@ -437,8 +437,10 @@ func TestPricingMapParseSkus(t *testing.T) {
 			expectedPricingMap: &PricingMap{
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
-						Storage: map[string]float64{
-							"pd-standard": 1.0 / utils.HoursInMonth,
+						Storage: map[string]*StoragePrices{
+							"pd-standard": {
+								ProvisionedSpaceGiB: 1.0 / utils.HoursInMonth,
+							},
 						},
 					},
 				},
@@ -464,8 +466,10 @@ func TestPricingMapParseSkus(t *testing.T) {
 			expectedPricingMap: &PricingMap{
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
-						Storage: map[string]float64{
-							"pd-ssd": 1.0 / utils.HoursInMonth,
+						Storage: map[string]*StoragePrices{
+							"pd-ssd": {
+								ProvisionedSpaceGiB: 1.0 / utils.HoursInMonth,
+							},
 						},
 					},
 				},
@@ -504,8 +508,10 @@ func TestPricingMapParseSkus(t *testing.T) {
 			expectedPricingMap: &PricingMap{
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
-						Storage: map[string]float64{
-							"pd-balanced": 1.0 / utils.HoursInMonth,
+						Storage: map[string]*StoragePrices{
+							"pd-balanced": {
+								ProvisionedSpaceGiB: 1.0 / utils.HoursInMonth,
+							},
 						},
 					},
 				},
@@ -531,8 +537,10 @@ func TestPricingMapParseSkus(t *testing.T) {
 			expectedPricingMap: &PricingMap{
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
-						Storage: map[string]float64{
-							"pd-extreme": 1.0 / utils.HoursInMonth,
+						Storage: map[string]*StoragePrices{
+							"pd-extreme": {
+								ProvisionedSpaceGiB: 1.0 / utils.HoursInMonth,
+							},
 						},
 					},
 				},
@@ -558,8 +566,10 @@ func TestPricingMapParseSkus(t *testing.T) {
 			expectedPricingMap: &PricingMap{
 				Storage: map[string]*StoragePricing{
 					"europe-west1": {
-						Storage: map[string]float64{
-							"hyperdisk-balanced": 1.0 / utils.HoursInMonth,
+						Storage: map[string]*StoragePrices{
+							"hyperdisk-balanced": {
+								ProvisionedSpaceGiB: 1.0 / utils.HoursInMonth,
+							},
 						},
 					},
 				},
@@ -600,8 +610,10 @@ func TestPricingMapParseSkus(t *testing.T) {
 			expectedPricingMap: &PricingMap{
 				Storage: map[string]*StoragePricing{
 					"us-east4": {
-						Storage: map[string]float64{
-							"pd-ssd": 187000000 * 1e-9 / utils.HoursInMonth,
+						Storage: map[string]*StoragePrices{
+							"pd-ssd": {
+								ProvisionedSpaceGiB: 187000000 * 1e-9 / utils.HoursInMonth,
+							},
 						},
 					},
 				},
