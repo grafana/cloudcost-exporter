@@ -124,14 +124,6 @@ func NewPricingMap(ctx context.Context, billingService *billingv1.CloudCatalogCl
 	return pm, nil
 }
 
-// NewComputePricingMap returns a new PricingMap in a way that can be used afterwards.
-func NewComputePricingMap() *PricingMap {
-	return &PricingMap{
-		Compute: map[string]*FamilyPricing{},
-		Storage: map[string]*StoragePricing{},
-	}
-}
-
 // FamilyPricing is a map where the key is the family and the value is the price tiers
 type FamilyPricing struct {
 	Family map[string]*PriceTiers
@@ -143,14 +135,20 @@ func NewMachineTypePricing() *FamilyPricing {
 	}
 }
 
+type StoragePrices struct {
+	ProvisionedSpaceGiB float64
+	Throughput          float64
+	IOops               float64
+}
+
 // StoragePricing is a map where the key is the storage type and the value is the price
 type StoragePricing struct {
-	Storage map[string]float64
+	Storage map[string]*StoragePrices
 }
 
 func NewStoragePricing() *StoragePricing {
 	return &StoragePricing{
-		Storage: map[string]float64{},
+		Storage: map[string]*StoragePrices{},
 	}
 }
 
@@ -183,7 +181,7 @@ func (m PricingMap) GetCostOfStorage(region, storageClass string) (float64, erro
 	if _, ok := m.Storage[region].Storage[storageClass]; !ok {
 		return 0, fmt.Errorf("%w: %s", ErrFamilyTypeNotFound, storageClass)
 	}
-	return m.Storage[region].Storage[storageClass], nil
+	return m.Storage[region].Storage[storageClass].ProvisionedSpaceGiB, nil
 }
 
 var (
@@ -280,7 +278,11 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 					log.Printf("Storage class contains Confidential: %s\n%s\n", storageClass, data.Description)
 					continue
 				}
-				if pm.Storage[data.Region].Storage[storageClass] != 0 {
+				// First time seen, need to initialize
+				if pm.Storage[data.Region].Storage[storageClass] == nil {
+					pm.Storage[data.Region].Storage[storageClass] = &StoragePrices{}
+				}
+				if pm.Storage[data.Region].Storage[storageClass].ProvisionedSpaceGiB != 0.0 {
 					log.Printf("Storage class %s already exists in region %s", storageClass, data.Region)
 					continue
 				}
@@ -293,7 +295,7 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 				// The current implementation specifically looks for `Hyperdisk Balanced Capacity` to avoid taking the last price that's found
 				// Then there is one variation of hyperdisks that are priced differently:
 				// 1. Storage Pools Advanced Capacity(Hyperdisk Balanced Storage Pools Advanced Capacity - Mexico)
-				pm.Storage[data.Region].Storage[storageClass] = float64(data.Price) * 1e-9 / utils.HoursInMonth
+				pm.Storage[data.Region].Storage[storageClass].ProvisionedSpaceGiB = float64(data.Price) * 1e-9 / utils.HoursInMonth
 			}
 		}
 	}
