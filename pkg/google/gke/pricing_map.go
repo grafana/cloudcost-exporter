@@ -278,8 +278,8 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 					log.Printf("Storage class contains Confidential: %s\n%s\n", storageClass, data.Description)
 					continue
 				}
-				// First time seen, need to initialize
-				if pm.Storage[data.Region].Storage[storageClass] == nil {
+				// First time seen, need to initialize the StoragePrices for the storageClass
+				if _, ok := pm.Storage[data.Region].Storage[storageClass]; !ok {
 					pm.Storage[data.Region].Storage[storageClass] = &StoragePrices{}
 				}
 				if pm.Storage[data.Region].Storage[storageClass].ProvisionedSpaceGiB != 0.0 {
