@@ -47,3 +47,4 @@ body:
     attributes:
       label: References
       placeholder: |
+        Include a list of references to support the bug.
