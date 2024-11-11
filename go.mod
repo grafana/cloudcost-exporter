@@ -1,6 +1,7 @@
 module github.com/grafana/cloudcost-exporter
 
 go 1.22
+toolchain go1.22.9
 
 require (
 	cloud.google.com/go/billing v1.19.1
@@ -26,7 +27,7 @@ require (
 	gomodules.xyz/azure-retail-prices-sdk-for-go v0.0.2
 	google.golang.org/api v0.204.0
 	google.golang.org/genproto v0.0.0-20241021214115-324edc3d5d38
-	google.golang.org/grpc v1.67.1
+	google.golang.org/grpc v1.68.0
 	gopkg.in/matryer/try.v1 v1.0.0-20150601225556-312d2599e12e
 )
 
