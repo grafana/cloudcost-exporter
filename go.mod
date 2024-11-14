@@ -1,6 +1,7 @@
 module github.com/grafana/cloudcost-exporter
 
-go 1.22
+go 1.22.7
+
 toolchain go1.22.9
 
 require (
