@@ -135,6 +135,8 @@ func NewMachineTypePricing() *FamilyPricing {
 	}
 }
 
+// StoragePrices represents the hourly cost of each dimension relevant to disks. Note that not all disk types
+// are charged for Throughput and IOops
 type StoragePrices struct {
 	ProvisionedSpaceGiB float64
 	Throughput          float64
@@ -171,26 +173,28 @@ func (m PricingMap) GetCostOfInstance(instance *MachineSpec) (float64, float64, 
 	return computePrices.Cpu, computePrices.Ram, nil
 }
 
-func (m PricingMap) GetCostOfStorage(region, storageClass string) (float64, error) {
+// GetCostOfStorage looks for the region and storageClass of the disk and returns a StoragePrices that represents the cost of that disk
+func (m PricingMap) GetCostOfStorage(region, storageClass string) (*StoragePrices, error) {
 	if len(m.Storage) == 0 {
-		return 0, ErrRegionNotFound
+		return nil, ErrRegionNotFound
 	}
 	if _, ok := m.Storage[region]; !ok {
-		return 0, fmt.Errorf("%w: %s", ErrRegionNotFound, region)
+		return nil, fmt.Errorf("%w: %s", ErrRegionNotFound, region)
 	}
 	if _, ok := m.Storage[region].Storage[storageClass]; !ok {
-		return 0, fmt.Errorf("%w: %s", ErrFamilyTypeNotFound, storageClass)
+		return nil, fmt.Errorf("%w: %s", ErrFamilyTypeNotFound, storageClass)
 	}
-	return m.Storage[region].Storage[storageClass].ProvisionedSpaceGiB, nil
+	return m.Storage[region].Storage[storageClass], nil
 }
 
 var (
 	storageClasses = map[string]string{
-		"Storage PD Capacity":         "pd-standard",
-		"SSD backed PD Capacity":      "pd-ssd",
-		"Balanced PD Capacity":        "pd-balanced",
-		"Extreme PD Capacity":         "pd-extreme",
-		"Hyperdisk Balanced Capacity": "hyperdisk-balanced",
+		"Storage PD Capacity":           "pd-standard",
+		"SSD backed PD Capacity":        "pd-ssd",
+		"Balanced PD Capacity":          "pd-balanced",
+		"Extreme PD Capacity":           "pd-extreme",
+		"Hyperdisk Balanced Capacity":   "hyperdisk-balanced",
+		"Hyperdisk Balanced Throughput": "hyerpdisk-balanced",
 	}
 )
 
@@ -285,6 +289,10 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 				if pm.Storage[data.Region].Storage[storageClass].ProvisionedSpaceGiB != 0.0 {
 					log.Printf("Storage class %s already exists in region %s", storageClass, data.Region)
 					continue
+				}
+				if storageClass == "hyperdisk-balanced" {
+					log.Printf("Storage class %s", storageClass)
+					
 				}
 				// Switch statement must go here to handle hyperdisk cases, otherwise what's happening is
 				// The four dimensions get ignored. There is a sku for:

@@ -21,28 +21,32 @@ const (
 type Disk struct {
 	Cluster string
 
-	Project     string
-	name        string // Name of the disk as it appears in the GCP console. Used as a backup if the name can't be extracted from the description
-	zone        string
-	labels      map[string]string
-	description map[string]string
-	diskType    string // type is a reserved word, which is why we're using diskType
-	Size        int64
-	users       []string
+	Project               string
+	name                  string // Name of the disk as it appears in the GCP console. Used as a backup if the name can't be extracted from the description
+	zone                  string
+	labels                map[string]string
+	description           map[string]string
+	diskType              string // type is a reserved word, which is why we're using diskType
+	Size                  int64
+	users                 []string
+	ProvisionedIops       int64
+	ProvisionedThroughput int64
 }
 
 func NewDisk(disk *compute.Disk, project string) *Disk {
 	clusterName := disk.Labels[GkeClusterLabel]
 	d := &Disk{
-		Cluster:     clusterName,
-		Project:     project,
-		name:        disk.Name,
-		zone:        disk.Zone,
-		diskType:    disk.Type,
-		labels:      disk.Labels,
-		description: make(map[string]string),
-		Size:        disk.SizeGb,
-		users:       disk.Users,
+		Cluster:               clusterName,
+		Project:               project,
+		name:                  disk.Name,
+		zone:                  disk.Zone,
+		diskType:              disk.Type,
+		labels:                disk.Labels,
+		description:           make(map[string]string),
+		Size:                  disk.SizeGb,
+		users:                 disk.Users,
+		ProvisionedIops:       disk.ProvisionedIops,
+		ProvisionedThroughput: disk.ProvisionedThroughput,
 	}
 	err := extractLabelsFromDesc(disk.Description, d.description)
 	if err != nil {
@@ -142,4 +146,16 @@ func (d Disk) UseStatus() string {
 	}
 
 	return inUseDisk
+}
+
+// TotalHourlyCost is responsible for calculating how much the disk will cost. TotalHourlyCost takes into account the specific type of
+// disk. Persistent Disks main dimension is provisioned storage. For hyperdisks, TotalHourlyCost will include the costs of
+// Throughput and Iops.
+func (d Disk) TotalHourlyCost(price *StoragePrices) float64 {
+	tc := float64(d.Size) * price.ProvisionedSpaceGiB
+	if strings.Contains(d.StorageClass(), "hyperdisk") {
+		tc += (float64(d.ProvisionedThroughput) * price.Throughput) +
+			(float64(d.ProvisionedIops) * price.IOops)
+	}
+	return tc
 }

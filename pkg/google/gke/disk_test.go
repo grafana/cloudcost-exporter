@@ -3,6 +3,7 @@ package gke
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	computev1 "google.golang.org/api/compute/v1"
 )
@@ -262,6 +263,44 @@ func Test_UseStatus(t *testing.T) {
 			if got := test.disk.UseStatus(); got != test.want {
 				t.Errorf("UseStatus() = %v, want %v", got, test.want)
 			}
+		})
+	}
+}
+
+func TestDisk_TotalHourlyCost(t *testing.T) {
+	tests := map[string]struct {
+		disk   *Disk
+		prices *StoragePrices
+		want   float64
+	}{
+		"Disk with only provisioned space costs": {
+			disk: &Disk{
+				Size: 100,
+			},
+			prices: &StoragePrices{
+				1,
+				0,
+				0,
+			},
+			want: 100,
+		},
+		"Hyperdisk Disk with only provisioned space costs": {
+			disk: &Disk{
+				Size:                  100,
+				diskType:              "a/b/hyperdisk-balanced",
+				ProvisionedThroughput: 1000,
+			},
+			prices: &StoragePrices{
+				1,
+				1,
+				0,
+			},
+			want: 100,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, tt.disk.TotalHourlyCost(tt.prices), "TotalHourlyCost(%v)", tt.want)
 		})
 	}
 }

@@ -168,6 +168,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					instance.PriceTier,
 				}
 				cpuCost, ramCost, err := c.PricingMap.GetCostOfInstance(instance)
+
 				if err != nil {
 					// Log out the error and continue processing nodes
 					// TODO(@pokom): Should we set sane defaults here to emit _something_?
@@ -232,7 +233,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				ch <- prometheus.MustNewConstMetric(
 					persistentVolumeHourlyCostDesc,
 					prometheus.GaugeValue,
-					float64(d.Size)*price,
+					d.TotalHourlyCost(price),
 					labelValues...,
 				)
 			}
