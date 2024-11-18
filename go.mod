@@ -6,7 +6,7 @@ toolchain go1.22.9
 
 require (
 	cloud.google.com/go/billing v1.19.1
-	cloud.google.com/go/compute v1.28.3
+	cloud.google.com/go/compute v1.29.0
 	cloud.google.com/go/storage v1.46.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.8.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4 v4.2.1
