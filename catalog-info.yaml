@@ -4,7 +4,6 @@ metadata:
   name: cloudcost-exporter
   title: Cloudcost Exporter
   annotations:
-    backstage.io/techdocs-ref: dir:./docs
     github.com/project-slug: grafana/cloudcost-exporter
   links:
     - title: Slack Channel
