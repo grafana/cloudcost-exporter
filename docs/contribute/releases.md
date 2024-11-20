@@ -29,3 +29,17 @@ Creating and pushing a new tag will trigger the `goreleaser` workflow in [./.git
 The configuration for `goreleaser` itself can be found in [./.goreleaser.yaml](https://github.com/grafana/cloudcost-exporter/blob/main/.goreleaser.yaml).
 
 See https://github.com/grafana/cloudcost-exporter/issues/18 for progress on our path to automating releases.
+
+## GitHub Actions
+
+When adding or upgrading a GitHub Actions `actions`, please set the full length commit SHA instead of the version:
+
+```
+jobs:
+  myjob:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: foo/baraction@abcdef1234567890abcdef1234567890abcdef12 # v1.2.3
+```
+
+Granular control of the version helps with security since commit SHAs are immutable.
