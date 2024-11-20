@@ -39,21 +39,21 @@ var (
 		subsystem,
 		utils.InstanceCPUCostSuffix,
 		"The cpu cost a ec2 instance in USD/(core*h)",
-		[]string{"instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier"},
+		[]string{"instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier", "architecture"},
 	)
 	InstanceMemoryHourlyCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		utils.InstanceMemoryCostSuffix,
 		"The memory cost of a ec2 instance in USD/(GiB*h)",
-		[]string{"instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier"},
+		[]string{"instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier", "architecture"},
 	)
 	InstanceTotalHourlyCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		utils.InstanceTotalCostSuffix,
 		"The total cost of the ec2 instance in USD/h",
-		[]string{"instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier"},
+		[]string{"instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier", "architecture"},
 	)
 	PersistentVolumeHourlyCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
@@ -323,6 +323,7 @@ func (c *Collector) emitMetricsFromReservationsChannel(reservationsCh chan []ec2
 					string(instance.InstanceType),
 					clusterName,
 					pricetier,
+					string(instance.Architecture),
 				}
 				ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.Cpu, labelValues...)
 				ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.Ram, labelValues...)
@@ -364,7 +365,6 @@ func (c *Collector) emitMetricsFromVolumesChannel(volumesCh chan []ec2Types.Volu
 				strconv.FormatInt(int64(*volume.Size), 10),
 				string(volume.State),
 			}
-
 			ch <- prometheus.MustNewConstMetric(PersistentVolumeHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
 		}
 	}
