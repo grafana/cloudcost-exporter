@@ -11,6 +11,6 @@ metadata:
   description: |
     Prometheus Exporter for Cloud Provider agnostic cost metrics
 spec:
-  type: tool
+  type: service
   owner: group:default/platform-monitoring
   lifecycle: production
