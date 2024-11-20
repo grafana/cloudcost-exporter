@@ -1,0 +1,31 @@
+# Make sure to check the documentation at https://goreleaser.com
+
+builds:
+  - id: cloudcost-explorer
+    binary: cloudcost-explorer
+    main: ./cmd/exporter/exporter.go
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+     - amd64
+     - arm64
+
+archives:
+  - format: tar.gz
+    # this name template makes the OS and Arch compatible with the results of uname.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+checksum:
+  name_template: 'checksums.txt'
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs'
+      - '^chore(deps):'
