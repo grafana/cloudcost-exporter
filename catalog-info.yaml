@@ -1,0 +1,18 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: cloudcost-exporter
+  title: Cloudcost Exporter
+  annotations:
+    github.com/project-slug: grafana/cloudcost-exporter
+  links:
+    - title: Community Slack Channel
+      url: https://grafana.slack.com/archives/C064EMEB4E6
+    - title: Internal Slack Channel
+      url: https://raintank-corp.slack.com/archives/C067MGQ98AW
+  description: |
+    Prometheus Exporter for Cloud Provider agnostic cost metrics
+spec:
+  type: service
+  owner: group:default/platform-monitoring
+  lifecycle: production
