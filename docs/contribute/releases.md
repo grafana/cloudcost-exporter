@@ -14,7 +14,7 @@ Then increment the relevant version label.
 
 For instance, let's say we're on `v0.2.2` and determined the next release is a minor change.
 The next version would then be `v0.3.0`.
-Execute the follow command to generate the tag and push it:
+Execute the following command to generate the tag and push it:
 
 ```sh
 git tag v0.3.0
