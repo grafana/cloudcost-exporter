@@ -1,10 +1,11 @@
 # Make sure to check the documentation at https://goreleaser.com
 
+project_name: cloudcost-explorer
 builds:
   - id: cloudcost-explorer
     binary: cloudcost-explorer
     main: ./cmd/exporter/exporter.go
-  - env:
+    env:
       - CGO_ENABLED=0
     goos:
       - linux
