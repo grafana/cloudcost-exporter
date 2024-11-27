@@ -1,5 +1,7 @@
 # Make sure to check the documentation at https://goreleaser.com
 
+version: 2
+
 project_name: cloudcost-explorer
 builds:
   - id: cloudcost-explorer
