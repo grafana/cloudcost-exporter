@@ -1,4 +1,4 @@
-# cloudcost-exporter Helm chart
+# Cloud Cost Exporter Helm chart
 
 ## Usage
 
