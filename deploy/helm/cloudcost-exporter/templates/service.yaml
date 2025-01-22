@@ -9,7 +9,7 @@ spec:
   ports:
     - port: {{ .Values.service.port }}
       targetPort: http
-      protocol: TCP
+      protocol: {{ .Values.service.protocol }}
       name: http
   selector:
     {{- include "cloudcost-exporter.selectorLabels" . | nindent 4 }}
