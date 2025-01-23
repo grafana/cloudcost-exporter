@@ -30,16 +30,26 @@ podSecurityContext:
 
 service:
   type: ClusterIP
-  port: 80
+  port: 8080
+  portName: http
   protocol: TCP
 
-resources: {}
+resources:
+  limits:
+    cpu: "2"
+    memory: 2Gi
+  requests:
+    cpu: "1"
+    memory: 1Gi
 
 nodeSelector: {}
 
 tolerations: []
 
 affinity: {}
+
+volumes: []
+volumeMounts: []
 
 minReadySeconds: 10
 revisionHistoryLimit: 10

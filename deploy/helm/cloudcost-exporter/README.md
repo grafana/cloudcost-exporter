@@ -37,15 +37,20 @@ Parameter | Description | Default
 `podAnnotations` | annotations to add to each pod | `{}`
 `podSecurityContext.fsGroup` | filesystem group to associate for each pod | `10001`
 `replicaCount` | desired number of pods | `1` |
-`resources` | pod resource requests and limits | `{}`
+`resources.limits.cpu` | cpu limit | `2`
+`resources.limits.memory` | memory limit | `2Gi`
+`resources.requests.cpu` | cpu request | `1`
+`resources.requests.memory` | memory request | `1Gi`
 `revisionHistoryLimit` | number of old versions to retain to allow rollback | `10`
 `serviceAccount.annotations` | annotations to add to the service account | `{}`
 `serviceAccount.create` | specifies whether a service account should be created | `true`
 `serviceAccount.name` | name of service account to use - generated | `""`
-`service.port` | port number for the service | `80`
+`service.port` | port number for the service | `8080`
+`service.portName` | name of the port | `http`
 `service.protocol` | protocol for the serivce | `TCP`
 `service.type` | type of service | `ClusterIP`
 `tolerations` | list of node taints to tolerate | `[]`
+`volumes` | list of volumes | `[]`
 
 ## Contribute
 
