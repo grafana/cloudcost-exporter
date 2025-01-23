@@ -5,7 +5,7 @@
 replicaCount: 1
 
 image:
-  repository: nginx
+  repository: grafana/cloudcost-exporter
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
@@ -25,16 +25,8 @@ serviceAccount:
 
 podAnnotations: {}
 
-podSecurityContext: {}
-  # fsGroup: 2000
-
-securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
+podSecurityContext:
+  fsGroup: "10001"
 
 service:
   type: ClusterIP
@@ -48,3 +40,6 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+
+minReadySeconds: 10
+revisionHistoryLimit: 10
