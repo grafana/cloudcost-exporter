@@ -4,11 +4,19 @@
 
 [Helm](https://helm.sh/) must be installed in order to deploy the `cloudcost-exporter` Helm chart.
 
-Then, add the repository as follows:
+### Setup the Grafana chart repository
 
-```
+```console
 helm repo add grafana https://grafana.github.io/helm-charts
-helm search repo grafana
+helm repo update
+```
+
+### Install the chart
+
+To install the chart with the release name my-release:
+
+```console
+helm install my-release grafana/cloudcost-exporter
 ```
 
 ## Configuration
@@ -38,3 +46,7 @@ Parameter | Description | Default
 `service.protocol` | protocol for the serivce | `TCP`
 `service.type` | type of service | `ClusterIP`
 `tolerations` | list of node taints to tolerate | `[]`
+
+## Contribute
+
+Check out the [docs](../../../docs/contribute/releases.md#helm-chart) for more information on how to contribute to the `cloudcost-explorer`'s Helm chart.

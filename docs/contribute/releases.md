@@ -43,3 +43,9 @@ jobs:
 ```
 
 Granular control of the version helps with security since commit SHAs are immutable.
+
+## Helm Chart
+
+The `cloudcost-exporter`'s Helm chart can be found in the repo's root path at [./deploy/helm/cloudcost-exporter](../../deploy/helm/cloudcost-exporter/README.md)
+
+To contribute to the Helm chart, make any changes to the [Kubernetes manifest templates](../../deploy/helm/cloudcost-exporter/templates/). Then, add the field to the list of configuration options in the chart's README [here](../../deploy/helm/cloudcost-exporter/README.md#configuration).
