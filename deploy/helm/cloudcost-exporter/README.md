@@ -1,11 +1,5 @@
 # Cloud Cost Exporter Helm chart
 
-> [!WARNING]
-> This Helm chart is still a WIP.
-> The instructions below are not functional yet.
->
-> Progress on the Helm chart is tracked here: https://github.com/grafana/cloudcost-exporter/issues/392
-
 ## Usage
 
 [Helm](https://helm.sh/) must be installed in order to deploy the `cloudcost-exporter` Helm chart.
