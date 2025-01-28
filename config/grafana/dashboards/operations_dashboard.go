@@ -1,8 +1,7 @@
-package main
+package dashboards
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/grafana/grafana-foundation-sdk/go/cog"
 	"github.com/grafana/grafana-foundation-sdk/go/common"
@@ -12,22 +11,8 @@ import (
 	"github.com/grafana/grafana-foundation-sdk/go/timeseries"
 )
 
-func prometheusDatasourceRef() dashboard.DataSourceRef {
-	return dashboard.DataSourceRef{
-		Type: cog.ToPtr[string]("prometheus"),
-		Uid:  cog.ToPtr[string]("${datasource}"),
-	}
-}
-
-func prometheusQuery(expression string, legendFormat string) *prometheus.DataqueryBuilder {
-	return prometheus.NewDataqueryBuilder().
-		Expr(expression).
-		Range().
-		LegendFormat(legendFormat)
-}
-
-func main() {
-	builder := dashboard.NewDashboardBuilder("CloudCost Exporter").
+func buildOperationsDashboard() ([]byte, error) {
+	builder := dashboard.NewDashboardBuilder("CloudCost Exporter Operations Dashboard").
 		// leaving this for BC reasons, but a proper human-readable UID would be better.
 		Uid("1a9c0de366458599246184cf0ae8b468").
 		Editable().
@@ -71,14 +56,23 @@ func main() {
 
 	sampleDashboard, err := builder.Build()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	dashboardJson, err := json.MarshalIndent(sampleDashboard, "", "  ")
-	if err != nil {
-		panic(err)
-	}
+	return json.MarshalIndent(sampleDashboard, "", "  ")
+}
 
-	fmt.Println(string(dashboardJson))
+func prometheusDatasourceRef() dashboard.DataSourceRef {
+	return dashboard.DataSourceRef{
+		Type: cog.ToPtr[string]("prometheus"),
+		Uid:  cog.ToPtr[string]("${datasource}"),
+	}
+}
+
+func prometheusQuery(expression string, legendFormat string) *prometheus.DataqueryBuilder {
+	return prometheus.NewDataqueryBuilder().
+		Expr(expression).
+		Range().
+		LegendFormat(legendFormat)
 }
 
 func collectorScrapeDurationOverTime() *timeseries.PanelBuilder {
