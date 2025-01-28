@@ -26,4 +26,11 @@ The following role needs to be created:
 }
 ```
 
-This role needs to be attached to the EC2 instance, ECS task, or EKS pod that the CloudCost Exporter is running on.
+In the [values.yaml](./helm/cloudcost-exporter/values.yaml) file, annotate the `serviceAccount` with the ARN of the role created above.
+An example values file is provided below:
+
+```yaml
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/CloudCostExporterRole
+```
