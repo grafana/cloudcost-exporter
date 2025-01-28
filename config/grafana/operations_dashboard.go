@@ -121,12 +121,7 @@ func costExplorerAPIRequestsOverTime() *timeseries.PanelBuilder {
 				"__auto",
 			),
 		).
-		Unit("reqps").
-		Legend(common.NewVizLegendOptionsBuilder().
-			DisplayMode(common.LegendDisplayModeList).
-			Placement(common.LegendPlacementBottom).
-			ShowLegend(true),
-		)
+		Unit("reqps")
 }
 
 func awsS3NextPricingMapRefreshOverTime() *timeseries.PanelBuilder {
@@ -140,11 +135,7 @@ func awsS3NextPricingMapRefreshOverTime() *timeseries.PanelBuilder {
 				"max by (cluster) (cloudcost_exporter_aws_s3_next_scrape{cluster=~\"$cluster\"}) - time() ",
 				"__auto",
 			),
-		).
-		Legend(common.NewVizLegendOptionsBuilder().
-			DisplayMode(common.LegendDisplayModeList).
-			Placement(common.LegendPlacementBottom).
-			ShowLegend(true))
+		)
 }
 
 func gcpListBucketsRPSOverTime() *timeseries.PanelBuilder {
@@ -153,12 +144,7 @@ func gcpListBucketsRPSOverTime() *timeseries.PanelBuilder {
 		Description("The number of requests per second to list buckets in GCS.").
 		Datasource(prometheusDatasourceRef()).
 		Unit("reqps").
-		WithTarget(prometheusQuery("sum by (cluster, status) (increase(cloudcost_exporter_gcp_gcs_bucket_list_status_total[5m]))", "{{cluster}}:{{status}}")).
-		Legend(common.NewVizLegendOptionsBuilder().
-			DisplayMode(common.LegendDisplayModeList).
-			Placement(common.LegendPlacementBottom).
-			ShowLegend(true),
-		)
+		WithTarget(prometheusQuery("sum by (cluster, status) (increase(cloudcost_exporter_gcp_gcs_bucket_list_status_total[5m]))", "{{cluster}}:{{status}}"))
 }
 
 func gcpNextScrapeOverTime() *timeseries.PanelBuilder {
@@ -169,11 +155,6 @@ func gcpNextScrapeOverTime() *timeseries.PanelBuilder {
 		Unit("s").
 		WithTarget(
 			prometheusQuery("max by (cluster) (cloudcost_exporter_gcp_gcs_next_scrape{cluster=~\"$cluster\"}) - time() ", "__auto"),
-		).
-		Legend(common.NewVizLegendOptionsBuilder().
-			DisplayMode(common.LegendDisplayModeList).
-			Placement(common.LegendPlacementBottom).
-			ShowLegend(true),
 		)
 }
 
