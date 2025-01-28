@@ -20,9 +20,6 @@ func main() {
 	}
 
 	dash := dashboard.Dashboard{}
-	if err := dash.UnmarshalJSONStrict(dashboardJSON); err != nil {
-		fmt.Printf("Error unmarshalling dashboard: %v\n", err)
-	}
 
 	if err = json.Unmarshal(dashboardJSON, &dash); err != nil {
 		panic(err)
