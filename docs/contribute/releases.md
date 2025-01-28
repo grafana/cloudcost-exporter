@@ -49,3 +49,15 @@ Granular control of the version helps with security since commit SHAs are immuta
 The `cloudcost-exporter`'s Helm chart can be found in the repo's root path at [./deploy/helm/cloudcost-exporter](../../deploy/helm/cloudcost-exporter/README.md)
 
 To contribute to the Helm chart, make any changes to the [Kubernetes manifest templates](../../deploy/helm/cloudcost-exporter/templates/). Then, add the field to the list of configuration options in the chart's README [here](../../deploy/helm/cloudcost-exporter/README.md#configuration).
+
+### Generate the Helm Chart configuration docs
+
+[helm-docs](https://github.com/norwoodj/helm-docs) is used to generate the [Helm Chart configuration docs](../../deploy/helm/cloudcost-exporter/README.md).
+
+First, install `helm-docs` e.g. with `brew` (other options are listed [here](https://github.com/norwoodj/helm-docs?tab=readme-ov-file#installation)). Then, generate the docs.
+```console
+brew install norwoodj/tap/helm-docs
+helm-docs
+```
+
+The README is generated using a [gotemplate](../../deploy/helm/cloudcost-exporter/README.md.gotmpl).
