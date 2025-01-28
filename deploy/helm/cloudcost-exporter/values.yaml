@@ -53,3 +53,11 @@ volumeMounts: []
 
 minReadySeconds: 10
 revisionHistoryLimit: 10
+
+ingress:
+  enabled: false
+  hosts:
+    - host: chart-example.local
+      paths: []
+  annotations: {}
+  tls: []
