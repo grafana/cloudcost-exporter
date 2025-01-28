@@ -44,7 +44,7 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
-            {{- toYaml .Values.podSecurityContext | nindent 8 }}
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
           volumeMounts:
             {{- toYaml .Values.volumeMounts | nindent 12 }}
       {{- with .Values.nodeSelector }}
