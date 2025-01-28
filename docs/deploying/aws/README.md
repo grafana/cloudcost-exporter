@@ -26,7 +26,7 @@ The following role needs to be created:
 }
 ```
 
-In the [values.yaml](./helm/cloudcost-exporter/values.yaml) file, annotate the `serviceAccount` with the ARN of the role created above.
+In the [values.yaml](../../../deploy/helm/cloudcost-exporter/values.yaml) file, annotate the `serviceAccount` with the ARN of the role created above.
 An example values file is provided below:
 
 ```yaml
