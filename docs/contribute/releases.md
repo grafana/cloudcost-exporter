@@ -48,16 +48,8 @@ Granular control of the version helps with security since commit SHAs are immuta
 
 The `cloudcost-exporter`'s Helm chart can be found in the repo's root path at [./deploy/helm/cloudcost-exporter](../../deploy/helm/cloudcost-exporter/README.md)
 
-To contribute to the Helm chart, make any changes to the [Kubernetes manifest templates](../../deploy/helm/cloudcost-exporter/templates/). Then, add the field to the list of configuration options in the chart's README [here](../../deploy/helm/cloudcost-exporter/README.md#configuration).
+To contribute to the Helm chart, make changes to the Helm chart [templates](../../deploy/helm/cloudcost-exporter/templates/) and the [values.yaml](../../deploy/helm/cloudcost-exporter/values.yaml).
 
-### Generate the Helm Chart configuration docs
+The Helm chart's [README](../../deploy/helm/cloudcost-exporter/README.md) is generated using [helm-docs](https://github.com/norwoodj/helm-docs) and a [gotemplate](../../deploy/helm/cloudcost-exporter/README.md.gotmpl) that goes with it.
 
-[helm-docs](https://github.com/norwoodj/helm-docs) is used to generate the [Helm Chart configuration docs](../../deploy/helm/cloudcost-exporter/README.md).
-
-First, install `helm-docs` e.g. with `brew` (other options are listed [here](https://github.com/norwoodj/helm-docs?tab=readme-ov-file#installation)). Then, generate the docs.
-```console
-brew install norwoodj/tap/helm-docs
-helm-docs
-```
-
-The README is generated using a [gotemplate](../../deploy/helm/cloudcost-exporter/README.md.gotmpl).
+Run `make helm` to check that the Helm chart compiles and that its README is up-to-date.
