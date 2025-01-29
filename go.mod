@@ -14,7 +14,7 @@ require (
 	github.com/Azure/go-autorest/autorest/to v0.4.0
 	github.com/aws/aws-sdk-go-v2 v1.34.0
 	github.com/aws/aws-sdk-go-v2/config v1.29.2
-	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.46.0
+	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.46.4
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.200.0
 	github.com/aws/aws-sdk-go-v2/service/pricing v1.32.7
 	github.com/google/go-cmp v0.6.0
