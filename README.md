@@ -5,13 +5,6 @@
 Cloud Cost exporter is a designed to collect cost data from cloud providers and export the data in Prometheus format.
 The cost data can then be combined with usage data from tools such as stackdriver, yace, and promitor to measure the spend of resources at a granular level.
 
-> [!WARNING]
-> This project is in the early stages of development and is subject to change.
-> Grafana Labs builds and maintains this project as part of our commitment to the open-source community, but we do not provide support for it.
-> In its current state, the exporter exports rates for resources and not the total spend.
-> We intend to opensource recording rules we use internally to measure the spend of resources.
-> For a better understanding of how we view measuring costs, view a talk given at [KubeCon NA 2023](https://youtu.be/8eiLXtL3oLk?si=wm-43ZQ9Fr51wS4a&t=1)
-
 ## Goals
 
 The goal of this project is to provide a consistent interface for collecting the rate of cost data from multiple cloud providers and exporting the data in Prometheus format.
@@ -61,6 +54,16 @@ Check out the follow docs for metrics:
   - [ec2](docs/metrics/aws/ec2.md)
 - azure
   - [aks](docs/metrics/azure/aks.md)
+
+## Maturity
+
+This project is in the early stages of development and is subject to change.
+Grafana Labs builds and maintains this project as part of our commitment to the open-source community, but we do not provide support for it.
+In its current state, the exporter exports rates for resources and not the total spend.
+
+For a better understanding of how we view measuring costs, view a talk given at [KubeCon NA 2023](https://youtu.be/8eiLXtL3oLk?si=wm-43ZQ9Fr51wS4a&t=1)
+
+In the future, we intend to opensource recording rules we use internally to measure the spend of resources.
 
 ## Contributing
 
