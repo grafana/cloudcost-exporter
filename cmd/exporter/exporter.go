@@ -19,7 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	cversion "github.com/prometheus/common/version"
 
-	"github.com/grafana/cloudcost-exporter"
+	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	"github.com/grafana/cloudcost-exporter/cmd/exporter/web"
 	"github.com/grafana/cloudcost-exporter/pkg/aws"
