@@ -15,7 +15,7 @@ This container a set of Grafana Dashboards that are generated using the [Grafana
 To generate the dashboards:
 
 ```shell
-go run operations_dashboard.go > operations_dashboard.json
+go run dashboards/operations_dashboard.go > operations_dashboard.json
 ```
 
 To iteratively develop dashboards with live reload:

@@ -62,7 +62,7 @@ func main() {
 }
 
 // providerFlags is a helper method that is responsible for setting up the flags that are used to configure the provider.
-// TODO: This should probably be moved over to the config package.
+// TODO: This should probably be moved over to the cloudcost-exporter-dashboards package.
 func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.StringVar(&cfg.Provider, "provider", "aws", "aws, gcp, or azure")
 	fs.StringVar(&cfg.Providers.AWS.Profile, "aws.profile", "", "AWS Profile to authenticate with.")
@@ -79,7 +79,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 }
 
 // operationalFlags is a helper method that is responsible for setting up the flags that are used to configure the operational aspects of the application.
-// TODO: This should probably be moved over to the config package.
+// TODO: This should probably be moved over to the cloudcost-exporter-dashboards package.
 func operationalFlags(cfg *config.Config) {
 	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
 	flag.DurationVar(&cfg.Collector.Timeout, "collector-interval", 1*time.Minute, "Context timeout for collectors")

@@ -44,3 +44,9 @@ push: build test push-dev
 helm:
 	helm template my-release ./deploy/helm/cloudcost-exporter --debug
 	docker run -v "$(PWD):/helm-docs" -u "$(id -u)" jnorwood/helm-docs:latest
+
+grizzly-serve:
+	grr serve -p 8088 -w -S "go run ./cloudcost-exporter-dashboards/main.go"
+
+build-dashboards:
+	go run ./cloudcost-exporter-dashboard/main.go  --mode=file

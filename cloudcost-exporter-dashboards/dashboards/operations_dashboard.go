@@ -1,8 +1,6 @@
 package dashboards
 
 import (
-	"encoding/json"
-
 	"github.com/grafana/grafana-foundation-sdk/go/cog"
 	"github.com/grafana/grafana-foundation-sdk/go/common"
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
@@ -11,7 +9,7 @@ import (
 	"github.com/grafana/grafana-foundation-sdk/go/timeseries"
 )
 
-func buildOperationsDashboard() ([]byte, error) {
+func OperationsDashboard() *dashboard.DashboardBuilder {
 	builder := dashboard.NewDashboardBuilder("CloudCost Exporter Operations Dashboard").
 		// leaving this for BC reasons, but a proper human-readable UID would be better.
 		Uid("1a9c0de366458599246184cf0ae8b468").
@@ -53,12 +51,7 @@ func buildOperationsDashboard() ([]byte, error) {
 		WithRow(dashboard.NewRowBuilder("GCP")).
 		WithPanel(gcpListBucketsRPSOverTime().Height(6).Span(12)).
 		WithPanel(gcpNextScrapeOverTime().Height(6).Span(12))
-
-	sampleDashboard, err := builder.Build()
-	if err != nil {
-		return nil, err
-	}
-	return json.MarshalIndent(sampleDashboard, "", "  ")
+	return builder
 }
 
 func prometheusDatasourceRef() dashboard.DataSourceRef {
