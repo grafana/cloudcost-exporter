@@ -24,8 +24,8 @@ jobs:
       - name: Test
         run: go test -v ./...
       - name: Check for Dashboards Drift
-        run:
-          go run ./cloudcost-exporter-dashboards/cmd/check-dashboards/main.go --mode=files
+        run: |
+          go run ./cloudcost-exporter-dashboards/main.go --mode=files > /dev/null
           if ! git diff --exit-code; then
             echo "Dashboards are out of sync. Please run 'make build-dashboards' and commit the changes."
             exit 1
