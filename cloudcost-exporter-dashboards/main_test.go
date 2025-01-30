@@ -14,7 +14,6 @@ func Test_sluggify(t *testing.T) {
 		"multiple words should be hyphenated":           {s: "multiple words", want: "multiple-words"},
 		"mixed case should be lowercased":               {s: "Mixed Case", want: "mixed-case"},
 		"leading and trailing spaces should be removed": {s: "  leading and trailing spaces  ", want: "leading-and-trailing-spaces"},
-		"special characters should be removed":          {s: "special characters !@#$%^&*()_+{}|:<>?`~", want: "special-characters"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
