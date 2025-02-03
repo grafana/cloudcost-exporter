@@ -14,13 +14,18 @@ The tools are used by `make generate-mocks` in the [Makefile](https://github.com
 ## Running Locally
 
 Prior to running the exporter, you will need to ensure you have the appropriate credentials for the cloud provider you are trying to export data for.
-- Setup AWS: https://github.com/grafana/deployment_tools/blob/fd5dbe933614259d55c2fac0b7e4d3bf284d5457/docs/infrastructure/aws.md#L121
-    - `aws sso login --profile infra-prod`
-- GCP: `gcloud auth application-default login` should be enough
+- AWS
+  - `aws sso login --profile $AWS_PROFILE`
+- GCP
+  - `gcloud auth application-default login` 
+- Azure
+  - `az login`
+
 
 > [!WARNING]
-> :fire: AWS costexplorer costs $0.01 _per_ request! The default settings _should_ keep it to 1 request per hour :fire:
-> :fire: Keep an eye on aws_costexplorer_requests_total metric to ensure you are not exceeding your budget :fire:
+> AWS costexplorer costs $0.01 _per_ request! 
+> The default settings will keep it to 1 request per hour.
+> Each restart of the exporter will trigger a new request. 
 
 ```shell
 # Usage
@@ -42,8 +47,18 @@ go run cmd/exporter/exporter.go -provider azure -azure.subscription-id $AZ_SUBSC
 
 ## Project Structure
 
-The main entrypoint for the exporter is `cmd/exporter/exporter.go`. This file is responsible for setting up the exporter and starting the server.
-When running the application, there is a `--provider` flag that is used to determine which cloud provider to use. 
-Within `pkg/collector`, there are subdirectories for each cloud provider that contain the logic for collecting cost data from that provider.
-Each provider is composed of a set of _collectors_.
-Each collector represents a cloud resource such as `GKE` or `GCS`, and is responsible for collecting cost data for that resource.
+The main entrypoint for the cloudcost exporter is [exporter.go](../../cmd/exporter/exporter.go). 
+When running the application, there is a flag that is used to determine which cloud service provider(csp) to use. 
+`cloudcost-exporter` currently supports three csp's:
+- `gcp`
+- `aws`
+- `azure`
+
+Each csp has an entrypoint in `./pkg/{aws,azure,gcp}/{aws,azure,gcp}.go` that is responsible for initializing the provider and a set of collectors.
+A collector is a modules for a single CSP that collects cost data for a specific service and emits the data as a set of Prometheus metrics.
+A provider can run multiple collectors at once. 
+
+
+
+
+
