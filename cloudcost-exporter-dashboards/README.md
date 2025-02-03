@@ -15,11 +15,11 @@ This container a set of Grafana Dashboards that are generated using the [Grafana
 To generate the dashboards:
 
 ```shell
-go run operations_dashboard.go > operations_dashboard.json
+make build-dashboards
 ```
 
 To iteratively develop dashboards with live reload:
 
 ```shell
-grr serve -p 8088 -w -S 'go run *.go' .
+make grizzly-serve
 ```
