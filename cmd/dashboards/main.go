@@ -39,7 +39,8 @@ func run(dashes []*dashboard.DashboardBuilder, output *string, outputDir *string
 			fmt.Println(string(data))
 			continue
 		}
-		err = createFile(*outputDir, sluggify(*build.Title), data)
+
+		err = os.WriteFile(fmt.Sprintf("%s/%s.json", *outputDir, sluggify(*build.Title)), data, 0644)
 		if err != nil {
 			return err
 		}
@@ -51,14 +52,4 @@ func run(dashes []*dashboard.DashboardBuilder, output *string, outputDir *string
 func sluggify(s string) string {
 	s = strings.TrimSpace(s)
 	return strings.ReplaceAll(strings.ToLower(s), " ", "-")
-}
-
-func createFile(outputDir, name string, data []byte) error {
-	file, err := os.Create(fmt.Sprintf("%s/%s.json", outputDir, name))
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	_, err = file.Write(data)
-	return err
 }
