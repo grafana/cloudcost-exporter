@@ -49,4 +49,4 @@ grizzly-serve:
 	grr serve -p 8088 -w -S "go run ./cloudcost-exporter-dashboards/main.go"
 
 build-dashboards:
-	go run ./cmd/dashboards/main.go  --mode=file
+	go run ./cmd/dashboards/main.go  --output=file
