@@ -14,32 +14,32 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "json", "output mode. Can be json or file")
+	output := flag.String("output", "console", "Where to write output to. Can be console or file")
 	outputDir := flag.String("output-dir", "./cloudcost-exporter-dashboards/grafana", "output directory")
 	flag.Parse()
 	dashes := dashboards.BuildDashboards()
 
-	err := run(dashes, mode, outputDir)
+	err := run(dashes, output, outputDir)
 	if err != nil {
 		log.Fatalf("error generating dashboards: %s", err.Error())
 	}
 }
 
-func run(dashes []*dashboard.DashboardBuilder, mode *string, outputDir *string) error {
+func run(dashes []*dashboard.DashboardBuilder, output *string, outputDir *string) error {
 	for _, dash := range dashes {
 		build, err := dash.Build()
 		if err != nil {
 			return err
 		}
-		output, err := json.MarshalIndent(build, "", "  ")
+		data, err := json.MarshalIndent(build, "", "  ")
 		if err != nil {
 			return err
 		}
-		if *mode == "json" {
-			fmt.Println(string(output))
+		if *output == "console" {
+			fmt.Println(string(data))
 			continue
 		}
-		err = createFile(*outputDir, sluggify(*build.Title), output)
+		err = createFile(*outputDir, sluggify(*build.Title), data)
 		if err != nil {
 			return err
 		}
