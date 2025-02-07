@@ -1,0 +1,17 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ce:*",
+                "ec2:DescribeRegions",
+                "ec2:DescribeInstances",
+                "ec2:DescribeSpotPriceHistory",
+                "ec2:DescribeVolumes",
+                "pricing:GetProducts"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
