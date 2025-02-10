@@ -76,7 +76,7 @@ serviceAccount:
 An example values file is provided [here](../../.././deploy/helm/cloudcost-exporter/values.aws.yaml).
 The AWS-specific values can be used along the main values like this:
 ```console
-helm template my-release ./deploy/helm/cloudcost-exporter \
+helm install my-release ./deploy/helm/cloudcost-exporter \
 --values ./deploy/helm/cloudcost-exporter/values.yaml \
 --values ./deploy/helm/cloudcost-exporter/values.aws.yaml
 ```
