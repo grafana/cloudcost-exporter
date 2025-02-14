@@ -25,6 +25,7 @@ helm install my-release grafana/cloudcost-exporter
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` |  |
+| containerArgs | list | `[]` | Configuration per CSP (required) |
 | fullnameOverride | string | `""` |  |
 | image.pullPolicy | string | `"IfNotPresent"` |  |
 | image.repository | string | `"grafana/cloudcost-exporter"` |  |
@@ -39,13 +40,13 @@ helm install my-release grafana/cloudcost-exporter
 | nameOverride | string | `""` |  |
 | nodeSelector | object | `{}` |  |
 | podAnnotations | object | `{}` |  |
-| podSecurityContext.fsGroup | string | `"10001"` |  |
 | replicaCount | int | `1` |  |
 | resources.limits.cpu | string | `"2"` |  |
 | resources.limits.memory | string | `"2Gi"` |  |
 | resources.requests.cpu | string | `"1"` |  |
 | resources.requests.memory | string | `"1Gi"` |  |
 | revisionHistoryLimit | int | `10` |  |
+| securityContext.fsGroup | int | `10001` |  |
 | service.port | int | `8080` |  |
 | service.portName | string | `"http"` |  |
 | service.protocol | string | `"TCP"` |  |

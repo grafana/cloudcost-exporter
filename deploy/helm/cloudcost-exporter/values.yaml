@@ -23,10 +23,14 @@ serviceAccount:
   # If not set and create is true, a name is generated using the fullname template
   name: ""
 
+# -- Configuration per CSP (required)
+containerArgs:
+  []
+
 podAnnotations: {}
 
-podSecurityContext:
-  fsGroup: "10001"
+securityContext:
+  fsGroup: 10001
 
 service:
   type: ClusterIP
