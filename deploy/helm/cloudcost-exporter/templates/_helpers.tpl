@@ -48,6 +48,7 @@ Selector labels
 {{- define "cloudcost-exporter.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "cloudcost-exporter.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+name: cloudcost-exporter
 {{- end }}
 
 {{/*
