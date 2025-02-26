@@ -25,6 +25,7 @@ helm install my-release grafana/cloudcost-exporter
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` |  |
+| containerArgs | list | `[]` | Configuration per CSP (required) |
 | fullnameOverride | string | `""` |  |
 | image.pullPolicy | string | `"IfNotPresent"` |  |
 | image.repository | string | `"grafana/cloudcost-exporter"` |  |

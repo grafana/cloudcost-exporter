@@ -7,4 +7,7 @@ serviceAccount:
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/CloudCostExporterRole
 
-containerArgs: []
+containerArgs:
+  - "--provider=aws"
+  - "--aws.region=us-east-1"
+  - "--aws.services=s3,ec2"
