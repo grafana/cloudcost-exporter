@@ -85,7 +85,7 @@ helm install my-release ./deploy/helm/cloudcost-exporter \
 
 Below is a list of Helm values and how to configure them to deploy cloudcost-exporter to AWS.
 
-#### containerArgs
+#### `containerArgs`
 
 Set AWS as the provider:
 ```

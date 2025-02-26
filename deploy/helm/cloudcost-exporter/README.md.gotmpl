@@ -21,6 +21,15 @@ helm install my-release grafana/{{ template "chart.name" . }}
 
 {{ template "chart.requirementsSection" . }}
 
+## Configuration per cloud service provider (CSP)
+
+The Helm chart can be used with the general `values.yaml` manifest.
+The project includes CSP-specific configuration (e.g. `values.<csp>.yaml`) that can be used in combination with the general values.
+The deployment itself will depend on each deployment pipeline and tooling available.
+
+Documentation per CSP will vary (especially when it comes to authentication). Below are links to docs to help with this:
+* [AWS](https://github.com/grafana/cloudcost-exporter/tree/main/docs/deploying/aws)
+
 {{ template "chart.valuesSection" . }}
 
 {{ template "helm-docs.versionFooter" . }}
