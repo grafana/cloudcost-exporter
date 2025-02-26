@@ -80,3 +80,26 @@ helm install my-release ./deploy/helm/cloudcost-exporter \
 --values ./deploy/helm/cloudcost-exporter/values.yaml \
 --values ./deploy/helm/cloudcost-exporter/values.aws.yaml
 ```
+
+### Values
+
+Below is a list of Helm values and how to configure them to deploy cloudcost-exporter to AWS.
+
+#### `containerArgs`
+
+Set AWS as the provider:
+```
+  - "--provider=aws"
+```
+
+Set the region that the client should authenticate with.
+Check which region is used by the [AWS IAM endpoint](https://docs.aws.amazon.com/general/latest/gr/iam-service.html).
+This is often a global endpoint so only needs to be set to one region.
+```
+  - "--aws.region=us-east-1"
+```
+
+Set which AWS service to use:
+```
+  - "--aws.services=s3,ec2"
+```

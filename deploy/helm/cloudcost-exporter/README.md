@@ -20,11 +20,21 @@ helm repo update
 helm install my-release grafana/cloudcost-exporter
 ```
 
+## Configuration per cloud service provider (CSP)
+
+The Helm chart can be used with the general `values.yaml` manifest.
+The project includes CSP-specific configuration (e.g. `values.<csp>.yaml`) that can be used in combination with the general values.
+The deployment itself will depend on each deployment pipeline and tooling available.
+
+Documentation per CSP will vary (especially when it comes to authentication). Below are links to docs to help with this:
+* [AWS](https://github.com/grafana/cloudcost-exporter/tree/main/docs/deploying/aws)
+
 ## Values
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` |  |
+| containerArgs | list | `[]` | Configuration per CSP (required) |
 | fullnameOverride | string | `""` |  |
 | image.pullPolicy | string | `"IfNotPresent"` |  |
 | image.repository | string | `"grafana/cloudcost-exporter"` |  |

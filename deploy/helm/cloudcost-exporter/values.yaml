@@ -25,6 +25,10 @@ serviceAccount:
 
 podAnnotations: {}
 
+# -- Configuration per CSP (required)
+containerArgs:
+  []
+
 securityContext:
   fsGroup: 10001
 
