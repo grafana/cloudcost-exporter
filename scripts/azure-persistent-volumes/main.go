@@ -10,6 +10,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/grafana/cloudcost-exporter/pkg/azure/aks"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
 )
 
@@ -39,7 +40,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create Azure client: %v", err)
 	}
-	priceStore := NewVolumePriceStore(ctx, logger, priceClient)
+	priceStore := aks.NewVolumePriceStore(ctx, logger, priceClient)
 
 	// List all disks in the subscription
 	pager := client.NewListPager(nil)

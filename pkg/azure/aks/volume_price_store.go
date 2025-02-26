@@ -2,7 +2,6 @@ package aks
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -18,15 +17,10 @@ import (
 const (
 	AzureVolumePriceSearchFilter = `serviceName eq 'Storage' and contains(productName, 'Disk') and priceType eq 'Consumption'`
 	AzureMeterRegion             = `'primary'`
-	AZ_API_VERSION               = "2023-01-01-preview"
-	listPricesMaxRetries         = 5
-	priceRefreshInterval         = 24 * time.Hour
-	monthlyUnitOfMeasure         = "1/Month"
-)
-
-var (
-	ErrPriceInformationNotFound = errors.New("price information not found in map")
-	ErrMaxRetriesReached        = errors.New("max retries reached")
+	// TODO: These are shared with the instance price store, we should move them to a shared location
+	listPricesMaxRetries = 5
+	priceRefreshInterval = 24 * time.Hour
+	monthlyUnitOfMeasure = "1/Month"
 )
 
 type VolumeSku struct {
@@ -35,17 +29,16 @@ type VolumeSku struct {
 	Tier        string
 }
 
-type PriceBySku map[string]*VolumeSku
-type PriceByRegion map[string]PriceBySku
+type VolumePriceBySku map[string]*VolumeSku
+type VolumePriceByRegion map[string]VolumePriceBySku
 
 type VolumePriceStore struct {
 	logger  *slog.Logger
 	context context.Context
 
 	volumePriceByRegionLock *sync.RWMutex
-	VolumePriceByRegion     PriceByRegion
+	VolumePriceByRegion     VolumePriceByRegion
 
-	// Use the existing interface
 	azureClient azureClientWrapper.AzureClient
 }
 
@@ -61,7 +54,7 @@ func NewVolumePriceStore(ctx context.Context, logger *slog.Logger, azClient azur
 		context:                 ctx,
 		azureClient:             azClient,
 		volumePriceByRegionLock: &sync.RWMutex{},
-		VolumePriceByRegion:     make(PriceByRegion),
+		VolumePriceByRegion:     make(VolumePriceByRegion),
 	}
 
 	// Populate the store before it is used
@@ -183,7 +176,7 @@ func (p *VolumePriceStore) PopulatePriceStore(ctx context.Context) {
 	defer p.volumePriceByRegionLock.Unlock()
 
 	// Create a new map to replace the old one
-	newPriceMap := make(PriceByRegion)
+	newPriceMap := make(VolumePriceByRegion)
 
 	for _, price := range allPrices {
 		regionName := price.ArmRegionName
@@ -200,7 +193,7 @@ func (p *VolumePriceStore) PopulatePriceStore(ctx context.Context) {
 		if _, ok := newPriceMap[regionName]; !ok {
 			p.logger.LogAttrs(ctx, slog.LevelDebug, "populating volume prices for region",
 				slog.String("region", regionName))
-			newPriceMap[regionName] = make(PriceBySku)
+			newPriceMap[regionName] = make(VolumePriceBySku)
 		}
 
 		volumeSku := &VolumeSku{
