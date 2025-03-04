@@ -20,7 +20,7 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@971e284b6050e8a5849b72094c50ab08da042db8 # 6.1.1
         with:
-          version: v1.56
+          version: v1.64.6
       - name: Test
         run: go test -v ./...
       - name: Install make

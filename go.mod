@@ -1,8 +1,6 @@
 module github.com/grafana/cloudcost-exporter
 
-go 1.22.7
-
-toolchain go1.22.9
+go 1.24
 
 require (
 	cloud.google.com/go/billing v1.20.1

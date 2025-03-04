@@ -149,7 +149,7 @@ func TestMisformedPricingInfoFromSku(t *testing.T) {
 	for _, testcase := range tt {
 		_, err := getPriceFromSku(testcase.sku)
 		if err == nil {
-			t.Errorf(testcase.descr)
+			t.Error(testcase.descr)
 		}
 	}
 }
