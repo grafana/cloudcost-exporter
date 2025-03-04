@@ -54,7 +54,7 @@ func Test_RegisterCollectors(t *testing.T) {
 				collectors: []provider.Collector{},
 				logger:     logger,
 			}
-			for i := 0; i < tt.numCollectors; i++ {
+			for range tt.numCollectors {
 				gcp.collectors = append(gcp.collectors, c)
 			}
 			err := gcp.RegisterCollectors(r)
@@ -148,7 +148,7 @@ func TestGCP_CollectMetrics(t *testing.T) {
 				logger:     logger,
 			}
 
-			for i := 0; i < tt.numCollectors; i++ {
+			for range tt.numCollectors {
 				gcp.collectors = append(gcp.collectors, c)
 			}
 
