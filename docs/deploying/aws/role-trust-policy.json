@@ -3,13 +3,14 @@
     "Statement": [
         {
             "Effect": "Allow",
-            "Action": [
-                "sts:AssumeRole"
-            ],
             "Principal": {
-                "Service": [
-                    "ec2.amazonaws.com"
-                ]
+                "Federated": "arn:aws:iam::123456789012:oidc-provider/oidc.eks.<region>.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE"
+            },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+                "StringEquals": {
+                    "oidc.eks.<region>.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE:sub": "system:serviceaccount:cloudcost-exporter:cloudcost-exporter"
+                }
             }
         }
     ]
