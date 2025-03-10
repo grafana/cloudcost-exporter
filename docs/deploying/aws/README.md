@@ -1,79 +1,25 @@
 # AWS CloudCost Exporter Deployment
 
-## Authentication
+## 1. Setup the IAM role
 
-cloudcost-exporter uses [AWS SDK for Go V2](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/getting-started.html) and supports providing authentication via the [AWS SDK's default credential provider chain](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/security_iam_service-with-iam.html).
+cloudcost-exporter uses [AWS SDK for Go V2](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/getting-started.html)
+and supports providing authentication via the [AWS SDK's default credential provider chain](https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html).
 This means that the CloudCost Exporter can be deployed on an EC2 instance, ECS, EKS, or any other AWS service that supports IAM roles for service accounts.
 
-You will need to create a [service role](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/security_iam_service-with-iam.html#security_iam_service-with-iam-roles-service) and its policy.
-Below are some options for how to create one.
+First, create an IAM Policy the minimum required permissions for cloudcost-exporter to work on AWS, an example of which can be found in [./permissions-policy.json](./permissions-policy.json).
 
-### Option 1: AWS Console
+Next, [create and associate an IAM role for the cloudcost-exporter Service Account](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html).
 
-First, create a policy with the following JSON (see: [./permissions-policy.json](./permissions-policy.json)):
-```json
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "ce:*",
-                "ec2:DescribeRegions",
-                "ec2:DescribeInstances",
-                "ec2:DescribeSpotPriceHistory",
-                "ec2:DescribeVolumes",
-                "pricing:GetProducts"
-            ],
-            "Resource": "*"
-        }
-    ]
-}
-```
+The role ARN will be passed as an [annotation to the Service Account](#serviceaccountannotations-required) in the values file of the Helm chart.
 
-To create a role, for `Trusted entity type`, select `AWS service`.
-For `Use case`, select `EC2`.
-For the policy, select the one that was created in the earlier step.
-The trust policy should look like this (see: [./role-trust-policy.json](./role-trust-policy.json)):
-```json
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "sts:AssumeRole"
-            ],
-            "Principal": {
-                "Service": [
-                    "ec2.amazonaws.com"
-                ]
-            }
-        }
-    ]
-}
-```
+The role's trust policy should look like this: [./role-trust-policy.json](./role-trust-policy.json).
 
-### Option 2: AWS CLI
-
-Follow the AWS docs for [how to create a role for a service using the AWS CLI](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-service.html#roles-creatingrole-service-cli).
-
-The trust policy can be found in [./role-trust-policy.json](./role-trust-policy.json).
-The permissions policy can be found in [./permissions-policy.json](./permissions-policy.json).
-
-## Helm chart
+## 2. Configure the Helm chart
 
 The Helm chart can be deployed after creating the necessary role and policy described above in [Authentication](#authentication).
-In the [values.yaml](../../../deploy/helm/cloudcost-exporter/values.yaml) file, annotate the `serviceAccount` with the ARN of the role created above.
-This should look like the following:
 
-```yaml
-serviceAccount:
-  annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/CloudCostExporterRole
-```
+An example values file with the additional AWS-specific values is provided [here](../../.././deploy/helm/cloudcost-exporter/values.aws.yaml).
 
-An example values file is provided [here](../../.././deploy/helm/cloudcost-exporter/values.aws.yaml).
 The AWS-specific values can be used along the main values like this:
 ```console
 helm install my-release ./deploy/helm/cloudcost-exporter \
@@ -81,11 +27,7 @@ helm install my-release ./deploy/helm/cloudcost-exporter \
 --values ./deploy/helm/cloudcost-exporter/values.aws.yaml
 ```
 
-### Values
-
-Below is a list of Helm values and how to configure them to deploy cloudcost-exporter to AWS.
-
-#### `containerArgs`
+### `containerArgs` (required)
 
 Set AWS as the provider:
 ```
@@ -102,4 +44,15 @@ This is often a global endpoint so only needs to be set to one region.
 Set which AWS service to use:
 ```
   - "--aws.services=s3,ec2"
+```
+
+### `serviceAccount.annotations` (required)
+
+Annotate the `serviceAccount` with the ARN of the role created above.
+This should look like the following:
+
+```yaml
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/CloudCostExporterRole
 ```
