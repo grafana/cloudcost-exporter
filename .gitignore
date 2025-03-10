@@ -34,3 +34,4 @@ cloudcost-exporter
 !cloudcost-exporter/
 
 dist/
+.cr-release-packages/
