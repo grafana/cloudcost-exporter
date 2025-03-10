@@ -100,13 +100,13 @@ func TestPopulatePriceStore(t *testing.T) {
 				context:            priceStoreCtx,
 				azureClientWrapper: mockAzureClient,
 
-				regionMapLock: &sync.RWMutex{},
-				RegionMap:     make(map[string]PriceByPriority),
+				machinePriceByPriorityLock: &sync.RWMutex{},
+				MachinePriceByPriority:     make(map[string]PriceByPriority),
 			}
 
 			p.PopulatePriceStore(priceStoreCtx)
 
-			mapEq := reflect.DeepEqual(tc.expectedPriceMap, p.RegionMap)
+			mapEq := reflect.DeepEqual(tc.expectedPriceMap, p.MachinePriceByPriority)
 			assert.True(t, mapEq)
 		})
 	}
@@ -114,7 +114,7 @@ func TestPopulatePriceStore(t *testing.T) {
 
 func TestGetPriceInfoFromVmInfo(t *testing.T) {
 	fakePriceStore := &PriceStore{
-		RegionMap: map[string]PriceByPriority{
+		MachinePriceByPriority: map[string]PriceByPriority{
 			"region1": {
 				OnDemand: PriceByOperatingSystem{
 					Linux: PriceBySku{
@@ -125,8 +125,8 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 				},
 			},
 		},
-		regionMapLock: &sync.RWMutex{},
-		logger:        slog.Default(),
+		machinePriceByPriorityLock: &sync.RWMutex{},
+		logger:                     slog.Default(),
 	}
 
 	testTable := map[string]struct {

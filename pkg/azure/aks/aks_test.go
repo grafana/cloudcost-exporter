@@ -51,9 +51,9 @@ func TestCollect(t *testing.T) {
 				},
 			},
 			priceStore: &PriceStore{
-				logger:        aksTestLogger,
-				regionMapLock: &sync.RWMutex{},
-				RegionMap: map[string]PriceByPriority{
+				logger:                     aksTestLogger,
+				machinePriceByPriorityLock: &sync.RWMutex{},
+				MachinePriceByPriority: map[string]PriceByPriority{
 					"westus": {
 						OnDemand: {
 							Linux: {
@@ -91,9 +91,9 @@ func TestCollect(t *testing.T) {
 				},
 			},
 			priceStore: &PriceStore{
-				logger:        aksTestLogger,
-				regionMapLock: &sync.RWMutex{},
-				RegionMap: map[string]PriceByPriority{
+				logger:                     aksTestLogger,
+				machinePriceByPriorityLock: &sync.RWMutex{},
+				MachinePriceByPriority: map[string]PriceByPriority{
 					"centralus": {
 						OnDemand: {
 							Linux: {
@@ -153,9 +153,9 @@ func TestGetMachinePrices(t *testing.T) {
 		"nil machine store": {
 			machineStore: &MachineStore{machineMapLock: &sync.RWMutex{}, logger: aksTestLogger},
 			priceStore: &PriceStore{
-				logger:        aksTestLogger,
-				regionMapLock: &sync.RWMutex{},
-				RegionMap: map[string]PriceByPriority{
+				logger:                     aksTestLogger,
+				machinePriceByPriorityLock: &sync.RWMutex{},
+				MachinePriceByPriority: map[string]PriceByPriority{
 					"centralus": {
 						OnDemand: {
 							Linux: {
@@ -182,9 +182,9 @@ func TestGetMachinePrices(t *testing.T) {
 				},
 			},
 			priceStore: &PriceStore{
-				logger:        aksTestLogger,
-				regionMapLock: &sync.RWMutex{},
-				RegionMap: map[string]PriceByPriority{
+				logger:                     aksTestLogger,
+				machinePriceByPriorityLock: &sync.RWMutex{},
+				MachinePriceByPriority: map[string]PriceByPriority{
 					"centralus": {
 						OnDemand: {
 							Linux: {
@@ -211,9 +211,9 @@ func TestGetMachinePrices(t *testing.T) {
 				},
 			},
 			priceStore: &PriceStore{
-				logger:        aksTestLogger,
-				regionMapLock: &sync.RWMutex{},
-				RegionMap:     map[string]PriceByPriority{},
+				logger:                     aksTestLogger,
+				machinePriceByPriorityLock: &sync.RWMutex{},
+				MachinePriceByPriority:     map[string]PriceByPriority{},
 			},
 
 			vmId:           "vmId",
@@ -237,9 +237,9 @@ func TestGetMachinePrices(t *testing.T) {
 				},
 			},
 			priceStore: &PriceStore{
-				logger:        aksTestLogger,
-				regionMapLock: &sync.RWMutex{},
-				RegionMap: map[string]PriceByPriority{
+				logger:                     aksTestLogger,
+				machinePriceByPriorityLock: &sync.RWMutex{},
+				MachinePriceByPriority: map[string]PriceByPriority{
 					"westus": {
 						OnDemand: {
 							Linux: {
@@ -273,9 +273,9 @@ func TestGetMachinePrices(t *testing.T) {
 				},
 			},
 			priceStore: &PriceStore{
-				logger:        aksTestLogger,
-				regionMapLock: &sync.RWMutex{},
-				RegionMap: map[string]PriceByPriority{
+				logger:                     aksTestLogger,
+				machinePriceByPriorityLock: &sync.RWMutex{},
+				MachinePriceByPriority: map[string]PriceByPriority{
 					"centralus": {
 						OnDemand: {
 							Linux: {
