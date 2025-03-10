@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"log/slog"
 
@@ -42,6 +43,11 @@ func main() {
 	}
 	priceStore := aks.NewVolumePriceStore(ctx, logger, priceClient)
 
+	// Wait for price store to be populated
+	for len(priceStore.VolumePriceByRegion) == 0 {
+		time.Sleep(1 * time.Second)
+	}
+
 	// List all disks in the subscription
 	pager := client.NewListPager(nil)
 	for pager.More() {
@@ -55,10 +61,14 @@ func main() {
 			fmt.Println("------")
 			if disk.Location != nil && disk.SKU.Name != nil {
 				// Get pricing information
-				price, err := priceStore.GetEstimatedMonthlyCost(*disk.Location, string(*disk.SKU.Name), int(*disk.Properties.DiskSizeGB))
+				price, err := priceStore.GetEstimatedMonthlyCost(disk)
 				if err != nil {
 					fmt.Printf("Price: Unable to fetch (%v)\n", err)
 				} else {
+					fmt.Printf("Disk: %s\n", *disk.Name)
+					fmt.Printf("SKU: %s\n", *disk.SKU.Name)
+					fmt.Printf("Tier: %s\n", *disk.SKU.Tier)
+					fmt.Printf("Size: %d\n", *disk.Properties.DiskSizeGB)
 					fmt.Printf("Estimated Monthly Cost: $%.2f\n", price)
 				}
 			}
