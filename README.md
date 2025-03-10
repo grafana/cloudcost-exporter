@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/grafana/cloudcost-exporter.svg)](https://pkg.go.dev/github.com/grafana/cloudcost-exporter)
 
-Cloud Cost exporter is a designed to collect cost data from cloud providers and export the data in Prometheus format.
+Cloud Cost exporter is a tool designed to collect cost data from cloud providers and export the data in Prometheus format.
 The cost data can then be combined with usage data from tools such as stackdriver, yace, and promitor to measure the spend of resources at a granular level.
 
 ## Goals
@@ -29,20 +29,16 @@ Non Goals:
 
 ## Usage
 
-Each tagged version will publish a docker image to https://hub.docker.com/r/grafana/cloudcost-exporter with the version tag.
-The image can be run locally or deployed to a kubernetes cluster.
-Cloud Cost Exporter has an opinionated way of authenticating against each cloud provider.
+### Deployment
 
-| Provider | Notes |
-|-|-|
-| GCP | Depends on [default credentials](https://cloud.google.com/docs/authentication/application-default-credentials) |
-| AWS | Uses profile names from your [credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) or `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` env variables |
-| Azure | Uses the [default azure credential chain](https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication?tabs=bash), e.g. enviornment variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_CLIENT_SECRET` |
+Cloud Cost Exporter can be used locally or on Kubernetes.
 
-When running in a kubernetes cluster, it is recommended to use a service account with the necessary permissions for the cloud provider.
-- [ ] TODO: Document the necessary permissions for each cloud provider.
+Checkout the [deployment docs](./docs/deploying/deploying.md)
+for how to:
+* Authenticate with CSPs
+* Deploy it via the image alone or the Helm chart
 
-There is no helm chart available at this time, but one is planned.
+### Metrics
 
 Check out the follow docs for metrics:
 - [provider level](docs/metrics/providers.md)
