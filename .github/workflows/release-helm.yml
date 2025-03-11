@@ -42,7 +42,7 @@ jobs:
           mkdir "${CR_BIN_PATH}"
           mkdir "${CR_PACKAGE_PATH}"
           mkdir "${CR_INDEX_PATH}"
-          crVersion=$(gh release list --repo helm/chart-releaser --exclude-pre-releases --json tagName --jq '.[0].tagName' | sed 's/v//')
+          crVersion=1.7.0
           curl -sSLo cr.tar.gz "https://github.com/helm/chart-releaser/releases/download/v${crVersion}/chart-releaser_${crVersion}_linux_amd64.tar.gz"
           tar -xzf cr.tar.gz -C "${CR_BIN_PATH}"
           rm -f cr.tar.gz
