@@ -46,7 +46,7 @@ Granular control of the version helps with security since commit SHAs are immuta
 
 ## Helm chart
 
-### Contribute to Helm chart
+### Contribute to the Helm chart
 
 The `cloudcost-exporter`'s Helm chart can be found in the repo's root path at [./deploy/helm/cloudcost-exporter](../../deploy/helm/cloudcost-exporter/README.md)
 
@@ -58,6 +58,7 @@ Run `make helm` to check that the Helm chart compiles and that its README is up-
 
 ### Create a release for the Helm chart
 
-Once the Helm chart has been released via the GitHub Actions workflow, follow these steps:
-
-1. Update `deploy/helm/Chart.yaml` with the new Helm `version`, `appVersion`, and `home` path.
+A GitHub Action workflow to publish a new Helm chart will be triggered by any changes to `deploy/helm/Chart.yaml`.
+To release a new version of the Helm chart, update `deploy/helm/Chart.yaml` with the
+new Helm `version`, `appVersion`, and `home` path.
+We aim to maintain parity between the version of cloudcost-exporter and the Helm chart version.
