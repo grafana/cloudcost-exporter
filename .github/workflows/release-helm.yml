@@ -1,0 +1,111 @@
+---
+name: Release Helm Chart
+
+on:
+  workflow_dispatch:
+
+env:
+  CR_BIN_PATH: "${{ github.workspace }}/bin"
+  CR_PACKAGE_PATH: "${{ github.workspace }}/package"
+  CR_INDEX_PATH: "${{ github.workspace }}/index"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout grafana/cloud-cost-exporter
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: source
+
+      - name: Checkout grafana/helm-charts
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: helm-charts
+          token: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
+
+      - name: Setup Helm
+        uses: helm/setup-helm@v4
+        with:
+          version: v3.10.3
+
+      - name: Install CR tool
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir "${CR_BIN_PATH}"
+          mkdir "${CR_PACKAGE_PATH}"
+          mkdir "${CR_INDEX_PATH}"
+          crVersion=$(gh release list --repo helm/chart-releaser --exclude-pre-releases --json tagName --jq '.[0].tagName' | sed 's/v//')
+          curl -sSLo cr.tar.gz "https://github.com/helm/chart-releaser/releases/download/v${crVersion}/chart-releaser_${crVersion}_linux_amd64.tar.gz"
+          tar -xzf cr.tar.gz -C "${CR_BIN_PATH}"
+          rm -f cr.tar.gz
+
+      - name: Configure Git for grafana/cloud-cost-exporter
+        working-directory: source
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Configure Git for grafana/helm-charts
+        working-directory: helm-charts
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Parse Chart.yaml
+        id: parse-chart
+        working-directory: source
+        run: |
+          name="$(yq ".name" deploy/helm/cloudcost-exporter/Chart.yaml)"
+          version="$(yq ".version" deploy/helm/cloudcost-exporter/Chart.yaml)"
+
+          {
+              echo "description=$(yq ".description" deploy/helm/cloudcost-exporter/Chart.yaml)"
+              echo "version=${version}"
+              echo "tagVersion=v${version}"
+              echo "packageName=${name}-${version}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Create Helm package
+        working-directory: source
+        run: |
+          cd source
+          "${CR_TOOL_PATH}/cr" package "${{ steps.parse-chart.outputs.chartpath }}" --config "${CR_CONFIGFILE}" --package-path "${CR_PACKAGE_PATH}"
+          echo "Result of chart package:"
+          ls -l "${CR_PACKAGE_PATH}"
+
+      - name: Create tag "helm-chart/<version>"
+        run: |
+          cd source
+          echo "Making tag ${{ steps.parse-chart.outputs.tagname }}"
+          git tag "${{ steps.parse-chart.outputs.tagname }}"
+
+      - name: Create release on grafana/helm-charts
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.parse-chart.outputs.packagename }}
+          repository: grafana/helm-charts
+          tag_name: ${{ steps.parse-chart.outputs.packagename }}
+          token: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
+          body: |
+            ${{ steps.parse-chart.outputs.desc }}
+
+            Source commit: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
+
+            Tag on source: https://github.com/${{ github.repository }}/releases/tag/${{ steps.parse-chart.outputs.tagname }}
+          files: ${{ env.CR_PACKAGE_PATH }}/${{ steps.parse-chart.outputs.packagename }}.tgz
+          fail_on_unmatched_files: true
+
+      - name: Update Helm repository index
+        working-directory: helm-charts
+        env:
+          CR_OWNER: grafana
+          CR_GIT_REPO: helm-charts
+          CR_PACKAGE_PATH: ${{ env.CR_PACKAGE_PATH }}
+          CR_SKIP_EXISTING: true
+          CR_TOKEN: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
+        run: |
+          "${CR_BIN_PATH}/cr" index --index-path "${CR_INDEX_PATH}" --push

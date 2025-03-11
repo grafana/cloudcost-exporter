@@ -11,4 +11,4 @@ version: 0.7.7
 # with each release.
 appVersion: "0.7.7"
 
-home: https://github.com/grafana/cloudcost-exporter
+home: https://github.com/grafana/cloudcost-exporter/tree/v0.7.7

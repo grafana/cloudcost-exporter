@@ -24,7 +24,7 @@ git push origin tag v0.3.0
 
 ## Releases
 
-Creating and pushing a new tag will trigger the `goreleaser` workflow in [./.github/workflows/release.yml](https://github.com/grafana/cloudcost-exporter/tree/main/.github/workflows/release.yml).
+Creating and pushing a new tag that starts with `v` will trigger the `goreleaser` workflow in [./.github/workflows/release.yml](https://github.com/grafana/cloudcost-exporter/tree/main/.github/workflows/release.yml).
 
 The configuration for `goreleaser` itself can be found in [./.goreleaser.yaml](https://github.com/grafana/cloudcost-exporter/blob/main/.goreleaser.yaml).
 
@@ -44,7 +44,9 @@ jobs:
 
 Granular control of the version helps with security since commit SHAs are immutable.
 
-## Helm Chart
+## Helm chart
+
+### Contribute to Helm chart
 
 The `cloudcost-exporter`'s Helm chart can be found in the repo's root path at [./deploy/helm/cloudcost-exporter](../../deploy/helm/cloudcost-exporter/README.md)
 
@@ -53,3 +55,9 @@ To contribute to the Helm chart, make changes to the Helm chart [templates](../.
 The Helm chart's [README](../../deploy/helm/cloudcost-exporter/README.md) is generated using [helm-docs](https://github.com/norwoodj/helm-docs) and a [gotemplate](../../deploy/helm/cloudcost-exporter/README.md.gotmpl) that goes with it.
 
 Run `make helm` to check that the Helm chart compiles and that its README is up-to-date.
+
+### Create a release for the Helm chart
+
+Once the Helm chart has been released via the GitHub Actions workflow, follow these steps:
+
+1. Update `deploy/helm/Chart.yaml` with the new Helm `version`, `appVersion`, and `home` path.
