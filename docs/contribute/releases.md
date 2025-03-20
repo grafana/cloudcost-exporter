@@ -44,12 +44,18 @@ jobs:
 
 Granular control of the version helps with security since commit SHAs are immutable.
 
-## Helm Chart
+## Helm chart
 
-The `cloudcost-exporter`'s Helm chart can be found in the repo's root path at [./deploy/helm/cloudcost-exporter](../../deploy/helm/cloudcost-exporter/README.md)
+The `cloudcost-exporter`'s Helm chart can be found here: https://github.com/grafana/helm-charts/tree/main/charts/cloudcost-exporter
 
-To contribute to the Helm chart, make changes to the Helm chart [templates](../../deploy/helm/cloudcost-exporter/templates/) and the [values.yaml](../../deploy/helm/cloudcost-exporter/values.yaml).
+### Helm chart release process
 
-The Helm chart's [README](../../deploy/helm/cloudcost-exporter/README.md) is generated using [helm-docs](https://github.com/norwoodj/helm-docs) and a [gotemplate](../../deploy/helm/cloudcost-exporter/README.md.gotmpl) that goes with it.
+If making changes to the Chart template/values (optional):
+1. Make changes to the Helm chart [templates](https://github.com/grafana/helm-charts/tree/main/charts/cloudcost-exporter/templates/) if needed
+1. Update the [values.yaml](https://github.com/grafana/helm-charts/tree/main/charts/cloudcost-exporter/values.yaml) if needed
 
-Run `make helm` to check that the Helm chart compiles and that its README is up-to-date.
+Once changes have been made to the Chart itself (see above) and/or **there is a new release of cloudcost-exporter** (required):
+1. Update the [Chart.yaml](https://github.com/grafana/helm-charts/tree/main/charts/cloudcost-exporter/Chart.yaml):
+    * Make sure that the `appVersion` matches the new cloudcost-explorer release version
+    * Bump the Helm chart's `version` too
+1. [Generate the Helm chart's README](https://github.com/grafana/helm-charts/blob/main/CONTRIBUTING.md#generate-readme)
