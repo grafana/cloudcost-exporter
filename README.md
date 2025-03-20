@@ -27,18 +27,37 @@ Non Goals:
 - GCP
 - Azure
 
-## Usage
+## Installation
 
-### Deployment
+Each tagged version of the Cloud Cost Exporter will publish a Docker image to https://hub.docker.com/r/grafana/cloudcost-exporter and a Helm chart.
 
-Cloud Cost Exporter can be used locally or on Kubernetes.
+### Local usage
 
-Checkout the [deployment docs](./docs/deploying/deploying.md)
-for how to:
-* Authenticate with CSPs
-* Deploy it via the image alone or the Helm chart
+The image can be used to deploy Cloud Cost Exporter to a Kubernetes cluster or to run it locally.
 
-### Metrics
+#### Use the image
+
+Cloud Cost Exporter has an opinionated way of authenticating against each cloud provider:
+
+| Provider | Notes |
+|-|-|
+| GCP | Depends on [default credentials](https://cloud.google.com/docs/authentication/application-default-credentials) |
+| AWS | Uses profile names from your [credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) or `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` env variables |
+| Azure | Uses the [default azure credential chain](https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication?tabs=bash), e.g. enviornment variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_CLIENT_SECRET` |
+
+### Deployment to Kubernetes
+
+When running in a Kubernetes cluster, it is recommended to create an IAM role for a Service Account (IRSA) with the necessary permissions for the cloud provider.
+
+Documentation about the necessary permission for AWS can be found [here](./docs/deploying/aws/README.md#1-setup-the-iam-role). Documentation for GCP and Azure are under development.
+
+#### Use the Helm chart
+
+When deploying to Kubernetes, it is recommended to use the Helm chart, which can be found here: https://github.com/grafana/helm-charts/tree/main/charts/cloudcost-exporter
+
+Additional Helm chart configuration for AWS can be found [here](./docs/deploying/aws/README.md#2-configure-the-helm-chart)
+
+## Metrics
 
 Check out the follow docs for metrics:
 - [provider level](docs/metrics/providers.md)
