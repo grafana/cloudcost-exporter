@@ -18,13 +18,14 @@ The role's trust policy should look like this: [./role-trust-policy.json](./role
 
 The Helm chart can be deployed after creating the necessary role and policy described above in [Authentication](#authentication).
 
-An example values file with the additional AWS-specific values is provided [here](../../.././deploy/helm/cloudcost-exporter/values.aws.yaml).
+An example values file with the additional AWS-specific values is provided here: https://github.com/grafana/helm-charts/blob/main/charts/cloudcost-exporter/values.aws.yaml
 
-The AWS-specific values can be used along the main values like this:
+Use the AWS-specific values along with the main values like this:
 ```console
-helm install my-release ./deploy/helm/cloudcost-exporter \
---values ./deploy/helm/cloudcost-exporter/values.yaml \
---values ./deploy/helm/cloudcost-exporter/values.aws.yaml
+helm install my-release grafana/cloudcost-exporter \
+--values .charts/cloudcost-exporter/values.yaml \
+--values .charts/cloudcost-exporter/values.aws.yaml \
+--namespace cloudcost-exporter --create-namespace
 ```
 
 ### `containerArgs` (required)

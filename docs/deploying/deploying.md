@@ -2,7 +2,7 @@
 
 There are multiple ways to deploy Cloud Cost Exporter:
 
-* [Helm Chart](../../deploy/helm/cloudcost-exporter/README.md)
+* [Helm Chart](https://github.com/grafana/helm-charts/tree/main/charts/cloudcost-exporter)
 * [Image](#use-the-image)
 
 ## Use the image

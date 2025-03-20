@@ -31,7 +31,5 @@ go.work
 .vscode
 
 cloudcost-exporter
-!cloudcost-exporter/
 
 dist/
-.cr-release-packages/
