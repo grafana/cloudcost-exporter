@@ -41,10 +41,6 @@ push-dev: build test
 push: build test push-dev
 	docker push $(IMAGE_NAME_LATEST)
 
-helm:
-	helm template my-release ./deploy/helm/cloudcost-exporter --debug
-	docker run -v "$(PWD):/helm-docs" -u "$(id -u)" jnorwood/helm-docs:v1.14.2
-
 grizzly-serve:
 	grr serve -p 8088 -w -S "go run ./cloudcost-exporter-dashboards/main.go"
 

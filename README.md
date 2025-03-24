@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/grafana/cloudcost-exporter.svg)](https://pkg.go.dev/github.com/grafana/cloudcost-exporter)
 
-Cloud Cost exporter is a designed to collect cost data from cloud providers and export the data in Prometheus format.
+Cloud Cost exporter is a tool designed to collect cost data from cloud providers and export the data in Prometheus format.
 The cost data can then be combined with usage data from tools such as stackdriver, yace, and promitor to measure the spend of resources at a granular level.
 
 ## Goals
@@ -27,11 +27,17 @@ Non Goals:
 - GCP
 - Azure
 
-## Usage
+## Installation
 
-Each tagged version will publish a docker image to https://hub.docker.com/r/grafana/cloudcost-exporter with the version tag.
-The image can be run locally or deployed to a kubernetes cluster.
-Cloud Cost Exporter has an opinionated way of authenticating against each cloud provider.
+Each tagged version of the Cloud Cost Exporter will publish a Docker image to https://hub.docker.com/r/grafana/cloudcost-exporter and a Helm chart.
+
+### Local usage
+
+The image can be used to deploy Cloud Cost Exporter to a Kubernetes cluster or to run it locally.
+
+#### Use the image
+
+Cloud Cost Exporter has an opinionated way of authenticating against each cloud provider:
 
 | Provider | Notes |
 |-|-|
@@ -39,10 +45,19 @@ Cloud Cost Exporter has an opinionated way of authenticating against each cloud 
 | AWS | Uses profile names from your [credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) or `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` env variables |
 | Azure | Uses the [default azure credential chain](https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication?tabs=bash), e.g. enviornment variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_CLIENT_SECRET` |
 
-When running in a kubernetes cluster, it is recommended to use a service account with the necessary permissions for the cloud provider.
-- [ ] TODO: Document the necessary permissions for each cloud provider.
+### Deployment to Kubernetes
 
-There is no helm chart available at this time, but one is planned.
+When running in a Kubernetes cluster, it is recommended to create an IAM role for a Service Account (IRSA) with the necessary permissions for the cloud provider.
+
+Documentation about the necessary permission for AWS can be found [here](./docs/deploying/aws/README.md#1-setup-the-iam-role). Documentation for GCP and Azure are under development.
+
+#### Use the Helm chart
+
+When deploying to Kubernetes, it is recommended to use the Helm chart, which can be found here: https://github.com/grafana/helm-charts/tree/main/charts/cloudcost-exporter
+
+Additional Helm chart configuration for AWS can be found [here](./docs/deploying/aws/README.md#2-configure-the-helm-chart)
+
+## Metrics
 
 Check out the follow docs for metrics:
 - [provider level](docs/metrics/providers.md)

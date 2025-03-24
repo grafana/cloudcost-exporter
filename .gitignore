@@ -31,6 +31,5 @@ go.work
 .vscode
 
 cloudcost-exporter
-!cloudcost-exporter/
 
 dist/

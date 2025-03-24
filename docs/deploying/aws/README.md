@@ -14,17 +14,25 @@ The role ARN will be passed as an [annotation to the Service Account](#serviceac
 
 The role's trust policy should look like this: [./role-trust-policy.json](./role-trust-policy.json).
 
+>[!IMPORTANT]
+> In the STS `Condition` element of the JSON policy, make sure that the Service Account name matches exactly the Service Account name that is deployed.
+> For example, this could be as simple as `"system:serviceaccount:cloudcost-exporter:cloudcost-exporter"`.
+> If using Helm to create a release such as `my-release`, the Service Account name should be updated to `"system:serviceaccount:cloudcost-exporter:my-release-cloudcost-exporter"`.
+
 ## 2. Configure the Helm chart
 
 The Helm chart can be deployed after creating the necessary role and policy described above in [Authentication](#authentication).
 
-An example values file with the additional AWS-specific values is provided [here](../../.././deploy/helm/cloudcost-exporter/values.aws.yaml).
+An example values file with the additional AWS-specific values is provided here: https://github.com/grafana/helm-charts/blob/main/charts/cloudcost-exporter/values.aws.yaml
 
-The AWS-specific values can be used along the main values like this:
+The AWS-specific values can also be set like this:
 ```console
-helm install my-release ./deploy/helm/cloudcost-exporter \
---values ./deploy/helm/cloudcost-exporter/values.yaml \
---values ./deploy/helm/cloudcost-exporter/values.aws.yaml
+helm install my-release grafana/cloudcost-exporter \
+--set 'containerArgs[0]=--provider=aws' \
+--set 'containerArgs[1]=--aws.region=us-east-1' \
+--set 'containerArgs[2]=--aws.services=s3\,ec2' \
+--set-string serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="arn:aws:iam::123456789012:role/CloudCostExporterRole" \
+--namespace cloudcost-exporter --create-namespace
 ```
 
 ### `containerArgs` (required)
@@ -55,4 +63,14 @@ This should look like the following:
 serviceAccount:
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/CloudCostExporterRole
+```
+
+## Troubleshooting
+
+### Issue with Service Account authentication
+
+The following logs suggest that there is an error with the Service Account setup. Please double-check the docs above. Feel free to open an issue in the repository if you encounter any issues.
+
+```
+level=ERROR msg="Error selecting provider" message="error getting regions: operation error EC2: DescribeRegions, get identity: get credentials: failed to refresh cached credentials, failed to retrieve credentials, operation error STS: AssumeRoleWithWebIdentity, https response error StatusCode: 403, RequestID: <request-ID>, api error AccessDenied: Not authorized to perform sts:AssumeRoleWithWebIdentity" provider=aws
 ```
