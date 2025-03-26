@@ -13,6 +13,7 @@ type Config struct {
 			Profile  string
 			Region   string
 			Services StringSliceFlag
+			RoleARN  string
 		}
 		GCP struct {
 			DefaultGCSDiscount int
