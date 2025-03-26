@@ -10,9 +10,11 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/prometheus/client_golang/prometheus"
 
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
@@ -29,6 +31,7 @@ type Config struct {
 	Profile        string
 	ScrapeInterval time.Duration
 	Logger         *slog.Logger
+	RoleARN        string
 }
 
 type AWS struct {
@@ -122,6 +125,17 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	if config.RoleARN != "" {
+		// TODO @nm: Move this to services/credentials
+		// Create the credentials from AssumeRoleProvider to assume the role
+		// referenced by the config.RoleARN
+		stsService := sts.NewFromConfig(ac)
+		creds := stscreds.NewAssumeRoleProvider(stsService, config.RoleARN)
+
+		ac.Credentials = aws.NewCredentialsCache(creds)
+	}
+
 	for _, service := range config.Services {
 		switch strings.ToUpper(service) {
 		case "S3":
