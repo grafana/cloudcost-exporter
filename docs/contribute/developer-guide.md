@@ -36,7 +36,7 @@ go run cmd/exporter/exporter.go -provider gcp -project-id=$GCP_PROJECT_ID
 
 # GCP - with custom bucket projects
 
-go run cmd/exporter/exporter.go -provider gcp -project-id=$GCP_PROJECT_ID -gcp.bucket-projects=$GPC_PROJECT_ID -gcp.bucket-projects=$GPC_PROJECT_ID
+go run cmd/exporter/exporter.go -provider gcp -project-id=$GCP_PROJECT_ID -gcp.projects=$GPC_PROJECT_ID -gcp.projects=$GPC_PROJECT_ID
 
 # AWS - Prod
 go run cmd/exporter/exporter.go -provider aws -aws.profile $AWS_PROFILE
