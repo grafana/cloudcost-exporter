@@ -10,9 +10,11 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/prometheus/client_golang/prometheus"
 
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
@@ -27,6 +29,7 @@ type Config struct {
 	Services       []string
 	Region         string
 	Profile        string
+	RoleARN        string
 	ScrapeInterval time.Duration
 	Logger         *slog.Logger
 }
@@ -116,6 +119,24 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	}
 	if config.Profile != "" {
 		options = append(options, awsconfig.WithSharedConfigProfile(config.Profile))
+	}
+	if config.RoleARN != "" {
+		// Add the credentials to assume the role specified in config.RoleARN
+		ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
+		if err != nil {
+			return nil, err
+		}
+
+		stsService := sts.NewFromConfig(ac)
+
+		options = append(options, awsconfig.WithCredentialsProvider(
+			aws.NewCredentialsCache(
+				stscreds.NewAssumeRoleProvider(
+					stsService,
+					config.RoleARN,
+				),
+			),
+		))
 	}
 	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
 	ac, err := awsconfig.LoadDefaultConfig(ctx, options...)
