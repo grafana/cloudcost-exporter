@@ -29,9 +29,9 @@ type Config struct {
 	Services       []string
 	Region         string
 	Profile        string
+	RoleARN        string
 	ScrapeInterval time.Duration
 	Logger         *slog.Logger
-	RoleARN        string
 }
 
 type AWS struct {
@@ -120,22 +120,29 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	if config.Profile != "" {
 		options = append(options, awsconfig.WithSharedConfigProfile(config.Profile))
 	}
+	if config.RoleARN != "" {
+		// Add the credentials to assume the role specified in config.RoleARN
+		ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
+		if err != nil {
+			return nil, err
+		}
+
+		stsService := sts.NewFromConfig(ac)
+
+		options = append(options, awsconfig.WithCredentialsProvider(
+			aws.NewCredentialsCache(
+				stscreds.NewAssumeRoleProvider(
+					stsService,
+					config.RoleARN,
+				),
+			),
+		))
+	}
 	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
 	ac, err := awsconfig.LoadDefaultConfig(ctx, options...)
 	if err != nil {
 		return nil, err
 	}
-
-	if config.RoleARN != "" {
-		// TODO @nm: Move this to services/credentials
-		// Create the credentials from AssumeRoleProvider to assume the role
-		// referenced by the config.RoleARN
-		stsService := sts.NewFromConfig(ac)
-		creds := stscreds.NewAssumeRoleProvider(stsService, config.RoleARN)
-
-		ac.Credentials = aws.NewCredentialsCache(creds)
-	}
-
 	for _, service := range config.Services {
 		switch strings.ToUpper(service) {
 		case "S3":
