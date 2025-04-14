@@ -20,17 +20,32 @@ var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 func Test_New(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
+		services      []string
+		region        string
+		profile       string
+		roleArn       string
 		expectedError error
 	}{
 		{
-			name: "no error",
+			name:          "no error",
+			expectedError: nil,
+			services:      []string{"ec2"},
+			region:        "us-east-1",
+			profile:       "",
+			roleArn:       "",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// TODO refactor New()
-			t.SkipNow()
 
-			a, err := New(context.Background(), &Config{})
+			a, err := New(context.Background(), &Config{
+				Logger:   logger,
+				Region:   tc.region,
+				Services: tc.services,
+				Profile:  tc.profile,
+				RoleARN:  tc.roleArn,
+			})
+
 			if tc.expectedError != nil {
 				require.EqualError(t, err, tc.expectedError.Error())
 				return

@@ -141,7 +141,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
 	ac, err := awsconfig.LoadDefaultConfig(ctx, options...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 	for _, service := range config.Services {
 		switch strings.ToUpper(service) {
