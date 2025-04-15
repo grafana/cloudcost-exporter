@@ -147,7 +147,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			}
 			regionClientMap := make(map[string]ec2client.EC2)
 			for _, r := range regions.Regions {
-				client, err := newEc2Client(*r.RegionName, config.Profile, config.RoleARN)
+				client, err := newEc2Client(*r.RegionName, ac)
 				if err != nil {
 					return nil, fmt.Errorf("error creating ec2 client: %w", err)
 				}
@@ -237,22 +237,11 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	providerScrapesTotalCounter.WithLabelValues(subsystem).Inc()
 }
 
-func newEc2Client(region, profile, roleARN string) (*ec2.Client, error) {
-	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
-	options = append(options, awsconfig.WithRegion(region))
-	if profile != "" {
-		options = append(options, awsconfig.WithSharedConfigProfile(profile))
-	}
-	// Set max retries to 10. Throttling is possible after fetching the pricing data, so setting it to 10 ensures the next scrape will be successful.
-	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
-
-	var err error
-	options, err = assumeRole(roleARN, options)
-	if err != nil {
-		return nil, err
-	}
-
-	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
+func newEc2Client(region string, ac aws.Config) (*ec2.Client, error) {
+	ac, err := awsconfig.LoadDefaultConfig(
+		context.Background(),
+		awsconfig.WithRegion(region),
+	)
 	if err != nil {
 		return nil, err
 	}
