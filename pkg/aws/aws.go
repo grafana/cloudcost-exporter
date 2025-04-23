@@ -121,11 +121,22 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 		options = append(options, awsconfig.WithSharedConfigProfile(config.Profile))
 	}
 	if config.RoleARN != "" {
-		var err error
-		options, err = assumeRole(config.RoleARN, options)
+		// Add the credentials to assume the role specified in config.RoleARN
+		ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
 		if err != nil {
 			return nil, err
 		}
+
+		stsService := sts.NewFromConfig(ac)
+
+		options = append(options, awsconfig.WithCredentialsProvider(
+			aws.NewCredentialsCache(
+				stscreds.NewAssumeRoleProvider(
+					stsService,
+					config.RoleARN,
+				),
+			),
+		))
 	}
 	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
 	ac, err := awsconfig.LoadDefaultConfig(ctx, options...)
@@ -147,7 +158,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			}
 			regionClientMap := make(map[string]ec2client.EC2)
 			for _, r := range regions.Regions {
-				client, err := newEc2Client(*r.RegionName, ac)
+				client, err := newEc2Client(*r.RegionName, config.Profile)
 				if err != nil {
 					return nil, fmt.Errorf("error creating ec2 client: %w", err)
 				}
@@ -237,35 +248,18 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	providerScrapesTotalCounter.WithLabelValues(subsystem).Inc()
 }
 
-func newEc2Client(region string, ac aws.Config) (*ec2.Client, error) {
-	ac, err := awsconfig.LoadDefaultConfig(
-		context.Background(),
-		awsconfig.WithRegion(region),
-	)
-	if err != nil {
-		return nil, err
+func newEc2Client(region, profile string) (*ec2.Client, error) {
+	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
+	options = append(options, awsconfig.WithRegion(region))
+	if profile != "" {
+		options = append(options, awsconfig.WithSharedConfigProfile(profile))
 	}
-
-	return ec2.NewFromConfig(ac), nil
-}
-
-func assumeRole(roleARN string, options []func(*awsconfig.LoadOptions) error) ([]func(*awsconfig.LoadOptions) error, error) {
-	// Add the credentials to assume the role specified in config.RoleARN
+	// Set max retries to 10. Throttling is possible after fetching the pricing data, so setting it to 10 ensures the next scrape will be successful.
+	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
 	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
 	if err != nil {
 		return nil, err
 	}
 
-	stsService := sts.NewFromConfig(ac)
-
-	options = append(options, awsconfig.WithCredentialsProvider(
-		aws.NewCredentialsCache(
-			stscreds.NewAssumeRoleProvider(
-				stsService,
-				roleARN,
-			),
-		),
-	))
-
-	return options, nil
+	return ec2.NewFromConfig(ac), nil
 }
