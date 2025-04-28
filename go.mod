@@ -14,7 +14,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.29.8
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.61
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.47.1
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.210.1
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.212.0
 	github.com/aws/aws-sdk-go-v2/service/pricing v1.34.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.16
 	github.com/google/go-cmp v0.7.0
