@@ -29,7 +29,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Build and push
-        uses: grafana/shared-workflows/actions/build-push-to-dockerhub@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
+        uses: grafana/shared-workflows/actions/build-push-to-dockerhub@402975d84dd3fac9ba690f994f412d0ee2f51cf4 # build-push-to-dockerhub-v0.1.1
         with:
           repository: ${{ env.REGISTRY_IMAGE }}
           context: .
