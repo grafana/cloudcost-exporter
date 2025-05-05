@@ -11,6 +11,9 @@ on:
 
 jobs:
   build-lint-test:
+    permissions:
+      pull-requests: read
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
