@@ -26,9 +26,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
+        with:
+          persist-credentials: false
       - name: Build and push
-        uses: grafana/shared-workflows/actions/build-push-to-dockerhub@main
+        uses: grafana/shared-workflows/actions/build-push-to-dockerhub@402975d84dd3fac9ba690f994f412d0ee2f51cf4 # build-push-to-dockerhub-v0.1.1
         with:
           repository: ${{ env.REGISTRY_IMAGE }}
           context: .
