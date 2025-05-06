@@ -1,6 +1,8 @@
 # AWS CloudCost Exporter Deployment
 
-## 1. Setup the IAM role
+## Setup the required IRSA authentication
+
+### 1. Setup the primary IAM role
 
 cloudcost-exporter uses [AWS SDK for Go V2](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/getting-started.html)
 and supports providing authentication via the [AWS SDK's default credential provider chain](https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html).
@@ -19,7 +21,7 @@ The role's trust policy should look like this: [./role-trust-policy.json](./role
 > For example, this could be as simple as `"system:serviceaccount:cloudcost-exporter:cloudcost-exporter"`.
 > If using Helm to create a release such as `my-release`, the Service Account name should be updated to `"system:serviceaccount:cloudcost-exporter:my-release-cloudcost-exporter"`.
 
-## 2. Configure the Helm chart
+### 2. Configure the Helm chart
 
 The Helm chart can be deployed after creating the necessary role and policy described above in [Authentication](#authentication).
 
@@ -64,6 +66,26 @@ serviceAccount:
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/CloudCostExporterRole
 ```
+
+## Access resources in a separate account
+
+There are two roles that cloudcost-exporter can use: the first one is the IRSA role, which is required.
+The setup for this is described in the section [Setup the required IRSA authentication](#setup-the-required-irsa-authentication).
+This is the role ARN that is added as a tag to the Service Account.
+This authenticates cloudcost-exporter running in the cluster with the cluster's AWS account via OIDC.
+
+cloudcost-exporter is also able to pull metrics from an account that is different to the account where the cluster is running.
+This feature is **optional**.
+
+The authentication setup involves the following (see AWS docs: [Cross-account access using roles](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies-cross-account-resource-access.html#access_policies-cross-account-using-roles)):
+* Set up the IRSA role in the cluster account
+* Set up the role to be assumed in the account where resources will be accessed
+
+![Cross-account IAM access diagram](./cross-account-access-diagram.png "Cross-account IAM access diagram")
+
+Once the roles are setup, set the role ARN of the role to be assumed through the following flag: `--aws.roleARN=<role-arn>`
+
+This can be added to the Helm configuration as an additional [containerArgs](#containerargs-required).
 
 ## Troubleshooting
 
