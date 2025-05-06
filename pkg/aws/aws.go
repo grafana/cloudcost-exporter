@@ -246,10 +246,12 @@ func newEc2Client(region, profile, roleARN string) (*ec2.Client, error) {
 	// Set max retries to 10. Throttling is possible after fetching the pricing data, so setting it to 10 ensures the next scrape will be successful.
 	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
 
-	var err error
-	options, err = assumeRole(roleARN, options)
-	if err != nil {
-		return nil, err
+	if roleARN != "" {
+		var err error
+		options, err = assumeRole(roleARN, options)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
