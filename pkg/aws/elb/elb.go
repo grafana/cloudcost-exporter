@@ -145,7 +145,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 }
 
 func (c *Collector) Name() string {
-	return "ELB"
+	return subsystem
 }
 
 func (c *Collector) shouldScrape() bool {
