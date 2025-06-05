@@ -74,7 +74,7 @@ func TestCollectorName(t *testing.T) {
 	}
 
 	collector := New(config, &MockPricingClient{})
-	assert.Equal(t, "ELB", collector.Name())
+	assert.Equal(t, subsystem, collector.Name())
 }
 
 func TestCollectorDescribe(t *testing.T) {
