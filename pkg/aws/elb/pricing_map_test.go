@@ -16,7 +16,7 @@ func TestNewELBPricingMap(t *testing.T) {
 
 func TestSetAndGetRegionPricing(t *testing.T) {
 	pm := NewELBPricingMap()
-	
+
 	pricing := &RegionPricing{
 		ALBHourlyRate: map[string]float64{"default": 0.0225},
 		NLBHourlyRate: map[string]float64{"default": 0.0225},
@@ -37,13 +37,13 @@ func TestSetAndGetRegionPricing(t *testing.T) {
 
 func TestConcurrentAccess(t *testing.T) {
 	pm := NewELBPricingMap()
-	
+
 	pricing1 := &RegionPricing{
 		ALBHourlyRate: map[string]float64{"default": 0.0225},
 		NLBHourlyRate: map[string]float64{"default": 0.0225},
 		CLBHourlyRate: map[string]float64{"default": 0.025},
 	}
-	
+
 	pricing2 := &RegionPricing{
 		ALBHourlyRate: map[string]float64{"default": 0.0250},
 		NLBHourlyRate: map[string]float64{"default": 0.0250},
@@ -83,7 +83,7 @@ func TestConcurrentAccess(t *testing.T) {
 	// Verify final state
 	finalPricing1 := pm.GetRegionPricing("us-east-1")
 	finalPricing2 := pm.GetRegionPricing("us-west-2")
-	
+
 	assert.NotNil(t, finalPricing1)
 	assert.NotNil(t, finalPricing2)
 	assert.Equal(t, pricing1, finalPricing1)
