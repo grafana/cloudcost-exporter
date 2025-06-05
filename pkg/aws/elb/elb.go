@@ -18,8 +18,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
-	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 	elbv2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/elbv2"
+	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
@@ -39,13 +39,13 @@ var (
 )
 
 type Collector struct {
-	Regions           []ec2Types.Region
-	ScrapeInterval    time.Duration
-	pricingMap        *ELBPricingMap
-	pricingService    pricingClient.Pricing
-	NextScrape        time.Time
-	elbRegionClients  map[string]elbv2client.ELBv2
-	logger            *slog.Logger
+	Regions          []ec2Types.Region
+	ScrapeInterval   time.Duration
+	pricingMap       *ELBPricingMap
+	pricingService   pricingClient.Pricing
+	NextScrape       time.Time
+	elbRegionClients map[string]elbv2client.ELBv2
+	logger           *slog.Logger
 }
 
 type Config struct {
