@@ -58,31 +58,6 @@ var (
 		[]string{"collector"},
 		nil,
 	)
-	providerLastScrapeDurationDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "last_scrape_duration_seconds"),
-		"Duration of the last scrape in seconds.",
-		[]string{"provider"},
-		nil,
-	)
-	providerLastScrapeErrorDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "last_scrape_error"),
-		"Was the last scrape an error. 1 indicates an error.",
-		[]string{"provider"},
-		nil,
-	)
-	providerLastScrapeTime = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "last_scrape_time"),
-		"Time of the last scrape.",
-		[]string{"provider"},
-		nil,
-	)
-	providerScrapesTotalCounter = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "scrapes_total"),
-			Help: "Total number of scrapes.",
-		},
-		[]string{"provider"},
-	)
 )
 
 type Azure struct {
@@ -172,10 +147,7 @@ func (a *Azure) RegisterCollectors(registry provider.Registry) error {
 func (a *Azure) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collectorLastScrapeErrorDesc
 	ch <- collectorDurationDesc
-	ch <- providerLastScrapeErrorDesc
-	ch <- providerLastScrapeDurationDesc
 	ch <- collectorLastScrapeTime
-	ch <- providerLastScrapeTime
 	ch <- collectorSuccessDesc
 	for _, c := range a.collectors {
 		if err := c.Describe(ch); err != nil {
@@ -189,7 +161,6 @@ func (a *Azure) Collect(ch chan<- prometheus.Metric) {
 	_, cancel := context.WithTimeout(a.context, a.collectorTimeout)
 	defer cancel()
 
-	providerStart := time.Now()
 	wg := &sync.WaitGroup{}
 	wg.Add(len(a.collectors))
 
@@ -208,12 +179,6 @@ func (a *Azure) Collect(ch chan<- prometheus.Metric) {
 			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, collectorErrors, c.Name())
 			collectorScrapesTotalCounter.WithLabelValues(subsystem, c.Name()).Inc()
 		}(c)
-
 	}
 	wg.Wait()
-
-	ch <- prometheus.MustNewConstMetric(providerLastScrapeErrorDesc, prometheus.GaugeValue, 0.0, subsystem)
-	ch <- prometheus.MustNewConstMetric(providerLastScrapeDurationDesc, prometheus.GaugeValue, time.Since(providerStart).Seconds(), subsystem)
-	ch <- prometheus.MustNewConstMetric(providerLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem)
-	providerScrapesTotalCounter.WithLabelValues(subsystem).Inc()
 }
