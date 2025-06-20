@@ -13,15 +13,18 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/prometheus/client_golang/prometheus"
 
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
+	elbCollector "github.com/grafana/cloudcost-exporter/pkg/aws/elb"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
+	elbv2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/elbv2"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
@@ -135,6 +138,28 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 				ScrapeInterval: config.ScrapeInterval,
 			}, pricingService)
 			collectors = append(collectors, collector)
+		case "ELB":
+			pricingService := pricing.NewFromConfig(ac)
+			computeService := ec2.NewFromConfig(ac)
+			regions, err := computeService.DescribeRegions(ctx, &ec2.DescribeRegionsInput{AllRegions: aws.Bool(false)})
+			if err != nil {
+				return nil, fmt.Errorf("error getting regions: %w", err)
+			}
+			regionClientMap := make(map[string]elbv2client.ELBv2)
+			for _, r := range regions.Regions {
+				client, err := newELBv2Client(*r.RegionName, config.Profile, config.RoleARN)
+				if err != nil {
+					return nil, fmt.Errorf("error creating elbv2 client: %w", err)
+				}
+				regionClientMap[*r.RegionName] = client
+			}
+			collector := elbCollector.New(&elbCollector.Config{
+				Regions:        regions.Regions,
+				RegionClients:  regionClientMap,
+				Logger:         logger,
+				ScrapeInterval: config.ScrapeInterval,
+			}, pricingService)
+			collectors = append(collectors, collector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",
 				slog.String("service", service),
@@ -227,6 +252,30 @@ func newEc2Client(region, profile, roleARN string) (*ec2.Client, error) {
 	}
 
 	return ec2.NewFromConfig(ac), nil
+}
+
+func newELBv2Client(region, profile, roleARN string) (*elasticloadbalancingv2.Client, error) {
+	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
+	options = append(options, awsconfig.WithRegion(region))
+	if profile != "" {
+		options = append(options, awsconfig.WithSharedConfigProfile(profile))
+	}
+	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
+
+	if roleARN != "" {
+		var err error
+		options, err = assumeRole(roleARN, options)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
+	if err != nil {
+		return nil, err
+	}
+
+	return elasticloadbalancingv2.NewFromConfig(ac), nil
 }
 
 func assumeRole(roleARN string, options []func(*awsconfig.LoadOptions) error) ([]func(*awsconfig.LoadOptions) error, error) {
