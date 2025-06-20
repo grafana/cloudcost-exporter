@@ -50,6 +50,12 @@ var (
 		[]string{"provider", "collector"},
 		nil,
 	)
+	collectorSuccessDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "collector_success"),
+		"Was the last scrape of the GCP metrics successful.",
+		[]string{"collector"},
+		nil,
+	)
 )
 
 type GCP struct {
@@ -157,6 +163,7 @@ func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collectorLastScrapeErrorDesc
 	ch <- collectorDurationDesc
 	ch <- collectorLastScrapeTime
+	ch <- collectorSuccessDesc
 	for _, c := range g.collectors {
 		if err := c.Describe(ch); err != nil {
 			g.logger.LogAttrs(context.Background(), slog.LevelError, "Error calling describe",
@@ -189,6 +196,7 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorErrors, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
+			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, collectorErrors, c.Name())
 			collectorScrapesTotalCounter.WithLabelValues(subsystem, c.Name()).Inc()
 		}(c)
 	}
