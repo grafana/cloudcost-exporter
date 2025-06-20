@@ -74,15 +74,8 @@ func TestGCP_CollectMetrics(t *testing.T) {
 		expectedMetrics []*utils.MetricResult
 	}{
 		"no error if no collectors": {
-			numCollectors: 0,
-			expectedMetrics: []*utils.MetricResult{
-				{
-					FqName:     "cloudcost_exporter_last_scrape_error",
-					Labels:     utils.LabelMap{"provider": "gcp"},
-					Value:      0,
-					MetricType: prometheus.GaugeValue,
-				},
-			},
+			numCollectors:   0,
+			expectedMetrics: []*utils.MetricResult{},
 		},
 		"bubble-up single collector error": {
 			numCollectors: 1,
@@ -94,12 +87,6 @@ func TestGCP_CollectMetrics(t *testing.T) {
 					FqName:     "cloudcost_exporter_collector_last_scrape_error",
 					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
 					Value:      1,
-					MetricType: prometheus.GaugeValue,
-				},
-				{
-					FqName:     "cloudcost_exporter_last_scrape_error",
-					Labels:     utils.LabelMap{"provider": "gcp"},
-					Value:      0,
 					MetricType: prometheus.GaugeValue,
 				},
 			},
@@ -120,12 +107,7 @@ func TestGCP_CollectMetrics(t *testing.T) {
 					Value:      0,
 					MetricType: prometheus.GaugeValue,
 				},
-				{
-					FqName:     "cloudcost_exporter_last_scrape_error",
-					Labels:     utils.LabelMap{"provider": "gcp"},
-					Value:      0,
-					MetricType: prometheus.GaugeValue,
-				}},
+			},
 		},
 	}
 	for name, tt := range tests {

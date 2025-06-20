@@ -25,25 +25,6 @@ const (
 )
 
 var (
-	providerLastScrapeErrorDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "last_scrape_error"),
-		"Was the last scrape an error. 1 indicates an error.",
-		[]string{"provider"},
-		nil,
-	)
-	providerLastScrapeDurationDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "last_scrape_duration_seconds"),
-		"Duration of the last scrape in seconds.",
-		[]string{"provider"},
-		nil,
-	)
-	providerScrapesTotalCounter = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "scrapes_total"),
-			Help: "Total number of scrapes.",
-		},
-		[]string{"provider"},
-	)
 	collectorLastScrapeErrorDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "last_scrape_error"),
 		"Was the last scrape an error. 1 indicates an error.",
@@ -67,12 +48,6 @@ var (
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "last_scrape_time"),
 		"Time of the last scrape.W",
 		[]string{"provider", "collector"},
-		nil,
-	)
-	providerLastScrapeTime = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "last_scrape_time"),
-		"Time of the last scrape.",
-		[]string{"provider"},
 		nil,
 	)
 )
@@ -168,7 +143,6 @@ func New(config *Config) (*GCP, error) {
 
 // RegisterCollectors will iterate over all the collectors instantiated during New and register their metrics.
 func (g *GCP) RegisterCollectors(registry provider.Registry) error {
-	registry.MustRegister(providerScrapesTotalCounter)
 	registry.MustRegister(collectorScrapesTotalCounter)
 	for _, c := range g.collectors {
 		if err := c.Register(registry); err != nil {
@@ -182,10 +156,7 @@ func (g *GCP) RegisterCollectors(registry provider.Registry) error {
 func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collectorLastScrapeErrorDesc
 	ch <- collectorDurationDesc
-	ch <- providerLastScrapeErrorDesc
-	ch <- providerLastScrapeDurationDesc
 	ch <- collectorLastScrapeTime
-	ch <- providerLastScrapeTime
 	for _, c := range g.collectors {
 		if err := c.Describe(ch); err != nil {
 			g.logger.LogAttrs(context.Background(), slog.LevelError, "Error calling describe",
@@ -199,7 +170,6 @@ func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
 func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 	wg := sync.WaitGroup{}
 	wg.Add(len(g.collectors))
-	start := time.Now()
 	for _, c := range g.collectors {
 		go func(c provider.Collector) {
 			now := time.Now()
@@ -223,9 +193,4 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 		}(c)
 	}
 	wg.Wait()
-	// When can the error actually happen? Potentially if all the collectors fail?
-	ch <- prometheus.MustNewConstMetric(providerLastScrapeErrorDesc, prometheus.GaugeValue, 0.0, subsystem)
-	ch <- prometheus.MustNewConstMetric(providerLastScrapeDurationDesc, prometheus.GaugeValue, time.Since(start).Seconds(), subsystem)
-	ch <- prometheus.MustNewConstMetric(providerLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem)
-	providerScrapesTotalCounter.WithLabelValues(subsystem).Inc()
 }

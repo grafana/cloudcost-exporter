@@ -41,12 +41,6 @@ type AWS struct {
 }
 
 var (
-	providerLastScrapeErrorDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "last_scrape_error"),
-		"Was the last scrape an error. 1 indicates an error.",
-		[]string{"provider"},
-		nil,
-	)
 	collectorSuccessDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "collector_success"),
 		"Was the last scrape of the AWS metrics successful.",
@@ -77,25 +71,6 @@ var (
 		"Time of the last scrape.",
 		[]string{"provider", "collector"},
 		nil,
-	)
-	providerLastScrapeTime = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "last_scrape_time"),
-		"Time of the last scrape.",
-		[]string{"provider"},
-		nil,
-	)
-	providerLastScrapeDurationDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "last_scrape_duration_seconds"),
-		"Duration of the last scrape in seconds.",
-		[]string{"provider"},
-		nil,
-	)
-	providerScrapesTotalCounter = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "", "scrapes_total"),
-			Help: "Total number of scrapes.",
-		},
-		[]string{"provider"},
 	)
 )
 
@@ -192,10 +167,7 @@ func (a *AWS) RegisterCollectors(registry provider.Registry) error {
 func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collectorLastScrapeErrorDesc
 	ch <- collectorDurationDesc
-	ch <- providerLastScrapeErrorDesc
-	ch <- providerLastScrapeDurationDesc
 	ch <- collectorLastScrapeTime
-	ch <- providerLastScrapeTime
 	ch <- collectorSuccessDesc
 	for _, c := range a.collectors {
 		if err := c.Describe(ch); err != nil {
@@ -208,7 +180,6 @@ func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (a *AWS) Collect(ch chan<- prometheus.Metric) {
-	start := time.Now()
 	wg := &sync.WaitGroup{}
 	wg.Add(len(a.collectors))
 	for _, c := range a.collectors {
@@ -231,10 +202,6 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 		}(c)
 	}
 	wg.Wait()
-	ch <- prometheus.MustNewConstMetric(providerLastScrapeErrorDesc, prometheus.GaugeValue, 0.0, subsystem)
-	ch <- prometheus.MustNewConstMetric(providerLastScrapeDurationDesc, prometheus.GaugeValue, time.Since(start).Seconds(), subsystem)
-	ch <- prometheus.MustNewConstMetric(providerLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem)
-	providerScrapesTotalCounter.WithLabelValues(subsystem).Inc()
 }
 
 func newEc2Client(region, profile, roleARN string) (*ec2.Client, error) {
