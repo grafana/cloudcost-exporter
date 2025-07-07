@@ -70,22 +70,31 @@ func Test_RegisterCollectors(t *testing.T) {
 func TestGCP_CollectMetrics(t *testing.T) {
 	tests := map[string]struct {
 		numCollectors   int
+		collectorName   string
 		collect         func(chan<- prometheus.Metric) error
 		expectedMetrics []*utils.MetricResult
 	}{
 		"no error if no collectors": {
 			numCollectors:   0,
+			collectorName:   "test1",
 			expectedMetrics: []*utils.MetricResult{},
 		},
 		"bubble-up single collector error": {
 			numCollectors: 1,
+			collectorName: "test2",
 			collect: func(chan<- prometheus.Metric) error {
 				return fmt.Errorf("test collect error")
 			},
 			expectedMetrics: []*utils.MetricResult{
 				{
+					FqName:     "cloudcost_exporter_gcp_collector_success",
+					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test2"},
+					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
 					FqName:     "cloudcost_exporter_collector_last_scrape_error",
-					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
+					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test2"},
 					Value:      1,
 					MetricType: prometheus.GaugeValue,
 				},
@@ -93,18 +102,31 @@ func TestGCP_CollectMetrics(t *testing.T) {
 		},
 		"two collectors with no errors": {
 			numCollectors: 2,
+			collectorName: "test3",
 			collect:       func(chan<- prometheus.Metric) error { return nil },
 			expectedMetrics: []*utils.MetricResult{
 				{
 					FqName:     "cloudcost_exporter_collector_last_scrape_error",
-					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
+					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test3"},
 					Value:      0,
 					MetricType: prometheus.GaugeValue,
 				},
 				{
 					FqName:     "cloudcost_exporter_collector_last_scrape_error",
-					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test"},
+					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test3"},
 					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName:     "cloudcost_exporter_gcp_collector_success",
+					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test3"},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName:     "cloudcost_exporter_gcp_collector_success",
+					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test3"},
+					Value:      2,
 					MetricType: prometheus.GaugeValue,
 				},
 			},
@@ -119,7 +141,7 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			registry := mock_provider.NewMockRegistry(ctrl)
 			registry.EXPECT().MustRegister(gomock.Any()).AnyTimes()
 			if tt.collect != nil {
-				c.EXPECT().Name().Return("test").AnyTimes()
+				c.EXPECT().Name().Return(tt.collectorName).AnyTimes()
 				// TODO: @pokom need to figure out why _sometimes_ this fails if we set it to *.Times(tt.numCollectors)
 				c.EXPECT().Collect(ch).DoAndReturn(tt.collect).AnyTimes()
 				c.EXPECT().Register(registry).Return(nil).AnyTimes()
@@ -166,6 +188,9 @@ func TestGCP_CollectMetrics(t *testing.T) {
 				metrics = append(metrics, metric)
 			}
 			assert.ElementsMatch(t, metrics, tt.expectedMetrics)
+			// clean up metrics for next test
+			metrics = []*utils.MetricResult{}
+			gcp.collectors = []provider.Collector{}
 		})
 	}
 }

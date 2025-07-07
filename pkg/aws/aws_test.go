@@ -5,14 +5,18 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -94,52 +98,128 @@ func Test_RegisterCollectors(t *testing.T) {
 }
 
 func Test_CollectMetrics(t *testing.T) {
-	for _, tc := range []struct {
-		name          string
-		numCollectors int
-		collect       func(chan<- prometheus.Metric) error
+	tests := map[string]struct {
+		numCollectors   int
+		collectorName   string
+		collect         func(chan<- prometheus.Metric) error
+		expectedMetrics []*utils.MetricResult
 	}{
-		{
-			name: "no error if no collectors",
+		"no error if no collectors": {
+			numCollectors:   0,
+			collectorName:   "test1",
+			expectedMetrics: []*utils.MetricResult{},
 		},
-		{
-			name:          "bubble-up single collector error",
+		"bubble-up single collector error": {
 			numCollectors: 1,
+			collectorName: "test2",
 			collect: func(chan<- prometheus.Metric) error {
-				return nil
+				return fmt.Errorf("test collect error")
+			},
+			expectedMetrics: []*utils.MetricResult{
+				{
+					FqName:     "cloudcost_exporter_aws_collector_success",
+					Labels:     utils.LabelMap{"provider": "aws", "collector": "test2"},
+					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName:     "cloudcost_exporter_collector_last_scrape_error",
+					Labels:     utils.LabelMap{"provider": "aws", "collector": "test2"},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
 			},
 		},
-		{
-			name:          "two collectors with no errors",
+		"two collectors with no errors": {
 			numCollectors: 2,
+			collectorName: "test3",
 			collect:       func(chan<- prometheus.Metric) error { return nil },
+			expectedMetrics: []*utils.MetricResult{
+				{
+					FqName:     "cloudcost_exporter_collector_last_scrape_error",
+					Labels:     utils.LabelMap{"provider": "aws", "collector": "test3"},
+					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName:     "cloudcost_exporter_collector_last_scrape_error",
+					Labels:     utils.LabelMap{"provider": "aws", "collector": "test3"},
+					Value:      0,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName:     "cloudcost_exporter_aws_collector_success",
+					Labels:     utils.LabelMap{"provider": "aws", "collector": "test3"},
+					Value:      1,
+					MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName:     "cloudcost_exporter_aws_collector_success",
+					Labels:     utils.LabelMap{"provider": "aws", "collector": "test3"},
+					Value:      2,
+					MetricType: prometheus.GaugeValue,
+				},
+			},
 		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
 			ch := make(chan prometheus.Metric)
-			go func() {
-				for range ch {
-					// This is necessary to ensure the test doesn't hang
-				}
-			}()
+
 			ctrl := gomock.NewController(t)
 			c := mock_provider.NewMockCollector(ctrl)
-			if tc.collect != nil {
-				c.EXPECT().Collect(ch).DoAndReturn(tc.collect).Times(tc.numCollectors)
-				c.EXPECT().Name().Return("test").AnyTimes()
+			registry := mock_provider.NewMockRegistry(ctrl)
+			registry.EXPECT().MustRegister(gomock.Any()).AnyTimes()
+			if tt.collect != nil {
+				c.EXPECT().Name().Return(tt.collectorName).AnyTimes()
+				c.EXPECT().Collect(ch).DoAndReturn(tt.collect).AnyTimes()
+				c.EXPECT().Register(registry).Return(nil).AnyTimes()
 			}
-
-			a := AWS{
+			aws := &AWS{
 				Config:     nil,
 				collectors: []provider.Collector{},
 				logger:     logger,
 			}
-			for i := 0; i < tc.numCollectors; i++ {
-				a.collectors = append(a.collectors, c)
+
+			for range tt.numCollectors {
+				aws.collectors = append(aws.collectors, c)
 			}
 
-			a.Collect(ch)
-			close(ch)
+			wg := sync.WaitGroup{}
+
+			wg.Add(1)
+			go func() {
+				aws.Collect(ch)
+				close(ch)
+			}()
+			wg.Done()
+
+			wg.Wait()
+			var metrics []*utils.MetricResult
+			var ignoreMetric = func(metricName string) bool {
+				ignoredMetricSuffix := []string{
+					"duration_seconds",
+					"last_scrape_time",
+				}
+				for _, suffix := range ignoredMetricSuffix {
+					if strings.Contains(metricName, suffix) {
+						return true
+					}
+				}
+
+				return false
+			}
+			for m := range ch {
+				metric := utils.ReadMetrics(m)
+				if ignoreMetric(metric.FqName) {
+					continue
+				}
+				metrics = append(metrics, metric)
+			}
+			assert.ElementsMatch(t, metrics, tt.expectedMetrics)
+			// clean up metrics for next test
+			metrics = []*utils.MetricResult{}
+			aws.collectors = []provider.Collector{}
 		})
 	}
 }

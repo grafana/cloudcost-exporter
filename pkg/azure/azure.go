@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 
 	"github.com/grafana/cloudcost-exporter/pkg/azure/aks"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
@@ -53,9 +55,9 @@ var (
 		[]string{"provider", "collector"},
 	)
 	collectorSuccessDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "collector_success"),
-		"Was the last scrape of the Azure metrics successful.",
-		[]string{"collector"},
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "success"),
+		"Number of successful scrapes for the collector.",
+		[]string{"provider", "collector"},
 		nil,
 	)
 )
@@ -176,8 +178,13 @@ func (a *Azure) Collect(ch chan<- prometheus.Metric) {
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorErrors, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(collectorStart).Seconds(), subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
-			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, collectorErrors, c.Name())
 			collectorScrapesTotalCounter.WithLabelValues(subsystem, c.Name()).Inc()
+
+			counter := collectorScrapesTotalCounter.WithLabelValues(subsystem, c.Name())
+			totalMetricCount := &dto.Metric{}
+			counter.Write(totalMetricCount)
+
+			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, math.Max(0, totalMetricCount.GetCounter().GetValue()-collectorErrors), subsystem, c.Name())
 		}(c)
 	}
 	wg.Wait()

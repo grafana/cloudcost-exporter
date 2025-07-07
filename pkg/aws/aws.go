@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
 
@@ -44,7 +45,7 @@ var (
 	collectorSuccessDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "collector_success"),
 		"Was the last scrape of the AWS metrics successful.",
-		[]string{"collector"},
+		[]string{"provider", "collector"},
 		nil,
 	)
 	collectorLastScrapeErrorDesc = prometheus.NewDesc(
@@ -197,8 +198,12 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorErrors, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
-			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, collectorErrors, c.Name())
 			collectorScrapesTotalCounter.WithLabelValues(subsystem, c.Name()).Inc()
+
+			counter := collectorScrapesTotalCounter.WithLabelValues(subsystem, c.Name())
+			totalMetricCount := &dto.Metric{}
+			counter.Write(totalMetricCount)
+			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, totalMetricCount.GetCounter().GetValue()-collectorErrors, subsystem, c.Name())
 		}(c)
 	}
 	wg.Wait()
