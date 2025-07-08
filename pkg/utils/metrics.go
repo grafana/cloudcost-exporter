@@ -44,6 +44,7 @@ func ReadMetrics(metric prometheus.Metric) *MetricResult {
 	}
 	if m.Counter != nil {
 		return &MetricResult{
+			FqName:     fqName,
 			Labels:     labels,
 			Value:      m.GetCounter().GetValue(),
 			MetricType: prometheus.CounterValue,
@@ -51,6 +52,7 @@ func ReadMetrics(metric prometheus.Metric) *MetricResult {
 	}
 	if m.Untyped != nil {
 		return &MetricResult{
+			FqName:     fqName,
 			Labels:     labels,
 			Value:      m.GetUntyped().GetValue(),
 			MetricType: prometheus.UntypedValue,
