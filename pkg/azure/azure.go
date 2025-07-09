@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 
 	"github.com/grafana/cloudcost-exporter/pkg/azure/aks"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
@@ -35,7 +37,7 @@ var (
 	)
 	collectorLastScrapeErrorDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "last_scrape_error"),
-		"Was the last scrape an error. 1 indicates an error.",
+		"Counter of the number of errors that occurred during the last scrape.",
 		[]string{"provider", "collector"},
 		nil,
 	)
@@ -53,9 +55,9 @@ var (
 		[]string{"provider", "collector"},
 	)
 	collectorSuccessDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "collector_success"),
-		"Was the last scrape of the Azure metrics successful.",
-		[]string{"collector"},
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "success"),
+		"Count the number of successful scrapes for a collector.",
+		[]string{"provider", "collector"},
 		nil,
 	)
 )
@@ -170,14 +172,19 @@ func (a *Azure) Collect(ch chan<- prometheus.Metric) {
 			defer wg.Done()
 			collectorErrors := 0.0
 			if err := c.Collect(ch); err != nil {
-				collectorErrors = 1.0
+				collectorErrors++
 				a.logger.LogAttrs(a.context, slog.LevelInfo, "error collecting metrics from collector", slog.String("collector", c.Name()), slog.String("error", err.Error()))
 			}
-			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.GaugeValue, collectorErrors, subsystem, c.Name())
+			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.CounterValue, collectorErrors, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(collectorStart).Seconds(), subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
-			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.GaugeValue, collectorErrors, c.Name())
 			collectorScrapesTotalCounter.WithLabelValues(subsystem, c.Name()).Inc()
+
+			counter := collectorScrapesTotalCounter.WithLabelValues(subsystem, c.Name())
+			totalMetricCount := &dto.Metric{}
+			counter.Write(totalMetricCount)
+
+			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.CounterValue, math.Max(0, totalMetricCount.GetCounter().GetValue()-collectorErrors), subsystem, c.Name())
 		}(c)
 	}
 	wg.Wait()
