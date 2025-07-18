@@ -117,12 +117,6 @@ func Test_CollectMetrics(t *testing.T) {
 			},
 			expectedMetrics: []*utils.MetricResult{
 				{
-					FqName:     "cloudcost_exporter_collector_success",
-					Labels:     utils.LabelMap{"provider": "aws", "collector": "test2"},
-					Value:      0,
-					MetricType: prometheus.CounterValue,
-				},
-				{
 					FqName:     "cloudcost_exporter_collector_last_scrape_error",
 					Labels:     utils.LabelMap{"provider": "aws", "collector": "test2"},
 					Value:      1,
@@ -147,18 +141,6 @@ func Test_CollectMetrics(t *testing.T) {
 					Value:      0,
 					MetricType: prometheus.CounterValue,
 				},
-				{
-					FqName:     "cloudcost_exporter_collector_success",
-					Labels:     utils.LabelMap{"provider": "aws", "collector": "test3"},
-					Value:      1,
-					MetricType: prometheus.CounterValue,
-				},
-				{
-					FqName:     "cloudcost_exporter_collector_success",
-					Labels:     utils.LabelMap{"provider": "aws", "collector": "test3"},
-					Value:      2,
-					MetricType: prometheus.CounterValue,
-				},
 			},
 		},
 	}
@@ -169,7 +151,6 @@ func Test_CollectMetrics(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			c := mock_provider.NewMockCollector(ctrl)
 			registry := mock_provider.NewMockRegistry(ctrl)
-			registry.EXPECT().MustRegister(gomock.Any()).AnyTimes()
 			if tt.collect != nil {
 				c.EXPECT().Name().Return(tt.collectorName).AnyTimes()
 				c.EXPECT().Collect(ch).DoAndReturn(tt.collect).AnyTimes()

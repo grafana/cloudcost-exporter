@@ -87,12 +87,6 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			},
 			expectedMetrics: []*utils.MetricResult{
 				{
-					FqName:     "cloudcost_exporter_collector_success",
-					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test2"},
-					Value:      0,
-					MetricType: prometheus.CounterValue,
-				},
-				{
 					FqName:     "cloudcost_exporter_collector_last_scrape_error",
 					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test2"},
 					Value:      1,
@@ -115,18 +109,6 @@ func TestGCP_CollectMetrics(t *testing.T) {
 					FqName:     "cloudcost_exporter_collector_last_scrape_error",
 					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test3"},
 					Value:      0,
-					MetricType: prometheus.CounterValue,
-				},
-				{
-					FqName:     "cloudcost_exporter_collector_success",
-					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test3"},
-					Value:      1,
-					MetricType: prometheus.CounterValue,
-				},
-				{
-					FqName:     "cloudcost_exporter_collector_success",
-					Labels:     utils.LabelMap{"provider": "gcp", "collector": "test3"},
-					Value:      2,
 					MetricType: prometheus.CounterValue,
 				},
 			},
