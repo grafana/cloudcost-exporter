@@ -16,7 +16,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
 
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
 
@@ -42,12 +41,6 @@ type AWS struct {
 }
 
 var (
-	collectorSuccessDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "success"),
-		"Count the number of successful scrapes for a collector.",
-		[]string{"provider", "collector"},
-		nil,
-	)
 	collectorLastScrapeErrorDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "last_scrape_error"),
 		"Counter of the number of errors that occurred during the last scrape.",
@@ -59,13 +52,6 @@ var (
 		"Duration of the last scrape in seconds.",
 		[]string{"provider", "collector"},
 		nil,
-	)
-	collectorScrapesTotalCounter = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "scrapes_total"),
-			Help: "Total number of scrapes for a collector.",
-		},
-		[]string{"provider", "collector"},
 	)
 	collectorLastScrapeTime = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "last_scrape_time"),
@@ -154,9 +140,6 @@ func (a *AWS) RegisterCollectors(registry provider.Registry) error {
 	a.logger.LogAttrs(context.Background(), slog.LevelInfo, "registering collectors",
 		slog.Int("count", len(a.collectors)),
 	)
-	registry.MustRegister(
-		collectorScrapesTotalCounter,
-	)
 	for _, c := range a.collectors {
 		if err := c.Register(registry); err != nil {
 			return err
@@ -169,7 +152,6 @@ func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collectorLastScrapeErrorDesc
 	ch <- collectorDurationDesc
 	ch <- collectorLastScrapeTime
-	ch <- collectorSuccessDesc
 	for _, c := range a.collectors {
 		if err := c.Describe(ch); err != nil {
 			a.logger.LogAttrs(context.Background(), slog.LevelError, "failed to describe collector",
@@ -198,12 +180,6 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.CounterValue, collectorErrors, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
-			collectorScrapesTotalCounter.WithLabelValues(subsystem, c.Name()).Inc()
-
-			counter := collectorScrapesTotalCounter.WithLabelValues(subsystem, c.Name())
-			totalMetricCount := &dto.Metric{}
-			counter.Write(totalMetricCount)
-			ch <- prometheus.MustNewConstMetric(collectorSuccessDesc, prometheus.CounterValue, totalMetricCount.GetCounter().GetValue()-collectorErrors, subsystem, c.Name())
 		}(c)
 	}
 	wg.Wait()
