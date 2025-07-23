@@ -109,7 +109,7 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 	if err != nil {
 		return err
 	}
-	mux.Handle(cfg.Server.Path, registryHandler) // prom metrics handler
+	mux.Handle(cfg.Server.Path, registryHandler) // prom metrics handler (/metrics)
 
 	server := &http.Server{Addr: cfg.Server.Address, Handler: mux}
 	errChan := make(chan error)
@@ -141,6 +141,23 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 }
 
 func createPromRegistryHandler(csp provider.Provider) (http.Handler, error) {
+	var subsystem = "metrics_handler"
+	requestDuration := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "request_duration_seconds"),
+			Help:    "Duration of HTTP requests in seconds for the metrics endpoint",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method"},
+	)
+
+	requestCounter := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "requests_total"),
+			Help: "Total number of HTTP requests for the metrics endpoint",
+		},
+		[]string{"code", "method"},
+	)
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
 		collectors.NewBuildInfoCollector(),
@@ -148,15 +165,25 @@ func createPromRegistryHandler(csp provider.Provider) (http.Handler, error) {
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		version.NewCollector(cloudcost_exporter.ExporterName),
 		csp,
+		requestCounter,
+		requestDuration,
 	)
 	err := csp.RegisterCollectors(registry)
 	if err != nil {
 		return nil, err
 	}
-	// CollectMetrics http server for prometheus
-	return promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+
+	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
-	}), nil
+	})
+
+	return promhttp.InstrumentHandlerDuration(
+		requestDuration,
+		promhttp.InstrumentHandlerCounter(
+			requestCounter,
+			handler,
+		),
+	), nil
 }
 
 func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider, error) {
