@@ -141,10 +141,11 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 }
 
 func createPromRegistryHandler(csp provider.Provider) (http.Handler, error) {
+	var subsystem = "metrics_handler"
 	requestDuration := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "cloudcost_exporter_request_duration_seconds",
-			Help:    "Duration of HTTP requests in seconds",
+			Name:    prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "request_duration_seconds"),
+			Help:    "Duration of HTTP requests in seconds for the metrics endpoint",
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"method"},
@@ -152,8 +153,8 @@ func createPromRegistryHandler(csp provider.Provider) (http.Handler, error) {
 
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "cloudcost_exporter_requests_total",
-			Help: "Total number of HTTP requests",
+			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "requests_total"),
+			Help: "Total number of HTTP requests for the metrics endpoint",
 		},
 		[]string{"code", "method"},
 	)
