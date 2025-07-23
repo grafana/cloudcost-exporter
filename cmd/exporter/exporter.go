@@ -139,6 +139,8 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 			return fmt.Errorf("error shutting down server: %w", err)
 		}
 	case err := <-errChan:
+		// FIXME: This is not correct, we need to get the status code from the response
+		// and it doesn't fit how histogram works as they expect a value distribution and not a counter.
 		requestErrors.WithLabelValues(cfg.Server.Path, "GET").Observe(1)
 		if !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("error running server: %w", err)
