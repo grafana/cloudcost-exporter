@@ -102,10 +102,11 @@ func setupLogger(level string, output string, logtype string) *slog.Logger {
 // runServer is a helper method that is responsible for starting the metrics server and handling shutdown signals.
 func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, log *slog.Logger) error {
 	mux := http.NewServeMux()
-	requestErrors := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "cloudcost_exporter_request_errors_total",
-			Help: "Total number of errors in HTTP requests",
+	requestErrors := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "cloudcost_exporter_request_errors_total",
+			Help:    "Total number of errors in HTTP requests",
+			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"path", "method"},
 	)
@@ -138,7 +139,7 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 			return fmt.Errorf("error shutting down server: %w", err)
 		}
 	case err := <-errChan:
-		requestErrors.WithLabelValues(cfg.Server.Path, "GET").Inc()
+		requestErrors.WithLabelValues(cfg.Server.Path, "GET").Observe(1)
 		if !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("error running server: %w", err)
 		}
@@ -147,7 +148,7 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 	return nil
 }
 
-func createPromRegistryHandler(csp provider.Provider, requestErrors *prometheus.CounterVec) (http.Handler, error) {
+func createPromRegistryHandler(csp provider.Provider, requestErrors *prometheus.HistogramVec) (http.Handler, error) {
 	requestDuration := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "cloudcost_exporter_request_duration_seconds",
