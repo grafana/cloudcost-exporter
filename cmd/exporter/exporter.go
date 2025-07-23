@@ -102,17 +102,10 @@ func setupLogger(level string, output string, logtype string) *slog.Logger {
 // runServer is a helper method that is responsible for starting the metrics server and handling shutdown signals.
 func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, log *slog.Logger) error {
 	mux := http.NewServeMux()
-	requestErrors := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "cloudcost_exporter_request_errors_total",
-			Help:    "Total number of errors in HTTP requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"path", "method"},
-	)
+
 	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path)) // landing page
 
-	registryHandler, err := createPromRegistryHandler(csp, requestErrors) // prom metrics handler
+	registryHandler, err := createPromRegistryHandler(csp) // prom metrics handler
 	if err != nil {
 		return err
 	}
@@ -139,9 +132,6 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 			return fmt.Errorf("error shutting down server: %w", err)
 		}
 	case err := <-errChan:
-		// FIXME: This is not correct, we need to get the status code from the response
-		// and it doesn't fit how histogram works as they expect a value distribution and not a counter.
-		requestErrors.WithLabelValues(cfg.Server.Path, "GET").Observe(1)
 		if !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("error running server: %w", err)
 		}
@@ -150,14 +140,22 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 	return nil
 }
 
-func createPromRegistryHandler(csp provider.Provider, requestErrors *prometheus.HistogramVec) (http.Handler, error) {
+func createPromRegistryHandler(csp provider.Provider) (http.Handler, error) {
 	requestDuration := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "cloudcost_exporter_request_duration_seconds",
 			Help:    "Duration of HTTP requests in seconds",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"path", "method"},
+		[]string{"method"},
+	)
+
+	requestCounter := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cloudcost_exporter_requests_total",
+			Help: "Total number of HTTP requests",
+		},
+		[]string{"code", "method"},
 	)
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
@@ -166,29 +164,25 @@ func createPromRegistryHandler(csp provider.Provider, requestErrors *prometheus.
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		version.NewCollector(cloudcost_exporter.ExporterName),
 		csp,
+		requestCounter,
 		requestDuration,
-		requestErrors,
 	)
 	err := csp.RegisterCollectors(registry)
 	if err != nil {
 		return nil, err
 	}
 
-	// CollectMetrics http server for prometheus
-	return prometheusMiddleware(
-		promhttp.HandlerFor(registry, promhttp.HandlerOpts{
-			EnableOpenMetrics: true,
-		}),
-		requestDuration,
-	), nil
-}
-
-func prometheusMiddleware(next http.Handler, requestDuration *prometheus.HistogramVec) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		timer := prometheus.NewTimer(requestDuration.With(prometheus.Labels{"path": r.URL.Path, "method": r.Method}))
-		defer timer.ObserveDuration()
-		next.ServeHTTP(w, r)
+	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+		EnableOpenMetrics: true,
 	})
+
+	return promhttp.InstrumentHandlerDuration(
+		requestDuration,
+		promhttp.InstrumentHandlerCounter(
+			requestCounter,
+			handler,
+		),
+	), nil
 }
 
 func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider, error) {
