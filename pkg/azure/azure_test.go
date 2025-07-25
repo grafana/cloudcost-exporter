@@ -93,7 +93,6 @@ func Test_RegisterCollectors(t *testing.T) {
 				azProvider.collectors = append(azProvider.collectors, c)
 			}
 
-			mockRegistry.EXPECT().MustRegister(gomock.Any()).Times(1)
 			err := azProvider.RegisterCollectors(mockRegistry)
 			assert.Equal(t, err, tc.expectedErr)
 		})
@@ -120,12 +119,6 @@ func Test_CollectMetrics(t *testing.T) {
 			},
 			expectedMetrics: []*utils.MetricResult{
 				{
-					FqName:     "cloudcost_exporter_collector_success",
-					Labels:     utils.LabelMap{"provider": "azure", "collector": "test2"},
-					Value:      0,
-					MetricType: prometheus.CounterValue,
-				},
-				{
 					FqName:     "cloudcost_exporter_collector_last_scrape_error",
 					Labels:     utils.LabelMap{"provider": "azure", "collector": "test2"},
 					Value:      1,
@@ -150,18 +143,6 @@ func Test_CollectMetrics(t *testing.T) {
 					Value:      0,
 					MetricType: prometheus.CounterValue,
 				},
-				{
-					FqName:     "cloudcost_exporter_collector_success",
-					Labels:     utils.LabelMap{"provider": "azure", "collector": "test3"},
-					Value:      1,
-					MetricType: prometheus.CounterValue,
-				},
-				{
-					FqName:     "cloudcost_exporter_collector_success",
-					Labels:     utils.LabelMap{"provider": "azure", "collector": "test3"},
-					Value:      2,
-					MetricType: prometheus.CounterValue,
-				},
 			},
 		},
 	}
@@ -178,6 +159,7 @@ func Test_CollectMetrics(t *testing.T) {
 				c.EXPECT().Collect(ch).DoAndReturn(tt.collect).AnyTimes()
 				c.EXPECT().Register(registry).Return(nil).AnyTimes()
 			}
+			registry.EXPECT().MustRegister(gomock.Any()).AnyTimes()
 			azure := &Azure{
 				context:    parentCtx,
 				logger:     testLogger,
