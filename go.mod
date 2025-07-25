@@ -18,7 +18,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/pricing v1.34.3
 	github.com/aws/aws-sdk-go-v2/service/sts v1.34.1
 	github.com/google/go-cmp v0.7.0
-	github.com/googleapis/gax-go/v2 v2.14.2
+	github.com/googleapis/gax-go/v2 v2.15.0
 	github.com/grafana/grafana-foundation-sdk/go v0.0.0-20241213004919-4516aa9d3732
 	github.com/prometheus/client_golang v1.21.1
 	github.com/prometheus/client_model v0.6.2
