@@ -14,11 +14,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
+	awsrds "github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/rds"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
@@ -108,26 +110,35 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	if err != nil {
 		return nil, err
 	}
+	var pricingService *pricing.Client
+	var regions *ec2.DescribeRegionsOutput
+	var awsCfg *aws.Config
 	for _, service := range config.Services {
+		// region API is shared between EC2 and RDS
+		if service == "RDS" || service == "EC2" {
+			pricingService = pricing.NewFromConfig(ac)
+			computeService := ec2.NewFromConfig(ac)
+			regions, err = computeService.DescribeRegions(ctx, &ec2.DescribeRegionsInput{AllRegions: aws.Bool(false)})
+			if err != nil {
+				return nil, fmt.Errorf("error getting regions: %w", err)
+			}
+			for _, r := range regions.Regions {
+				awsCfg, err = newAWSConfig(*r.RegionName, config.Profile, config.RoleARN)
+				if err != nil {
+					return nil, fmt.Errorf("error creating aws config: %w", err)
+				}
+			}
+		}
 		switch strings.ToUpper(service) {
 		case "S3":
 			client := costexplorer.NewFromConfig(ac)
 			collector := s3.New(config.ScrapeInterval, client)
 			collectors = append(collectors, collector)
 		case "EC2":
-			pricingService := pricing.NewFromConfig(ac)
-			computeService := ec2.NewFromConfig(ac)
-			regions, err := computeService.DescribeRegions(ctx, &ec2.DescribeRegionsInput{AllRegions: aws.Bool(false)})
-			if err != nil {
-				return nil, fmt.Errorf("error getting regions: %w", err)
-			}
 			regionClientMap := make(map[string]ec2client.EC2)
 			for _, r := range regions.Regions {
-				client, err := newEc2Client(*r.RegionName, config.Profile, config.RoleARN)
-				if err != nil {
-					return nil, fmt.Errorf("error creating ec2 client: %w", err)
-				}
-				regionClientMap[*r.RegionName] = client
+				ec2Client := ec2.NewFromConfig(*awsCfg)
+				regionClientMap[*r.RegionName] = ec2Client
 			}
 			collector := ec2Collector.New(&ec2Collector.Config{
 				Regions:        regions.Regions,
@@ -136,6 +147,18 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 				ScrapeInterval: config.ScrapeInterval,
 			}, pricingService)
 			collectors = append(collectors, collector)
+		case "RDS":
+			regionMap := make(map[string]awsrds.Client)
+			for _, r := range regions.Regions {
+				rdsClient := awsrds.NewFromConfig(*awsCfg)
+				regionMap[*r.RegionName] = *rdsClient
+			}
+			_ = rds.New(&rds.Config{
+				ScrapeInterval: config.ScrapeInterval,
+				Logger:         logger,
+				RegionClients:  regionMap,
+			}, pricingService)
+			// collectors = append(collectors, collector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",
 				slog.String("service", service),
@@ -209,7 +232,7 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	wg.Wait()
 }
 
-func newEc2Client(region, profile, roleARN string) (*ec2.Client, error) {
+func newAWSConfig(region, profile, roleARN string) (*aws.Config, error) {
 	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
 	options = append(options, awsconfig.WithRegion(region))
 	if profile != "" {
@@ -230,8 +253,7 @@ func newEc2Client(region, profile, roleARN string) (*ec2.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	return ec2.NewFromConfig(ac), nil
+	return &ac, nil
 }
 
 func assumeRole(roleARN string, options []func(*awsconfig.LoadOptions) error) ([]func(*awsconfig.LoadOptions) error, error) {
