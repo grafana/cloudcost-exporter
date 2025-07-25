@@ -18,16 +18,16 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/pricing v1.34.3
 	github.com/aws/aws-sdk-go-v2/service/sts v1.34.1
 	github.com/google/go-cmp v0.7.0
-	github.com/googleapis/gax-go/v2 v2.14.2
+	github.com/googleapis/gax-go/v2 v2.15.0
 	github.com/grafana/grafana-foundation-sdk/go v0.0.0-20241213004919-4516aa9d3732
 	github.com/prometheus/client_golang v1.21.1
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.63.0
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/mock v0.5.2
-	golang.org/x/sync v0.15.0
+	golang.org/x/sync v0.16.0
 	gomodules.xyz/azure-retail-prices-sdk-for-go v0.0.3
-	google.golang.org/api v0.239.0
+	google.golang.org/api v0.243.0
 	google.golang.org/genproto v0.0.0-20250721164621-a45f3dfb1074
 	google.golang.org/grpc v1.73.0
 	gopkg.in/matryer/try.v1 v1.0.0-20150601225556-312d2599e12e
@@ -36,7 +36,7 @@ require (
 require (
 	cel.dev/expr v0.23.0 // indirect
 	cloud.google.com/go v0.121.3 // indirect
-	cloud.google.com/go/auth v0.16.2 // indirect
+	cloud.google.com/go/auth v0.16.3 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.7.0 // indirect
 	cloud.google.com/go/iam v1.5.2 // indirect
@@ -93,11 +93,11 @@ require (
 	go.opentelemetry.io/otel/sdk v1.36.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.36.0 // indirect
 	go.opentelemetry.io/otel/trace v1.36.0 // indirect
-	golang.org/x/crypto v0.39.0 // indirect
-	golang.org/x/net v0.41.0 // indirect
+	golang.org/x/crypto v0.40.0 // indirect
+	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/text v0.26.0 // indirect
+	golang.org/x/sys v0.34.0 // indirect
+	golang.org/x/text v0.27.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250715232539-7130f93afb79 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250715232539-7130f93afb79 // indirect
