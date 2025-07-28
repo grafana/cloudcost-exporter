@@ -130,8 +130,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 		case "EC2":
 			regionClientMap := make(map[string]ec2client.EC2)
 			for _, r := range regions.Regions {
-				ec2Client := ec2.NewFromConfig(ac)
-				regionClientMap[*r.RegionName] = ec2Client
+				regionClientMap[*r.RegionName] = ec2.NewFromConfig(ac)
 			}
 			collector := ec2Collector.New(&ec2Collector.Config{
 				Regions:        regions.Regions,
