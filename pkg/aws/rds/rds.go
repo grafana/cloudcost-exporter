@@ -38,7 +38,7 @@ func NewMetrics() Metrics {
 	return Metrics{
 		DBCost: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "storage_by_location_usd_per_gibyte_hour"),
-			Help: "Storage cost of S3 objects by region, class, and tier. Cost represented in USD/(GiB*h)",
+			Help: "Storage cost of RDS databases by region, class, and tier. Cost represented in USD/(GiB*h)",
 		},
 			[]string{"region", "class"},
 		),
@@ -102,68 +102,68 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 }
 
 // Collect satisfies the provider.Collector interface.
-// func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-// 	start := time.Now()
-// 	ctx := context.Background()
-// 	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
+func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+	// start := time.Now()
+	// ctx := context.Background()
+	// c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
 
-// 	// TODO: make both maps scraping run async in the background
-// 	if c.computePricingMap == nil || time.Now().After(c.NextComputeScrape) {
-// 		err := c.populateComputePricingMap(ctx)
-// 		if err != nil {
-// 			return err
-// 		}
-// 		c.NextComputeScrape = time.Now().Add(c.ScrapeInterval)
-// 	}
+	// // TODO: make both maps scraping run async in the background
+	// if c.computePricingMap == nil || time.Now().After(c.NextComputeScrape) {
+	// 	err := c.populateComputePricingMap(ctx)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	c.NextComputeScrape = time.Now().Add(c.ScrapeInterval)
+	// }
 
-// 	if c.storagePricingMap == nil || time.Now().After(c.NextStorageScrape) {
-// 		err := c.populateStoragePricingMap(ctx)
-// 		if err != nil {
-// 			return err
-// 		}
-// 		c.NextStorageScrape = time.Now().Add(c.ScrapeInterval)
-// 	}
+	// if c.storagePricingMap == nil || time.Now().After(c.NextStorageScrape) {
+	// 	err := c.populateStoragePricingMap(ctx)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	c.NextStorageScrape = time.Now().Add(c.ScrapeInterval)
+	// }
 
-// 	numOfRegions := len(c.Regions)
+	// numOfRegions := len(c.Regions)
 
-// 	wgInstances := sync.WaitGroup{}
-// 	wgInstances.Add(numOfRegions)
-// 	instanceCh := make(chan []ec2Types.Reservation, numOfRegions)
+	// wgInstances := sync.WaitGroup{}
+	// wgInstances.Add(numOfRegions)
+	// instanceCh := make(chan []ec2Types.Reservation, numOfRegions)
 
-// 	wgVolumes := sync.WaitGroup{}
-// 	wgVolumes.Add(numOfRegions)
-// 	volumeCh := make(chan []ec2Types.Volume, numOfRegions)
+	// wgVolumes := sync.WaitGroup{}
+	// wgVolumes.Add(numOfRegions)
+	// volumeCh := make(chan []ec2Types.Volume, numOfRegions)
 
-// 	for _, region := range c.Regions {
-// 		regionName := *region.RegionName
-// 		client := c.ec2RegionClients[regionName]
+	// for _, region := range c.Regions {
+	// 	regionName := *region.RegionName
+	// 	client := c.ec2RegionClients[regionName]
 
-// 		if client == nil {
-// 			return ErrClientNotFound
-// 		}
+	// 	if client == nil {
+	// 		return ErrClientNotFound
+	// 	}
 
-// 		go func() {
-// 			c.fetchInstancesData(ctx, client, regionName, instanceCh)
-// 			wgInstances.Done()
-// 		}()
-// 		go func() {
-// 			c.fetchVolumesData(ctx, client, regionName, volumeCh)
-// 			wgVolumes.Done()
-// 		}()
-// 	}
-// 	go func() {
-// 		wgInstances.Wait()
-// 		close(instanceCh)
-// 	}()
-// 	go func() {
-// 		wgVolumes.Wait()
-// 		close(volumeCh)
-// 	}()
-// 	c.emitMetricsFromReservationsChannel(instanceCh, ch)
-// 	c.emitMetricsFromVolumesChannel(volumeCh, ch)
-// 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Finished collect", slog.Duration("duration", time.Since(start)))
-// 	return nil
-// }
+	// 	go func() {
+	// 		c.fetchInstancesData(ctx, client, regionName, instanceCh)
+	// 		wgInstances.Done()
+	// 	}()
+	// 	go func() {
+	// 		c.fetchVolumesData(ctx, client, regionName, volumeCh)
+	// 		wgVolumes.Done()
+	// 	}()
+	// }
+	// go func() {
+	// 	wgInstances.Wait()
+	// 	close(instanceCh)
+	// }()
+	// go func() {
+	// 	wgVolumes.Wait()
+	// 	close(volumeCh)
+	// }()
+	// c.emitMetricsFromReservationsChannel(instanceCh, ch)
+	// c.emitMetricsFromVolumesChannel(volumeCh, ch)
+	// c.logger.LogAttrs(ctx, slog.LevelInfo, "Finished collect", slog.Duration("duration", time.Since(start)))
+	return nil
+}
 
 // func (c *Collector) populateComputePricingMap(errGroupCtx context.Context) error {
 // 	c.logger.LogAttrs(errGroupCtx, slog.LevelInfo, "Refreshing compute pricing map")
