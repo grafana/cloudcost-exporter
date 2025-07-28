@@ -144,9 +144,11 @@ func createPromRegistryHandler(csp provider.Provider) (http.Handler, error) {
 	var subsystem = "metrics_handler"
 	requestDuration := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "request_duration_seconds"),
-			Help:    "Duration of HTTP requests in seconds for the metrics endpoint",
-			Buckets: prometheus.DefBuckets,
+			Name:                           prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "request_duration_seconds"),
+			Help:                           "Duration of HTTP requests in seconds for the metrics endpoint",
+			NativeHistogramBucketFactor:    1.1,
+			NativeHistogramMaxBucketNumber: 10,
+			Buckets:                        []float64{1, 2, 5, 7, 10, 20, 40, 80},
 		},
 		[]string{"method"},
 	)
