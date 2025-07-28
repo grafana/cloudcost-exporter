@@ -85,7 +85,7 @@ func operationalFlags(cfg *config.Config) {
 	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
 	flag.DurationVar(&cfg.Collector.Timeout, "collector-interval", 1*time.Minute, "Context timeout for collectors")
 	flag.DurationVar(&cfg.Server.Timeout, "server-timeout", 30*time.Second, "Server timeout")
-	flag.StringVar(&cfg.Server.Address, "server.address", ":8000", "Default address for the server to listen on.")
+	flag.StringVar(&cfg.Server.Address, "server.address", ":8080", "Default address for the server to listen on.")
 	flag.StringVar(&cfg.Server.Path, "server.path", "/metrics", "Default path for the server to listen on.")
 	flag.StringVar(&cfg.LoggerOpts.Level, "log.level", "info", "Log level: debug, info, warn, error")
 	flag.StringVar(&cfg.LoggerOpts.Output, "log.output", "stdout", "Log output stream: stdout, stderr, file")

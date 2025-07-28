@@ -146,12 +146,13 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			for _, r := range regions.Regions {
 				regionMap[*r.RegionName] = *rdsClient
 			}
-			_ = rds.New(&rds.Config{
+			collector := rds.New(&rds.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
 				RegionClients:  regionMap,
 			}, pricingService)
 			// TODO: append new aws rds collectors next
+			collectors = append(collectors, collector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",
 				slog.String("service", service),
