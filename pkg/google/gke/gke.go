@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	
+
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 

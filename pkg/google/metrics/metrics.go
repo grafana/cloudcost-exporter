@@ -51,12 +51,12 @@ func NewMetrics() *Metrics {
 			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "next_scrape"),
 			Help: "The next time the exporter will scrape GCP billing data. Can be used to trigger alerts if now - nextScrape > interval",
 		}),
-		
+
 		BucketListHistogram: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "bucket_list_duration_seconds"),
 			Help: "Histogram for the duration of GCS bucket list operations in seconds",
 		}, []string{"project_id"}),
-		
+
 		BucketListStatus: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "bucket_list_status_total"),
 			Help: "Status of GCS bucket list operations",

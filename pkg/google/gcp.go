@@ -76,9 +76,9 @@ func New(config *Config) (*GCP, error) {
 		switch strings.ToUpper(service) {
 		case "GCS":
 			collector, err = gcs.New(&gcs.Config{
-				ProjectId:       config.ProjectId,
-				Projects:        config.Projects,
-				ScrapeInterval:  config.ScrapeInterval,
+				ProjectId:      config.ProjectId,
+				Projects:       config.Projects,
+				ScrapeInterval: config.ScrapeInterval,
 			}, gpcClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",

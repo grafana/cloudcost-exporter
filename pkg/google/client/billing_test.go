@@ -2,7 +2,7 @@ package client
 
 import (
 	"testing"
-	
+
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
 	"github.com/stretchr/testify/assert"
@@ -35,7 +35,7 @@ func TestStorageclassFromSkuDescription(t *testing.T) {
 			"ARCHIVE",
 		},
 	}
-	
+
 	for name, f := range tt {
 		t.Run(name, func(t *testing.T) {
 			got := storageClassFromSkuDescription(name, "any_regular_region")
@@ -89,7 +89,7 @@ func TestMisformedPricingInfoFromSku(t *testing.T) {
 			descr: "shoud fail to parse sku with empty TieredRates",
 		},
 	}
-	
+
 	for _, testcase := range tt {
 		_, err := getPriceFromSku(testcase.sku)
 		if err == nil {

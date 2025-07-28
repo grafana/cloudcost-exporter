@@ -2,7 +2,7 @@ package client
 
 import (
 	"context"
-	
+
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
 )
 
