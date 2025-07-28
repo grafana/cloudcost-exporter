@@ -2,19 +2,15 @@ package google
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"math"
 	"strings"
 	"sync"
 	"time"
 
-	billingv1 "cloud.google.com/go/billing/apiv1"
-	computeapiv1 "cloud.google.com/go/compute/apiv1"
-	"cloud.google.com/go/storage"
+	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
-	computev1 "google.golang.org/api/compute/v1"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
@@ -22,9 +18,7 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
-const (
-	subsystem = "gcp"
-)
+const subsystem = "gcp_gcs"
 
 var (
 	collectorLastScrapeErrorDesc = prometheus.NewDesc(
@@ -83,24 +77,9 @@ func New(config *Config) (*GCP, error) {
 	ctx := context.Background()
 	logger := config.Logger.With("provider", "gcp")
 
-	computeService, err := computev1.NewService(ctx)
+	gpcClient, err := client.NewGPCClient(ctx, client.Config{ProjectId: config.ProjectId, Discount: config.DefaultDiscount})
 	if err != nil {
-		return nil, fmt.Errorf("error creating compute computeService: %w", err)
-	}
-
-	cloudCatalogClient, err := billingv1.NewCloudCatalogClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error creating cloudCatalogClient: %w", err)
-	}
-
-	regionsClient, err := computeapiv1.NewRegionsRESTClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not create regions client: %w", err)
-	}
-
-	storageClient, err := storage.NewClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not create bucket client: %w", err)
+		return nil, err
 	}
 
 	var collectors []provider.Collector
@@ -115,8 +94,7 @@ func New(config *Config) (*GCP, error) {
 				ProjectId:       config.ProjectId,
 				Projects:        config.Projects,
 				ScrapeInterval:  config.ScrapeInterval,
-				DefaultDiscount: config.DefaultDiscount,
-			}, cloudCatalogClient, regionsClient, storageClient)
+			}, gpcClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -126,9 +104,9 @@ func New(config *Config) (*GCP, error) {
 		case "GKE":
 			collector, err = gke.New(&gke.Config{
 				Projects:       config.Projects,
-				ScrapeInterval: config.ScrapeInterval,
 				Logger:         config.Logger,
-			}, computeService, cloudCatalogClient)
+				ScrapeInterval: config.ScrapeInterval,
+			}, gpcClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),

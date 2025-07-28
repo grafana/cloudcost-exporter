@@ -8,7 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
-
+	
+	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
@@ -241,7 +242,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func New(config *Config, computeService *compute.Service, billingService *billingv1.CloudCatalogClient) (*Collector, error) {
+func New(config *Config, gpcClient client.Client) (*Collector, error) {
 	logger := config.Logger.With("collector", "gke")
 	ctx := context.TODO()
 

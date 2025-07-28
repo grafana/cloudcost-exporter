@@ -21,7 +21,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/grafana/cloudcost-exporter/pkg/google/billing"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 

@@ -12,7 +12,6 @@ import (
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
 
-	"github.com/grafana/cloudcost-exporter/pkg/google/billing"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
