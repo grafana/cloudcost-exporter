@@ -226,30 +226,6 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	wg.Wait()
 }
 
-func newAWSConfig(region, profile, roleARN string) (*aws.Config, error) {
-	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
-	options = append(options, awsconfig.WithRegion(region))
-	if profile != "" {
-		options = append(options, awsconfig.WithSharedConfigProfile(profile))
-	}
-	// Set max retries to 10. Throttling is possible after fetching the pricing data, so setting it to 10 ensures the next scrape will be successful.
-	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
-
-	if roleARN != "" {
-		var err error
-		options, err = assumeRole(roleARN, options)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
-	if err != nil {
-		return nil, err
-	}
-	return &ac, nil
-}
-
 func assumeRole(roleARN string, options []func(*awsconfig.LoadOptions) error) ([]func(*awsconfig.LoadOptions) error, error) {
 	// Add the credentials to assume the role specified in config.RoleARN
 	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
