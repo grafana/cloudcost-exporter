@@ -112,21 +112,14 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	}
 	var pricingService *pricing.Client
 	var regions *ec2.DescribeRegionsOutput
-	var awsCfg *aws.Config
 	for _, service := range config.Services {
 		// region API is shared between EC2 and RDS
-		if service == "RDS" || service == "EC2" {
+		if strings.ToUpper(service) == "RDS" || strings.ToUpper(service) == "EC2" {
 			pricingService = pricing.NewFromConfig(ac)
 			computeService := ec2.NewFromConfig(ac)
 			regions, err = computeService.DescribeRegions(ctx, &ec2.DescribeRegionsInput{AllRegions: aws.Bool(false)})
 			if err != nil {
 				return nil, fmt.Errorf("error getting regions: %w", err)
-			}
-			for _, r := range regions.Regions {
-				awsCfg, err = newAWSConfig(*r.RegionName, config.Profile, config.RoleARN)
-				if err != nil {
-					return nil, fmt.Errorf("error creating aws config: %w", err)
-				}
 			}
 		}
 		switch strings.ToUpper(service) {
@@ -137,7 +130,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 		case "EC2":
 			regionClientMap := make(map[string]ec2client.EC2)
 			for _, r := range regions.Regions {
-				ec2Client := ec2.NewFromConfig(*awsCfg)
+				ec2Client := ec2.NewFromConfig(ac)
 				regionClientMap[*r.RegionName] = ec2Client
 			}
 			collector := ec2Collector.New(&ec2Collector.Config{
@@ -149,8 +142,8 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			collectors = append(collectors, collector)
 		case "RDS":
 			regionMap := make(map[string]awsrds.Client)
+			rdsClient := awsrds.NewFromConfig(ac)
 			for _, r := range regions.Regions {
-				rdsClient := awsrds.NewFromConfig(*awsCfg)
 				regionMap[*r.RegionName] = *rdsClient
 			}
 			_ = rds.New(&rds.Config{
@@ -158,7 +151,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 				Logger:         logger,
 				RegionClients:  regionMap,
 			}, pricingService)
-			// collectors = append(collectors, collector)
+			// TODO: append new aws rds collectors next
 		default:
 			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",
 				slog.String("service", service),
