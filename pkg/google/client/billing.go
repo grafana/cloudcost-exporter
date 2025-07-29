@@ -20,9 +20,8 @@ var (
 	invalidSku         = errors.New("invalid sku")
 	unknownPricingUnit = errors.New("unknown pricing unit")
 
-	collectorName = "GCS"
-	gibMonthly    = "gibibyte month"
-	gibDay        = "gibibyte day"
+	gibMonthly = "gibibyte month"
+	gibDay     = "gibibyte day"
 )
 
 type Billing struct {
@@ -106,30 +105,6 @@ func (b *Billing) getPricing(ctx context.Context, serviceName string) []*billing
 		skus = append(skus, sku)
 	}
 	return skus
-}
-
-func (b *Billing) parseStorageSku(sku *billingpb.Sku, m *metrics.Metrics) error {
-	price, err := getPriceFromSku(sku)
-	if err != nil {
-		return err
-	}
-	priceInfo := sku.PricingInfo[0]
-	priceUnit := priceInfo.PricingExpression.UsageUnitDescription
-
-	// Adjust price to hourly
-	if priceUnit == gibMonthly {
-		price = price / 31 / 24
-	} else if priceUnit == gibDay {
-		// For Early-Delete in Archive, CloudStorage and Nearline classes
-		price = price / 24
-	} else {
-		return fmt.Errorf("%w:%s, %s", unknownPricingUnit, sku.Description, priceUnit)
-	}
-
-	region := regionNameSameAsStackdriver(sku.ServiceRegions[0])
-	storageclass := storageClassFromSkuDescription(sku.Description, region)
-	m.StorageGauge.WithLabelValues(region, storageclass).Set(price)
-	return nil
 }
 
 func getPriceFromSku(sku *billingpb.Sku) (float64, error) {
