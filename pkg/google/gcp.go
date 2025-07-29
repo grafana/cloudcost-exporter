@@ -16,7 +16,7 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
-const subsystem = "gcp_gcs"
+const subsystem = "gcp"
 
 var (
 	collectorLastScrapeErrorDesc = prometheus.NewDesc(
