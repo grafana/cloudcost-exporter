@@ -11,9 +11,7 @@ import (
 	"os"
 	"strconv"
 
-	billingv1 "cloud.google.com/go/billing/apiv1"
-
-	"github.com/grafana/cloudcost-exporter/pkg/google/billing"
+	client2 "github.com/grafana/cloudcost-exporter/pkg/google/client"
 )
 
 type Config struct {
@@ -34,16 +32,19 @@ func main() {
 
 func run(config *Config) error {
 	ctx := context.Background()
-	client, err := billingv1.NewCloudCatalogClient(ctx)
+	gpcClient, err := client2.NewGPCClient(ctx, client2.Config{
+		ProjectId: "",
+		Discount:  0,
+	})
+	if err != nil {
+		return err
+	}
+
+	svcid, err := gpcClient.GetServiceName(ctx, config.Service)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer client.Close()
-	svcid, err := billing.GetServiceName(ctx, client, config.Service)
-	if err != nil {
-		log.Fatal(err)
-	}
-	skus := billing.GetPricing(ctx, client, svcid)
+	skus := gpcClient.GetPricing(ctx, svcid)
 	file, err := os.Create(config.OutputFile)
 	if err != nil {
 		log.Fatal(err)
