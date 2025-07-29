@@ -85,8 +85,8 @@ type Collector struct {
 	ctx        context.Context
 	interval   time.Duration
 	nextScrape time.Time
-	metrics   *metrics.Metrics
-	gcpClient client.Client
+	metrics    *metrics.Metrics
+	gcpClient  client.Client
 }
 
 func (c *Collector) Describe(_ chan<- *prometheus.Desc) error {

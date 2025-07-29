@@ -54,8 +54,8 @@ type Config struct {
 }
 
 type Collector struct {
-	gcpClient client.Client
-	config    *Config
+	gcpClient  client.Client
+	config     *Config
 	projects   []string
 	pricingMap *PricingMap
 	// nextScrape time.Time
