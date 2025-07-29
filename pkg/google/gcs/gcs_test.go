@@ -27,7 +27,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	gpcClient := client.NewMock("project-1",
+	gcpClient := client.NewMock("project-1",
 		0,
 		gcs.NewRegionsClient(t),
 		gcs.NewStorageClientInterface(t),
@@ -38,7 +38,7 @@ func TestNew(t *testing.T) {
 	t.Run("should return a non-nil client", func(t *testing.T) {
 		gcsCollector, err := New(&Config{
 			ProjectId: "project-1",
-		}, gpcClient)
+		}, gcpClient)
 		assert.NoError(t, err)
 		assert.NotNil(t, gcsCollector)
 	})
@@ -46,7 +46,7 @@ func TestNew(t *testing.T) {
 	t.Run("collectorName should be GCS", func(t *testing.T) {
 		gcsCollector, _ := New(&Config{
 			ProjectId: "project-1",
-		}, gpcClient)
+		}, gcpClient)
 		assert.Equal(t, "GCS", gcsCollector.Name())
 	})
 }
@@ -207,11 +207,11 @@ func TestGetServiceNameByReadableName(t *testing.T) {
 				option.WithoutAuthentication(),
 				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 
-			gpcClient := client.NewMock("", 0, nil, nil, catalogClient, nil)
+			gcpClient := client.NewMock("", 0, nil, nil, catalogClient, nil)
 
 			assert.NoError(t, err)
 			ctx := context.Background()
-			got, err := gpcClient.GetServiceName(ctx, tt.service)
+			got, err := gcpClient.GetServiceName(ctx, tt.service)
 			if !tt.wantErr(t, err, fmt.Sprintf("GetServiceNameByReadableName(%v, %v, %v)", ctx, catalogClient, tt.service)) {
 				return
 			}
@@ -258,12 +258,12 @@ func TestCollector_Collect(t *testing.T) {
 		option.WithoutAuthentication(),
 		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 
-	gpcClient := client.NewMock("project-1", 0, regionsClient, storageClient, cloudCatalogClient, nil)
+	gcpClient := client.NewMock("project-1", 0, regionsClient, storageClient, cloudCatalogClient, nil)
 
 	assert.NoError(t, err)
 	collector, err := New(&Config{
 		ProjectId: "project-1",
-	}, gpcClient)
+	}, gcpClient)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, collector)

@@ -62,7 +62,7 @@ func New(config *Config) (*GCP, error) {
 	ctx := context.Background()
 	logger := config.Logger.With("provider", "gcp")
 
-	gpcClient, err := client.NewGPCClient(ctx, client.Config{ProjectId: config.ProjectId, Discount: config.DefaultDiscount})
+	gcpClient, err := client.NewGCPClient(ctx, client.Config{ProjectId: config.ProjectId, Discount: config.DefaultDiscount})
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +79,7 @@ func New(config *Config) (*GCP, error) {
 				ProjectId:      config.ProjectId,
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
-			}, gpcClient)
+			}, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -91,7 +91,7 @@ func New(config *Config) (*GCP, error) {
 				Projects:       config.Projects,
 				Logger:         config.Logger,
 				ScrapeInterval: config.ScrapeInterval,
-			}, gpcClient)
+			}, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),

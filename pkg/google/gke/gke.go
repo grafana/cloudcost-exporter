@@ -54,8 +54,8 @@ type Config struct {
 }
 
 type Collector struct {
-	gpcClient  client.Client
-	config     *Config
+	gcpClient client.Client
+	config    *Config
 	projects   []string
 	pricingMap *PricingMap
 	// nextScrape time.Time
@@ -78,7 +78,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	ctx := context.Background()
 	for _, project := range c.projects {
-		zones, err := c.gpcClient.GetZones(project)
+		zones, err := c.gcpClient.GetZones(project)
 		if err != nil {
 			return err
 		}
@@ -96,7 +96,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					slog.String("project", project),
 					slog.String("zone", zone.Name))
 
-				results, err := c.gpcClient.ListInstancesInZone(project, zone.Name)
+				results, err := c.gcpClient.ListInstancesInZone(project, zone.Name)
 				if err != nil {
 					c.logger.LogAttrs(ctx, slog.LevelError,
 						"error listing instances in zone",
@@ -117,7 +117,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			}(zone)
 			go func(zone *compute.Zone) {
 				defer wg.Done()
-				results, err := c.gpcClient.ListDisks(ctx, project, zone.Name)
+				results, err := c.gcpClient.ListDisks(ctx, project, zone.Name)
 				if err != nil {
 					c.logger.Error("error listing disks in zone %s: %v",
 						slog.String("zone", zone.Name),
@@ -234,11 +234,11 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func New(config *Config, gpcClient client.Client) (*Collector, error) {
+func New(config *Config, gcpClient client.Client) (*Collector, error) {
 	logger := config.Logger.With("collector", "gke")
 	ctx := context.TODO()
 
-	pm, err := NewPricingMap(ctx, gpcClient)
+	pm, err := NewPricingMap(ctx, gcpClient)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +264,7 @@ func New(config *Config, gpcClient client.Client) (*Collector, error) {
 		projects:   strings.Split(config.Projects, ","),
 		logger:     logger,
 		pricingMap: pm,
-		gpcClient:  gpcClient,
+		gcpClient:  gcpClient,
 	}, nil
 }
 

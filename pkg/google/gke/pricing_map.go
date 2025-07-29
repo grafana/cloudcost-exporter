@@ -105,15 +105,15 @@ func NewPriceTiers() *PriceTiers {
 type PricingMap struct {
 	compute   map[string]*FamilyPricing
 	storage   map[string]*StoragePricing
-	gpcClient client.Client
+	gcpClient client.Client
 }
 
 // NewPricingMap returns a new PricingMap in a way that can be used afterwards.
-func NewPricingMap(ctx context.Context, gpcClient client.Client) (*PricingMap, error) {
+func NewPricingMap(ctx context.Context, gcpClient client.Client) (*PricingMap, error) {
 	pm := &PricingMap{
 		compute:   map[string]*FamilyPricing{},
 		storage:   map[string]*StoragePricing{},
-		gpcClient: gpcClient,
+		gcpClient: gcpClient,
 	}
 
 	if err := pm.Populate(ctx); err != nil {
@@ -196,11 +196,11 @@ var (
 // Populate is responsible for collecting skus related to Compute Engine, parsing out the response, and then populating the pricing map
 // with relevant skus.
 func (pm *PricingMap) Populate(ctx context.Context) error {
-	serviceName, err := pm.gpcClient.GetServiceName(ctx, "Compute Engine")
+	serviceName, err := pm.gcpClient.GetServiceName(ctx, "Compute Engine")
 	if err != nil {
 		return fmt.Errorf("%w: %s", ErrInitializingPricingMap, err.Error())
 	}
-	skus := pm.gpcClient.GetPricing(ctx, serviceName)
+	skus := pm.gcpClient.GetPricing(ctx, serviceName)
 
 	if len(skus) == 0 {
 		return ErrSkuNotFound

@@ -13,7 +13,7 @@ import (
 	computev1 "google.golang.org/api/compute/v1"
 )
 
-type GPCClient struct {
+type GCPClient struct {
 	compute *Compute
 	billing *Billing
 	regions *Region
@@ -25,7 +25,7 @@ type Config struct {
 	Discount  int
 }
 
-func NewGPCClient(ctx context.Context, cfg Config) (*GPCClient, error) {
+func NewGCPClient(ctx context.Context, cfg Config) (*GCPClient, error) {
 	computeService, err := computev1.NewService(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error creating compute computeService: %w", err)
@@ -46,7 +46,7 @@ func NewGPCClient(ctx context.Context, cfg Config) (*GPCClient, error) {
 		return nil, fmt.Errorf("could not create bucket client: %w", err)
 	}
 
-	return &GPCClient{
+	return &GCPClient{
 		compute: newCompute(computeService),
 		billing: newBilling(cloudCatalogClient),
 		regions: newRegion(cfg.ProjectId, cfg.Discount, regionsClient),
@@ -54,34 +54,34 @@ func NewGPCClient(ctx context.Context, cfg Config) (*GPCClient, error) {
 	}, nil
 }
 
-func (c *GPCClient) GetServiceName(ctx context.Context, serviceName string) (string, error) {
+func (c *GCPClient) GetServiceName(ctx context.Context, serviceName string) (string, error) {
 	return c.billing.getServiceName(ctx, serviceName)
 }
 
-func (c *GPCClient) ExportRegionalDiscounts(ctx context.Context, m *metrics.Metrics) error {
+func (c *GCPClient) ExportRegionalDiscounts(ctx context.Context, m *metrics.Metrics) error {
 	return c.regions.exportRegionalDiscounts(ctx, m)
 }
 
-func (c *GPCClient) ExportGCPCostData(ctx context.Context, serviceName string, m *metrics.Metrics) float64 {
+func (c *GCPClient) ExportGCPCostData(ctx context.Context, serviceName string, m *metrics.Metrics) float64 {
 	return c.billing.exportBilling(ctx, serviceName, m)
 }
 
-func (c *GPCClient) GetPricing(ctx context.Context, serviceName string) []*billingpb.Sku {
+func (c *GCPClient) GetPricing(ctx context.Context, serviceName string) []*billingpb.Sku {
 	return c.billing.getPricing(ctx, serviceName)
 }
 
-func (c *GPCClient) ExportBucketInfo(ctx context.Context, projects []string, m *metrics.Metrics) error {
+func (c *GCPClient) ExportBucketInfo(ctx context.Context, projects []string, m *metrics.Metrics) error {
 	return c.bucket.exportBucketInfo(ctx, projects, m)
 }
 
-func (c *GPCClient) GetZones(projectId string) ([]*computev1.Zone, error) {
+func (c *GCPClient) GetZones(projectId string) ([]*computev1.Zone, error) {
 	return c.compute.getZones(projectId)
 }
 
-func (c *GPCClient) ListInstancesInZone(projectId, zone string) ([]*MachineSpec, error) {
+func (c *GCPClient) ListInstancesInZone(projectId, zone string) ([]*MachineSpec, error) {
 	return c.compute.listInstancesInZone(projectId, zone)
 }
 
-func (c *GPCClient) ListDisks(ctx context.Context, projectId string, zone string) ([]*computev1.Disk, error) {
+func (c *GCPClient) ListDisks(ctx context.Context, projectId string, zone string) ([]*computev1.Disk, error) {
 	return c.compute.listDisks(ctx, projectId, zone)
 }

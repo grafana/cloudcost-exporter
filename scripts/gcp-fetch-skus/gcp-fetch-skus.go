@@ -32,7 +32,7 @@ func main() {
 
 func run(config *Config) error {
 	ctx := context.Background()
-	gpcClient, err := client2.NewGPCClient(ctx, client2.Config{
+	gcpClient, err := client2.NewGCPClient(ctx, client2.Config{
 		ProjectId: "",
 		Discount:  0,
 	})
@@ -40,11 +40,11 @@ func run(config *Config) error {
 		return err
 	}
 
-	svcid, err := gpcClient.GetServiceName(ctx, config.Service)
+	svcid, err := gcpClient.GetServiceName(ctx, config.Service)
 	if err != nil {
 		log.Fatal(err)
 	}
-	skus := gpcClient.GetPricing(ctx, svcid)
+	skus := gcpClient.GetPricing(ctx, svcid)
 	file, err := os.Create(config.OutputFile)
 	if err != nil {
 		log.Fatal(err)

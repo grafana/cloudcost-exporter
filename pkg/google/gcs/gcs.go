@@ -85,8 +85,8 @@ type Collector struct {
 	ctx        context.Context
 	interval   time.Duration
 	nextScrape time.Time
-	metrics    *metrics.Metrics
-	gpcClient  client.Client
+	metrics   *metrics.Metrics
+	gcpClient client.Client
 }
 
 func (c *Collector) Describe(_ chan<- *prometheus.Desc) error {
@@ -104,7 +104,7 @@ type Config struct {
 	ScrapeInterval time.Duration
 }
 
-func New(config *Config, gpcClient client.Client) (*Collector, error) {
+func New(config *Config, gcpClient client.Client) (*Collector, error) {
 	if config.ProjectId == "" {
 		return nil, fmt.Errorf("projectID cannot be empty")
 	}
@@ -123,7 +123,7 @@ func New(config *Config, gpcClient client.Client) (*Collector, error) {
 		// Set nextScrape to the current time minus the scrape interval so that the first scrape will run immediately
 		nextScrape: time.Now().Add(-config.ScrapeInterval),
 		metrics:    metrics.NewMetrics(),
-		gpcClient:  gpcClient,
+		gcpClient:  gcpClient,
 	}, nil
 }
 
@@ -159,20 +159,20 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 	c.nextScrape = time.Now().Add(c.interval)
 	c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
 	exporterOperationsDiscounts(c.metrics)
-	if err := c.gpcClient.ExportRegionalDiscounts(c.ctx, c.metrics); err != nil {
+	if err := c.gcpClient.ExportRegionalDiscounts(c.ctx, c.metrics); err != nil {
 		log.Printf("Error exporting regional discounts: %v", err)
 	}
 
-	if err := c.gpcClient.ExportBucketInfo(c.ctx, c.Projects, c.metrics); err != nil {
+	if err := c.gcpClient.ExportBucketInfo(c.ctx, c.Projects, c.metrics); err != nil {
 		log.Printf("Error exporting bucket info: %v", err)
 	}
 
-	serviceName, err := c.gpcClient.GetServiceName(c.ctx, "Cloud Storage")
+	serviceName, err := c.gcpClient.GetServiceName(c.ctx, "Cloud Storage")
 	if err != nil {
 		log.Printf("Error getting service name: %v", err)
 		return 0
 	}
-	return c.gpcClient.ExportGCPCostData(c.ctx, serviceName, c.metrics)
+	return c.gcpClient.ExportGCPCostData(c.ctx, serviceName, c.metrics)
 }
 
 func exporterOperationsDiscounts(m *metrics.Metrics) {
