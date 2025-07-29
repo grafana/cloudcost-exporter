@@ -2,7 +2,6 @@ package gcs
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -13,12 +12,6 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 
 	"github.com/prometheus/client_golang/prometheus"
-)
-
-var (
-	taggingError       = errors.New("tagging sku's is not supported")
-	invalidSku         = errors.New("invalid sku")
-	unknownPricingUnit = errors.New("unknown pricing unit")
 )
 
 // This data was pulled from https://console.cloud.google.com/billing/01330B-0FCEED-DEADF1/pricing?organizationId=803894190427&project=grafanalabs-global on 2023-07-28

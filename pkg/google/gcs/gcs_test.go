@@ -32,6 +32,7 @@ func TestNew(t *testing.T) {
 		gcs.NewRegionsClient(t),
 		gcs.NewStorageClientInterface(t),
 		nil,
+		nil,
 	)
 
 	t.Run("should return a non-nil client", func(t *testing.T) {
@@ -206,7 +207,7 @@ func TestGetServiceNameByReadableName(t *testing.T) {
 				option.WithoutAuthentication(),
 				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 
-			gpcClient := client.NewMock("", 0, nil, nil, catalogClient)
+			gpcClient := client.NewMock("", 0, nil, nil, catalogClient, nil)
 
 			assert.NoError(t, err)
 			ctx := context.Background()
@@ -257,7 +258,7 @@ func TestCollector_Collect(t *testing.T) {
 		option.WithoutAuthentication(),
 		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 
-	gpcClient := client.NewMock("project-1", 0, regionsClient, storageClient, cloudCatalogClient)
+	gpcClient := client.NewMock("project-1", 0, regionsClient, storageClient, cloudCatalogClient, nil)
 
 	assert.NoError(t, err)
 	collector, err := New(&Config{

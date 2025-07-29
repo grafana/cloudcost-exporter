@@ -2,8 +2,6 @@ package gke
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -12,7 +10,6 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 
-	billingv1 "cloud.google.com/go/billing/apiv1"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/compute/v1"
 
@@ -50,10 +47,6 @@ var (
 	)
 )
 
-var (
-	ErrListInstances = errors.New("no list price was found for the sku")
-)
-
 type Config struct {
 	Projects       string
 	ScrapeInterval time.Duration
@@ -61,13 +54,12 @@ type Config struct {
 }
 
 type Collector struct {
-	computeService *compute.Service
-	billingService *billingv1.CloudCatalogClient
-	config         *Config
-	Projects       []string
-	PricingMap     *PricingMap
-	NextScrape     time.Time
-	logger         *slog.Logger
+	gpcClient  client.Client
+	config     *Config
+	projects   []string
+	pricingMap *PricingMap
+	nextScrape time.Time
+	logger     *slog.Logger
 }
 
 func (c *Collector) Register(_ provider.Registry) error {
@@ -85,17 +77,17 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	ctx := context.Background()
-	for _, project := range c.Projects {
-		zones, err := c.computeService.Zones.List(project).Do()
+	for _, project := range c.projects {
+		zones, err := c.gpcClient.GetZones(project)
 		if err != nil {
 			return err
 		}
 		wg := sync.WaitGroup{}
 		// Multiply by 2 because we are making two requests per zone
-		wg.Add(len(zones.Items) * 2)
-		instances := make(chan []*MachineSpec, len(zones.Items))
-		disks := make(chan []*compute.Disk, len(zones.Items))
-		for _, zone := range zones.Items {
+		wg.Add(len(zones) * 2)
+		instances := make(chan []*client.MachineSpec, len(zones))
+		disks := make(chan []*compute.Disk, len(zones))
+		for _, zone := range zones {
 			go func(zone *compute.Zone) {
 				defer wg.Done()
 				now := time.Now()
@@ -104,7 +96,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					slog.String("project", project),
 					slog.String("zone", zone.Name))
 
-				results, err := ListInstancesInZone(project, zone.Name, c.computeService)
+				results, err := c.gpcClient.ListInstancesInZone(project, zone.Name)
 				if err != nil {
 					c.logger.LogAttrs(ctx, slog.LevelError,
 						"error listing instances in zone",
@@ -125,7 +117,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			}(zone)
 			go func(zone *compute.Zone) {
 				defer wg.Done()
-				results, err := ListDisks(project, zone.Name, c.computeService)
+				results, err := c.gpcClient.ListDisks(ctx, project, zone.Name)
 				if err != nil {
 					c.logger.Error("error listing disks in zone %s: %v",
 						slog.String("zone", zone.Name),
@@ -168,7 +160,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					project,
 					instance.PriceTier,
 				}
-				cpuCost, ramCost, err := c.PricingMap.GetCostOfInstance(instance)
+				cpuCost, ramCost, err := c.pricingMap.GetCostOfInstance(instance)
 				if err != nil {
 					// Log out the error and continue processing nodes
 					// TODO(@pokom): Should we set sane defaults here to emit _something_?
@@ -217,7 +209,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 					d.UseStatus(),
 				}
 
-				price, err := c.PricingMap.GetCostOfStorage(d.Region(), d.StorageClass())
+				price, err := c.pricingMap.GetCostOfStorage(d.Region(), d.StorageClass())
 				if err != nil {
 					c.logger.LogAttrs(ctx,
 						slog.LevelError,
@@ -246,34 +238,33 @@ func New(config *Config, gpcClient client.Client) (*Collector, error) {
 	logger := config.Logger.With("collector", "gke")
 	ctx := context.TODO()
 
-	pm, err := NewPricingMap(ctx, billingService)
+	pm, err := NewPricingMap(ctx, gpcClient)
 	if err != nil {
 		return nil, err
 	}
 
 	priceTicker := time.NewTicker(PriceRefreshInterval)
 
-	go func(ctx context.Context, billingService *billingv1.CloudCatalogClient) {
+	go func(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-priceTicker.C:
-				err := pm.Populate(ctx, billingService)
+				err := pm.Populate(ctx)
 				if err != nil {
 					logger.Error(err.Error())
 				}
 			}
 		}
-	}(ctx, billingService)
+	}(ctx)
 
 	return &Collector{
-		computeService: computeService,
-		billingService: billingService,
-		config:         config,
-		Projects:       strings.Split(config.Projects, ","),
-		logger:         logger,
-		PricingMap:     pm,
+		config:     config,
+		projects:   strings.Split(config.Projects, ","),
+		logger:     logger,
+		pricingMap: pm,
+		gpcClient:  gpcClient,
 	}, nil
 }
 
@@ -285,44 +276,4 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- gkeNodeCPUHourlyCostDesc
 	ch <- gkeNodeMemoryHourlyCostDesc
 	return nil
-}
-
-// ListDisks will list all disks in a given zone and return a slice of compute.Disk
-func ListDisks(project string, zone string, service *compute.Service) ([]*compute.Disk, error) {
-	var disks []*compute.Disk
-	// TODO: How do we get this to work for multi regional disks?
-	err := service.Disks.List(project, zone).Pages(context.Background(), func(page *compute.DiskList) error {
-		if page == nil {
-			return nil
-		}
-		disks = append(disks, page.Items...)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return disks, nil
-}
-
-// ListInstancesInZone will list all instances in a given zone and return a slice of MachineSpecs
-func ListInstancesInZone(projectID, zone string, c *compute.Service) ([]*MachineSpec, error) {
-	var allInstances []*MachineSpec
-	var nextPageToken string
-
-	for {
-		instances, err := c.Instances.List(projectID, zone).
-			PageToken(nextPageToken).
-			Do()
-		if err != nil {
-			return nil, fmt.Errorf("%w: %s", ErrListInstances, err.Error())
-		}
-		for _, instance := range instances.Items {
-			allInstances = append(allInstances, NewMachineSpec(instance))
-		}
-		nextPageToken = instances.NextPageToken
-		if nextPageToken == "" {
-			break
-		}
-	}
-	return allInstances, nil
 }

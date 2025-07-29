@@ -13,6 +13,7 @@ import (
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
+	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,7 +43,7 @@ func TestCollector_Collect(t *testing.T) {
 			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			})),
-			err:             ErrListInstances,
+			err:             client.ErrListInstances,
 			collectResponse: 0,
 			expectedMetrics: []*utils.MetricResult{},
 		},
@@ -355,7 +356,7 @@ func TestCollector_Collect(t *testing.T) {
 									ProvisioningModel: "test",
 								},
 								Labels: map[string]string{
-									GkeClusterLabel: "test",
+									client.GkeClusterLabel: "test",
 								},
 							},
 							{
@@ -366,7 +367,7 @@ func TestCollector_Collect(t *testing.T) {
 									ProvisioningModel: "test",
 								},
 								Labels: map[string]string{
-									GkeClusterLabel: "test",
+									client.GkeClusterLabel: "test",
 								},
 							},
 							{
@@ -377,7 +378,7 @@ func TestCollector_Collect(t *testing.T) {
 									ProvisioningModel: "SPOT",
 								},
 								Labels: map[string]string{
-									GkeClusterLabel: "test",
+									client.GkeClusterLabel: "test",
 								},
 							},
 							{
@@ -390,7 +391,7 @@ func TestCollector_Collect(t *testing.T) {
 									ProvisioningModel: "SPOT",
 								},
 								Labels: map[string]string{
-									GkeClusterLabel: "test",
+									client.GkeClusterLabel: "test",
 								},
 							},
 							{
@@ -401,7 +402,7 @@ func TestCollector_Collect(t *testing.T) {
 									ProvisioningModel: "test",
 								},
 								Labels: map[string]string{
-									GkeClusterLabel: "test",
+									client.GkeClusterLabel: "test",
 								},
 							},
 						},
@@ -420,8 +421,8 @@ func TestCollector_Collect(t *testing.T) {
 								Name: "test-disk",
 								Zone: "testing/us-central1-a",
 								Labels: map[string]string{
-									GkeClusterLabel: "test",
-									BootDiskLabel:   "",
+									client.GkeClusterLabel: "test",
+									BootDiskLabel:          "",
 								},
 								Description: `{"kubernetes.io/created-for/pvc/namespace":"cloudcost-exporter"}`,
 								Type:        "pd-standard",
@@ -431,7 +432,7 @@ func TestCollector_Collect(t *testing.T) {
 								Name: "test-ssd-disk",
 								Zone: "testing/us-east4",
 								Labels: map[string]string{
-									GkeClusterLabel: "test",
+									client.GkeClusterLabel: "test",
 								},
 								Description: `{"kubernetes.io/created-for/pvc/namespace":"cloudcost-exporter"}`,
 								Type:        "pd-ssd",
@@ -442,8 +443,8 @@ func TestCollector_Collect(t *testing.T) {
 								Name: "test-ssd-disk",
 								Zone: "testing/us-east4",
 								Labels: map[string]string{
-									GkeClusterLabel: "test",
-									BootDiskLabel:   "",
+									client.GkeClusterLabel: "test",
+									BootDiskLabel:          "",
 								},
 								Description: `{"kubernetes.io/created-for/pvc/namespace":"cloudcost-exporter"}`,
 								Type:        "pd-ssd",
@@ -472,14 +473,16 @@ func TestCollector_Collect(t *testing.T) {
 					t.Errorf("Failed to serve: %v", err)
 				}
 			}()
-			billingpb.RegisterCloudCatalogServer(gsrv, &billing.FakeCloudCatalogServer{})
+			billingpb.RegisterCloudCatalogServer(gsrv, &client.FakeCloudCatalogServer{})
 			cloudCatalogClient, err := billingv1.NewCloudCatalogClient(context.Background(),
 				option.WithEndpoint(l.Addr().String()),
 				option.WithoutAuthentication(),
 				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
 			)
 			require.NoError(t, err)
-			collector, _ := New(test.config, computeService, cloudCatalogClient)
+
+			gcpClient := client.NewMock("testing", 0, nil, nil, cloudCatalogClient, computeService)
+			collector, _ := New(test.config, gcpClient)
 			require.NotNil(t, collector)
 			ch := make(chan prometheus.Metric)
 			go func() {

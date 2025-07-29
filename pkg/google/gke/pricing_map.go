@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
+	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
@@ -103,20 +103,20 @@ func NewPriceTiers() *PriceTiers {
 
 // PricingMap is a map of regions to a map of family to price tiers
 type PricingMap struct {
-	Compute map[string]*FamilyPricing
-	Storage map[string]*StoragePricing
+	compute   map[string]*FamilyPricing
+	storage   map[string]*StoragePricing
+	gpcClient client.Client
 }
 
 // NewPricingMap returns a new PricingMap in a way that can be used afterwards.
-func NewPricingMap(ctx context.Context, billingService *billingv1.CloudCatalogClient) (*PricingMap, error) {
+func NewPricingMap(ctx context.Context, gpcClient client.Client) (*PricingMap, error) {
 	pm := &PricingMap{
-		Compute: map[string]*FamilyPricing{},
-		Storage: map[string]*StoragePricing{},
+		compute:   map[string]*FamilyPricing{},
+		storage:   map[string]*StoragePricing{},
+		gpcClient: gpcClient,
 	}
 
-	err := pm.Populate(ctx, billingService)
-
-	if err != nil {
+	if err := pm.Populate(ctx); err != nil {
 		return nil, err
 	}
 
@@ -151,17 +151,17 @@ func NewStoragePricing() *StoragePricing {
 	}
 }
 
-func (m PricingMap) GetCostOfInstance(instance *MachineSpec) (float64, float64, error) {
-	if len(m.Compute) == 0 || instance == nil {
+func (pm *PricingMap) GetCostOfInstance(instance *client.MachineSpec) (float64, float64, error) {
+	if len(pm.compute) == 0 || instance == nil {
 		return 0, 0, ErrRegionNotFound
 	}
-	if _, ok := m.Compute[instance.Region]; !ok {
+	if _, ok := pm.compute[instance.Region]; !ok {
 		return 0, 0, fmt.Errorf("%w: %s", ErrRegionNotFound, instance.Region)
 	}
-	if _, ok := m.Compute[instance.Region].Family[instance.Family]; !ok {
+	if _, ok := pm.compute[instance.Region].Family[instance.Family]; !ok {
 		return 0, 0, fmt.Errorf("%w: %s", ErrFamilyTypeNotFound, instance.Family)
 	}
-	priceTiers := m.Compute[instance.Region].Family[instance.Family]
+	priceTiers := pm.compute[instance.Region].Family[instance.Family]
 	computePrices := priceTiers.OnDemand
 	if instance.SpotInstance {
 		computePrices = priceTiers.Spot
@@ -170,17 +170,17 @@ func (m PricingMap) GetCostOfInstance(instance *MachineSpec) (float64, float64, 
 	return computePrices.Cpu, computePrices.Ram, nil
 }
 
-func (m PricingMap) GetCostOfStorage(region, storageClass string) (float64, error) {
-	if len(m.Storage) == 0 {
+func (pm *PricingMap) GetCostOfStorage(region, storageClass string) (float64, error) {
+	if len(pm.storage) == 0 {
 		return 0, ErrRegionNotFound
 	}
-	if _, ok := m.Storage[region]; !ok {
+	if _, ok := pm.storage[region]; !ok {
 		return 0, fmt.Errorf("%w: %s", ErrRegionNotFound, region)
 	}
-	if _, ok := m.Storage[region].Storage[storageClass]; !ok {
+	if _, ok := pm.storage[region].Storage[storageClass]; !ok {
 		return 0, fmt.Errorf("%w: %s", ErrFamilyTypeNotFound, storageClass)
 	}
-	return m.Storage[region].Storage[storageClass].ProvisionedSpaceGiB, nil
+	return pm.storage[region].Storage[storageClass].ProvisionedSpaceGiB, nil
 }
 
 var (
@@ -195,12 +195,12 @@ var (
 
 // Populate is responsible for collecting skus related to Compute Engine, parsing out the response, and then populating the pricing map
 // with relevant skus.
-func (pm *PricingMap) Populate(ctx context.Context, billingService *billingv1.CloudCatalogClient) error {
-	serviceName, err := billing.GetServiceName(ctx, billingService, "Compute Engine")
+func (pm *PricingMap) Populate(ctx context.Context) error {
+	serviceName, err := pm.gpcClient.GetServiceName(ctx, "Compute Engine")
 	if err != nil {
 		return fmt.Errorf("%w: %s", ErrInitializingPricingMap, err.Error())
 	}
-	skus := billing.GetPricing(ctx, billingService, serviceName)
+	skus := pm.gpcClient.GetPricing(ctx, serviceName)
 
 	if len(skus) == 0 {
 		return ErrSkuNotFound
@@ -228,14 +228,14 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 		for _, data := range rawData {
 			switch data.ComputeResource {
 			case Ram, Cpu:
-				if _, ok := pm.Compute[data.Region]; !ok {
-					pm.Compute[data.Region] = NewMachineTypePricing()
+				if _, ok := pm.compute[data.Region]; !ok {
+					pm.compute[data.Region] = NewMachineTypePricing()
 				}
-				if _, ok := pm.Compute[data.Region].Family[data.Description]; !ok {
-					pm.Compute[data.Region].Family[data.Description] = NewPriceTiers()
+				if _, ok := pm.compute[data.Region].Family[data.Description]; !ok {
+					pm.compute[data.Region].Family[data.Description] = NewPriceTiers()
 				}
 				floatPrice := float64(data.Price) * 1e-9
-				priceTier := pm.Compute[data.Region].Family[data.Description]
+				priceTier := pm.compute[data.Region].Family[data.Description]
 				if data.PriceTier == Spot {
 					if data.ComputeResource == Ram {
 						priceTier.Spot.Ram = floatPrice
@@ -255,8 +255,8 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 				// For extreme disks, we are ignoring the cost of IOPs, which would be a significant cost(could double cost of disk)
 				// TODO(pokom): Add support for other storage classes
 				// TODO(pokom): Add support for IOps operations
-				if _, ok := pm.Storage[data.Region]; !ok {
-					pm.Storage[data.Region] = NewStoragePricing()
+				if _, ok := pm.storage[data.Region]; !ok {
+					pm.storage[data.Region] = NewStoragePricing()
 				}
 				storageClass := ""
 				for description, sc := range storageClasses {
@@ -278,10 +278,10 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 					continue
 				}
 				// First time seen, need to initialize the StoragePrices for the storageClass
-				if _, ok := pm.Storage[data.Region].Storage[storageClass]; !ok {
-					pm.Storage[data.Region].Storage[storageClass] = &StoragePrices{}
+				if _, ok := pm.storage[data.Region].Storage[storageClass]; !ok {
+					pm.storage[data.Region].Storage[storageClass] = &StoragePrices{}
 				}
-				if pm.Storage[data.Region].Storage[storageClass].ProvisionedSpaceGiB != 0.0 {
+				if pm.storage[data.Region].Storage[storageClass].ProvisionedSpaceGiB != 0.0 {
 					log.Printf("Storage class %s already exists in region %s", storageClass, data.Region)
 					continue
 				}
@@ -294,7 +294,7 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 				// The current implementation specifically looks for `Hyperdisk Balanced Capacity` to avoid taking the last price that's found
 				// Then there is one variation of hyperdisks that are priced differently:
 				// 1. Storage Pools Advanced Capacity(Hyperdisk Balanced Storage Pools Advanced Capacity - Mexico)
-				pm.Storage[data.Region].Storage[storageClass].ProvisionedSpaceGiB = float64(data.Price) * 1e-9 / utils.HoursInMonth
+				pm.storage[data.Region].Storage[storageClass].ProvisionedSpaceGiB = float64(data.Price) * 1e-9 / utils.HoursInMonth
 			}
 		}
 	}
