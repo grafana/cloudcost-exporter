@@ -18,6 +18,8 @@ var (
 	baseRegions    = []string{"asia", "eu", "us", "asia1", "eur4", "nam4"}
 )
 
+//go:generate mockgen -source=region.go -destination mocks/region.go
+
 type RegionsClient interface {
 	List(ctx context.Context, req *computepb.ListRegionsRequest, opts ...gax.CallOption) *compute.RegionIterator
 }
