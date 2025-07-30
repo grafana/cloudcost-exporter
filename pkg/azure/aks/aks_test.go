@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	aksTestLogger *slog.Logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+	aksTestLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
 func TestNew(t *testing.T) {

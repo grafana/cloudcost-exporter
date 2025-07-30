@@ -10,9 +10,8 @@ import (
 	"time"
 
 	"github.com/Azure/go-autorest/autorest/to"
+	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
 	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
-
-	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
 
 	"gopkg.in/matryer/try.v1"
 )
@@ -68,13 +67,13 @@ type PriceStore struct {
 	logger  *slog.Logger
 	context context.Context
 
-	azureClientWrapper azureClientWrapper.AzureClient
+	azureClientWrapper client.AzureClient
 
 	regionMapLock *sync.RWMutex
 	RegionMap     map[string]PriceByPriority
 }
 
-func NewPricingStore(ctx context.Context, parentLogger *slog.Logger, azClientWrapper azureClientWrapper.AzureClient) *PriceStore {
+func NewPricingStore(ctx context.Context, parentLogger *slog.Logger, azClientWrapper client.AzureClient) *PriceStore {
 	logger := parentLogger.With("subsystem", "priceStore")
 
 	p := &PriceStore{

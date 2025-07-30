@@ -11,9 +11,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v5"
+	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
 
 	"github.com/Azure/go-autorest/autorest/to"
 )
@@ -67,7 +66,7 @@ type MachineStore struct {
 	context context.Context
 	logger  *slog.Logger
 
-	azClientWrapper azureClientWrapper.AzureClient
+	azClientWrapper client.AzureClient
 
 	MachineSizeMap     map[string]map[string]*armcompute.VirtualMachineSize
 	machineSizeMapLock *sync.RWMutex
@@ -76,7 +75,7 @@ type MachineStore struct {
 	machineMapLock *sync.RWMutex
 }
 
-func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, azClientWrapper azureClientWrapper.AzureClient) (*MachineStore, error) {
+func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, azClientWrapper client.AzureClient) (*MachineStore, error) {
 	logger := parentLogger.With("subsystem", "machineStore")
 
 	ms := &MachineStore{
