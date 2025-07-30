@@ -468,12 +468,13 @@ func TestCollector_Collect(t *testing.T) {
 			require.NoError(t, err)
 			gsrv := grpc.NewServer()
 			defer gsrv.Stop()
+			billingpb.RegisterCloudCatalogServer(gsrv, &client.FakeCloudCatalogServer{})
 			go func() {
 				if err := gsrv.Serve(l); err != nil {
 					t.Errorf("Failed to serve: %v", err)
 				}
 			}()
-			billingpb.RegisterCloudCatalogServer(gsrv, &client.FakeCloudCatalogServer{})
+
 			cloudCatalogClient, err := billingv1.NewCloudCatalogClient(context.Background(),
 				option.WithEndpoint(l.Addr().String()),
 				option.WithoutAuthentication(),
