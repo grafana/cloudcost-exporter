@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/cloudcost-exporter/pkg/azure/aks"
-	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
+	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
@@ -82,7 +82,7 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 		return nil, err
 	}
 
-	azClientWrapper, err := azureClientWrapper.NewAzureClientWrapper(logger, config.SubscriptionId, creds)
+	azClientWrapper, err := client.NewAzureClientWrapper(logger, config.SubscriptionId, creds)
 	if err != nil {
 		return nil, err
 	}
@@ -92,9 +92,7 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 		switch strings.ToUpper(svc) {
 		case "AKS":
 			collector, err := aks.New(ctx, &aks.Config{
-				Credentials:    creds,
-				SubscriptionId: config.SubscriptionId,
-				Logger:         logger,
+				Logger: logger,
 			}, azClientWrapper)
 			if err != nil {
 				return nil, err

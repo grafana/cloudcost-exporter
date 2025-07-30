@@ -8,12 +8,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
-	mockpricing "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/pricing"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/services/mocks"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-
-	ec22 "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/ec2"
+	"go.uber.org/mock/gomock"
 )
 
 func TestComputePricingMap_AddToComputePricingMap(t *testing.T) {
@@ -446,6 +444,7 @@ func Test_ListOnDemandPrices(t *testing.T) {
 					PriceList: []string{},
 				}, nil
 			},
+			expectedCalls: 1,
 		},
 		"Single product should return a single product": {
 			ctx:    context.Background(),
@@ -461,6 +460,7 @@ func Test_ListOnDemandPrices(t *testing.T) {
 					},
 				}, nil
 			},
+			expectedCalls: 1,
 		},
 		"Ensure errors propagate": {
 			ctx:    context.Background(),
@@ -470,6 +470,7 @@ func Test_ListOnDemandPrices(t *testing.T) {
 			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
 				return nil, assert.AnError
 			},
+			expectedCalls: 1,
 		},
 		"NextToken should return multiple products": {
 			ctx:    context.Background(),
@@ -499,10 +500,11 @@ func Test_ListOnDemandPrices(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			client := mockpricing.NewPricing(t)
+			ctrl := gomock.NewController(t)
+			client := mocks.NewMockPricing(ctrl)
 			client.EXPECT().
-				GetProducts(mock.Anything, mock.Anything, mock.Anything).
-				RunAndReturn(tt.GetProducts).
+				GetProducts(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(tt.GetProducts).
 				Times(tt.expectedCalls)
 			got, err := ListOnDemandPrices(tt.ctx, tt.region, client)
 			if tt.err != nil {
@@ -605,10 +607,11 @@ func TestListSpotPrices(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			client := ec22.NewEC2(t)
+			ctrl := gomock.NewController(t)
+			client := mocks.NewMockEC2(ctrl)
 			client.EXPECT().
-				DescribeSpotPriceHistory(mock.Anything, mock.Anything, mock.Anything).
-				RunAndReturn(tt.DescribeSpotPriceHistory).
+				DescribeSpotPriceHistory(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(tt.DescribeSpotPriceHistory).
 				Times(tt.expectedCalls)
 
 			got, err := ListSpotPrices(tt.ctx, client)
@@ -637,6 +640,7 @@ func TestListStoragePrices(t *testing.T) {
 			GetProducts: func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
 				return nil, assert.AnError
 			},
+			expectedCalls: 1,
 		},
 		"No volume prices for that region should return empty": {
 			ctx:    context.Background(),
@@ -646,6 +650,7 @@ func TestListStoragePrices(t *testing.T) {
 					PriceList: []string{},
 				}, nil
 			},
+			expectedCalls: 1,
 		},
 		"Single product should return a single product": {
 			ctx:    context.Background(),
@@ -660,6 +665,7 @@ func TestListStoragePrices(t *testing.T) {
 					},
 				}, nil
 			},
+			expectedCalls: 1,
 		},
 		"multiple products should return same length array": {
 			ctx:    context.Background(),
@@ -690,10 +696,11 @@ func TestListStoragePrices(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			client := mockpricing.NewPricing(t)
+			ctrl := gomock.NewController(t)
+			client := mocks.NewMockPricing(ctrl)
 			client.EXPECT().
-				GetProducts(mock.Anything, mock.Anything, mock.Anything).
-				RunAndReturn(tt.GetProducts).
+				GetProducts(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(tt.GetProducts).
 				Times(tt.expectedCalls)
 
 			resp, err := ListStoragePrices(tt.ctx, tt.region, client)

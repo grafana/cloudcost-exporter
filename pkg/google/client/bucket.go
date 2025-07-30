@@ -13,6 +13,8 @@ import (
 	"google.golang.org/api/iterator"
 )
 
+//go:generate mockgen -source=bucket.go -destination mocks/bucket.go
+
 type StorageClientInterface interface {
 	Buckets(ctx context.Context, projectID string) *storage.BucketIterator
 }

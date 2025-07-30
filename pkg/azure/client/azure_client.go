@@ -1,4 +1,4 @@
-package azureClientWrapper
+package client
 
 import (
 	"context"
@@ -18,17 +18,6 @@ var (
 	ErrClientCreationFailure = errors.New("failed to create client")
 	ErrPageAdvanceFailure    = errors.New("failed to advance page")
 )
-
-type AzureClient interface {
-	// Machine Store
-	ListClustersInSubscription(context.Context) ([]*armcontainerservice.ManagedCluster, error)
-	ListVirtualMachineScaleSetsOwnedVms(context.Context, string, string) ([]*armcompute.VirtualMachineScaleSetVM, error)
-	ListVirtualMachineScaleSetsFromResourceGroup(context.Context, string) ([]*armcompute.VirtualMachineScaleSet, error)
-	ListMachineTypesByLocation(context.Context, string) ([]*armcompute.VirtualMachineSize, error)
-
-	// Price Store
-	ListPrices(context.Context, *retailPriceSdk.RetailPricesClientListOptions) ([]*retailPriceSdk.ResourceSKU, error)
-}
 
 type AzClientWrapper struct {
 	logger *slog.Logger
@@ -76,7 +65,7 @@ func NewAzureClientWrapper(logger *slog.Logger, subscriptionId string, credentia
 func (a *AzClientWrapper) ListVirtualMachineScaleSetsOwnedVms(ctx context.Context, rgName, vmssName string) ([]*armcompute.VirtualMachineScaleSetVM, error) {
 	logger := a.logger.With("pager", "listVirtualMachineScaleSetsOwnedVms")
 
-	vmList := []*armcompute.VirtualMachineScaleSetVM{}
+	vmList := make([]*armcompute.VirtualMachineScaleSetVM, 0)
 
 	opts := &armcompute.VirtualMachineScaleSetVMsClientListOptions{
 		Expand: to.StringPtr("instanceView"),
@@ -98,7 +87,7 @@ func (a *AzClientWrapper) ListVirtualMachineScaleSetsOwnedVms(ctx context.Contex
 func (a *AzClientWrapper) ListVirtualMachineScaleSetsFromResourceGroup(ctx context.Context, rgName string) ([]*armcompute.VirtualMachineScaleSet, error) {
 	logger := a.logger.With("pager", "listVirtualMachineScaleSetsFromResourceGroup")
 
-	vmssList := []*armcompute.VirtualMachineScaleSet{}
+	vmssList := make([]*armcompute.VirtualMachineScaleSet, 0)
 
 	pager := a.azVMSSClient.NewListPager(rgName, nil)
 	for pager.More() {
@@ -117,7 +106,7 @@ func (a *AzClientWrapper) ListVirtualMachineScaleSetsFromResourceGroup(ctx conte
 func (a *AzClientWrapper) ListClustersInSubscription(ctx context.Context) ([]*armcontainerservice.ManagedCluster, error) {
 	logger := a.logger.With("pager", "listClustersInSubscription")
 
-	clusterList := []*armcontainerservice.ManagedCluster{}
+	clusterList := make([]*armcontainerservice.ManagedCluster, 0)
 
 	pager := a.azAksClient.NewListPager(nil)
 	for pager.More() {
@@ -135,7 +124,7 @@ func (a *AzClientWrapper) ListClustersInSubscription(ctx context.Context) ([]*ar
 func (a *AzClientWrapper) ListMachineTypesByLocation(ctx context.Context, region string) ([]*armcompute.VirtualMachineSize, error) {
 	logger := a.logger.With("pager", "listMachineTypesByLocation")
 
-	machineList := []*armcompute.VirtualMachineSize{}
+	machineList := make([]*armcompute.VirtualMachineSize, 0)
 
 	pager := a.azVMSizesClient.NewListPager(region, nil)
 	for pager.More() {
@@ -155,7 +144,7 @@ func (a *AzClientWrapper) ListPrices(ctx context.Context, searchOptions *retailP
 	logger := a.logger.With("pager", "listPrices")
 
 	logger.LogAttrs(ctx, slog.LevelDebug, "populating prices with opts", slog.String("opts", fmt.Sprintf("%+v", searchOptions)))
-	prices := []*retailPriceSdk.ResourceSKU{}
+	prices := make([]*retailPriceSdk.ResourceSKU, 0)
 
 	pager := a.retailPricesClient.NewListPager(searchOptions)
 	for pager.More() {

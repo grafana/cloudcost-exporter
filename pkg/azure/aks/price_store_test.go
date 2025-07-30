@@ -10,15 +10,15 @@ import (
 	"testing"
 
 	"github.com/Azure/go-autorest/autorest/to"
-	mock_az_client "github.com/grafana/cloudcost-exporter/mocks/pkg/azure/azureClientWrapper"
+	mock_client "github.com/grafana/cloudcost-exporter/pkg/azure/client/mocks"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
 
 var (
-	priceStoreCtx        context.Context = context.TODO()
-	priceStoreTestLogger *slog.Logger    = slog.New(slog.NewTextHandler(os.Stdout, nil))
+	priceStoreCtx        = context.TODO()
+	priceStoreTestLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
 func TestPopulatePriceStore(t *testing.T) {
@@ -31,7 +31,7 @@ func TestPopulatePriceStore(t *testing.T) {
 		MeterRegion: to.StringPtr(AzureMeterRegion),
 	}
 
-	mockAzureClient := mock_az_client.NewMockAzureClient(ctrl)
+	mockAzureClient := mock_client.NewMockAzureClient(ctrl)
 
 	testTable := map[string]struct {
 		expectedErr           error

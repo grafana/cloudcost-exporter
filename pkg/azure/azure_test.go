@@ -18,8 +18,8 @@ import (
 )
 
 var (
-	parentCtx  context.Context = context.TODO()
-	testLogger *slog.Logger    = slog.New(slog.NewTextHandler(os.Stdout, nil))
+	parentCtx  = context.TODO()
+	testLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
 func Test_New(t *testing.T) {

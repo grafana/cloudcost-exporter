@@ -12,8 +12,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v5"
 	"github.com/Azure/go-autorest/autorest/to"
-	mock_azureClientWrapper "github.com/grafana/cloudcost-exporter/mocks/pkg/azure/azureClientWrapper"
-	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
+	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
+	mock_client "github.com/grafana/cloudcost-exporter/pkg/azure/client/mocks"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
@@ -27,7 +27,7 @@ func TestPopulateMachineStore(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	newFakeMachineStore := func(cli azureClientWrapper.AzureClient) *MachineStore {
+	newFakeMachineStore := func(cli client.AzureClient) *MachineStore {
 		return &MachineStore{
 			context: machineStoreCtx,
 			logger:  machineStoreTestLogger,
@@ -293,7 +293,7 @@ func TestPopulateMachineStore(t *testing.T) {
 
 	for name, tc := range testTable {
 		t.Run(name, func(t *testing.T) {
-			azClientWrapper := mock_azureClientWrapper.NewMockAzureClient(ctrl)
+			azClientWrapper := mock_client.NewMockAzureClient(ctrl)
 
 			ms := newFakeMachineStore(azClientWrapper)
 

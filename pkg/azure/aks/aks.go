@@ -7,13 +7,11 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
+	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
-	"github.com/grafana/cloudcost-exporter/pkg/provider"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 )
@@ -93,13 +91,10 @@ type Collector struct {
 }
 
 type Config struct {
-	Logger      *slog.Logger
-	Credentials *azidentity.DefaultAzureCredential
-
-	SubscriptionId string
+	Logger *slog.Logger
 }
 
-func New(ctx context.Context, cfg *Config, azClientWrapper azureClientWrapper.AzureClient) (*Collector, error) {
+func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (*Collector, error) {
 	logger := cfg.Logger.With("collector", "aks")
 	priceStore := NewPricingStore(ctx, logger, azClientWrapper)
 	machineStore, err := NewMachineStore(ctx, logger, azClientWrapper)

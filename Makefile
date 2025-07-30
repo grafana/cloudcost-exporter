@@ -25,10 +25,6 @@ build-binary:
 
 build: build-binary build-image
 
-generate-mocks:
-	mockgen -source=pkg/provider/provider.go -destination pkg/provider/mocks/provider.go
-	mockgen -source=pkg/azure/azureClientWrapper/azureClientWrapper.go -destination mocks/pkg/azure/azureClientWrapper/azureClientWrapper.go
-
 test: build
 	go test -v ./...
 

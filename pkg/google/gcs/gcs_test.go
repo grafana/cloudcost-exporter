@@ -14,23 +14,24 @@ import (
 	computeapiv1 "cloud.google.com/go/compute/apiv1"
 	"cloud.google.com/go/storage"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
+	mock_client "github.com/grafana/cloudcost-exporter/pkg/google/client/mocks"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/api/option"
 
 	"google.golang.org/genproto/googleapis/type/money"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-
-	"github.com/grafana/cloudcost-exporter/mocks/pkg/google/gcs"
 )
 
 func TestNew(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	gcpClient := client.NewMock("project-1",
 		0,
-		gcs.NewRegionsClient(t),
-		gcs.NewStorageClientInterface(t),
+		mock_client.NewMockRegionsClient(ctrl),
+		mock_client.NewMockStorageClientInterface(ctrl),
 		nil,
 		nil,
 	)

@@ -7,10 +7,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/services/mocks"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-
-	ec22 "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/ec2"
+	"go.uber.org/mock/gomock"
 )
 
 func TestListEBSVolumes(t *testing.T) {
@@ -84,10 +83,11 @@ func TestListEBSVolumes(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			client := ec22.NewEC2(t)
+			ctrl := gomock.NewController(t)
+			client := mocks.NewMockEC2(ctrl)
 			client.EXPECT().
-				DescribeVolumes(mock.Anything, mock.Anything, mock.Anything).
-				RunAndReturn(tt.DescribeVolumes).
+				DescribeVolumes(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(tt.DescribeVolumes).
 				Times(tt.expectedCalls)
 			ctx := context.Background()
 

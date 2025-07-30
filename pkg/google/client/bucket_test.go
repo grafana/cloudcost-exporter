@@ -8,11 +8,11 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client/cache"
+	mock_client "github.com/grafana/cloudcost-exporter/pkg/google/client/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/api/option"
-
-	"github.com/grafana/cloudcost-exporter/mocks/pkg/google/gcs"
 )
 
 func TestNewBucketClient(t *testing.T) {
@@ -20,7 +20,7 @@ func TestNewBucketClient(t *testing.T) {
 		client StorageClientInterface
 	}{
 		"Empty cloudCatalogClient": {
-			client: gcs.NewStorageClientInterface(t),
+			client: mock_client.NewMockStorageClientInterface(gomock.NewController(t)),
 		},
 	}
 	for name, test := range tests {
