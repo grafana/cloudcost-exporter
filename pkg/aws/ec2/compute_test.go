@@ -7,10 +7,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/services/mocks"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-
-	ec22 "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/ec2"
+	"go.uber.org/mock/gomock"
 )
 
 func TestListComputeInstances(t *testing.T) {
@@ -57,14 +56,16 @@ func TestListComputeInstances(t *testing.T) {
 					},
 				},
 			},
+			expectedCalls: 1,
 		},
 		"Ensure errors propagate": {
 			ctx: context.Background(),
 			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
 				return nil, assert.AnError
 			},
-			err:  assert.AnError,
-			want: nil,
+			err:           assert.AnError,
+			want:          nil,
+			expectedCalls: 1,
 		},
 		"NextToken should return multiple instances": {
 			ctx: context.Background(),
@@ -122,10 +123,11 @@ func TestListComputeInstances(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			client := ec22.NewEC2(t)
+			ctrl := gomock.NewController(t)
+			client := mocks.NewMockEC2(ctrl)
 			client.EXPECT().
-				DescribeInstances(mock.Anything, mock.Anything, mock.Anything).
-				RunAndReturn(tt.DescribeInstances).
+				DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(tt.DescribeInstances).
 				Times(tt.expectedCalls)
 
 			got, err := ListComputeInstances(tt.ctx, client)

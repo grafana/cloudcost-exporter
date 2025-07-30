@@ -8,17 +8,16 @@ import (
 	"sync"
 	"testing"
 	"time"
-
+	
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/services/mocks"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-
-	mockec2 "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/ec2"
-	mockpricing "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/pricing"
+	"go.uber.org/mock/gomock"
+	
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
@@ -69,6 +68,7 @@ func TestCollector_Name(t *testing.T) {
 }
 
 func TestCollector_Collect(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	regions := []ec2Types.Region{
 		{
 			RegionName: aws.String("us-east-1"),
@@ -87,9 +87,9 @@ func TestCollector_Collect(t *testing.T) {
 	})
 
 	t.Run("Collect should return an error if ListOnDemandPrices returns an error", func(t *testing.T) {
-		ec2s := mockec2.NewEC2(t)
-		ec2s.EXPECT().DescribeSpotPriceHistory(mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(
+		ec2s := mocks.NewMockEC2(ctrl)
+		ec2s.EXPECT().DescribeSpotPriceHistory(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(
 				func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
 					return &ec2.DescribeSpotPriceHistoryOutput{
 						SpotPriceHistory: []ec2Types.SpotPrice{},
@@ -100,9 +100,9 @@ func TestCollector_Collect(t *testing.T) {
 			regionClientMap[*r.RegionName] = ec2s
 		}
 
-		ps := mockpricing.NewPricing(t)
-		ps.EXPECT().GetProducts(mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(
+		ps := mocks.NewMockPricing(ctrl)
+		ps.EXPECT().GetProducts(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(
 				func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
 					return nil, assert.AnError
 				}).Times(1)
@@ -117,7 +117,7 @@ func TestCollector_Collect(t *testing.T) {
 		assert.Error(t, err)
 	})
 	t.Run("Collect should return a ClientNotFound Error if the ec2 client is nil", func(t *testing.T) {
-		ps := mockpricing.NewPricing(t)
+		ps := mocks.NewMockPricing(ctrl)
 		collector := New(&Config{
 			Regions: regions,
 			Logger:  logger,
@@ -128,13 +128,13 @@ func TestCollector_Collect(t *testing.T) {
 		assert.ErrorIs(t, err, ErrClientNotFound)
 	})
 	t.Run("Collect should return an error if ListSpotPrices returns an error", func(t *testing.T) {
-		ec2s := mockec2.NewEC2(t)
-		ec2s.EXPECT().DescribeSpotPriceHistory(mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(
+		ec2s := mocks.NewMockEC2(ctrl)
+		ec2s.EXPECT().DescribeSpotPriceHistory(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(
 				func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
 					return nil, assert.AnError
 				}).Times(1)
-		ps := mockpricing.NewPricing(t)
+		ps := mocks.NewMockPricing(ctrl)
 		regionClientMap := make(map[string]ec2client.EC2)
 		for _, r := range regions {
 			regionClientMap[*r.RegionName] = ec2s
@@ -150,9 +150,9 @@ func TestCollector_Collect(t *testing.T) {
 		assert.ErrorIs(t, err, ErrListSpotPrices)
 	})
 	t.Run("Collect should return an error if GenerateComputePricingMap returns an error", func(t *testing.T) {
-		ec2s := mockec2.NewEC2(t)
-		ec2s.EXPECT().DescribeSpotPriceHistory(mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(
+		ec2s := mocks.NewMockEC2(ctrl)
+		ec2s.EXPECT().DescribeSpotPriceHistory(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(
 				func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
 					return &ec2.DescribeSpotPriceHistoryOutput{
 						SpotPriceHistory: []ec2Types.SpotPrice{
@@ -164,9 +164,9 @@ func TestCollector_Collect(t *testing.T) {
 						},
 					}, nil
 				}).Times(1)
-		ps := mockpricing.NewPricing(t)
-		ps.EXPECT().GetProducts(mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(
+		ps := mocks.NewMockPricing(ctrl)
+		ps.EXPECT().GetProducts(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(
 				func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
 					return &pricing.GetProductsOutput{
 						PriceList: []string{
@@ -188,9 +188,9 @@ func TestCollector_Collect(t *testing.T) {
 		assert.ErrorIs(t, collector.Collect(ch), ErrGeneratePricingMap)
 	})
 	t.Run("Test cpu, memory and total cost metrics emitted for each valid instance", func(t *testing.T) {
-		ec2s := mockec2.NewEC2(t)
-		ec2s.EXPECT().DescribeSpotPriceHistory(mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(
+		ec2s := mocks.NewMockEC2(ctrl)
+		ec2s.EXPECT().DescribeSpotPriceHistory(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(
 				func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
 					return &ec2.DescribeSpotPriceHistoryOutput{
 						SpotPriceHistory: []ec2Types.SpotPrice{
@@ -202,8 +202,8 @@ func TestCollector_Collect(t *testing.T) {
 						},
 					}, nil
 				}).Times(1)
-		ec2s.EXPECT().DescribeInstances(mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(
+		ec2s.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(
 				func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
 					return &ec2.DescribeInstancesOutput{
 						Reservations: []ec2Types.Reservation{
@@ -259,9 +259,9 @@ func TestCollector_Collect(t *testing.T) {
 						},
 					}, nil
 				}).Times(1)
-		ps := mockpricing.NewPricing(t)
-		ps.EXPECT().GetProducts(mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(
+		ps := mocks.NewMockPricing(ctrl)
+		ps.EXPECT().GetProducts(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(
 				func(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
 					return &pricing.GetProductsOutput{
 						PriceList: []string{
@@ -269,8 +269,8 @@ func TestCollector_Collect(t *testing.T) {
 						},
 					}, nil
 				}).Times(2)
-		ec2s.EXPECT().DescribeVolumes(mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(
+		ec2s.EXPECT().DescribeVolumes(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(
 				func(context.Context, *ec2.DescribeVolumesInput, ...func(*ec2.Options)) (*ec2.DescribeVolumesOutput, error) {
 					return &ec2.DescribeVolumesOutput{}, nil
 				}).Times(1)
@@ -302,6 +302,7 @@ func TestCollector_Collect(t *testing.T) {
 }
 
 func Test_PopulateStoragePricingMap(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	tests := map[string]struct {
 		ctx           context.Context
 		regions       []ec2Types.Region
@@ -367,15 +368,15 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			ps := mockpricing.NewPricing(t)
+			ps := mocks.NewMockPricing(ctrl)
 			collector := New(&Config{
 				Regions: tt.regions,
 				Logger:  logger,
 			}, ps)
 
 			ps.EXPECT().
-				GetProducts(mock.Anything, mock.Anything, mock.Anything).
-				RunAndReturn(tt.GetProducts).
+				GetProducts(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(tt.GetProducts).
 				Times(tt.expectedCalls)
 
 			err := collector.populateStoragePricingMap(tt.ctx)
@@ -388,22 +389,23 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 }
 
 func Test_FetchVolumesData(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	t.Run("sends EBS volumes data to channel", func(t *testing.T) {
 		regionName := "af-south-1"
 		region := ec2Types.Region{
 			RegionName: aws.String(regionName),
 		}
 
-		ps := mockpricing.NewPricing(t)
+		ps := mocks.NewMockPricing(ctrl)
 		collector := New(&Config{
 			Regions: []ec2Types.Region{region},
 			Logger:  logger,
 		}, ps)
 
-		client := mockec2.NewEC2(t)
+		client := mocks.NewMockEC2(ctrl)
 		client.EXPECT().
-			DescribeVolumes(mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(
+			DescribeVolumes(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(
 				func(ctx context.Context, e *ec2.DescribeVolumesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVolumesOutput, error) {
 					return &ec2.DescribeVolumesOutput{
 						Volumes: []ec2Types.Volume{
@@ -433,6 +435,7 @@ func Test_FetchVolumesData(t *testing.T) {
 }
 
 func Test_EmitMetricsFromVolumesChannel(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	t.Run("reads from volumes channel and sends it over to prometheus channel", func(t *testing.T) {
 		volumesCh := make(chan []ec2Types.Volume)
 		promCh := make(chan prometheus.Metric)
@@ -443,7 +446,7 @@ func Test_EmitMetricsFromVolumesChannel(t *testing.T) {
 		}
 		volumeType := "gp3"
 
-		ps := mockpricing.NewPricing(t)
+		ps := mocks.NewMockPricing(ctrl)
 		collector := New(&Config{
 			Regions: []ec2Types.Region{region},
 			Logger:  logger,

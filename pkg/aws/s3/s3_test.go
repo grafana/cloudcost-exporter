@@ -8,17 +8,16 @@ import (
 	"strings"
 	"testing"
 	"time"
-
+	
 	awscostexplorer "github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
+	mock_costexplorer "github.com/grafana/cloudcost-exporter/pkg/aws/services/mocks"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
-
-	mockcostexplorer "github.com/grafana/cloudcost-exporter/mocks/pkg/aws/services/costexplorer"
+	
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 )
 
@@ -176,7 +175,8 @@ func TestNewCollector(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			c := mockcostexplorer.NewCostExplorer(t)
+			ctrl := gomock.NewController(t)
+			c := mock_costexplorer.NewMockCostExplorer(ctrl)
 
 			got := New(tt.args.interval, c)
 			assert.NotNil(t, got)
@@ -609,18 +609,19 @@ cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage"
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ce := mockcostexplorer.NewCostExplorer(t)
+			ctrl := gomock.NewController(t)
+			ce := mock_costexplorer.NewMockCostExplorer(ctrl)
 			if tc.GetCostAndUsage != nil {
 				ce.EXPECT().
-					GetCostAndUsage(mock.Anything, mock.Anything, mock.Anything).
-					RunAndReturn(tc.GetCostAndUsage).
-					Once()
+					GetCostAndUsage(gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(tc.GetCostAndUsage).
+					Times(1)
 			}
 			if tc.GetCostAndUsage2 != nil {
 				ce.EXPECT().
-					GetCostAndUsage(mock.Anything, mock.Anything, mock.Anything).
-					RunAndReturn(tc.GetCostAndUsage2).
-					Once()
+					GetCostAndUsage(gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(tc.GetCostAndUsage2).
+					Times(1)
 			}
 
 			c := &Collector{
@@ -692,9 +693,10 @@ func Test_unitCostForComponent(t *testing.T) {
 
 func TestCollector_MultipleCalls(t *testing.T) {
 	t.Run("Test multiple calls to the collect method", func(t *testing.T) {
-		ce := mockcostexplorer.NewCostExplorer(t)
+		ctrl := gomock.NewController(t)
+		ce := mock_costexplorer.NewMockCostExplorer(ctrl)
 		ce.EXPECT().
-			GetCostAndUsage(mock.Anything, mock.Anything, mock.Anything).
+			GetCostAndUsage(gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(&awscostexplorer.GetCostAndUsageOutput{}, nil)
 
 		c := &Collector{
@@ -710,7 +712,8 @@ func TestCollector_MultipleCalls(t *testing.T) {
 	})
 	// This tests if the collect method is thread safe. If it fails, then we need to implement a mutex.`
 	t.Run("Test multiple calls to collect method in parallel", func(t *testing.T) {
-		ce := mockcostexplorer.NewCostExplorer(t)
+		ctrl := gomock.NewController(t)
+		ce := mock_costexplorer.NewMockCostExplorer(ctrl)
 		getCostAndUsage := func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
 			a := "1"
 			u := "unit"
@@ -758,8 +761,8 @@ func TestCollector_MultipleCalls(t *testing.T) {
 		goroutines := 10
 		collectCalls := 1000
 		ce.EXPECT().
-			GetCostAndUsage(mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(getCostAndUsage).
+			GetCostAndUsage(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(getCostAndUsage).
 			Times(goroutines * collectCalls)
 
 		c := &Collector{
