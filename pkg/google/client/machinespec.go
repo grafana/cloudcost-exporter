@@ -1,4 +1,4 @@
-package gke
+package client
 
 import (
 	"log"

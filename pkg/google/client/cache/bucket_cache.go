@@ -1,4 +1,4 @@
-package gcs
+package cache
 
 import (
 	"sync"
@@ -24,7 +24,7 @@ func (c *BucketCache) Set(project string, buckets []*storage.BucketAttrs) {
 	c.m.Unlock()
 }
 
-func NewBucketCache() *BucketCache {
+func NewBucketCache() Cache[[]*storage.BucketAttrs] {
 	return &BucketCache{
 		Buckets: make(map[string][]*storage.BucketAttrs),
 		m:       sync.RWMutex{},
