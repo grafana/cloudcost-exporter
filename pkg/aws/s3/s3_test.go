@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-	
+
 	awscostexplorer "github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	mock_costexplorer "github.com/grafana/cloudcost-exporter/pkg/aws/services/mocks"
@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
-	
+
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 )
 
