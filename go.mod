@@ -11,12 +11,12 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v5 v5.0.0
 	github.com/Azure/go-autorest/autorest/to v0.4.1
 	github.com/aws/aws-sdk-go-v2 v1.37.1
-	github.com/aws/aws-sdk-go-v2/config v1.29.8
+	github.com/aws/aws-sdk-go-v2/config v1.30.2
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.2
-	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.51.3
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.237.0
-	github.com/aws/aws-sdk-go-v2/service/pricing v1.34.3
-	github.com/aws/aws-sdk-go-v2/service/rds v1.99.2
+	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.52.1
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.239.0
+	github.com/aws/aws-sdk-go-v2/service/pricing v1.36.1
+	github.com/aws/aws-sdk-go-v2/service/rds v1.100.1
 	github.com/aws/aws-sdk-go-v2/service/sts v1.35.1
 	github.com/google/go-cmp v0.7.0
 	github.com/googleapis/gax-go/v2 v2.15.0
