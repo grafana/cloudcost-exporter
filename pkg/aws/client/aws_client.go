@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	awsPricing "github.com/aws/aws-sdk-go-v2/service/pricing"
+	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -52,6 +53,7 @@ type AWSClient struct {
 	priceService   *pricing
 	computeService *compute
 	billing        *billing
+	rdsClient      *rds.Client
 	metrics        *Metrics
 }
 
@@ -76,6 +78,7 @@ func NewAWSClient(ctx context.Context, opts ...Option) (*AWSClient, error) {
 		priceService:   newPricing(awsPricing.NewFromConfig(ac), ec2Service),
 		computeService: newCompute(ec2Service),
 		billing:        newBilling(costexplorer.NewFromConfig(ac), m),
+		rdsClient:      rds.NewFromConfig(ac),
 		metrics:        m,
 	}, nil
 }

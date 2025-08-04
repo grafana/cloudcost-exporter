@@ -11,9 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	awsrds "github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/prometheus/client_golang/prometheus"
@@ -23,7 +21,6 @@ import (
 	
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
-	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
