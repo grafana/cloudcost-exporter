@@ -7,20 +7,20 @@ import (
 	"strings"
 	"sync"
 	"time"
-
+	
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/service/pricing"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	awsrds "github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/prometheus/client_golang/prometheus"
-
+	
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/rds"
-
+	
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
@@ -77,49 +77,34 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	// I'm going to use the AWS SDK to handle this for me. If the user has provided a region and profile, it will use that.
 	// If not, it will use the EC2 instance metadata service to determine the region and credentials.
 	// This is the same logic that the AWS CLI uses, so it should be fine.
-	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
-	if config.Region != "" {
-		options = append(options, awsconfig.WithRegion(config.Region))
-	}
-	if config.Profile != "" {
-		options = append(options, awsconfig.WithSharedConfigProfile(config.Profile))
-	}
-	if config.RoleARN != "" {
-		var err error
-		options, err = assumeRole(config.RoleARN, options)
-		if err != nil {
-			return nil, err
-		}
-	}
-	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
-	ac, err := awsconfig.LoadDefaultConfig(ctx, options...)
+	awsClient, err := client.NewAWSClient(ctx,
+		client.WithRegion(config.Region),
+		client.WithProfile(config.Profile),
+		client.WithRoleARN(config.RoleARN))
+	
 	if err != nil {
 		return nil, err
 	}
-	var pricingService *pricing.Client
-	var regions *ec2.DescribeRegionsOutput
+	var regions []types.Region
 	for _, service := range config.Services {
 		// region API is shared between EC2 and RDS
 		if strings.ToUpper(service) == "RDS" || strings.ToUpper(service) == "EC2" {
-			pricingService = pricing.NewFromConfig(ac)
-			computeService := ec2.NewFromConfig(ac)
-			regions, err = computeService.DescribeRegions(ctx, &ec2.DescribeRegionsInput{AllRegions: aws.Bool(false)})
+			regions, err = awsClient.DescribeRegions(ctx, false)
 			if err != nil {
 				return nil, fmt.Errorf("error getting regions: %w", err)
 			}
 		}
 		switch strings.ToUpper(service) {
 		case "S3":
-			client := costexplorer.NewFromConfig(ac)
-			collector := s3.New(config.ScrapeInterval, client)
+			collector := s3.New(config.ScrapeInterval, awsClient)
 			collectors = append(collectors, collector)
 		case "EC2":
 			regionClientMap := make(map[string]ec2client.EC2)
-			for _, r := range regions.Regions {
+			for _, r := range regions {
 				regionClientMap[*r.RegionName] = ec2.NewFromConfig(ac)
 			}
 			collector := ec2Collector.New(&ec2Collector.Config{
-				Regions:        regions.Regions,
+				Regions:        regions,
 				RegionClients:  regionClientMap,
 				Logger:         logger,
 				ScrapeInterval: config.ScrapeInterval,
@@ -128,7 +113,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 		case "RDS":
 			regionMap := make(map[string]awsrds.Client)
 			rdsClient := awsrds.NewFromConfig(ac)
-			for _, r := range regions.Regions {
+			for _, r := range regions {
 				regionMap[*r.RegionName] = *rdsClient
 			}
 			_ = rds.New(&rds.Config{
@@ -207,9 +192,9 @@ func assumeRole(roleARN string, options []func(*awsconfig.LoadOptions) error) ([
 	if err != nil {
 		return nil, err
 	}
-
+	
 	stsService := sts.NewFromConfig(ac)
-
+	
 	options = append(options, awsconfig.WithCredentialsProvider(
 		aws.NewCredentialsCache(
 			stscreds.NewAssumeRoleProvider(
@@ -218,6 +203,6 @@ func assumeRole(roleARN string, options []func(*awsconfig.LoadOptions) error) ([
 			),
 		),
 	))
-
+	
 	return options, nil
 }
