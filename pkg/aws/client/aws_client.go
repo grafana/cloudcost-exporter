@@ -10,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/aws-sdk-go-v2/service/pricing"
+	awsPricing "github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -49,8 +49,8 @@ type Config struct {
 }
 
 type AWSClient struct {
-	priceService   *pricing.Client
-	computeService *ec2.Client
+	priceService   *pricing
+	computeService *compute
 	billing        *billing
 	metrics        *Metrics
 }
@@ -69,11 +69,12 @@ func NewAWSClient(ctx context.Context, opts ...Option) (*AWSClient, error) {
 		return nil, err
 	}
 	
+	ec2Service := ec2.NewFromConfig(ac)
 	m := NewMetrics()
 	
 	return &AWSClient{
-		priceService:   pricing.NewFromConfig(ac),
-		computeService: ec2.NewFromConfig(ac),
+		priceService:   newPricing(awsPricing.NewFromConfig(ac), ec2Service),
+		computeService: newCompute(ec2Service),
 		billing:        newBilling(costexplorer.NewFromConfig(ac), m),
 		metrics:        m,
 	}, nil
@@ -83,17 +84,32 @@ func (c *AWSClient) Metrics() []prometheus.Collector {
 	return []prometheus.Collector{c.metrics.RequestCount, c.metrics.RequestErrorsCount}
 }
 
-func (c *AWSClient) DescribeRegions(ctx context.Context, allRegions bool) ([]types.Region, error) {
-	regions, err := c.computeService.DescribeRegions(ctx, &ec2.DescribeRegionsInput{AllRegions: aws.Bool(allRegions)})
-	if err != nil {
-		return nil, err
-	}
-	
-	return regions.Regions, nil
-}
-
 func (c *AWSClient) GetBillingData(ctx context.Context, startDate time.Time, endDate time.Time) (*BillingData, error) {
 	return c.billing.getBillingData(ctx, startDate, endDate)
+}
+
+func (c *AWSClient) DescribeRegions(ctx context.Context, allRegions bool) ([]types.Region, error) {
+	return c.computeService.describeRegions(ctx, allRegions)
+}
+
+func (c *AWSClient) ListComputeInstances(ctx context.Context) ([]types.Reservation, error) {
+	return c.computeService.listComputeInstances(ctx)
+}
+
+func (c *AWSClient) ListEBSVolumes(ctx context.Context) ([]types.Volume, error) {
+	return c.computeService.listEBSVolumes(ctx)
+}
+
+func (c *AWSClient) ListSpotPrices(ctx context.Context) ([]types.SpotPrice, error) {
+	return c.priceService.listSpotPrices(ctx)
+}
+
+func (c *AWSClient) ListOnDemandPrices(ctx context.Context, region string) ([]string, error) {
+	return c.priceService.listOnDemandPrices(ctx, region)
+}
+
+func (c *AWSClient) ListStoragePrices(ctx context.Context, region string) ([]string, error) {
+	return c.priceService.listStoragePrices(ctx, region)
 }
 
 func assumeRole(roleARN string, options []func(*awsconfig.LoadOptions) error) (awsconfig.LoadOptionsFunc, error) {

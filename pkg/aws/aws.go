@@ -99,28 +99,18 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			collector := s3.New(config.ScrapeInterval, awsClient)
 			collectors = append(collectors, collector)
 		case "EC2":
-			regionClientMap := make(map[string]ec2client.EC2)
-			for _, r := range regions {
-				regionClientMap[*r.RegionName] = ec2.NewFromConfig(ac)
-			}
 			collector := ec2Collector.New(&ec2Collector.Config{
 				Regions:        regions,
-				RegionClients:  regionClientMap,
 				Logger:         logger,
 				ScrapeInterval: config.ScrapeInterval,
-			}, pricingService)
+			}, awsClient)
 			collectors = append(collectors, collector)
 		case "RDS":
-			regionMap := make(map[string]awsrds.Client)
-			rdsClient := awsrds.NewFromConfig(ac)
-			for _, r := range regions {
-				regionMap[*r.RegionName] = *rdsClient
-			}
 			_ = rds.New(&rds.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
-				RegionClients:  regionMap,
-			}, pricingService)
+				Regions:        regions,
+			}, awsClient)
 			// TODO: append new aws rds collectors next
 			// collectors = append(collectors, collector)
 		default:

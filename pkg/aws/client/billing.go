@@ -51,7 +51,7 @@ func (b *billing) getBillingData(ctx context.Context, startDate time.Time, endDa
 	var outputs []*costexplorer.GetCostAndUsageOutput
 	for {
 		b.m.RequestCount.Inc()
-		output, err := b.GetCostAndUsage(ctx, input)
+		output, err := b.costExplorerService.GetCostAndUsage(ctx, input)
 		if err != nil {
 			log.Printf("Error getting cost and usage: %v\n", err)
 			b.m.RequestErrorsCount.Inc()
@@ -136,8 +136,4 @@ func getComponentFromKey(key string) string {
 		val += "-" + split[2]
 	}
 	return val
-}
-
-func (b *billing) GetCostAndUsage(ctx context.Context, params *costexplorer.GetCostAndUsageInput, optFns ...func(*costexplorer.Options)) (*costexplorer.GetCostAndUsageOutput, error) {
-	return b.costExplorerService.GetCostAndUsage(ctx, params, optFns...)
 }

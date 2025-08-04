@@ -62,7 +62,7 @@ func NewMetrics() Metrics {
 // Collector is the AWS implementation of the Collector interface
 // It is responsible for registering and collecting metrics
 type Collector struct {
-	client      *client.AWSClient
+	client      client.Client
 	interval    time.Duration
 	nextScrape  time.Time
 	metrics     Metrics
@@ -85,7 +85,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 }
 
 // New creates a new Collector with a client and scrape interval defined.
-func New(scrapeInterval time.Duration, client *client.AWSClient) *Collector {
+func New(scrapeInterval time.Duration, client client.Client) *Collector {
 	return &Collector{
 		client:   client,
 		interval: scrapeInterval,

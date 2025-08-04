@@ -1,7 +1,6 @@
 package ec2
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,16 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/aws-sdk-go-v2/service/pricing"
-	"github.com/aws/aws-sdk-go-v2/service/pricing/types"
-
-	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
-	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 )
 
 const (
@@ -160,20 +151,20 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ondemandPrices []string,
 func (spm *StoragePricingMap) GenerateStoragePricingMap(storagePrices []string) error {
 	spm.m.Lock()
 	defer spm.m.Unlock()
-
+	
 	for _, product := range storagePrices {
 		var productInfo storageProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
 			return err
 		}
-
+		
 		region := productInfo.Product.Attributes.Region
 		storageClass := productInfo.Product.Attributes.VolumeApiName
 		if spm.Regions[region] == nil {
 			spm.Regions[region] = &StoragePricing{}
 			spm.Regions[region].Storage = make(map[string]float64)
 		}
-
+		
 		for _, term := range productInfo.Terms.OnDemand {
 			for _, priceDimension := range term.PriceDimensions {
 				price, err := strconv.ParseFloat(priceDimension.PricePerUnit["USD"], 64)
@@ -185,7 +176,7 @@ func (spm *StoragePricingMap) GenerateStoragePricingMap(storagePrices []string) 
 			}
 		}
 	}
-
+	
 	return nil
 }
 
@@ -197,11 +188,11 @@ func (cpm *ComputePricingMap) AddToComputePricingMap(price float64, attribute In
 		cpm.Regions[attribute.Region] = &FamilyPricing{}
 		cpm.Regions[attribute.Region].Family = make(map[string]*Prices)
 	}
-
+	
 	if cpm.Regions[attribute.Region].Family[attribute.InstanceType] != nil {
 		return ErrInstanceTypeAlreadyExists
 	}
-
+	
 	weightedPrice, err := weightedPriceForInstance(price, attribute)
 	if err != nil {
 		return err
@@ -239,7 +230,7 @@ func weightedPriceForInstance(price float64, attributes InstanceAttributes) (*Pr
 		log.Printf("no ratio found for instance type %s, defaulting to %s", attributes.InstanceType, defaultInstanceFamily)
 		ratio = cpuToCostRatio[defaultInstanceFamily]
 	}
-
+	
 	return &Prices{
 		Cpu: price * ratio / cpus,
 		Ram: price * (1 - ratio) / ram,
@@ -262,15 +253,15 @@ func (cpm *ComputePricingMap) GetPriceForInstanceType(region string, instanceTyp
 func (spm *StoragePricingMap) GetPriceForVolumeType(region string, volumeType string, size int32) (float64, error) {
 	spm.m.RLock()
 	defer spm.m.RUnlock()
-
+	
 	if _, ok := spm.Regions[region]; !ok {
 		return 0, ErrRegionNotFound
 	}
-
+	
 	if _, ok := spm.Regions[region].Storage[volumeType]; !ok {
 		return 0, ErrVolumeTypeNotFound
 	}
-
+	
 	// Prices are listed in GB-Mo units (Gib/month, considering 30 day months).
 	// Divide by 30 and 24 to get the hourly price.
 	return spm.Regions[region].Storage[volumeType] * float64(size) / 30 / 24, nil
@@ -321,125 +312,4 @@ type storageProduct struct {
 			}
 		}
 	}
-}
-
-func ListOnDemandPrices(ctx context.Context, region string, client pricingClient.Pricing) ([]string, error) {
-	input := &pricing.GetProductsInput{
-		ServiceCode: aws.String("AmazonEC2"),
-		Filters: []types.Filter{
-			{
-				Field: aws.String("regionCode"),
-				Type:  types.FilterTypeTermMatch,
-				Value: aws.String(region),
-			},
-			{
-				// Limit output to only base installs
-				Field: aws.String("preInstalledSw"),
-				Type:  types.FilterTypeTermMatch,
-				Value: aws.String("NA"),
-			},
-			{
-				// Limit to shared tenancy machines
-				Field: aws.String("tenancy"),
-				Type:  types.FilterTypeTermMatch,
-				Value: aws.String("shared"),
-			},
-			{
-				// Limit to ec2 instances(ie, not bare metal)
-				Field: aws.String("productFamily"),
-				Type:  types.FilterTypeTermMatch,
-				Value: aws.String("Compute Instance"),
-			},
-			{
-				// RunInstances is the operation that we're interested in.
-				Field: aws.String("operation"),
-				Type:  types.FilterTypeTermMatch,
-				Value: aws.String("RunInstances"),
-			},
-			{
-				// This effectively filters only for ondemand pricing
-				Field: aws.String("capacitystatus"),
-				Type:  types.FilterTypeTermMatch,
-				Value: aws.String("UnusedCapacityReservation"),
-			},
-			{
-				// Only care about Linux. If there's a request for windows, remove this flag and expand the pricing map to include a key for operating system
-				Field: aws.String("operatingSystem"),
-				Type:  types.FilterTypeTermMatch,
-				Value: aws.String("Linux"),
-			},
-		},
-	}
-
-	return getPricesFromProductList(ctx, input, client)
-}
-
-func ListSpotPrices(ctx context.Context, client ec2client.EC2) ([]ec2Types.SpotPrice, error) {
-	var spotPrices []ec2Types.SpotPrice
-	startTime := time.Now().Add(-time.Hour)
-	endTime := time.Now()
-	sphi := &ec2.DescribeSpotPriceHistoryInput{
-		ProductDescriptions: []string{
-			"Linux/UNIX (Amazon VPC)",
-		},
-
-		StartTime: &startTime,
-		EndTime:   &endTime,
-	}
-	for {
-		resp, err := client.DescribeSpotPriceHistory(ctx, sphi)
-		if err != nil {
-			// If there's an error, return the set of processed spotPrices and the error.
-			return spotPrices, err
-		}
-		spotPrices = append(spotPrices, resp.SpotPriceHistory...)
-		if resp.NextToken == nil || *resp.NextToken == "" {
-			break
-		}
-		sphi.NextToken = resp.NextToken
-	}
-	return spotPrices, nil
-}
-
-func ListStoragePrices(ctx context.Context, region string, client pricingClient.Pricing) ([]string, error) {
-	input := &pricing.GetProductsInput{
-		ServiceCode: aws.String("AmazonEC2"),
-		Filters: []types.Filter{
-			{
-				Field: aws.String("regionCode"),
-				Type:  types.FilterTypeTermMatch,
-				Value: aws.String(region),
-			},
-			// Get prices for EBS Volumes
-			{
-				Field: aws.String("productFamily"),
-				Type:  types.FilterTypeTermMatch,
-				Value: aws.String("Storage"),
-			},
-		},
-	}
-
-	return getPricesFromProductList(ctx, input, client)
-}
-
-func getPricesFromProductList(ctx context.Context, input *pricing.GetProductsInput, client pricingClient.Pricing) ([]string, error) {
-	var productOutputs []string
-
-	for {
-		products, err := client.GetProducts(ctx, input)
-		if err != nil {
-			return productOutputs, err
-		}
-
-		if products == nil {
-			break
-		}
-
-		productOutputs = append(productOutputs, products.PriceList...)
-		if products.NextToken == nil || *products.NextToken == "" {
-			break
-		}
-		input.NextToken = products.NextToken
-	}
-	return productOutputs, nil
 }
