@@ -3,7 +3,7 @@ package client
 import (
 	"context"
 	"testing"
-	
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -98,7 +98,7 @@ func TestListComputeInstances(t *testing.T) {
 					},
 				}, nil
 			},
-			
+
 			err: nil,
 			want: []types.Reservation{
 				{
@@ -129,7 +129,7 @@ func TestListComputeInstances(t *testing.T) {
 				DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).
 				DoAndReturn(tt.DescribeInstances).
 				Times(tt.expectedCalls)
-			
+
 			c := newCompute(client)
 			got, err := c.listComputeInstances(tt.ctx)
 			assert.Equal(t, tt.err, err)
@@ -256,7 +256,7 @@ func TestListEBSVolumes(t *testing.T) {
 			expectedCalls: 2,
 		},
 	}
-	
+
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
@@ -266,7 +266,7 @@ func TestListEBSVolumes(t *testing.T) {
 				DoAndReturn(tt.DescribeVolumes).
 				Times(tt.expectedCalls)
 			ctx := context.Background()
-			
+
 			c := newCompute(client)
 			resp, err := c.listEBSVolumes(ctx)
 			assert.Equal(t, tt.err, err)
@@ -307,7 +307,7 @@ func TestNameFromVolume(t *testing.T) {
 			expected: "pvc-1234567890",
 		},
 	}
-	
+
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			assert.Equal(t, tt.expected, NameFromVolume(tt.volume))

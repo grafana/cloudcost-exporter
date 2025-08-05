@@ -5,7 +5,7 @@ import (
 	"log"
 	"strings"
 	"time"
-	
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
@@ -47,7 +47,7 @@ func (b *billing) getBillingData(ctx context.Context, startDate time.Time, endDa
 			},
 		},
 	}
-	
+
 	var outputs []*costexplorer.GetCostAndUsageOutput
 	for {
 		b.m.RequestCount.Inc()
@@ -63,7 +63,7 @@ func (b *billing) getBillingData(ctx context.Context, startDate time.Time, endDa
 		}
 		input.NextPageToken = output.NextPageToken
 	}
-	
+
 	return parseBillingData(outputs), nil
 }
 
@@ -72,7 +72,7 @@ func parseBillingData(outputs []*costexplorer.GetCostAndUsageOutput) *BillingDat
 	billingData := &BillingData{
 		Regions: make(map[string]*PricingModel),
 	}
-	
+
 	// Process the billing data in the 'output' variable
 	for _, output := range outputs {
 		for _, result := range output.ResultsByTime {
@@ -99,13 +99,13 @@ func getRegionFromKey(key string) string {
 	if key == "Requests-Tier1" || key == "Requests-Tier2" {
 		return ""
 	}
-	
+
 	split := strings.Split(key, "-")
 	if len(split) < 2 {
 		log.Printf("Could not find region in key: %s\n", key)
 		return ""
 	}
-	
+
 	billingRegion := split[0]
 	if region, ok := billingToRegionMap[billingRegion]; ok {
 		return region

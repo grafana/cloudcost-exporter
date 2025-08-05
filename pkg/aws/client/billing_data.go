@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
-	
+
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
@@ -60,7 +60,7 @@ func (s *BillingData) AddMetricGroup(region string, component string, group type
 	if region == "" || component == "" {
 		return
 	}
-	
+
 	// Check if the region is in the billingToRegionMap
 	// If not we need to instantiate the map, otherwise it will panic
 	if _, ok := s.Regions[region]; !ok {
@@ -68,20 +68,20 @@ func (s *BillingData) AddMetricGroup(region string, component string, group type
 			Model: make(map[string]*Pricing),
 		}
 	}
-	
+
 	// Check if the component is in the map
 	// If not we need to instantiate the map, otherwise it will panic
 	if _, ok := s.Regions[region].Model[component]; !ok {
 		s.Regions[region].Model[component] = &Pricing{}
 	}
-	
+
 	componentsMap := s.Regions[region].Model[component]
 	for name, metric := range group.Metrics {
 		if metric.Amount == nil {
 			fmt.Printf("Error parsing amount: amount is nil\n")
 			continue
 		}
-		
+
 		switch name {
 		case "UsageQuantity":
 			usageAmount, err := strconv.ParseFloat(*metric.Amount, 64)
@@ -90,7 +90,7 @@ func (s *BillingData) AddMetricGroup(region string, component string, group type
 				continue
 			}
 			componentsMap.Usage += usageAmount
-			
+
 			if metric.Unit == nil {
 				fmt.Printf("Error parsing amount: unit is nil\n")
 				continue
@@ -105,7 +105,7 @@ func (s *BillingData) AddMetricGroup(region string, component string, group type
 			componentsMap.Cost += cost
 		}
 	}
-	
+
 	componentsMap.UnitCost = unitCostForComponent(component, componentsMap)
 }
 
@@ -118,7 +118,7 @@ func unitCostForComponent(component string, pricing *Pricing) float64 {
 		log.Printf("Usage is 0 for component: %s\n", component)
 		return 0
 	}
-	
+
 	switch component {
 	case "Requests-Tier1", "Requests-Tier2":
 		return pricing.Cost / (pricing.Usage / 1000)

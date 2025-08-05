@@ -2,11 +2,11 @@ package client
 
 import (
 	"context"
-	
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsEc2 "github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	
+
 	"github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 )
 
@@ -28,7 +28,7 @@ func (e *compute) describeRegions(ctx context.Context, allRegions bool) ([]types
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return regions.Regions, nil
 }
 
@@ -49,7 +49,7 @@ func (e *compute) listComputeInstances(ctx context.Context) ([]types.Reservation
 		}
 		dii.NextToken = resp.NextToken
 	}
-	
+
 	return instances, nil
 }
 
@@ -65,22 +65,22 @@ func (e *compute) listEBSVolumes(ctx context.Context) ([]types.Volume, error) {
 			},
 		},
 	}
-	
+
 	pager := awsEc2.NewDescribeVolumesPaginator(e.client, params)
 	var volumes []types.Volume
-	
+
 	for pager.HasMorePages() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, err
 		}
-		
+
 		volumes = append(volumes, resp.Volumes...)
 		if resp.NextToken == nil || *resp.NextToken == "" {
 			break
 		}
 	}
-	
+
 	return volumes, nil
 }
 
@@ -90,7 +90,7 @@ func NameFromVolume(volume types.Volume) string {
 			return *tag.Value
 		}
 	}
-	
+
 	return ""
 }
 

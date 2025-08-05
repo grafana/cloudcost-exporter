@@ -3,7 +3,7 @@ package client
 import (
 	"context"
 	"time"
-	
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
@@ -38,7 +38,7 @@ func WithRoleARN(roleARN string) Option {
 		if err != nil {
 			return
 		}
-		
+
 		options = append(options, option)
 	}
 }
@@ -61,19 +61,19 @@ func NewAWSClient(ctx context.Context, opts ...Option) (*AWSClient, error) {
 	optionsFunc := make([]func(options *awsconfig.LoadOptions) error, 0)
 	optionsFunc = append(optionsFunc, awsconfig.WithEC2IMDSRegion())
 	optionsFunc = append(optionsFunc, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
-	
+
 	for _, opt := range opts {
 		opt(optionsFunc)
 	}
-	
+
 	ac, err := awsconfig.LoadDefaultConfig(ctx, optionsFunc...)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	ec2Service := ec2.NewFromConfig(ac)
 	m := NewMetrics()
-	
+
 	return &AWSClient{
 		priceService:   newPricing(awsPricing.NewFromConfig(ac), ec2Service),
 		computeService: newCompute(ec2Service),
@@ -121,9 +121,9 @@ func assumeRole(roleARN string, options []func(*awsconfig.LoadOptions) error) (a
 	if err != nil {
 		return nil, err
 	}
-	
+
 	stsService := sts.NewFromConfig(ac)
-	
+
 	return awsconfig.WithCredentialsProvider(
 		aws.NewCredentialsCache(
 			stscreds.NewAssumeRoleProvider(

@@ -8,21 +8,21 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	
+
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
-	
+
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
-	
+
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
 const (
 	subsystem = "aws_ec2"
-	
+
 	errGroupLimit = 5
 )
 
@@ -82,7 +82,7 @@ type Config struct {
 // New creates an ec2 collector
 func New(config *Config, client client.Client) *Collector {
 	logger := config.Logger.With("logger", "ec2")
-	
+
 	return &Collector{
 		ScrapeInterval:    config.ScrapeInterval,
 		Regions:           config.Regions,
@@ -104,7 +104,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	start := time.Now()
 	ctx := context.Background()
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
-	
+
 	// TODO: make both maps scraping run async in the background
 	if c.computePricingMap == nil || time.Now().After(c.nextComputeScrape) {
 		err := c.populateComputePricingMap(ctx)
@@ -113,7 +113,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		}
 		c.nextComputeScrape = time.Now().Add(c.ScrapeInterval)
 	}
-	
+
 	if c.storagePricingMap == nil || time.Now().After(c.nextStorageScrape) {
 		err := c.populateStoragePricingMap(ctx)
 		if err != nil {
@@ -121,20 +121,20 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		}
 		c.nextStorageScrape = time.Now().Add(c.ScrapeInterval)
 	}
-	
+
 	numOfRegions := len(c.Regions)
-	
+
 	wgInstances := sync.WaitGroup{}
 	wgInstances.Add(numOfRegions)
 	instanceCh := make(chan []ec2Types.Reservation, numOfRegions)
-	
+
 	wgVolumes := sync.WaitGroup{}
 	wgVolumes.Add(numOfRegions)
 	volumeCh := make(chan []ec2Types.Volume, numOfRegions)
-	
+
 	for _, region := range c.Regions {
 		regionName := *region.RegionName
-		
+
 		go func() {
 			c.fetchInstancesData(ctx, regionName, instanceCh)
 			wgInstances.Done()
@@ -168,17 +168,17 @@ func (c *Collector) populateComputePricingMap(errGroupCtx context.Context) error
 	for _, region := range c.Regions {
 		eg.Go(func() error {
 			c.logger.LogAttrs(errGroupCtx, slog.LevelDebug, "fetching compute pricing info", slog.String("region", *region.RegionName))
-			
+
 			spotPriceList, err := c.client.ListSpotPrices(errGroupCtx)
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
 			}
-			
+
 			priceList, err := c.client.ListOnDemandPrices(errGroupCtx, *region.RegionName)
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
 			}
-			
+
 			m.Lock()
 			spotPrices = append(spotPrices, spotPriceList...)
 			prices = append(prices, priceList...)
@@ -194,7 +194,7 @@ func (c *Collector) populateComputePricingMap(errGroupCtx context.Context) error
 	if err := c.computePricingMap.GenerateComputePricingMap(prices, spotPrices); err != nil {
 		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 	}
-	
+
 	return nil
 }
 
@@ -211,7 +211,7 @@ func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrListStoragePrices, err)
 			}
-			
+
 			m.Lock()
 			storagePrices = append(storagePrices, storagePriceList...)
 			m.Unlock()
@@ -226,14 +226,14 @@ func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
 	if err := c.storagePricingMap.GenerateStoragePricingMap(storagePrices); err != nil {
 		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 	}
-	
+
 	return nil
 }
 
 func (c *Collector) fetchInstancesData(ctx context.Context, region string, instanceCh chan []ec2Types.Reservation) {
 	now := time.Now()
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching instances", slog.String("region", region))
-	
+
 	reservations, err := c.client.ListComputeInstances(ctx)
 	if err != nil {
 		c.logger.LogAttrs(ctx, slog.LevelError, "Could not list compute instances",
@@ -241,20 +241,20 @@ func (c *Collector) fetchInstancesData(ctx context.Context, region string, insta
 			slog.String("message", err.Error()))
 		return
 	}
-	
+
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Successfully listed instances",
 		slog.String("region", region),
 		slog.Int("instances", len(reservations)),
 		slog.Duration("duration", time.Since(now)),
 	)
-	
+
 	instanceCh <- reservations
 }
 
 func (c *Collector) fetchVolumesData(ctx context.Context, region string, volumeCh chan []ec2Types.Volume) {
 	now := time.Now()
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching volumes", slog.String("region", region))
-	
+
 	volumes, err := c.client.ListEBSVolumes(ctx)
 	if err != nil {
 		c.logger.LogAttrs(ctx, slog.LevelError, "Could not list EBS volumes",
@@ -262,13 +262,13 @@ func (c *Collector) fetchVolumesData(ctx context.Context, region string, volumeC
 			slog.String("message", err.Error()))
 		return
 	}
-	
+
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Successfully listed volumes",
 		slog.String("region", region),
 		slog.Int("volumes", len(volumes)),
 		slog.Duration("duration", time.Since(now)),
 	)
-	
+
 	volumeCh <- volumes
 }
 
@@ -285,22 +285,22 @@ func (c *Collector) emitMetricsFromReservationsChannel(reservationsCh chan []ec2
 					c.logger.Debug(fmt.Sprintf("no availability zone found for instance %s", *instance.InstanceId))
 					continue
 				}
-				
+
 				region := *instance.Placement.AvailabilityZone
-				
+
 				pricetier := "spot"
 				if instance.InstanceLifecycle != ec2Types.InstanceLifecycleTypeSpot {
 					pricetier = "ondemand"
 					// Ondemand instances are keyed based upon their Region, so we need to remove the availability zone
 					region = region[:len(region)-1]
 				}
-				
+
 				price, err := c.computePricingMap.GetPriceForInstanceType(region, string(instance.InstanceType))
 				if err != nil {
 					c.logger.Error(fmt.Sprintf("error getting price for instance type %s: %s", instance.InstanceType, err))
 					continue
 				}
-				
+
 				labelValues := []string{
 					*instance.PrivateDnsName,
 					*instance.InstanceId,
@@ -326,22 +326,22 @@ func (c *Collector) emitMetricsFromVolumesChannel(volumesCh chan []ec2Types.Volu
 				c.logger.Error("Volume's Availability Zone unknown: skipping")
 				continue
 			}
-			
+
 			az := *volume.AvailabilityZone
 			// Might not be accurate every case, but it's not worth another API call to get the exact region of an AZ
 			region := az[0 : len(az)-1]
-			
+
 			if volume.Size == nil {
 				c.logger.Error("Volume's size unknown: skipping")
 				continue
 			}
-			
+
 			price, err := c.storagePricingMap.GetPriceForVolumeType(region, string(volume.VolumeType), *volume.Size)
 			if err != nil {
 				c.logger.Error(fmt.Sprintf("error getting price for volume type %s in region %s: %s", volume.VolumeType, region, err))
 				continue
 			}
-			
+
 			labelValues := []string{
 				client.NameFromVolume(volume),
 				region,

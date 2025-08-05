@@ -3,7 +3,7 @@ package client
 import (
 	"context"
 	"testing"
-	
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -202,7 +202,7 @@ func TestListSpotPrices(t *testing.T) {
 				DescribeSpotPriceHistory(gomock.Any(), gomock.Any(), gomock.Any()).
 				DoAndReturn(tt.DescribeSpotPriceHistory).
 				Times(tt.expectedCalls)
-			
+
 			c := newPricing(nil, client)
 			got, err := c.listSpotPrices(tt.ctx)
 			if tt.err != nil {
@@ -283,7 +283,7 @@ func TestListStoragePrices(t *testing.T) {
 			expectedCalls: 2,
 		},
 	}
-	
+
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
@@ -292,7 +292,7 @@ func TestListStoragePrices(t *testing.T) {
 				GetProducts(gomock.Any(), gomock.Any(), gomock.Any()).
 				DoAndReturn(tt.GetProducts).
 				Times(tt.expectedCalls)
-			
+
 			c := newPricing(client, nil)
 			resp, err := c.listStoragePrices(tt.ctx, tt.region)
 			if tt.err != nil {

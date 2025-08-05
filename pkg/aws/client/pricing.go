@@ -3,7 +3,7 @@ package client
 import (
 	"context"
 	"time"
-	
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -72,7 +72,7 @@ func (p *pricing) listOnDemandPrices(ctx context.Context, region string) ([]stri
 			},
 		},
 	}
-	
+
 	return p.getPricesFromProductList(ctx, input)
 }
 
@@ -84,7 +84,7 @@ func (p *pricing) listSpotPrices(ctx context.Context) ([]ec2Types.SpotPrice, err
 		ProductDescriptions: []string{
 			"Linux/UNIX (Amazon VPC)",
 		},
-		
+
 		StartTime: &startTime,
 		EndTime:   &endTime,
 	}
@@ -120,23 +120,23 @@ func (p *pricing) listStoragePrices(ctx context.Context, region string) ([]strin
 			},
 		},
 	}
-	
+
 	return p.getPricesFromProductList(ctx, input)
 }
 
 func (p *pricing) getPricesFromProductList(ctx context.Context, input *awsPricing.GetProductsInput) ([]string, error) {
 	var productOutputs []string
-	
+
 	for {
 		products, err := p.client.GetProducts(ctx, input)
 		if err != nil {
 			return productOutputs, err
 		}
-		
+
 		if products == nil {
 			break
 		}
-		
+
 		productOutputs = append(productOutputs, products.PriceList...)
 		if products.NextToken == nil || *products.NextToken == "" {
 			break

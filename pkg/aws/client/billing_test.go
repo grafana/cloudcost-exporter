@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-	
+
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/services/mocks"
@@ -23,13 +23,13 @@ func Test_getDimensionFromKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	
+
 	reader := csv.NewReader(f)
 	records, err := reader.ReadAll()
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	for _, record := range records {
 		key, want := record[0], record[2]
 		if got := getComponentFromKey(key); got != want {
@@ -44,13 +44,13 @@ func Test_getRegionFromKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	
+
 	reader := csv.NewReader(f)
 	records, err := reader.ReadAll()
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	for _, record := range records {
 		key, want := record[0], record[1]
 		got := getRegionFromKey(key)
@@ -139,7 +139,7 @@ func TestS3BillingData_AddRegion(t *testing.T) {
 			want: 2,
 		},
 	}
-	
+
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			s := BillingData{Regions: make(map[string]*PricingModel)}
@@ -201,13 +201,13 @@ func Test_unitCostForComponent(t *testing.T) {
 }
 
 func Test_getBillingData_Metrics(t *testing.T) {
-	
+
 	for _, tc := range []struct {
 		name             string
 		expectedErr      error
 		GetCostAndUsage  func(ctx context.Context, params *costexplorer.GetCostAndUsageInput, optFns ...func(*costexplorer.Options)) (*costexplorer.GetCostAndUsageOutput, error)
 		GetCostAndUsage2 func(ctx context.Context, params *costexplorer.GetCostAndUsageInput, optFns ...func(*costexplorer.Options)) (*costexplorer.GetCostAndUsageOutput, error)
-		
+
 		// metricNames can be nil to check all metrics, or a set of strings form an allow list of metrics to check.
 		metricNames        []string
 		expectedExposition string
@@ -518,20 +518,20 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 1
 					DoAndReturn(tc.GetCostAndUsage).
 					Times(1)
 			}
-			
+
 			if tc.GetCostAndUsage2 != nil {
 				costExplorer.EXPECT().
 					GetCostAndUsage(gomock.Any(), gomock.Any(), gomock.Any()).
 					DoAndReturn(tc.GetCostAndUsage2).
 					Times(1)
 			}
-			
+
 			m := NewMetrics()
 			r := prometheus.NewPedanticRegistry()
 			r.MustRegister(m.RequestCount, m.RequestErrorsCount)
 			b := newBilling(costExplorer, m)
 			_, _ = b.getBillingData(context.TODO(), time.Now(), time.Now())
-			
+
 			err := testutil.CollectAndCompare(r, strings.NewReader(tc.expectedExposition), tc.metricNames...)
 			assert.NoError(t, err)
 		})

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 	"time"
-	
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
@@ -16,7 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
-	
+
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
@@ -83,20 +83,20 @@ func TestCollector_Collect(t *testing.T) {
 			assert.NoError(t, err)
 		}()
 	})
-	
+
 	t.Run("Collect should return an error if ListOnDemandPrices returns an error", func(t *testing.T) {
 		c := mock_client.NewMockClient(ctrl)
 		c.EXPECT().ListOnDemandPrices(gomock.Any(), gomock.Any()).DoAndReturn(
 			func(ctx context.Context, region string) ([]string, error) {
 				return nil, assert.AnError
 			}).Times(1)
-		
+
 		c.EXPECT().ListSpotPrices(gomock.Any()).
 			DoAndReturn(
 				func(ctx context.Context) ([]ec2Types.SpotPrice, error) {
 					return []ec2Types.SpotPrice{}, nil
 				}).Times(1)
-		
+
 		collector := New(&Config{
 			Regions: regions,
 			Logger:  logger,
@@ -151,7 +151,7 @@ func TestCollector_Collect(t *testing.T) {
 						},
 					}, nil
 				}).Times(1)
-		
+
 		c.EXPECT().ListOnDemandPrices(gomock.Any(), gomock.Any()).
 			DoAndReturn(
 				func(ctx context.Context, region string) ([]string, error) {
@@ -159,7 +159,7 @@ func TestCollector_Collect(t *testing.T) {
 						"Unparsable String into json",
 					}, nil
 				}).Times(1)
-		
+
 		collector := New(&Config{
 			Regions: regions,
 			Logger:  logger,
@@ -259,7 +259,7 @@ func TestCollector_Collect(t *testing.T) {
 			Regions: regions,
 			Logger:  logger,
 		}, c)
-		
+
 		ch := make(chan prometheus.Metric)
 		go func() {
 			if err := collector.Collect(ch); err != nil {
@@ -267,7 +267,7 @@ func TestCollector_Collect(t *testing.T) {
 			}
 			close(ch)
 		}()
-		
+
 		var metrics []*utils.MetricResult
 		for metric := range ch {
 			assert.NotNil(t, metric)
@@ -337,7 +337,7 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 			err:           ErrGeneratePricingMap,
 		},
 	}
-	
+
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			c := mock_client.NewMockClient(ctrl)
@@ -345,12 +345,12 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 				Regions: tt.regions,
 				Logger:  logger,
 			}, c)
-			
+
 			c.EXPECT().
 				ListStoragePrices(gomock.Any(), gomock.Any()).
 				DoAndReturn(tt.ListStoragePricesFn).
 				Times(tt.expectedCalls)
-			
+
 			err := collector.populateStoragePricingMap(tt.ctx)
 			if tt.err != nil {
 				assert.ErrorIs(t, err, tt.err)
@@ -367,13 +367,13 @@ func Test_FetchVolumesData(t *testing.T) {
 		region := ec2Types.Region{
 			RegionName: aws.String(regionName),
 		}
-		
+
 		c := mock_client.NewMockClient(ctrl)
 		collector := New(&Config{
 			Regions: []ec2Types.Region{region},
 			Logger:  logger,
 		}, c)
-		
+
 		c.EXPECT().
 			ListEBSVolumes(gomock.Any()).
 			DoAndReturn(
@@ -386,7 +386,7 @@ func Test_FetchVolumesData(t *testing.T) {
 				},
 			).
 			Times(1)
-		
+
 		wg := sync.WaitGroup{}
 		wg.Add(len(collector.Regions))
 		ch := make(chan []ec2Types.Volume)
@@ -395,7 +395,7 @@ func Test_FetchVolumesData(t *testing.T) {
 			wg.Wait()
 			close(ch)
 		}()
-		
+
 		msg, ok := <-ch
 		assert.True(t, ok)
 		assert.NotNil(t, msg)
@@ -408,19 +408,19 @@ func Test_EmitMetricsFromVolumesChannel(t *testing.T) {
 	t.Run("reads from volumes channel and sends it over to prometheus channel", func(t *testing.T) {
 		volumesCh := make(chan []ec2Types.Volume)
 		promCh := make(chan prometheus.Metric)
-		
+
 		regionName := "af-south-1"
 		region := ec2Types.Region{
 			RegionName: aws.String(regionName),
 		}
 		volumeType := "gp3"
-		
+
 		c := mock_client.NewMockClient(ctrl)
 		collector := New(&Config{
 			Regions: []ec2Types.Region{region},
 			Logger:  logger,
 		}, c)
-		
+
 		collector.storagePricingMap = &StoragePricingMap{
 			Regions: map[string]*StoragePricing{
 				regionName: {
@@ -430,7 +430,7 @@ func Test_EmitMetricsFromVolumesChannel(t *testing.T) {
 				},
 			},
 		}
-		
+
 		originMsg := []ec2Types.Volume{
 			{
 				AvailabilityZone: aws.String(fmt.Sprintf("%sa", regionName)),
@@ -439,18 +439,18 @@ func Test_EmitMetricsFromVolumesChannel(t *testing.T) {
 				Size:             aws.Int32(100),
 			},
 		}
-		
+
 		go func() {
 			collector.emitMetricsFromVolumesChannel(volumesCh, promCh)
 		}()
-		
+
 		// fill volumes channel with data from the above volume
 		volumesCh <- originMsg
 		close(volumesCh)
-		
+
 		receivedMsg, ok := <-promCh
 		close(promCh)
-		
+
 		assert.True(t, ok)
 		assert.NotNil(t, receivedMsg)
 		assert.Contains(t, receivedMsg.Desc().String(), "persistent_volume_usd_per_hour")

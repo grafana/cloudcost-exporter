@@ -6,10 +6,10 @@ import (
 	"log"
 	"sync"
 	"time"
-	
+
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/prometheus/client_golang/prometheus"
-	
+
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
@@ -27,10 +27,10 @@ const (
 type Metrics struct {
 	// StorageGauge measures the cost of storage in $/GiB, per region and class.
 	StorageGauge *prometheus.GaugeVec
-	
+
 	// OperationsGauge measures the cost of operations in $/1k requests
 	OperationsGauge *prometheus.GaugeVec
-	
+
 	// NextScrapeGauge is a gauge that tracks the next time the exporter will scrape AWS billing data
 	NextScrapeGauge prometheus.Gauge
 }
@@ -44,14 +44,14 @@ func NewMetrics() Metrics {
 		},
 			[]string{"region", "class"},
 		),
-		
+
 		OperationsGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "operation_by_location_usd_per_krequest"),
 			Help: "Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)",
 		},
 			[]string{"region", "class", "tier"},
 		),
-		
+
 		NextScrapeGauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "next_scrape"),
 			Help: "The next time the exporter will scrape AWS billing data. Can be used to trigger alerts if now - nextScrape > interval",
@@ -106,7 +106,7 @@ func (c *Collector) Register(registry provider.Registry) error {
 	registry.MustRegister(c.metrics.OperationsGauge)
 	registry.MustRegister(c.metrics.NextScrapeGauge)
 	registry.MustRegister(c.client.Metrics()...)
-	
+
 	return nil
 }
 
@@ -129,7 +129,7 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 		c.nextScrape = time.Now().Add(c.interval)
 		c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
 	}
-	
+
 	exportMetrics(c.billingData, c.metrics)
 	return 1.0
 }

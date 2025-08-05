@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	
+
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
 
@@ -151,20 +151,20 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ondemandPrices []string,
 func (spm *StoragePricingMap) GenerateStoragePricingMap(storagePrices []string) error {
 	spm.m.Lock()
 	defer spm.m.Unlock()
-	
+
 	for _, product := range storagePrices {
 		var productInfo storageProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
 			return err
 		}
-		
+
 		region := productInfo.Product.Attributes.Region
 		storageClass := productInfo.Product.Attributes.VolumeApiName
 		if spm.Regions[region] == nil {
 			spm.Regions[region] = &StoragePricing{}
 			spm.Regions[region].Storage = make(map[string]float64)
 		}
-		
+
 		for _, term := range productInfo.Terms.OnDemand {
 			for _, priceDimension := range term.PriceDimensions {
 				price, err := strconv.ParseFloat(priceDimension.PricePerUnit["USD"], 64)
@@ -176,7 +176,7 @@ func (spm *StoragePricingMap) GenerateStoragePricingMap(storagePrices []string) 
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -188,11 +188,11 @@ func (cpm *ComputePricingMap) AddToComputePricingMap(price float64, attribute In
 		cpm.Regions[attribute.Region] = &FamilyPricing{}
 		cpm.Regions[attribute.Region].Family = make(map[string]*Prices)
 	}
-	
+
 	if cpm.Regions[attribute.Region].Family[attribute.InstanceType] != nil {
 		return ErrInstanceTypeAlreadyExists
 	}
-	
+
 	weightedPrice, err := weightedPriceForInstance(price, attribute)
 	if err != nil {
 		return err
@@ -230,7 +230,7 @@ func weightedPriceForInstance(price float64, attributes InstanceAttributes) (*Pr
 		log.Printf("no ratio found for instance type %s, defaulting to %s", attributes.InstanceType, defaultInstanceFamily)
 		ratio = cpuToCostRatio[defaultInstanceFamily]
 	}
-	
+
 	return &Prices{
 		Cpu: price * ratio / cpus,
 		Ram: price * (1 - ratio) / ram,
@@ -253,15 +253,15 @@ func (cpm *ComputePricingMap) GetPriceForInstanceType(region string, instanceTyp
 func (spm *StoragePricingMap) GetPriceForVolumeType(region string, volumeType string, size int32) (float64, error) {
 	spm.m.RLock()
 	defer spm.m.RUnlock()
-	
+
 	if _, ok := spm.Regions[region]; !ok {
 		return 0, ErrRegionNotFound
 	}
-	
+
 	if _, ok := spm.Regions[region].Storage[volumeType]; !ok {
 		return 0, ErrVolumeTypeNotFound
 	}
-	
+
 	// Prices are listed in GB-Mo units (Gib/month, considering 30 day months).
 	// Divide by 30 and 24 to get the hourly price.
 	return spm.Regions[region].Storage[volumeType] * float64(size) / 30 / 24, nil

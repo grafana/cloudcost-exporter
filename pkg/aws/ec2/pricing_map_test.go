@@ -2,7 +2,7 @@ package ec2
 
 import (
 	"testing"
-	
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/stretchr/testify/assert"
@@ -302,7 +302,7 @@ func TestStoragePricingMap_GetPriceForVolumeType(t *testing.T) {
 			expected:   .4 / 30 / 24 * 100,
 		},
 	}
-	
+
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			price, err := tt.spm.GetPriceForVolumeType(tt.region, tt.volumeType, tt.size)

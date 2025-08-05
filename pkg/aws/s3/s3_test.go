@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-	
+
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	mock_client "github.com/grafana/cloudcost-exporter/pkg/aws/client/mocks"
 	"github.com/prometheus/client_golang/prometheus"
@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
-	
+
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 )
 
@@ -37,7 +37,7 @@ func TestNewCollector(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			c := mock_client.NewMockClient(ctrl)
-			
+
 			got := New(tt.args.interval, c)
 			assert.NotNil(t, got)
 			assert.Equal(t, tt.args.interval, got.interval)
@@ -54,10 +54,10 @@ func TestCollector_Register(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	r := mock_provider.NewMockRegistry(ctrl)
 	r.EXPECT().MustRegister(gomock.Any()).Times(4)
-	
+
 	client := mock_client.NewMockClient(ctrl)
 	client.EXPECT().Metrics().Return([]prometheus.Collector{}).Times(1)
-	
+
 	c := &Collector{
 		client: client,
 	}
@@ -71,12 +71,12 @@ func TestCollector_Collect(t *testing.T) {
 		"cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour",
 		"cloudcost_aws_s3_operation_by_location_usd_per_krequest",
 	}
-	
+
 	for _, tc := range []struct {
 		name           string
 		nextScrape     time.Time
 		GetBillingData func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error)
-		
+
 		// metricNames can be nil to check all metrics, or a set of strings form an allow list of metrics to check.
 		metricNames        []string
 		expectedResponse   float64
@@ -276,7 +276,7 @@ cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage"
 					DoAndReturn(tc.GetBillingData).
 					Times(1)
 			}
-			
+
 			c := &Collector{
 				client:     client,
 				nextScrape: tc.nextScrape,
@@ -287,11 +287,11 @@ cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage"
 			if tc.expectedResponse == 0 {
 				return
 			}
-			
+
 			r := prometheus.NewPedanticRegistry()
 			err := c.Register(r)
 			assert.NoError(t, err)
-			
+
 			err = testutil.CollectAndCompare(r, strings.NewReader(tc.expectedExposition), tc.metricNames...)
 			assert.NoError(t, err)
 		})
@@ -305,7 +305,7 @@ func TestCollector_MultipleCalls(t *testing.T) {
 		ce.EXPECT().
 			GetBillingData(gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(&client.BillingData{}, nil)
-		
+
 		c := &Collector{
 			client:   ce,
 			metrics:  NewMetrics(),
@@ -313,7 +313,7 @@ func TestCollector_MultipleCalls(t *testing.T) {
 		}
 		up := c.CollectMetrics(nil)
 		require.Equal(t, 1.0, up)
-		
+
 		up = c.CollectMetrics(nil)
 		require.Equal(t, 1.0, up)
 	})
@@ -345,19 +345,19 @@ func TestCollector_MultipleCalls(t *testing.T) {
 				},
 			}}, nil
 		}
-		
+
 		goroutines := 10
 		collectCalls := 1000
 		ce.EXPECT().
 			GetBillingData(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(getCostAndUsage).
 			Times(goroutines * collectCalls)
-		
+
 		c := &Collector{
 			client:  ce,
 			metrics: NewMetrics(),
 		}
-		
+
 		for i := 0; i < goroutines; i++ {
 			t.Run(fmt.Sprintf("Test %d", i), func(t *testing.T) {
 				t.Parallel()

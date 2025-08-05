@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
@@ -15,10 +15,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/prometheus/client_golang/prometheus"
-	
+
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/rds"
-	
+
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -78,7 +78,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 		client.WithRegion(config.Region),
 		client.WithProfile(config.Profile),
 		client.WithRoleARN(config.RoleARN))
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -179,9 +179,9 @@ func assumeRole(roleARN string, options []func(*awsconfig.LoadOptions) error) ([
 	if err != nil {
 		return nil, err
 	}
-	
+
 	stsService := sts.NewFromConfig(ac)
-	
+
 	options = append(options, awsconfig.WithCredentialsProvider(
 		aws.NewCredentialsCache(
 			stscreds.NewAssumeRoleProvider(
@@ -190,6 +190,6 @@ func assumeRole(roleARN string, options []func(*awsconfig.LoadOptions) error) ([
 			),
 		),
 	))
-	
+
 	return options, nil
 }
