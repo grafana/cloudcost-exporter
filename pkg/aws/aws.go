@@ -172,24 +172,3 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	}
 	wg.Wait()
 }
-
-func assumeRole(roleARN string, options []func(*awsconfig.LoadOptions) error) ([]func(*awsconfig.LoadOptions) error, error) {
-	// Add the credentials to assume the role specified in config.RoleARN
-	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
-	if err != nil {
-		return nil, err
-	}
-
-	stsService := sts.NewFromConfig(ac)
-
-	options = append(options, awsconfig.WithCredentialsProvider(
-		aws.NewCredentialsCache(
-			stscreds.NewAssumeRoleProvider(
-				stsService,
-				roleARN,
-			),
-		),
-	))
-
-	return options, nil
-}
