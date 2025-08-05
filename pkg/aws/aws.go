@@ -8,11 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/prometheus/client_golang/prometheus"
 
