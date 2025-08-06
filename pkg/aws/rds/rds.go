@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/rds"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
-	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -67,29 +67,27 @@ func NewMetrics() Metrics {
 
 // Collector is a prometheus collector that collects metrics from AWS RDS clusters.
 type Collector struct {
-	Regions           []string
-	ScrapeInterval    time.Duration
-	pricingService    pricingClient.Pricing
+	regions           []types.Region
+	client            client.Client
+	scrapeInterval    time.Duration
 	NextComputeScrape time.Time
 	NextStorageScrape time.Time
-	rdsRegionClients  map[string]rds.Client
 	logger            *slog.Logger
 }
 
 type Config struct {
+	Regions        []types.Region
 	ScrapeInterval time.Duration
-	RegionClients  map[string]rds.Client
 	Logger         *slog.Logger
 }
 
 // New creates an rds collector
-func New(config *Config, ps pricingClient.Pricing) *Collector {
-	logger := config.Logger.With("logger", "rds")
+func New(config *Config, client client.Client) *Collector {
 	return &Collector{
-		ScrapeInterval:   config.ScrapeInterval,
-		rdsRegionClients: config.RegionClients,
-		logger:           logger,
-		pricingService:   ps,
+		scrapeInterval: config.ScrapeInterval,
+		regions:        config.Regions,
+		logger:         config.Logger.With("logger", "rds"),
+		client:         client,
 	}
 }
 

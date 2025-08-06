@@ -2,16 +2,13 @@ package s3
 
 import (
 	"context"
-	"encoding/csv"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
-	awscostexplorer "github.com/aws/aws-sdk-go-v2/service/costexplorer"
-	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
-	mock_costexplorer "github.com/grafana/cloudcost-exporter/pkg/aws/services/mocks"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
+	mock_client "github.com/grafana/cloudcost-exporter/pkg/aws/client/mocks"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -20,143 +17,6 @@ import (
 
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 )
-
-func Test_getDimensionFromKey(t *testing.T) {
-	f, err := os.Open("testdata/dimensions.csv")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-
-	reader := csv.NewReader(f)
-	records, err := reader.ReadAll()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, record := range records {
-		key, want := record[0], record[2]
-		if got := getComponentFromKey(key); got != want {
-			t.Fatalf("getComponentFromKey(%s) = %v, want %v", key, got, want)
-		}
-	}
-}
-
-func Test_getRegionFromKey(t *testing.T) {
-	f, err := os.Open("testdata/dimensions.csv")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-
-	reader := csv.NewReader(f)
-	records, err := reader.ReadAll()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, record := range records {
-		key, want := record[0], record[1]
-		got := getRegionFromKey(key)
-		mappedWant := billingToRegionMap[want]
-		if mappedWant != got {
-			t.Fatalf("getRegionFromKey(%s) = %v, want %v", key, got, want)
-		}
-	}
-}
-
-func TestS3BillingData_AddRegion(t *testing.T) {
-	type args struct {
-		key   string
-		group types.Group
-	}
-	tests := map[string]struct {
-		args []args
-		want int
-	}{
-		"Do not add a region if key is empty": {
-			args: []args{
-				{
-					key: "",
-					group: types.Group{
-						Metrics: map[string]types.MetricValue{},
-					},
-				},
-			},
-			want: 0,
-		},
-		"Add a single region": {
-			args: []args{
-				{
-					key: "USE2-Requests-Tier1",
-					group: types.Group{
-						Metrics: map[string]types.MetricValue{},
-					},
-				},
-			},
-			want: 1,
-		},
-		"Add multiple regions": {
-			args: []args{
-				{
-					key: "USE2-Requests-Tier1",
-					group: types.Group{
-						Metrics: map[string]types.MetricValue{},
-					},
-				},
-				{
-					key: "USW1-Requests-Tier1",
-					group: types.Group{
-						Metrics: map[string]types.MetricValue{},
-					},
-				},
-			},
-			want: 2,
-		},
-		"Add multiple regions with duplicates": {
-			args: []args{
-				{
-					key: "USE2-Requests-Tier1",
-					group: types.Group{
-						Metrics: map[string]types.MetricValue{},
-					},
-				},
-				{
-					key: "USE2-Requests-Tier1",
-					group: types.Group{
-						Metrics: map[string]types.MetricValue{},
-					},
-				},
-				{
-					key: "USW1-Requests-Tier1",
-					group: types.Group{
-						Metrics: map[string]types.MetricValue{},
-					},
-				},
-				{
-					key: "USW1-Requests-Tier1",
-					group: types.Group{
-						Metrics: map[string]types.MetricValue{},
-					},
-				},
-			},
-			want: 2,
-		},
-	}
-
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			s := NewS3BillingData()
-			for _, arg := range tt.args {
-				region, dimension := getRegionFromKey(arg.key), getComponentFromKey(arg.key)
-				s.AddMetricGroup(region, dimension, arg.group)
-			}
-			if len(s.Regions) != tt.want {
-				t.Fatalf("len(s.Regions) = %v, want %d", len(s.Regions), tt.want)
-			}
-		})
-	}
-}
 
 func TestNewCollector(t *testing.T) {
 	type args struct {
@@ -176,7 +36,7 @@ func TestNewCollector(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
-			c := mock_costexplorer.NewMockCostExplorer(ctrl)
+			c := mock_client.NewMockClient(ctrl)
 
 			got := New(tt.args.interval, c)
 			assert.NotNil(t, got)
@@ -193,9 +53,14 @@ func TestCollector_Name(t *testing.T) {
 func TestCollector_Register(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	r := mock_provider.NewMockRegistry(ctrl)
-	r.EXPECT().MustRegister(gomock.Any()).Times(5)
+	r.EXPECT().MustRegister(gomock.Any()).Times(4)
 
-	c := &Collector{}
+	client := mock_client.NewMockClient(ctrl)
+	client.EXPECT().Metrics().Return([]prometheus.Collector{}).Times(1)
+
+	c := &Collector{
+		client: client,
+	}
 	err := c.Register(r)
 	require.NoError(t, err)
 }
@@ -205,15 +70,12 @@ func TestCollector_Collect(t *testing.T) {
 	withoutNextScrape := []string{
 		"cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour",
 		"cloudcost_aws_s3_operation_by_location_usd_per_krequest",
-		"cloudcost_exporter_aws_s3_cost_api_requests_total",
-		"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
 	}
 
 	for _, tc := range []struct {
-		name             string
-		nextScrape       time.Time
-		GetCostAndUsage  func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error)
-		GetCostAndUsage2 func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error)
+		name           string
+		nextScrape     time.Time
+		GetBillingData func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error)
 
 		// metricNames can be nil to check all metrics, or a set of strings form an allow list of metrics to check.
 		metricNames        []string
@@ -223,161 +85,33 @@ func TestCollector_Collect(t *testing.T) {
 		{
 			name:       "cost and usage error is bubbled-up",
 			nextScrape: timeInPast,
-			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
+			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
 				return nil, fmt.Errorf("test cost and usage error")
 			},
 			expectedResponse: 0.0,
 		},
 		{
-			name:       "no cost and usage output",
-			nextScrape: timeInPast,
-			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
-				return &awscostexplorer.GetCostAndUsageOutput{}, nil
-			},
-			metricNames: []string{
-				"cloudcost_exporter_aws_s3_cost_api_requests_total",
-				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
-			},
-			expectedExposition: `
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_errors_total 0
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_total Total number of requests made to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_total 1
-`,
-			expectedResponse: 1.0,
-		},
-		{
-			name:             "cost and usage output - one result without keys",
-			nextScrape:       timeInPast,
-			expectedResponse: 1.0,
-			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
-				return &awscostexplorer.GetCostAndUsageOutput{
-					ResultsByTime: []types.ResultByTime{{
-						Groups: []types.Group{{
-							Keys: nil,
-						}},
-					}},
-				}, nil
-			},
-			metricNames: []string{
-				"cloudcost_exporter_aws_s3_cost_api_requests_total",
-				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
-			},
-			expectedExposition: `
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_errors_total 0
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_total Total number of requests made to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_total 1
-`,
-		},
-		{
-			name:             "cost and usage output - one result with keys but non-existent region",
-			nextScrape:       timeInPast,
-			expectedResponse: 1.0,
-			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
-				return &awscostexplorer.GetCostAndUsageOutput{
-					ResultsByTime: []types.ResultByTime{{
-						Groups: []types.Group{{
-							Keys: []string{"non-existent-region"},
-						}},
-					}},
-				}, nil
-			},
-			metricNames: []string{
-				"cloudcost_exporter_aws_s3_cost_api_requests_total",
-				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
-			},
-			expectedExposition: `
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_errors_total 0
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_total Total number of requests made to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_total 1
-`,
-		},
-		{
-			name:             "cost and usage output - one result with keys but special-case region",
-			nextScrape:       timeInPast,
-			expectedResponse: 1.0,
-			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
-				return &awscostexplorer.GetCostAndUsageOutput{
-					ResultsByTime: []types.ResultByTime{{
-						Groups: []types.Group{{
-							Keys: []string{"Requests-Tier1", "Requests-Tier2"},
-						}},
-					}},
-				}, nil
-			},
-			metricNames: []string{
-				"cloudcost_exporter_aws_s3_cost_api_requests_total",
-				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
-			},
-			expectedExposition: `
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_errors_total 0
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_total Total number of requests made to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_total 1
-`,
-		},
-		{
-			name:             "cost and usage output - one result with keys and valid region with a hyphen",
-			nextScrape:       timeInPast,
-			expectedResponse: 1.0,
-			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
-				return &awscostexplorer.GetCostAndUsageOutput{
-					ResultsByTime: []types.ResultByTime{{
-						Groups: []types.Group{{
-							// TODO: region lookup failure
-							// TODO: test should fail
-							Keys: []string{"AWS GovCloud (US-East)-Requests-Tier1"},
-						}},
-					}},
-				}, nil
-			},
-			metricNames: []string{
-				"cloudcost_exporter_aws_s3_cost_api_requests_total",
-				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
-			},
-			expectedExposition: `
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_errors_total 0
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_total Total number of requests made to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_total 1
-`,
-		},
-		{
 			name:             "cost and usage output - three results with keys and valid region without a hyphen",
 			nextScrape:       timeInPast,
 			expectedResponse: 1.0,
-			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
-				return &awscostexplorer.GetCostAndUsageOutput{
-					ResultsByTime: []types.ResultByTime{
-						{
-							Groups: []types.Group{{
-								Keys: []string{"APN1-Requests-Tier1"},
-							}},
-						},
-						{
-							Groups: []types.Group{{
-								Keys: []string{"APN2-Requests-Tier2"},
-							}},
-						},
-						{
-							Groups: []types.Group{{
-								Keys: []string{"APN3-TimedStorage"},
-							}},
+			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
+				return &client.BillingData{Regions: map[string]*client.PricingModel{
+					"ap-northeast-1": {
+						Model: map[string]*client.Pricing{
+							"Requests-Tier1": {},
 						},
 					},
-				}, nil
+					"ap-northeast-2": {
+						Model: map[string]*client.Pricing{
+							"Requests-Tier2": {},
+						},
+					},
+					"ap-northeast-3": {
+						Model: map[string]*client.Pricing{
+							"TimedStorage": {},
+						},
+					},
+				}}, nil
 			},
 			metricNames: withoutNextScrape,
 			expectedExposition: `
@@ -388,216 +122,138 @@ cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",
 # HELP cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour Storage cost of S3 objects by region, class, and tier. Cost represented in USD/(GiB*h)
 # TYPE cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour gauge
 cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage",region="ap-northeast-3"} 0
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_errors_total 0
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_total Total number of requests made to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_total 1
 `,
 		},
 		{
 			name:             "cost and usage output - results with two pages",
 			nextScrape:       timeInPast,
 			expectedResponse: 1.0,
-			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
-				t := "token"
-				return &awscostexplorer.GetCostAndUsageOutput{
-					ResultsByTime: []types.ResultByTime{{
-						Groups: []types.Group{{
-							Keys: []string{"APN1-Requests-Tier1"},
-						}},
-					}},
-					NextPageToken: &t,
-				}, nil
-			},
-			GetCostAndUsage2: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
-				return &awscostexplorer.GetCostAndUsageOutput{
-					ResultsByTime: []types.ResultByTime{{
-						Groups: []types.Group{{
-							Keys: []string{"APN2-Requests-Tier2"},
-						}},
-					}},
-				}, nil
+			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
+				return &client.BillingData{Regions: map[string]*client.PricingModel{
+					"ap-northeast-1": {
+						Model: map[string]*client.Pricing{
+							"Requests-Tier1": {},
+						},
+					},
+					"ap-northeast-2": {
+						Model: map[string]*client.Pricing{
+							"Requests-Tier2": {},
+						},
+					},
+				}}, nil
 			},
 			metricNames: []string{
 				"cloudcost_aws_s3_operation_by_location_usd_per_krequest",
-				"cloudcost_exporter_aws_s3_cost_api_requests_total",
-				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
 			},
 			expectedExposition: `
 # HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
 cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
 cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_errors_total 0
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_total Total number of requests made to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_total 2
 `,
 		},
 		{
 			name:             "cost and usage output - result with nil amount",
 			nextScrape:       timeInPast,
 			expectedResponse: 1.0,
-			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
-				return &awscostexplorer.GetCostAndUsageOutput{
-					ResultsByTime: []types.ResultByTime{{
-						Groups: []types.Group{{
-							Keys: []string{"APN1-Requests-Tier1"},
-							Metrics: map[string]types.MetricValue{
-								"UsageQuantity": {},
-								"UnblendedCost": {},
-							},
-						}},
-					}},
-				}, nil
+			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
+				return &client.BillingData{Regions: map[string]*client.PricingModel{
+					"ap-northeast-1": {
+						Model: map[string]*client.Pricing{
+							"Requests-Tier1": {},
+						},
+					},
+				}}, nil
 			},
 			metricNames: []string{
 				"cloudcost_aws_s3_operation_by_location_usd_per_krequest",
-				"cloudcost_exporter_aws_s3_cost_api_requests_total",
-				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
 			},
 			expectedExposition: `
 # HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
 cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_errors_total 0
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_total Total number of requests made to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_total 1
 `,
 		},
 		{
 			name:             "cost and usage output - result with invalid amount",
 			nextScrape:       timeInPast,
 			expectedResponse: 1.0,
-			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
-				a := ""
-				return &awscostexplorer.GetCostAndUsageOutput{
-					ResultsByTime: []types.ResultByTime{{
-						Groups: []types.Group{{
-							Keys: []string{"APN1-Requests-Tier1"},
-							Metrics: map[string]types.MetricValue{
-								"UsageQuantity": {Amount: &a},
-								"UnblendedCost": {Amount: &a},
+			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
+				return &client.BillingData{Regions: map[string]*client.PricingModel{
+					"ap-northeast-1": {
+						Model: map[string]*client.Pricing{
+							"Requests-Tier1": {
+								Usage: -32,
+								Cost:  -3,
 							},
-						}},
-					}},
-				}, nil
+						},
+					},
+				}}, nil
 			},
 			metricNames: []string{
 				"cloudcost_aws_s3_operation_by_location_usd_per_krequest",
-				"cloudcost_exporter_aws_s3_cost_api_requests_total",
-				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
 			},
 			expectedExposition: `
 # HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
 cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_errors_total 0
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_total Total number of requests made to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_total 1
 `,
 		},
 		{
 			name:             "cost and usage output - result with nil unit",
 			nextScrape:       timeInPast,
 			expectedResponse: 1.0,
-			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
-				a := "1"
-				return &awscostexplorer.GetCostAndUsageOutput{
-					ResultsByTime: []types.ResultByTime{{
-						Groups: []types.Group{{
-							Keys: []string{"APN1-Requests-Tier1"},
-							Metrics: map[string]types.MetricValue{
-								"UsageQuantity": {Amount: &a},
-								"UnblendedCost": {Amount: &a},
+			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
+				return &client.BillingData{Regions: map[string]*client.PricingModel{
+					"ap-northeast-1": {
+						Model: map[string]*client.Pricing{
+							"Requests-Tier1": {
+								UnitCost: 1000,
 							},
-						}},
-					}},
-				}, nil
+						},
+					},
+				}}, nil
 			},
 			metricNames: []string{
 				"cloudcost_aws_s3_operation_by_location_usd_per_krequest",
-				"cloudcost_exporter_aws_s3_cost_api_requests_total",
-				"cloudcost_exporter_aws_s3_cost_api_requests_errors_total",
 			},
 			expectedExposition: `
 # HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
 cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 1000
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_errors_total 0
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_total Total number of requests made to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_total 1
 `,
 		},
 		{
 			name:             "cost and usage output - result with valid amount and unit",
 			nextScrape:       timeInPast,
 			expectedResponse: 1.0,
-			GetCostAndUsage: func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
-				a := "1"
-				u := "unit"
-				return &awscostexplorer.GetCostAndUsageOutput{
-					ResultsByTime: []types.ResultByTime{
-						{
-							Groups: []types.Group{{
-								Keys: []string{"APN1-Requests-Tier1"},
-								Metrics: map[string]types.MetricValue{
-									"UsageQuantity": {Amount: &a, Unit: &u},
-									"UnblendedCost": {Amount: &a, Unit: &u},
-								},
-							}},
-						},
-						{
-							Groups: []types.Group{{
-								Keys: []string{"APN1-Requests-Tier2"},
-								Metrics: map[string]types.MetricValue{
-									"UsageQuantity": {Amount: &a, Unit: &u},
-									"UnblendedCost": {Amount: &a, Unit: &u},
-								},
-							}},
-						},
-						{
-							Groups: []types.Group{{
-								Keys: []string{"APN1-TimedStorage"},
-								Metrics: map[string]types.MetricValue{
-									"UsageQuantity": {Amount: &a, Unit: &u},
-									"UnblendedCost": {Amount: &a, Unit: &u},
-								},
-							}},
-						},
-						{
-							Groups: []types.Group{{
-								Keys: []string{"APN1-unknown"},
-								Metrics: map[string]types.MetricValue{
-									"UsageQuantity": {Amount: &a, Unit: &u},
-									"UnblendedCost": {Amount: &a, Unit: &u},
-								},
-							}},
+			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
+				return &client.BillingData{Regions: map[string]*client.PricingModel{
+					"ap-northeast-1": {
+						Model: map[string]*client.Pricing{
+							"Requests-Tier1": {
+								Units:    "unit",
+								UnitCost: 1000,
+							},
+							"Requests-Tier2": {
+								Units:    "unit",
+								UnitCost: 1000,
+							},
+							"TimedStorage": {
+								Cost:     1,
+								Units:    "unit",
+								UnitCost: 0.0013689253935660506,
+							},
+							"unknown": {
+								Units:    "unit",
+								UnitCost: 1,
+							},
 						},
 					},
-				}, nil
+				}}, nil
 			},
 			metricNames: withoutNextScrape,
 			expectedExposition: `
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_errors_total Total number of errors when making requests to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_errors_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_errors_total 0
-# HELP cloudcost_exporter_aws_s3_cost_api_requests_total Total number of requests made to the AWS Cost Explorer API
-# TYPE cloudcost_exporter_aws_s3_cost_api_requests_total counter
-cloudcost_exporter_aws_s3_cost_api_requests_total 1
 # HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
 cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 1000
@@ -610,22 +266,19 @@ cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage"
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
-			ce := mock_costexplorer.NewMockCostExplorer(ctrl)
-			if tc.GetCostAndUsage != nil {
-				ce.EXPECT().
-					GetCostAndUsage(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(tc.GetCostAndUsage).
-					Times(1)
+			client := mock_client.NewMockClient(ctrl)
+			if tc.expectedResponse != 0 {
+				client.EXPECT().Metrics().Return([]prometheus.Collector{})
 			}
-			if tc.GetCostAndUsage2 != nil {
-				ce.EXPECT().
-					GetCostAndUsage(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(tc.GetCostAndUsage2).
+			if tc.GetBillingData != nil {
+				client.EXPECT().
+					GetBillingData(gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(tc.GetBillingData).
 					Times(1)
 			}
 
 			c := &Collector{
-				client:     ce,
+				client:     client,
 				nextScrape: tc.nextScrape,
 				metrics:    NewMetrics(),
 			}
@@ -645,59 +298,13 @@ cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage"
 	}
 }
 
-func Test_unitCostForComponent(t *testing.T) {
-	tests := map[string]struct {
-		component string
-		pricing   *Pricing
-		want      float64
-	}{
-		"Requests-Tier1 basic": {
-			component: "Requests-Tier1",
-			pricing: &Pricing{
-				Usage: 1.0,
-				Cost:  1.0,
-			},
-			want: 1000,
-		},
-		"Requests-Tier1 with 1000's of requests": {
-			component: "Requests-Tier1",
-			pricing: &Pricing{
-				Usage: 1000.0,
-				Cost:  1.0,
-			},
-			want: 1,
-		},
-		"Requests-Tier1 with 1000's of costs": {
-			component: "Requests-Tier1",
-			pricing: &Pricing{
-				Usage: 1.0,
-				Cost:  1000.0,
-			},
-			want: 1e6,
-		},
-		"Requests-Tier1 with 1000's of costs and 1000 requests": {
-			component: "Requests-Tier1",
-			pricing: &Pricing{
-				Usage: 1000.0,
-				Cost:  1000.0,
-			},
-			want: 1000,
-		},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, unitCostForComponent(tt.component, tt.pricing), "unitCostForComponent(%v, %v)", tt.component, tt.pricing)
-		})
-	}
-}
-
 func TestCollector_MultipleCalls(t *testing.T) {
 	t.Run("Test multiple calls to the collect method", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		ce := mock_costexplorer.NewMockCostExplorer(ctrl)
+		ce := mock_client.NewMockClient(ctrl)
 		ce.EXPECT().
-			GetCostAndUsage(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(&awscostexplorer.GetCostAndUsageOutput{}, nil)
+			GetBillingData(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&client.BillingData{}, nil)
 
 		c := &Collector{
 			client:   ce,
@@ -713,55 +320,36 @@ func TestCollector_MultipleCalls(t *testing.T) {
 	// This tests if the collect method is thread safe. If it fails, then we need to implement a mutex.`
 	t.Run("Test multiple calls to collect method in parallel", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		ce := mock_costexplorer.NewMockCostExplorer(ctrl)
-		getCostAndUsage := func(ctx context.Context, params *awscostexplorer.GetCostAndUsageInput, optFns ...func(*awscostexplorer.Options)) (*awscostexplorer.GetCostAndUsageOutput, error) {
-			a := "1"
-			u := "unit"
-			return &awscostexplorer.GetCostAndUsageOutput{
-				ResultsByTime: []types.ResultByTime{
-					{
-						Groups: []types.Group{{
-							Keys: []string{"APN1-Requests-Tier1"},
-							Metrics: map[string]types.MetricValue{
-								"UsageQuantity": {Amount: &a, Unit: &u},
-								"UnblendedCost": {Amount: &a, Unit: &u},
-							},
-						}},
-					},
-					{
-						Groups: []types.Group{{
-							Keys: []string{"APN1-Requests-Tier2"},
-							Metrics: map[string]types.MetricValue{
-								"UsageQuantity": {Amount: &a, Unit: &u},
-								"UnblendedCost": {Amount: &a, Unit: &u},
-							},
-						}},
-					},
-					{
-						Groups: []types.Group{{
-							Keys: []string{"APN1-TimedStorage"},
-							Metrics: map[string]types.MetricValue{
-								"UsageQuantity": {Amount: &a, Unit: &u},
-								"UnblendedCost": {Amount: &a, Unit: &u},
-							},
-						}},
-					},
-					{
-						Groups: []types.Group{{
-							Keys: []string{"APN1-unknown"},
-							Metrics: map[string]types.MetricValue{
-								"UsageQuantity": {Amount: &a, Unit: &u},
-								"UnblendedCost": {Amount: &a, Unit: &u},
-							},
-						}},
+		ce := mock_client.NewMockClient(ctrl)
+		getCostAndUsage := func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
+			return &client.BillingData{Regions: map[string]*client.PricingModel{
+				"ap-northeast-1": {
+					Model: map[string]*client.Pricing{
+						"APN1-Requests-Tier1": {
+							Usage: 1,
+							Units: "unit",
+						},
+						"APN1-Requests-Tier2": {
+							Usage: 1,
+							Units: "unit",
+						},
+						"APN1-TimedStorage": {
+							Usage: 1,
+							Units: "unit",
+						},
+						"PN1-unknown": {
+							Usage: 1,
+							Units: "unit",
+						},
 					},
 				},
-			}, nil
+			}}, nil
 		}
+
 		goroutines := 10
 		collectCalls := 1000
 		ce.EXPECT().
-			GetCostAndUsage(gomock.Any(), gomock.Any(), gomock.Any()).
+			GetBillingData(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(getCostAndUsage).
 			Times(goroutines * collectCalls)
 
