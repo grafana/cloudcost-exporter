@@ -140,12 +140,13 @@ func parseStorageSku(sku *billingpb.Sku, m *metrics.Metrics) error {
 	priceUnit := priceInfo.PricingExpression.UsageUnitDescription
 
 	// Adjust price to hourly
-	if priceUnit == gibMonthly {
+	switch priceUnit {
+	case gibMonthly:
 		price = price / 31 / 24
-	} else if priceUnit == gibDay {
+	case gibDay:
 		// For Early-Delete in Archive, CloudStorage and Nearline classes
 		price = price / 24
-	} else {
+	default:
 		return fmt.Errorf("%w:%s, %s", errUnknownPricingUnit, sku.Description, priceUnit)
 	}
 
