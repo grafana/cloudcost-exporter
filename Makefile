@@ -23,12 +23,12 @@ build-image:
 build-binary:
 	CGO_ENABLED=0 go build -v -ldflags "$(GO_LDFLAGS)" -o cloudcost-exporter ./cmd/exporter
 
-build: build-binary build-image
+build: lint build-binary build-image
 
-test: build
+test: lint build
 	go test -v ./...
 
-lint:
+lint: ## Run linter over the codebase
 	golangci-lint run ./...
 
 push-dev: build test
