@@ -68,7 +68,7 @@ const (
 
 func New(ctx context.Context, config *Config) (*AWS, error) {
 	var collectors []provider.Collector
-	logger := config.Logger.With("provider", "aws")
+	logger := config.Logger.With("provider", subsystem)
 	// There are two scenarios:
 	// 1. Running locally, the user must pass in a region and profile to use
 	// 2. Running within an EC2 instance and the region and profile can be derived
@@ -83,9 +83,11 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var regions []types.Region
 	for _, service := range config.Services {
 		service = strings.ToUpper(service)
+
 		// region API is shared between EC2 and RDS
 		if service == serviceRDS || service == serviceEC2 {
 			regions, err = awsClient.DescribeRegions(ctx, false)

@@ -60,7 +60,7 @@ type Config struct {
 // collector specific services further down.
 func New(config *Config) (*GCP, error) {
 	ctx := context.Background()
-	logger := config.Logger.With("provider", "gcp")
+	logger := config.Logger.With("provider", subsystem)
 
 	gcpClient, err := client.NewGCPClient(ctx, client.Config{ProjectId: config.ProjectId, Discount: config.DefaultDiscount})
 	if err != nil {
