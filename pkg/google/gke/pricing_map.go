@@ -385,7 +385,7 @@ func getPricingInfoFromSku(sku *billingpb.Sku) (int32, error) {
 		return 0, fmt.Errorf("no pricing info found for sku %s", sku.Name)
 	}
 	pricingInfo := sku.PricingInfo[0]
-	if pricingInfo.PricingExpression.TieredRates == nil || len(pricingInfo.PricingExpression.TieredRates) < 1 {
+	if len(pricingInfo.PricingExpression.TieredRates) < 1 {
 		return 0, fmt.Errorf("no tiered rates found for sku %s", sku.Name)
 	}
 	// TODO: We need to consider if there are many teired rates here. For instance, Storage will have a standard disk that has two rates. The first one is zero for the first GiB, then $/GiB after.
