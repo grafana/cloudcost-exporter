@@ -96,16 +96,9 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			}
 		}
 
-		awsClientPerRegion := make(map[string]client.Client)
-		for _, region := range regions {
-			c, err := client.NewAWSClient(ctx,
-				client.WithRegion(*region.RegionName),
-				client.WithProfile(config.Profile),
-				client.WithRoleARN(config.RoleARN))
-			if err != nil {
-				return nil, err
-			}
-			awsClientPerRegion[*region.RegionName] = c
+		awsClientPerRegion, err := newRegionClientMap(ctx, regions, config.Profile, config.RoleARN)
+		if err != nil {
+			return nil, err
 		}
 
 		switch service {
@@ -189,4 +182,20 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 		}(c)
 	}
 	wg.Wait()
+}
+
+func newRegionClientMap(ctx context.Context, regions []types.Region, profile string, roleARN string) (map[string]client.Client, error) {
+	awsClientPerRegion := make(map[string]client.Client)
+	for _, region := range regions {
+		c, err := client.NewAWSClient(ctx,
+			client.WithRegion(*region.RegionName),
+			client.WithProfile(profile),
+			client.WithRoleARN(roleARN))
+		if err != nil {
+			return nil, err
+		}
+		awsClientPerRegion[*region.RegionName] = c
+	}
+
+	return awsClientPerRegion, nil
 }
