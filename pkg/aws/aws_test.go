@@ -198,9 +198,6 @@ func Test_CollectMetrics(t *testing.T) {
 				metrics = append(metrics, metric)
 			}
 			assert.ElementsMatch(t, metrics, tt.expectedMetrics)
-			// clean up metrics for next test
-			metrics = []*utils.MetricResult{}
-			aws.collectors = []provider.Collector{}
 		})
 	}
 }
