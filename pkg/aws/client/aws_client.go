@@ -22,24 +22,30 @@ type Option func(client *[]func(options *awsconfig.LoadOptions) error)
 
 func WithRegion(region string) Option {
 	return func(options *[]func(options *awsconfig.LoadOptions) error) {
-		*options = append(*options, awsconfig.WithRegion(region))
+		if region != "" {
+			*options = append(*options, awsconfig.WithRegion(region))
+		}
 	}
 }
 
 func WithProfile(profile string) Option {
 	return func(options *[]func(options *awsconfig.LoadOptions) error) {
-		*options = append(*options, awsconfig.WithSharedConfigProfile(profile))
+		if profile != "" {
+			*options = append(*options, awsconfig.WithSharedConfigProfile(profile))
+		}
 	}
 }
 
 func WithRoleARN(roleARN string) Option {
 	return func(options *[]func(options *awsconfig.LoadOptions) error) {
-		option, err := assumeRole(roleARN, *options)
-		if err != nil {
-			return
-		}
+		if roleARN != "" {
+			option, err := assumeRole(roleARN, *options)
+			if err != nil {
+				return
+			}
 
-		*options = append(*options, option)
+			*options = append(*options, option)
+		}
 	}
 }
 
