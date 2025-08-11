@@ -8,7 +8,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	awsPricing "github.com/aws/aws-sdk-go-v2/service/pricing"
+	rds2 "github.com/aws/aws-sdk-go-v2/service/rds"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -69,20 +77,24 @@ const (
 func New(ctx context.Context, config *Config) (*AWS, error) {
 	var collectors []provider.Collector
 	logger := config.Logger.With("provider", subsystem)
+
 	// There are two scenarios:
 	// 1. Running locally, the user must pass in a region and profile to use
 	// 2. Running within an EC2 instance and the region and profile can be derived
 	// I'm going to use the AWS SDK to handle this for me. If the user has provided a region and profile, it will use that.
 	// If not, it will use the EC2 instance metadata service to determine the region and credentials.
 	// This is the same logic that the AWS CLI uses, so it should be fine.
-	awsClient, err := client.NewAWSClient(ctx,
-		client.WithRegion(config.Region),
-		client.WithProfile(config.Profile),
-		client.WithRoleARN(config.RoleARN))
-
+	ac, err := createAWSConfig(ctx, config.Region, config.Profile, config.RoleARN)
 	if err != nil {
 		return nil, err
 	}
+
+	awsClient := client.NewAWSClient(client.Config{
+		PricingService: awsPricing.NewFromConfig(ac),
+		EC2Service:     ec2.NewFromConfig(ac),
+		BillingService: costexplorer.NewFromConfig(ac),
+		RDSService:     rds2.NewFromConfig(ac),
+	})
 
 	var regions []types.Region
 	for _, service := range config.Services {
@@ -96,7 +108,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			}
 		}
 
-		awsClientPerRegion, err := newRegionClientMap(ctx, regions, config.Profile, config.RoleARN)
+		awsClientPerRegion, err := newRegionClientMap(ctx, ac, regions, config.Profile, config.RoleARN)
 		if err != nil {
 			return nil, err
 		}
@@ -184,18 +196,64 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	wg.Wait()
 }
 
-func newRegionClientMap(ctx context.Context, regions []types.Region, profile string, roleARN string) (map[string]client.Client, error) {
+func newRegionClientMap(ctx context.Context, globalConfig aws.Config, regions []types.Region, profile string, roleARN string) (map[string]client.Client, error) {
 	awsClientPerRegion := make(map[string]client.Client)
 	for _, region := range regions {
-		c, err := client.NewAWSClient(ctx,
-			client.WithRegion(*region.RegionName),
-			client.WithProfile(profile),
-			client.WithRoleARN(roleARN))
+		ac, err := createAWSConfig(ctx, *region.RegionName, profile, roleARN)
 		if err != nil {
 			return nil, err
 		}
-		awsClientPerRegion[*region.RegionName] = c
+		awsClientPerRegion[*region.RegionName] = client.NewAWSClient(
+			client.Config{
+				PricingService: awsPricing.NewFromConfig(globalConfig),
+				EC2Service:     ec2.NewFromConfig(ac),
+				BillingService: costexplorer.NewFromConfig(globalConfig),
+				RDSService:     rds2.NewFromConfig(globalConfig),
+			})
 	}
 
 	return awsClientPerRegion, nil
+}
+
+func createAWSConfig(ctx context.Context, region, profile, roleARN string) (aws.Config, error) {
+	optionsFunc := make([]func(options *config.LoadOptions) error, 0)
+	optionsFunc = append(optionsFunc, config.WithEC2IMDSRegion())
+	optionsFunc = append(optionsFunc, config.WithRetryMaxAttempts(maxRetryAttempts))
+
+	if region != "" {
+		optionsFunc = append(optionsFunc, config.WithRegion(region))
+	}
+
+	if profile != "" {
+		optionsFunc = append(optionsFunc, config.WithSharedConfigProfile(profile))
+	}
+
+	if roleARN != "" {
+		role, err := assumeRole(roleARN, optionsFunc)
+		if err != nil {
+			return aws.Config{}, err
+		}
+		optionsFunc = append(optionsFunc, role)
+	}
+
+	return config.LoadDefaultConfig(ctx, optionsFunc...)
+}
+
+func assumeRole(roleARN string, options []func(*config.LoadOptions) error) (config.LoadOptionsFunc, error) {
+	// Add the credentials to assume the role specified in config.RoleARN
+	ac, err := config.LoadDefaultConfig(context.Background(), options...)
+	if err != nil {
+		return nil, err
+	}
+
+	stsService := sts.NewFromConfig(ac)
+
+	return config.WithCredentialsProvider(
+		aws.NewCredentialsCache(
+			stscreds.NewAssumeRoleProvider(
+				stsService,
+				roleARN,
+			),
+		),
+	), nil
 }
