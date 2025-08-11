@@ -18,28 +18,28 @@ import (
 
 const maxRetryAttempts = 10
 
-type Option func(client []func(options *awsconfig.LoadOptions) error)
+type Option func(client *[]func(options *awsconfig.LoadOptions) error)
 
 func WithRegion(region string) Option {
-	return func(options []func(options *awsconfig.LoadOptions) error) {
-		options = append(options, awsconfig.WithRegion(region))
+	return func(options *[]func(options *awsconfig.LoadOptions) error) {
+		*options = append(*options, awsconfig.WithRegion(region))
 	}
 }
 
 func WithProfile(profile string) Option {
-	return func(options []func(options *awsconfig.LoadOptions) error) {
-		options = append(options, awsconfig.WithSharedConfigProfile(profile))
+	return func(options *[]func(options *awsconfig.LoadOptions) error) {
+		*options = append(*options, awsconfig.WithSharedConfigProfile(profile))
 	}
 }
 
 func WithRoleARN(roleARN string) Option {
-	return func(options []func(options *awsconfig.LoadOptions) error) {
-		option, err := assumeRole(roleARN, options)
+	return func(options *[]func(options *awsconfig.LoadOptions) error) {
+		option, err := assumeRole(roleARN, *options)
 		if err != nil {
 			return
 		}
 
-		options = append(options, option)
+		*options = append(*options, option)
 	}
 }
 
@@ -63,7 +63,7 @@ func NewAWSClient(ctx context.Context, opts ...Option) (*AWSClient, error) {
 	optionsFunc = append(optionsFunc, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
 
 	for _, opt := range opts {
-		opt(optionsFunc)
+		opt(&optionsFunc)
 	}
 
 	ac, err := awsconfig.LoadDefaultConfig(ctx, optionsFunc...)

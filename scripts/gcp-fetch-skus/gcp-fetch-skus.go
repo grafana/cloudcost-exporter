@@ -20,11 +20,11 @@ type Config struct {
 }
 
 func main() {
-	var config *Config
+	var config Config
 	flag.StringVar(&config.Service, "service", "Compute Engine", "The service to fetch skus for")
 	flag.StringVar(&config.OutputFile, "output-file", "skus.csv", "The file to write the skus to")
 	flag.Parse()
-	if err := run(config); err != nil {
+	if err := run(&config); err != nil {
 		log.Printf("error: %v", err)
 		os.Exit(1)
 	}

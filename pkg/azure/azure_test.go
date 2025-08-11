@@ -28,7 +28,7 @@ func Test_New(t *testing.T) {
 		subId       string
 	}{
 		"no subscription ID": {
-			expectedErr: InvalidSubscriptionId,
+			expectedErr: errInvalidSubscriptionID,
 			subId:       "",
 		},
 
@@ -202,9 +202,6 @@ func Test_CollectMetrics(t *testing.T) {
 				metrics = append(metrics, metric)
 			}
 			assert.ElementsMatch(t, metrics, tt.expectedMetrics)
-			// clean up metrics for next test
-			metrics = []*utils.MetricResult{}
-			azure.collectors = []provider.Collector{}
 		})
 	}
 }

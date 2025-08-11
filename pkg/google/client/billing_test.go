@@ -135,7 +135,7 @@ func Test_parseOpSku(t *testing.T) {
 				},
 				ServiceRegions: []string{"us-east1"},
 			},
-			err: invalidSku,
+			err: errInvalidSKU,
 		},
 		"should fail to parse sku with tagging": {
 			sku: &billingpb.Sku{
@@ -144,7 +144,7 @@ func Test_parseOpSku(t *testing.T) {
 				},
 				Description: "Tagging",
 			},
-			err: taggingError,
+			err: errTaggingNotSupported,
 		},
 		"should parse a sku with pricing and description": {
 			sku: &billingpb.Sku{
@@ -184,7 +184,7 @@ func Test_parseStorageSku(t *testing.T) {
 				},
 				ServiceRegions: []string{"us-east1"},
 			},
-			err: invalidSku,
+			err: errInvalidSKU,
 		},
 		"should fail to parse sku with unknown pricing unit": {
 			sku: &billingpb.Sku{
@@ -203,7 +203,7 @@ func Test_parseStorageSku(t *testing.T) {
 					},
 				},
 			},
-			err: unknownPricingUnit,
+			err: errUnknownPricingUnit,
 		},
 		"should parse a sku with one pricing unit with gibDaily": {
 			sku: &billingpb.Sku{

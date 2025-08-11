@@ -13,12 +13,16 @@ import (
 	"google.golang.org/api/iterator"
 )
 
-var ServiceNotFound = errors.New("service not found")
+// ServiceNotFound indicates the requested GCP service was not found in the Cloud Catalog.
+var errServiceNotFound = errors.New("service not found")
 
 var (
-	taggingError       = errors.New("tagging sku's is not supported")
-	invalidSku         = errors.New("invalid sku")
-	unknownPricingUnit = errors.New("unknown pricing unit")
+	// errTaggingNotSupported indicates that tagging SKUs are not supported by the exporter.
+	errTaggingNotSupported = errors.New("tagging sku's is not supported")
+	// errInvalidSKU indicates that a SKU didn’t provide valid pricing information.
+	errInvalidSKU = errors.New("invalid sku")
+	// errUnknownPricingUnit indicates an unrecognized pricing unit description.
+	errUnknownPricingUnit = errors.New("unknown pricing unit")
 
 	gibMonthly = "gibibyte month"
 	gibDay     = "gibibyte day"
@@ -50,7 +54,7 @@ func (b *Billing) getServiceName(ctx context.Context, name string) (string, erro
 			return service.Name, nil
 		}
 	}
-	return "", ServiceNotFound
+	return "", errServiceNotFound
 }
 
 func (b *Billing) exportBilling(ctx context.Context, serviceName string, m *metrics.Metrics) float64 {
@@ -111,7 +115,7 @@ func getPriceFromSku(sku *billingpb.Sku) (float64, error) {
 	// TODO: Do we need to support Multiple PricingInfo?
 	// That not needed here as we query only actual pricing
 	if len(sku.PricingInfo) < 1 {
-		return 0.0, fmt.Errorf("%w:%s", invalidSku, sku.Description)
+		return 0.0, fmt.Errorf("%w:%s", errInvalidSKU, sku.Description)
 	}
 	priceInfo := sku.PricingInfo[0]
 
@@ -136,13 +140,14 @@ func parseStorageSku(sku *billingpb.Sku, m *metrics.Metrics) error {
 	priceUnit := priceInfo.PricingExpression.UsageUnitDescription
 
 	// Adjust price to hourly
-	if priceUnit == gibMonthly {
+	switch priceUnit {
+	case gibMonthly:
 		price = price / 31 / 24
-	} else if priceUnit == gibDay {
+	case gibDay:
 		// For Early-Delete in Archive, CloudStorage and Nearline classes
 		price = price / 24
-	} else {
-		return fmt.Errorf("%w:%s, %s", unknownPricingUnit, sku.Description, priceUnit)
+	default:
+		return fmt.Errorf("%w:%s, %s", errUnknownPricingUnit, sku.Description, priceUnit)
 	}
 
 	region := regionNameSameAsStackdriver(sku.ServiceRegions[0])
@@ -153,7 +158,7 @@ func parseStorageSku(sku *billingpb.Sku, m *metrics.Metrics) error {
 
 func parseOpSku(sku *billingpb.Sku, m *metrics.Metrics) error {
 	if strings.Contains(sku.Description, "Tagging") {
-		return taggingError
+		return errTaggingNotSupported
 	}
 
 	price, err := getPriceFromSku(sku)
