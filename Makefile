@@ -1,4 +1,4 @@
-.PHONY: build-image build-binary build test push push-dev
+.PHONY: build-image build-binary build test push push-dev generate
 
 VERSION=$(shell git describe --tags --dirty --always)
 
@@ -23,9 +23,12 @@ build-image:
 build-binary:
 	CGO_ENABLED=0 go build -v -ldflags "$(GO_LDFLAGS)" -o cloudcost-exporter ./cmd/exporter
 
-build: lint build-binary build-image
+build: lint generate build-binary build-image
 
-test: lint build
+generate:
+	go generate -v ./...
+
+test: lint generate build
 	go test -v ./...
 
 lint: ## Run linter over the codebase
