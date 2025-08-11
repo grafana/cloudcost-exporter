@@ -23,7 +23,7 @@ const (
 )
 
 var (
-	InvalidSubscriptionId = errors.New("subscription id was invalid")
+	errInvalidSubscriptionID = errors.New("subscription id was invalid")
 )
 
 var (
@@ -73,7 +73,7 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 
 	if config.SubscriptionId == "" {
 		logger.LogAttrs(ctx, slog.LevelError, "subscription id was invalid")
-		return nil, InvalidSubscriptionId
+		return nil, errInvalidSubscriptionID
 	}
 
 	creds, err := azidentity.NewDefaultAzureCredential(nil)

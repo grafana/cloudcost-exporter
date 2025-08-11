@@ -28,7 +28,7 @@ func Test_New(t *testing.T) {
 		subId       string
 	}{
 		"no subscription ID": {
-			expectedErr: InvalidSubscriptionId,
+			expectedErr: errInvalidSubscriptionID,
 			subId:       "",
 		},
 

@@ -14,7 +14,7 @@ import (
 )
 
 // ServiceNotFound indicates the requested GCP service was not found in the Cloud Catalog.
-var ServiceNotFound = errors.New("service not found")
+var errServiceNotFound = errors.New("service not found")
 
 var (
 	// errTaggingNotSupported indicates that tagging SKUs are not supported by the exporter.
@@ -54,7 +54,7 @@ func (b *Billing) getServiceName(ctx context.Context, name string) (string, erro
 			return service.Name, nil
 		}
 	}
-	return "", ServiceNotFound
+	return "", errServiceNotFound
 }
 
 func (b *Billing) exportBilling(ctx context.Context, serviceName string, m *metrics.Metrics) float64 {
