@@ -5,17 +5,11 @@ type Cache[T any] interface {
 	Set(project string, buckets T)
 }
 
-type NoopCache[T any] struct {
-	v T
-}
+type NoopCache[T any] struct{}
 
-func (c NoopCache[T]) Get(_ string) T {
-	return c.v
-}
+func (c NoopCache[T]) Get(_ string) T { var zero T; return zero }
 
-func (c NoopCache[T]) Set(_ string, buckets T) {
-	c.v = buckets
-}
+func (c NoopCache[T]) Set(_ string, _ T) {}
 
 func NewNoopCache[T any]() Cache[T] {
 	return NoopCache[T]{}
