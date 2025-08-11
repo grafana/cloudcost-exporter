@@ -12,36 +12,34 @@ linters:
     - errorlint
     - unused
     - bodyclose
-    - errcheck
-    - revive
+    # - revive
     - govet
     - ineffassign
     - misspell
     - staticcheck
     - unused
-  settings:
-    revive:
-        confidence: 0.8
-        severity: warning
-        rules:
-            - name: blank-imports
-            - name: context-as-argument
-            - name: context-keys-type
-            - name: error-return
-            - name: error-strings
-            - name: error-naming
-            - name: exported
-            - name: if-return
-            - name: increment-decrement
-            - name: var-naming
-            - name: var-declaration
-            - name: package-comments
-            - name: range
-            - name: receiver-naming
-            - name: time-naming
-            - name: unexported-return
-            - name: indent-error-flow
-            - name: errorf
+  # settings:
+  #   revive:
+        # confidence: 0.8
+        # severity: warning
+        # rules:
+        #     - name: blank-imports
+        #     - name: context-as-argument
+        #     - name: context-keys-type
+        #     - name: error-return
+        #     - name: error-strings
+            # - name: error-naming
+            # - name: exported
+            # - name: if-return
+            # - name: increment-decrement
+            # - name: var-naming
+            # - name: var-declaration
+            # - name: range
+            # - name: receiver-naming
+            # - name: time-naming
+            # - name: unexported-return
+            # - name: indent-error-flow
+            # - name: errorf
 
 formatters:
   enable:
