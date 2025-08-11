@@ -15,8 +15,10 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
-	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
+
+	mock_client "github.com/grafana/cloudcost-exporter/pkg/aws/client/mocks"
+	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 )
 
 var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -25,16 +27,21 @@ func Test_New(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
 		expectedError error
+		config        *Config
 	}{
 		{
-			name: "no error",
+			name:          "no error",
+			expectedError: nil,
+			config: &Config{
+				Logger: logger,
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// TODO refactor New()
-			t.SkipNow()
+			ctrl := gomock.NewController(t)
+			r := mock_client.NewMockClient(ctrl)
 
-			a, err := New(context.Background(), &Config{})
+			a, err := New(context.Background(), tc.config)
 			if tc.expectedError != nil {
 				require.EqualError(t, err, tc.expectedError.Error())
 				return
