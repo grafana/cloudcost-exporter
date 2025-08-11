@@ -96,6 +96,18 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			}
 		}
 
+		awsClientPerRegion := make(map[string]client.Client)
+		for _, region := range regions {
+			c, err := client.NewAWSClient(ctx,
+				client.WithRegion(*region.RegionName),
+				client.WithProfile(config.Profile),
+				client.WithRoleARN(config.RoleARN))
+			if err != nil {
+				return nil, err
+			}
+			awsClientPerRegion[*region.RegionName] = c
+		}
+
 		switch service {
 		case serviceS3:
 			collector := s3.New(config.ScrapeInterval, awsClient)
@@ -105,7 +117,8 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 				Regions:        regions,
 				Logger:         logger,
 				ScrapeInterval: config.ScrapeInterval,
-			}, awsClient)
+				RegionMap:      awsClientPerRegion,
+			})
 			collectors = append(collectors, collector)
 		case serviceRDS:
 			_ = rds.New(&rds.Config{

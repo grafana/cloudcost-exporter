@@ -28,6 +28,7 @@ const (
 
 var (
 	ErrGeneratePricingMap = errors.New("error generating pricing map")
+	ErrClientNotFound     = errors.New("no client found")
 )
 
 var (
@@ -63,33 +64,34 @@ var (
 
 // Collector is a prometheus collector that collects metrics from AWS EKS clusters.
 type Collector struct {
-	Regions           []ec2Types.Region
-	ScrapeInterval    time.Duration
-	computePricingMap *ComputePricingMap
-	storagePricingMap *StoragePricingMap
-	client            client.Client
-	nextComputeScrape time.Time
-	nextStorageScrape time.Time
-	logger            *slog.Logger
+	Regions            []ec2Types.Region
+	ScrapeInterval     time.Duration
+	computePricingMap  *ComputePricingMap
+	storagePricingMap  *StoragePricingMap
+	awsRegionClientMap map[string]client.Client
+	nextComputeScrape  time.Time
+	nextStorageScrape  time.Time
+	logger             *slog.Logger
 }
 
 type Config struct {
 	ScrapeInterval time.Duration
 	Regions        []ec2Types.Region
 	Logger         *slog.Logger
+	RegionMap      map[string]client.Client
 }
 
 // New creates an ec2 collector
-func New(config *Config, client client.Client) *Collector {
+func New(config *Config) *Collector {
 	logger := config.Logger.With("logger", "ec2")
 
 	return &Collector{
-		ScrapeInterval:    config.ScrapeInterval,
-		Regions:           config.Regions,
-		logger:            logger,
-		client:            client,
-		computePricingMap: NewComputePricingMap(logger),
-		storagePricingMap: NewStoragePricingMap(logger),
+		ScrapeInterval:     config.ScrapeInterval,
+		Regions:            config.Regions,
+		logger:             logger,
+		awsRegionClientMap: config.RegionMap,
+		computePricingMap:  NewComputePricingMap(logger),
+		storagePricingMap:  NewStoragePricingMap(logger),
 	}
 }
 
@@ -135,12 +137,17 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	for _, region := range c.Regions {
 		regionName := *region.RegionName
 
+		regionClient, ok := c.awsRegionClientMap[regionName]
+		if !ok {
+			return ErrClientNotFound
+		}
+
 		go func() {
-			c.fetchInstancesData(ctx, regionName, instanceCh)
+			c.fetchInstancesData(ctx, regionClient, regionName, instanceCh)
 			wgInstances.Done()
 		}()
 		go func() {
-			c.fetchVolumesData(ctx, regionName, volumeCh)
+			c.fetchVolumesData(ctx, regionClient, regionName, volumeCh)
 			wgVolumes.Done()
 		}()
 	}
@@ -169,12 +176,17 @@ func (c *Collector) populateComputePricingMap(errGroupCtx context.Context) error
 		eg.Go(func() error {
 			c.logger.LogAttrs(errGroupCtx, slog.LevelDebug, "fetching compute pricing info", slog.String("region", *region.RegionName))
 
-			spotPriceList, err := c.client.ListSpotPrices(errGroupCtx)
+			regionClient, ok := c.awsRegionClientMap[*region.RegionName]
+			if !ok {
+				return ErrClientNotFound
+			}
+
+			spotPriceList, err := regionClient.ListSpotPrices(errGroupCtx)
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
 			}
 
-			priceList, err := c.client.ListOnDemandPrices(errGroupCtx, *region.RegionName)
+			priceList, err := regionClient.ListOnDemandPrices(errGroupCtx, *region.RegionName)
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
 			}
@@ -206,8 +218,12 @@ func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
 	m := sync.Mutex{}
 	for _, region := range c.Regions {
 		eg.Go(func() error {
+			regionClient, ok := c.awsRegionClientMap[*region.RegionName]
+			if !ok {
+				return ErrClientNotFound
+			}
 			c.logger.LogAttrs(ctx, slog.LevelDebug, "fetching storage pricing info", slog.String("region", *region.RegionName))
-			storagePriceList, err := c.client.ListStoragePrices(ctx, *region.RegionName)
+			storagePriceList, err := regionClient.ListStoragePrices(ctx, *region.RegionName)
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrListStoragePrices, err)
 			}
@@ -230,11 +246,11 @@ func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
 	return nil
 }
 
-func (c *Collector) fetchInstancesData(ctx context.Context, region string, instanceCh chan []ec2Types.Reservation) {
+func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.Client, region string, instanceCh chan []ec2Types.Reservation) {
 	now := time.Now()
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching instances", slog.String("region", region))
 
-	reservations, err := c.client.ListComputeInstances(ctx)
+	reservations, err := regionClient.ListComputeInstances(ctx)
 	if err != nil {
 		c.logger.LogAttrs(ctx, slog.LevelError, "Could not list compute instances",
 			slog.String("region", region),
@@ -251,11 +267,11 @@ func (c *Collector) fetchInstancesData(ctx context.Context, region string, insta
 	instanceCh <- reservations
 }
 
-func (c *Collector) fetchVolumesData(ctx context.Context, region string, volumeCh chan []ec2Types.Volume) {
+func (c *Collector) fetchVolumesData(ctx context.Context, regionClient client.Client, region string, volumeCh chan []ec2Types.Volume) {
 	now := time.Now()
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching volumes", slog.String("region", region))
 
-	volumes, err := c.client.ListEBSVolumes(ctx)
+	volumes, err := regionClient.ListEBSVolumes(ctx)
 	if err != nil {
 		c.logger.LogAttrs(ctx, slog.LevelError, "Could not list EBS volumes",
 			slog.String("region", region),
