@@ -7,7 +7,6 @@ import (
 	"os"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -17,7 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 
-	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
@@ -25,42 +23,11 @@ var (
 	logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
-func TestNewCollector(t *testing.T) {
-	tests := map[string]struct {
-		region         string
-		profile        string
-		scrapeInternal time.Duration
-		ps             *client.AWSClient
-		ec2s           ec2client.EC2
-	}{
-		"Empty Region and profile should return a collector": {
-			region:         "",
-			profile:        "",
-			scrapeInternal: 0,
-			ps:             nil,
-		},
-		"Region and profile should return a collector": {
-			region:         "us-east-1",
-			profile:        "default",
-			scrapeInternal: 0,
-			ps:             nil,
-		},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			collector := New(&Config{
-				Logger: logger,
-			}, tt.ps)
-			assert.NotNil(t, collector)
-		})
-	}
-}
-
 func TestCollector_Name(t *testing.T) {
 	t.Run("Name should return the same name as the subsystem const", func(t *testing.T) {
 		collector := New(&Config{
 			Logger: logger,
-		}, nil)
+		})
 		assert.Equal(t, subsystem, collector.Name())
 	})
 }
@@ -75,7 +42,7 @@ func TestCollector_Collect(t *testing.T) {
 	t.Run("Collect should return no error", func(t *testing.T) {
 		collector := New(&Config{
 			Logger: logger,
-		}, nil)
+		})
 		ch := make(chan prometheus.Metric)
 		go func() {
 			err := collector.Collect(ch)
@@ -100,27 +67,25 @@ func TestCollector_Collect(t *testing.T) {
 		collector := New(&Config{
 			Regions: regions,
 			Logger:  logger,
-		}, c)
+			RegionMap: map[string]client.Client{
+				"us-east-1": c,
+			},
+		})
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
 		close(ch)
 		assert.Error(t, err)
 	})
 	t.Run("Collect should return a ClientNotFound Error if the ec2 client is nil", func(t *testing.T) {
-		c := mock_client.NewMockClient(ctrl)
-		c.EXPECT().ListSpotPrices(gomock.Any()).
-			DoAndReturn(
-				func(ctx context.Context) ([]ec2Types.SpotPrice, error) {
-					return nil, assert.AnError
-				}).Times(1)
 		collector := New(&Config{
-			Regions: regions,
-			Logger:  logger,
-		}, c)
+			Regions:   regions,
+			Logger:    logger,
+			RegionMap: map[string]client.Client{},
+		})
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
 		close(ch)
-		assert.ErrorIs(t, err, assert.AnError)
+		assert.ErrorIs(t, err, ErrClientNotFound)
 	})
 	t.Run("Collect should return an error if ListSpotPrices returns an error", func(t *testing.T) {
 		c := mock_client.NewMockClient(ctrl)
@@ -132,7 +97,10 @@ func TestCollector_Collect(t *testing.T) {
 		collector := New(&Config{
 			Regions: regions,
 			Logger:  logger,
-		}, c)
+			RegionMap: map[string]client.Client{
+				"us-east-1": c,
+			},
+		})
 		ch := make(chan prometheus.Metric)
 		err := collector.Collect(ch)
 		close(ch)
@@ -163,7 +131,10 @@ func TestCollector_Collect(t *testing.T) {
 		collector := New(&Config{
 			Regions: regions,
 			Logger:  logger,
-		}, c)
+			RegionMap: map[string]client.Client{
+				"us-east-1": c,
+			},
+		})
 		ch := make(chan prometheus.Metric)
 		defer close(ch)
 		assert.ErrorIs(t, collector.Collect(ch), ErrGeneratePricingMap)
@@ -258,7 +229,10 @@ func TestCollector_Collect(t *testing.T) {
 		collector := New(&Config{
 			Regions: regions,
 			Logger:  logger,
-		}, c)
+			RegionMap: map[string]client.Client{
+				"us-east-1": c,
+			},
+		})
 
 		ch := make(chan prometheus.Metric)
 		go func() {
@@ -344,7 +318,10 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 			collector := New(&Config{
 				Regions: tt.regions,
 				Logger:  logger,
-			}, c)
+				RegionMap: map[string]client.Client{
+					"af-south-1": c,
+				},
+			})
 
 			c.EXPECT().
 				ListStoragePrices(gomock.Any(), gomock.Any()).
@@ -372,7 +349,10 @@ func Test_FetchVolumesData(t *testing.T) {
 		collector := New(&Config{
 			Regions: []ec2Types.Region{region},
 			Logger:  logger,
-		}, c)
+			RegionMap: map[string]client.Client{
+				regionName: c,
+			},
+		})
 
 		c.EXPECT().
 			ListEBSVolumes(gomock.Any()).
@@ -390,7 +370,7 @@ func Test_FetchVolumesData(t *testing.T) {
 		wg := sync.WaitGroup{}
 		wg.Add(len(collector.Regions))
 		ch := make(chan []ec2Types.Volume)
-		go collector.fetchVolumesData(context.Background(), regionName, ch)
+		go collector.fetchVolumesData(context.Background(), c, regionName, ch)
 		go func() {
 			wg.Wait()
 			close(ch)
@@ -419,7 +399,10 @@ func Test_EmitMetricsFromVolumesChannel(t *testing.T) {
 		collector := New(&Config{
 			Regions: []ec2Types.Region{region},
 			Logger:  logger,
-		}, c)
+			RegionMap: map[string]client.Client{
+				regionName: c,
+			},
+		})
 
 		collector.storagePricingMap = &StoragePricingMap{
 			Regions: map[string]*StoragePricing{
