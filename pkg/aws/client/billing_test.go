@@ -54,7 +54,7 @@ func Test_getRegionFromKey(t *testing.T) {
 	for _, record := range records {
 		key, want := record[0], record[1]
 		got := getRegionFromKey(key)
-		mappedWant := billingToRegionMap[want]
+		mappedWant := BillingToRegionMap[want]
 		if mappedWant != got {
 			t.Fatalf("getRegionFromKey(%s) = %v, want %v", key, got, want)
 		}
