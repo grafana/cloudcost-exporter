@@ -67,8 +67,8 @@ const (
 )
 
 func New(ctx context.Context, config *Config) (*AWS, error) {
-	var collectors []provider.Collector
 	logger := config.Logger.With("provider", subsystem)
+
 	// There are two scenarios:
 	// 1. Running locally, the user must pass in a region and profile to use
 	// 2. Running within an EC2 instance and the region and profile can be derived
@@ -78,13 +78,18 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	awsClient, err := client.NewAWSClient(ctx,
 		client.WithRegion(config.Region),
 		client.WithProfile(config.Profile),
-		client.WithRoleARN(config.RoleARN))
+		client.WithRoleARN(config.RoleARN),
+	)
 
 	if err != nil {
 		return nil, err
 	}
 
-	var regions []types.Region
+	var (
+		regions    []types.Region
+		collectors []provider.Collector
+	)
+
 	for _, service := range config.Services {
 		service = strings.ToUpper(service)
 
