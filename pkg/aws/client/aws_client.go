@@ -12,8 +12,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-const maxRetryAttempts = 10
-
 type Config struct {
 	PricingService p.Pricing
 	EC2Service     e.EC2
