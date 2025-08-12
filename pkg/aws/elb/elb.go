@@ -25,7 +25,10 @@ import (
 )
 
 const (
-	subsystem = "aws_elb"
+	subsystem            = "aws_elb"
+	ALBHourlyRateDefault = 0.0225
+	NLBHourlyRateDefault = 0.0225
+	CLBHourlyRateDefault = 0.025
 )
 
 var (
@@ -237,13 +240,13 @@ func (c *Collector) fetchRegionPricing(region string) (*RegionPricing, error) {
 
 	// Set default rates if not found (fallback values)
 	if len(regionPricing.ALBHourlyRate) == 0 {
-		regionPricing.ALBHourlyRate["default"] = 0.0225 // Default ALB rate
+		regionPricing.ALBHourlyRate["default"] = ALBHourlyRateDefault // Default ALB rate
 	}
 	if len(regionPricing.NLBHourlyRate) == 0 {
-		regionPricing.NLBHourlyRate["default"] = 0.0225 // Default NLB rate
+		regionPricing.NLBHourlyRate["default"] = NLBHourlyRateDefault // Default NLB rate
 	}
 	if len(regionPricing.CLBHourlyRate) == 0 {
-		regionPricing.CLBHourlyRate["default"] = 0.025 // Default CLB rate
+		regionPricing.CLBHourlyRate["default"] = CLBHourlyRateDefault // Default CLB rate
 	}
 
 	return regionPricing, nil
