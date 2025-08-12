@@ -136,21 +136,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			// TODO: append new aws rds collectors next
 			// collectors = append(collectors, collector)
 		case serviceNATGW:
-			// Build a Cost Explorer client using the same region/profile settings
-			loadOpts := []func(*awsconfig.LoadOptions) error{
-				awsconfig.WithEC2IMDSRegion(),
-			}
-			if config.Profile != "" {
-				loadOpts = append(loadOpts, awsconfig.WithSharedConfigProfile(config.Profile))
-			}
-			if config.Region != "" {
-				loadOpts = append(loadOpts, awsconfig.WithRegion(config.Region))
-			}
-			acfg, err := awsconfig.LoadDefaultConfig(ctx, loadOpts...)
-			if err != nil {
-				return nil, fmt.Errorf("failed to load AWS config for NAT Gateway: %w", err)
-			}
-			ceClient := costexplorer.NewFromConfig(acfg)
+			ceClient := costexplorer.NewFromConfig(ac)
 			gwCollector := awsgwnat.New(config.ScrapeInterval, ceClient)
 			collectors = append(collectors, gwCollector)
 		default:
