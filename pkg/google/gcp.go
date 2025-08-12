@@ -7,12 +7,14 @@ import (
 	"sync"
 	"time"
 
+	billingv1 "cloud.google.com/go/billing/apiv1"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/prometheus/client_golang/prometheus"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
+	"github.com/grafana/cloudcost-exporter/pkg/google/natgateway"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
@@ -33,7 +35,7 @@ var (
 	)
 	collectorLastScrapeTime = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "last_scrape_time"),
-		"Time of the last scrape.W",
+		"Time of the last scrape.",
 		[]string{"provider", "collector"},
 		nil,
 	)
@@ -92,6 +94,24 @@ func New(config *Config) (*GCP, error) {
 				Logger:         config.Logger,
 				ScrapeInterval: config.ScrapeInterval,
 			}, gcpClient)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
+		case "NATGATEWAY":
+			cloudCatalogClient, err := billingv1.NewCloudCatalogClient(ctx)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating CloudCatalog client",
+					slog.String("message", err.Error()))
+				continue
+			}
+			collector, err = natgateway.New(&natgateway.Config{
+				ProjectId:      config.ProjectId,
+				Projects:       config.Projects,
+				ScrapeInterval: config.ScrapeInterval,
+			}, cloudCatalogClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
