@@ -31,4 +31,3 @@ func Retry(attempts int, initialDelay, maxDelay time.Duration, retryIf func(erro
 	}
 	return lastErr
 }
-

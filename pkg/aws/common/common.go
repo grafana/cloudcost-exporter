@@ -19,7 +19,7 @@ func ParseBilling(outputs []*awscostexplorer.GetCostAndUsageOutput, componentReS
 	for _, out := range outputs {
 		for _, r := range out.ResultsByTime {
 			for _, g := range r.Groups {
-				if g.Keys == nil || len(g.Keys) < 2 {
+				if len(g.Keys) < 2 {
 					continue
 				}
 				service := g.Keys[0]

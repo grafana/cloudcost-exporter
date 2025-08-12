@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -17,7 +18,7 @@ func GetServiceName(ctx context.Context, cc *billingv1.CloudCatalogClient, displ
 	for {
 		svc, err := it.Next()
 		if err != nil {
-			if err == iterator.Done {
+			if errors.Is(err, iterator.Done) {
 				break
 			}
 			return "", err
@@ -36,7 +37,7 @@ func GetPricing(ctx context.Context, cc *billingv1.CloudCatalogClient, serviceNa
 	for {
 		sku, err := it.Next()
 		if err != nil {
-			if err == iterator.Done {
+			if errors.Is(err, iterator.Done) {
 				break
 			}
 			// TODO(jjo): use slog
