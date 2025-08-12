@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	awsPricing "github.com/aws/aws-sdk-go-v2/service/pricing"
 	rds2 "github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -21,11 +22,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/elb"
 	awsgwnat "github.com/grafana/cloudcost-exporter/pkg/aws/natgateway"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/rds"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
+	elbv2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/elbv2"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
@@ -74,12 +77,13 @@ const (
 	serviceEC2   = "EC2"
 	serviceRDS   = "RDS"
 	serviceNATGW = "NATGATEWAY"
+	serviceELB   = "ELB"
 )
 
 func New(ctx context.Context, config *Config) (*AWS, error) {
 	var collectors []provider.Collector
-	logger := config.Logger.With("provider", subsystem)
 
+	logger := config.Logger.With("provider", subsystem)
 	// There are two scenarios:
 	// 1. Running locally, the user must pass in a region and profile to use
 	// 2. Running within an EC2 instance and the region and profile can be derived
@@ -90,20 +94,18 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	awsClient := client.NewAWSClient(client.Config{
 		PricingService: awsPricing.NewFromConfig(ac),
 		EC2Service:     ec2.NewFromConfig(ac),
 		BillingService: costexplorer.NewFromConfig(ac),
 		RDSService:     rds2.NewFromConfig(ac),
 	})
-
 	var regions []types.Region
 	for _, service := range config.Services {
 		service = strings.ToUpper(service)
 
 		// region API is shared between EC2, RDS, and NATGW
-		if service == serviceRDS || service == serviceEC2 || service == serviceNATGW {
+		if service == serviceRDS || service == serviceEC2 || service == serviceNATGW || service == serviceELB {
 			regions, err = awsClient.DescribeRegions(ctx, false)
 			if err != nil {
 				return nil, fmt.Errorf("error getting regions: %w", err)
@@ -144,6 +146,27 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 				RegionMap:      awsClientPerRegion,
 			})
 			collectors = append(collectors, natGwCollector)
+		case serviceELB:
+			regionClientMap := make(map[string]elbv2client.ELBv2)
+			for _, region := range regions {
+				logger.LogAttrs(ctx, slog.LevelInfo, "creating elbv2 client",
+					slog.String("region", *region.RegionName),
+					slog.String("profile", config.Profile),
+					slog.String("roleARN", config.RoleARN),
+				)
+				client, err := newELBv2Client(*region.RegionName, config.Profile, config.RoleARN)
+				if err != nil {
+					return nil, fmt.Errorf("error creating elbv2 client: %w", err)
+				}
+				regionClientMap[*region.RegionName] = client
+			}
+			collector := elb.New(&elb.Config{
+				Regions:        regions,
+				RegionClients:  regionClientMap,
+				ScrapeInterval: config.ScrapeInterval,
+				Logger:         logger,
+			}, awsClient)
+			collectors = append(collectors, collector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",
 				slog.String("service", service),
@@ -224,6 +247,31 @@ func newRegionClientMap(ctx context.Context, globalConfig aws.Config, regions []
 	}
 
 	return awsClientPerRegion, nil
+}
+
+func newELBv2Client(region, profile, roleARN string) (*elasticloadbalancingv2.Client, error) {
+	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
+	maxRetryAttempts := 10
+	options = append(options, awsconfig.WithRegion(region))
+	if profile != "" {
+		options = append(options, awsconfig.WithSharedConfigProfile(profile))
+	}
+	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
+
+	if roleARN != "" {
+		roleOption, err := assumeRole(roleARN, options)
+		if err != nil {
+			return nil, err
+		}
+		options = append(options, roleOption)
+	}
+
+	cfg, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
+	if err != nil {
+		return nil, err
+	}
+
+	return elasticloadbalancingv2.NewFromConfig(cfg), nil
 }
 
 func createAWSConfig(ctx context.Context, region, profile, roleARN string) (aws.Config, error) {
