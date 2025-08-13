@@ -9,17 +9,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
-	"github.com/aws/aws-sdk-go-v2/service/pricing"
-	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	elbv2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/elbv2"
-	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
@@ -45,7 +42,7 @@ type Collector struct {
 	Regions          []ec2Types.Region
 	ScrapeInterval   time.Duration
 	pricingMap       *ELBPricingMap
-	pricingService   pricingClient.Pricing
+	client           client.Client
 	NextScrape       time.Time
 	elbRegionClients map[string]elbv2client.ELBv2
 	logger           *slog.Logger
@@ -84,11 +81,11 @@ type elbProduct struct {
 	}
 }
 
-func New(config *Config, ps pricingClient.Pricing) *Collector {
+func New(config *Config, client client.Client) *Collector {
 	return &Collector{
 		Regions:          config.Regions,
 		ScrapeInterval:   config.ScrapeInterval,
-		pricingService:   ps,
+		client:           client,
 		elbRegionClients: config.RegionClients,
 		logger:           config.Logger,
 		pricingMap:       NewELBPricingMap(),
@@ -164,7 +161,7 @@ func (c *Collector) refreshPricing() error {
 	for _, region := range c.Regions {
 		region := region
 		eg.Go(func() error {
-			pricing, err := c.fetchRegionPricing(*region.RegionName)
+			pricing, err := c.fetchRegionPricing(context.Background(), *region.RegionName)
 			if err != nil {
 				return fmt.Errorf("failed to fetch pricing for region %s: %w", *region.RegionName, err)
 			}
@@ -180,31 +177,14 @@ func (c *Collector) refreshPricing() error {
 	return eg.Wait()
 }
 
-func (c *Collector) fetchRegionPricing(region string) (*RegionPricing, error) {
+func (c *Collector) fetchRegionPricing(ctx context.Context, region string) (*RegionPricing, error) {
 	regionPricing := &RegionPricing{
 		ALBHourlyRate: make(map[string]float64),
 		NLBHourlyRate: make(map[string]float64),
 		CLBHourlyRate: make(map[string]float64),
 	}
 
-	// Fetch ELB pricing from AWS Pricing API
-	input := &pricing.GetProductsInput{
-		ServiceCode: aws.String("AmazonEC2"),
-		Filters: []pricingTypes.Filter{
-			{
-				Field: aws.String("regionCode"),
-				Type:  pricingTypes.FilterTypeTermMatch,
-				Value: aws.String(region),
-			},
-			{
-				Field: aws.String("productFamily"),
-				Type:  pricingTypes.FilterTypeTermMatch,
-				Value: aws.String("Load Balancer"),
-			},
-		},
-	}
-
-	prices, err := c.getPricesFromProductList(context.Background(), input)
+	prices, err := c.client.ListELBPrices(ctx, region)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ELB pricing: %w", err)
 	}
@@ -240,38 +220,19 @@ func (c *Collector) fetchRegionPricing(region string) (*RegionPricing, error) {
 
 	// Set default rates if not found (fallback values)
 	if len(regionPricing.ALBHourlyRate) == 0 {
+		c.logger.Warn("No ALB pricing data available for region", "region", region)
 		regionPricing.ALBHourlyRate["default"] = ALBHourlyRateDefault // Default ALB rate
 	}
 	if len(regionPricing.NLBHourlyRate) == 0 {
+		c.logger.Warn("No NLB pricing data available for region", "region", region)
 		regionPricing.NLBHourlyRate["default"] = NLBHourlyRateDefault // Default NLB rate
 	}
 	if len(regionPricing.CLBHourlyRate) == 0 {
+		c.logger.Warn("No CLB pricing data available for region", "region", region)
 		regionPricing.CLBHourlyRate["default"] = CLBHourlyRateDefault // Default CLB rate
 	}
 
 	return regionPricing, nil
-}
-
-func (c *Collector) getPricesFromProductList(ctx context.Context, input *pricing.GetProductsInput) ([]string, error) {
-	var productOutputs []string
-
-	for {
-		products, err := c.pricingService.GetProducts(ctx, input)
-		if err != nil {
-			return productOutputs, err
-		}
-
-		if products == nil {
-			break
-		}
-
-		productOutputs = append(productOutputs, products.PriceList...)
-		if products.NextToken == nil || *products.NextToken == "" {
-			break
-		}
-		input.NextToken = products.NextToken
-	}
-	return productOutputs, nil
 }
 
 func (c *Collector) collectLoadBalancers() ([]LoadBalancerInfo, error) {
