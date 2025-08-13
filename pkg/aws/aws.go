@@ -136,8 +136,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			// TODO: append new aws rds collectors next
 			// collectors = append(collectors, collector)
 		case serviceNATGW:
-			ceClient := costexplorer.NewFromConfig(ac)
-			gwCollector := awsgwnat.New(config.ScrapeInterval, ceClient)
+			gwCollector := awsgwnat.New(config.ScrapeInterval, awsClient)
 			collectors = append(collectors, gwCollector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",

@@ -75,7 +75,7 @@ func TestCollector_Collect(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
 		nextScrape     time.Time
-		GetBillingData func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error)
+		GetBillingData func(ctx context.Context, startDate time.Time, endDate time.Time, serviceName string) (*client.BillingData, error)
 
 		// metricNames can be nil to check all metrics, or a set of strings form an allow list of metrics to check.
 		metricNames        []string
@@ -85,7 +85,7 @@ func TestCollector_Collect(t *testing.T) {
 		{
 			name:       "cost and usage error is bubbled-up",
 			nextScrape: timeInPast,
-			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
+			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time, serviceName string) (*client.BillingData, error) {
 				return nil, fmt.Errorf("test cost and usage error")
 			},
 			expectedResponse: 0.0,
@@ -94,7 +94,7 @@ func TestCollector_Collect(t *testing.T) {
 			name:             "cost and usage output - three results with keys and valid region without a hyphen",
 			nextScrape:       timeInPast,
 			expectedResponse: 1.0,
-			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
+			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time, serviceName string) (*client.BillingData, error) {
 				return &client.BillingData{Regions: map[string]*client.PricingModel{
 					"ap-northeast-1": {
 						Model: map[string]*client.Pricing{
@@ -128,7 +128,7 @@ cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage"
 			name:             "cost and usage output - results with two pages",
 			nextScrape:       timeInPast,
 			expectedResponse: 1.0,
-			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
+			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time, serviceName string) (*client.BillingData, error) {
 				return &client.BillingData{Regions: map[string]*client.PricingModel{
 					"ap-northeast-1": {
 						Model: map[string]*client.Pricing{
@@ -156,7 +156,7 @@ cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",
 			name:             "cost and usage output - result with nil amount",
 			nextScrape:       timeInPast,
 			expectedResponse: 1.0,
-			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
+			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time, serviceName string) (*client.BillingData, error) {
 				return &client.BillingData{Regions: map[string]*client.PricingModel{
 					"ap-northeast-1": {
 						Model: map[string]*client.Pricing{
@@ -178,7 +178,7 @@ cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",
 			name:             "cost and usage output - result with invalid amount",
 			nextScrape:       timeInPast,
 			expectedResponse: 1.0,
-			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
+			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time, serviceName string) (*client.BillingData, error) {
 				return &client.BillingData{Regions: map[string]*client.PricingModel{
 					"ap-northeast-1": {
 						Model: map[string]*client.Pricing{
@@ -203,7 +203,7 @@ cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",
 			name:             "cost and usage output - result with nil unit",
 			nextScrape:       timeInPast,
 			expectedResponse: 1.0,
-			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
+			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time, serviceName string) (*client.BillingData, error) {
 				return &client.BillingData{Regions: map[string]*client.PricingModel{
 					"ap-northeast-1": {
 						Model: map[string]*client.Pricing{
@@ -227,7 +227,7 @@ cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",
 			name:             "cost and usage output - result with valid amount and unit",
 			nextScrape:       timeInPast,
 			expectedResponse: 1.0,
-			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
+			GetBillingData: func(ctx context.Context, startDate time.Time, endDate time.Time, serviceName string) (*client.BillingData, error) {
 				return &client.BillingData{Regions: map[string]*client.PricingModel{
 					"ap-northeast-1": {
 						Model: map[string]*client.Pricing{
@@ -272,7 +272,7 @@ cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage"
 			}
 			if tc.GetBillingData != nil {
 				client.EXPECT().
-					GetBillingData(gomock.Any(), gomock.Any(), gomock.Any()).
+					GetBillingData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 					DoAndReturn(tc.GetBillingData).
 					Times(1)
 			}
@@ -303,7 +303,7 @@ func TestCollector_MultipleCalls(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		ce := mock_client.NewMockClient(ctrl)
 		ce.EXPECT().
-			GetBillingData(gomock.Any(), gomock.Any(), gomock.Any()).
+			GetBillingData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(&client.BillingData{}, nil)
 
 		c := &Collector{
@@ -349,7 +349,7 @@ func TestCollector_MultipleCalls(t *testing.T) {
 		goroutines := 10
 		collectCalls := 1000
 		ce.EXPECT().
-			GetBillingData(gomock.Any(), gomock.Any(), gomock.Any()).
+			GetBillingData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(getCostAndUsage).
 			Times(goroutines * collectCalls)
 

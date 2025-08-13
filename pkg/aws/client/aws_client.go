@@ -42,8 +42,8 @@ func (c *AWSClient) Metrics() []prometheus.Collector {
 	return []prometheus.Collector{c.metrics.RequestCount, c.metrics.RequestErrorsCount}
 }
 
-func (c *AWSClient) GetBillingData(ctx context.Context, startDate time.Time, endDate time.Time) (*BillingData, error) {
-	return c.billing.getBillingData(ctx, startDate, endDate)
+func (c *AWSClient) GetBillingData(ctx context.Context, startDate time.Time, endDate time.Time, serviceName string) (*BillingData, error) {
+	return c.billing.getBillingData(ctx, startDate, endDate, serviceName)
 }
 
 func (c *AWSClient) DescribeRegions(ctx context.Context, allRegions bool) ([]types.Region, error) {

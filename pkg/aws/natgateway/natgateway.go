@@ -16,7 +16,6 @@ import (
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	awsclient "github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/common"
-	"github.com/grafana/cloudcost-exporter/pkg/aws/services/costexplorer"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
@@ -64,15 +63,15 @@ func NewMetrics() Metrics {
 
 // Collector implements provider.Collector for AWS NAT Gateway
 type Collector struct {
-	client     costexplorer.CostExplorer
-	interval   time.Duration
-	nextScrape time.Time
-	metrics    Metrics
-	billing    *awsclient.BillingData
-	m          sync.RWMutex
+	client      awsclient.Client
+	interval    time.Duration
+	nextScrape  time.Time
+	metrics     Metrics
+	billingData *awsclient.BillingData
+	m           sync.RWMutex
 }
 
-func New(scrapeInterval time.Duration, client costexplorer.CostExplorer) *Collector {
+func New(scrapeInterval time.Duration, client awsclient.Client) *Collector {
 	return &Collector{
 		client:     client,
 		interval:   scrapeInterval,
@@ -110,24 +109,24 @@ func (c *Collector) collectInternal() float64 {
 	c.m.Lock()
 	defer c.m.Unlock()
 	now := time.Now()
-	if c.billing == nil || now.After(c.nextScrape) {
+	if c.billingData == nil || now.After(c.nextScrape) {
 		endDate := time.Now().AddDate(0, 0, -1)
 		startDate := endDate.AddDate(0, 0, -30)
-		billing, err := getBillingData(c.client, startDate, endDate, c.metrics)
+		billingData, err := c.client.GetBillingData(context.Background(), startDate, endDate, "Amazon NAT Gateway")
 		if err != nil {
 			log.Printf("Error getting NAT Gateway billing data: %v\n", err)
 			return 0
 		}
-		c.billing = billing
+		c.billingData = billingData
 		c.nextScrape = time.Now().Add(c.interval)
 		c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
 	}
-	exportMetrics(c.billing, c.metrics)
+	exportMetrics(c.billingData, c.metrics)
 	return 1
 }
 
 // Billing structures now reuse the shared AWS client types.
-func getBillingData(client costexplorer.CostExplorer, startDate, endDate time.Time, m Metrics) (*awsclient.BillingData, error) {
+func getBillingData(client awsclient.Client, startDate, endDate time.Time, m Metrics) (*awsclient.BillingData, error) {
 	input := &awscostexplorer.GetCostAndUsageInput{
 		TimePeriod:  &types.DateInterval{Start: aws.String(startDate.Format("2006-01-02")), End: aws.String(endDate.Format("2006-01-02"))},
 		Granularity: types.GranularityDaily,

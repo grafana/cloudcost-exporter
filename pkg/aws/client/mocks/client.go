@@ -60,18 +60,18 @@ func (mr *MockClientMockRecorder) DescribeRegions(ctx, allRegions any) *gomock.C
 }
 
 // GetBillingData mocks base method.
-func (m *MockClient) GetBillingData(ctx context.Context, startDate, endDate time.Time) (*client.BillingData, error) {
+func (m *MockClient) GetBillingData(ctx context.Context, startDate, endDate time.Time, serviceName string) (*client.BillingData, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetBillingData", ctx, startDate, endDate)
+	ret := m.ctrl.Call(m, "GetBillingData", ctx, startDate, endDate, serviceName)
 	ret0, _ := ret[0].(*client.BillingData)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetBillingData indicates an expected call of GetBillingData.
-func (mr *MockClientMockRecorder) GetBillingData(ctx, startDate, endDate any) *gomock.Call {
+func (mr *MockClientMockRecorder) GetBillingData(ctx, startDate, endDate, serviceName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBillingData", reflect.TypeOf((*MockClient)(nil).GetBillingData), ctx, startDate, endDate)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBillingData", reflect.TypeOf((*MockClient)(nil).GetBillingData), ctx, startDate, endDate, serviceName)
 }
 
 // ListComputeInstances mocks base method.

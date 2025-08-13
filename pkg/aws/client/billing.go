@@ -24,8 +24,8 @@ func newBilling(costExplorerService cost.CostExplorer, m *Metrics) *billing {
 	}
 }
 
-func (b *billing) getBillingData(ctx context.Context, startDate time.Time, endDate time.Time) (*BillingData, error) {
-	log.Printf("Getting billing data for %s to %s\n", startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
+func (b *billing) getBillingData(ctx context.Context, startDate time.Time, endDate time.Time, serviceName string) (*BillingData, error) {
+	log.Printf("Getting billing data for %s to %s for %s\n", startDate.Format("2006-01-02"), endDate.Format("2006-01-02"), serviceName)
 	input := &costexplorer.GetCostAndUsageInput{
 		TimePeriod: &types.DateInterval{
 			Start: aws.String(startDate.Format("2006-01-02")), // Specify the start date
@@ -43,7 +43,7 @@ func (b *billing) getBillingData(ctx context.Context, startDate time.Time, endDa
 		Filter: &types.Expression{
 			Dimensions: &types.DimensionValues{
 				Key:    types.DimensionService,
-				Values: []string{"Amazon Simple Storage Service"},
+				Values: []string{serviceName},
 			},
 		},
 	}
