@@ -20,6 +20,7 @@ type Client interface {
 	ListOnDemandPrices(ctx context.Context, region string) ([]string, error)
 	ListStoragePrices(ctx context.Context, region string) ([]string, error)
 	ListEC2ServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error)
+	ListELBPrices(ctx context.Context, region string) ([]string, error)
 
 	// TODO: Break out Metrics into an independent interface
 	Metrics() []prometheus.Collector

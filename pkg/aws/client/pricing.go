@@ -9,6 +9,7 @@ import (
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	awsPricing "github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/aws/aws-sdk-go-v2/service/pricing/types"
+	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 )
@@ -143,6 +144,43 @@ func (p *pricing) listEC2ServicePrices(ctx context.Context, region string, filte
 	input.Filters = append(input.Filters, filters...)
 
 	return p.getPricesFromProductList(ctx, input)
+}
+
+func (p *pricing) listELBPrices(ctx context.Context, region string) ([]string, error) {
+	// Fetch ELB pricing from AWS Pricing API
+	input := &awsPricing.GetProductsInput{
+		ServiceCode: aws.String("AmazonEC2"),
+		Filters: []pricingTypes.Filter{
+			{
+				Field: aws.String("regionCode"),
+				Type:  pricingTypes.FilterTypeTermMatch,
+				Value: aws.String(region),
+			},
+			{
+				Field: aws.String("productFamily"),
+				Type:  pricingTypes.FilterTypeTermMatch,
+				Value: aws.String("Load Balancer"),
+			},
+		},
+	}
+	var productOutputs []string
+	for {
+		products, err := p.client.GetProducts(ctx, input)
+		if err != nil {
+			return productOutputs, err
+		}
+
+		if products == nil {
+			break
+		}
+
+		productOutputs = append(productOutputs, products.PriceList...)
+		if products.NextToken == nil || *products.NextToken == "" {
+			break
+		}
+		input.NextToken = products.NextToken
+	}
+	return productOutputs, nil
 }
 
 func (p *pricing) getPricesFromProductList(ctx context.Context, input *awsPricing.GetProductsInput) ([]string, error) {

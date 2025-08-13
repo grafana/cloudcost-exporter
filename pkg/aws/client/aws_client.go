@@ -74,3 +74,7 @@ func (c *AWSClient) ListStoragePrices(ctx context.Context, region string) ([]str
 func (c *AWSClient) ListEC2ServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
 	return c.priceService.listEC2ServicePrices(ctx, region, filters)
 }
+
+func (c *AWSClient) ListELBPrices(ctx context.Context, region string) ([]string, error) {
+	return c.priceService.listELBPrices(ctx, region)
+}
