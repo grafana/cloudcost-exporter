@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	ceTypes "github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	c "github.com/grafana/cloudcost-exporter/pkg/aws/services/costexplorer"
@@ -42,8 +43,8 @@ func (c *AWSClient) Metrics() []prometheus.Collector {
 	return []prometheus.Collector{c.metrics.RequestCount, c.metrics.RequestErrorsCount}
 }
 
-func (c *AWSClient) GetBillingData(ctx context.Context, startDate time.Time, endDate time.Time, serviceName string) (*BillingData, error) {
-	return c.billing.getBillingData(ctx, startDate, endDate, serviceName)
+func (c *AWSClient) GetBillingData(ctx context.Context, startDate time.Time, endDate time.Time, filterKey ceTypes.Dimension, filterValue string) (*BillingData, error) {
+	return c.billing.getBillingData(ctx, startDate, endDate, filterKey, filterValue)
 }
 
 func (c *AWSClient) DescribeRegions(ctx context.Context, allRegions bool) ([]types.Region, error) {

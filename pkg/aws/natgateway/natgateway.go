@@ -8,16 +8,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awscostexplorer "github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/prometheus/client_golang/prometheus"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	awsclient "github.com/grafana/cloudcost-exporter/pkg/aws/client"
-	"github.com/grafana/cloudcost-exporter/pkg/aws/common"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
-	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 const (
@@ -112,7 +108,7 @@ func (c *Collector) collectInternal() float64 {
 	if c.billingData == nil || now.After(c.nextScrape) {
 		endDate := time.Now().AddDate(0, 0, -1)
 		startDate := endDate.AddDate(0, 0, -30)
-		billingData, err := c.client.GetBillingData(context.Background(), startDate, endDate, "Amazon NAT Gateway")
+		billingData, err := c.client.GetBillingData(context.Background(), startDate, endDate, types.DimensionService, "EC2")
 		if err != nil {
 			log.Printf("Error getting NAT Gateway billing data: %v\n", err)
 			return 0
@@ -125,44 +121,44 @@ func (c *Collector) collectInternal() float64 {
 	return 1
 }
 
-// Billing structures now reuse the shared AWS client types.
-func getBillingData(client awsclient.Client, startDate, endDate time.Time, m Metrics) (*awsclient.BillingData, error) {
-	input := &awscostexplorer.GetCostAndUsageInput{
-		TimePeriod:  &types.DateInterval{Start: aws.String(startDate.Format("2006-01-02")), End: aws.String(endDate.Format("2006-01-02"))},
-		Granularity: types.GranularityDaily,
-		Metrics:     []string{"UsageQuantity", "UnblendedCost"},
-		GroupBy: []types.GroupDefinition{
-			{Type: types.GroupDefinitionTypeDimension, Key: aws.String("SERVICE")},
-			{Type: types.GroupDefinitionTypeDimension, Key: aws.String("USAGE_TYPE")},
-		},
-	}
-	var outputs []*awscostexplorer.GetCostAndUsageOutput
-	for {
-		var out *awscostexplorer.GetCostAndUsageOutput
-		// Use generic retry with exponential backoff for BillExpirationException
-		err := utils.Retry(5, 200*time.Millisecond, 3*time.Second, func(err error) bool {
-			return common.IsBillExpirationError(err)
-		}, func() error {
-			m.RequestCount.Inc()
-			resp, err := client.GetCostAndUsage(context.TODO(), input)
-			if err != nil {
-				m.RequestErrorsCount.Inc()
-				return err
-			}
-			out = resp
-			return nil
-		})
-		if err != nil {
-			return &awsclient.BillingData{}, err
-		}
-		outputs = append(outputs, out)
-		if out.NextPageToken == nil {
-			break
-		}
-		input.NextPageToken = out.NextPageToken
-	}
-	return common.ParseBilling(outputs, "(?i)natgateway"), nil
-}
+// // Billing structures now reuse the shared AWS client types.
+// func getBillingData(client awsclient.Client, startDate, endDate time.Time, m Metrics) (*awsclient.BillingData, error) {
+// 	input := &awscostexplorer.GetCostAndUsageInput{
+// 		TimePeriod:  &types.DateInterval{Start: aws.String(startDate.Format("2006-01-02")), End: aws.String(endDate.Format("2006-01-02"))},
+// 		Granularity: types.GranularityDaily,
+// 		Metrics:     []string{"UsageQuantity", "UnblendedCost"},
+// 		GroupBy: []types.GroupDefinition{
+// 			{Type: types.GroupDefinitionTypeDimension, Key: aws.String("SERVICE")},
+// 			{Type: types.GroupDefinitionTypeDimension, Key: aws.String("USAGE_TYPE")},
+// 		},
+// 	}
+// 	var outputs []*awscostexplorer.GetCostAndUsageOutput
+// 	for {
+// 		var out *awscostexplorer.GetCostAndUsageOutput
+// 		// Use generic retry with exponential backoff for BillExpirationException
+// 		err := utils.Retry(5, 200*time.Millisecond, 3*time.Second, func(err error) bool {
+// 			return common.IsBillExpirationError(err)
+// 		}, func() error {
+// 			m.RequestCount.Inc()
+// 			resp, err := client.GetCostAndUsage(context.TODO(), input)
+// 			if err != nil {
+// 				m.RequestErrorsCount.Inc()
+// 				return err
+// 			}
+// 			out = resp
+// 			return nil
+// 		})
+// 		if err != nil {
+// 			return &awsclient.BillingData{}, err
+// 		}
+// 		outputs = append(outputs, out)
+// 		if out.NextPageToken == nil {
+// 			break
+// 		}
+// 		input.NextPageToken = out.NextPageToken
+// 	}
+// 	return common.ParseBilling(outputs, "(?i)natgateway"), nil
+// }
 
 func exportMetrics(b *awsclient.BillingData, m Metrics) {
 	for region, model := range b.Regions {

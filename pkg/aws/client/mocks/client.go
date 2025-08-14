@@ -14,7 +14,8 @@ import (
 	reflect "reflect"
 	time "time"
 
-	types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	types "github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
+	types0 "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	client "github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	prometheus "github.com/prometheus/client_golang/prometheus"
 	gomock "go.uber.org/mock/gomock"
@@ -45,10 +46,10 @@ func (m *MockClient) EXPECT() *MockClientMockRecorder {
 }
 
 // DescribeRegions mocks base method.
-func (m *MockClient) DescribeRegions(ctx context.Context, allRegions bool) ([]types.Region, error) {
+func (m *MockClient) DescribeRegions(ctx context.Context, allRegions bool) ([]types0.Region, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DescribeRegions", ctx, allRegions)
-	ret0, _ := ret[0].([]types.Region)
+	ret0, _ := ret[0].([]types0.Region)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -60,25 +61,25 @@ func (mr *MockClientMockRecorder) DescribeRegions(ctx, allRegions any) *gomock.C
 }
 
 // GetBillingData mocks base method.
-func (m *MockClient) GetBillingData(ctx context.Context, startDate, endDate time.Time, serviceName string) (*client.BillingData, error) {
+func (m *MockClient) GetBillingData(ctx context.Context, startDate, endDate time.Time, filterKey types.Dimension, filterValue string) (*client.BillingData, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetBillingData", ctx, startDate, endDate, serviceName)
+	ret := m.ctrl.Call(m, "GetBillingData", ctx, startDate, endDate, filterKey, filterValue)
 	ret0, _ := ret[0].(*client.BillingData)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetBillingData indicates an expected call of GetBillingData.
-func (mr *MockClientMockRecorder) GetBillingData(ctx, startDate, endDate, serviceName any) *gomock.Call {
+func (mr *MockClientMockRecorder) GetBillingData(ctx, startDate, endDate, filterKey, filterValue any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBillingData", reflect.TypeOf((*MockClient)(nil).GetBillingData), ctx, startDate, endDate, serviceName)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBillingData", reflect.TypeOf((*MockClient)(nil).GetBillingData), ctx, startDate, endDate, filterKey, filterValue)
 }
 
 // ListComputeInstances mocks base method.
-func (m *MockClient) ListComputeInstances(ctx context.Context) ([]types.Reservation, error) {
+func (m *MockClient) ListComputeInstances(ctx context.Context) ([]types0.Reservation, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListComputeInstances", ctx)
-	ret0, _ := ret[0].([]types.Reservation)
+	ret0, _ := ret[0].([]types0.Reservation)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -90,10 +91,10 @@ func (mr *MockClientMockRecorder) ListComputeInstances(ctx any) *gomock.Call {
 }
 
 // ListEBSVolumes mocks base method.
-func (m *MockClient) ListEBSVolumes(ctx context.Context) ([]types.Volume, error) {
+func (m *MockClient) ListEBSVolumes(ctx context.Context) ([]types0.Volume, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListEBSVolumes", ctx)
-	ret0, _ := ret[0].([]types.Volume)
+	ret0, _ := ret[0].([]types0.Volume)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -120,10 +121,10 @@ func (mr *MockClientMockRecorder) ListOnDemandPrices(ctx, region any) *gomock.Ca
 }
 
 // ListSpotPrices mocks base method.
-func (m *MockClient) ListSpotPrices(ctx context.Context) ([]types.SpotPrice, error) {
+func (m *MockClient) ListSpotPrices(ctx context.Context) ([]types0.SpotPrice, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListSpotPrices", ctx)
-	ret0, _ := ret[0].([]types.SpotPrice)
+	ret0, _ := ret[0].([]types0.SpotPrice)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

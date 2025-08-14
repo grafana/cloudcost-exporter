@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	ceTypes "github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -11,7 +12,7 @@ import (
 //go:generate mockgen -source=client.go -destination mocks/client.go
 
 type Client interface {
-	GetBillingData(ctx context.Context, startDate time.Time, endDate time.Time, serviceName string) (*BillingData, error)
+	GetBillingData(ctx context.Context, startDate time.Time, endDate time.Time, filterKey ceTypes.Dimension, filterValue string) (*BillingData, error)
 	DescribeRegions(ctx context.Context, allRegions bool) ([]types.Region, error)
 	ListComputeInstances(ctx context.Context) ([]types.Reservation, error)
 	ListEBSVolumes(ctx context.Context) ([]types.Volume, error)

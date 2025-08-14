@@ -2,13 +2,17 @@ package client
 
 import (
 	"context"
+	"errors"
 	"log"
 	"strings"
 	"time"
 
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
+	"github.com/aws/smithy-go"
 	cost "github.com/grafana/cloudcost-exporter/pkg/aws/services/costexplorer"
 )
 
@@ -24,34 +28,27 @@ func newBilling(costExplorerService cost.CostExplorer, m *Metrics) *billing {
 	}
 }
 
-func (b *billing) getBillingData(ctx context.Context, startDate time.Time, endDate time.Time, serviceName string) (*BillingData, error) {
-	log.Printf("Getting billing data for %s to %s for %s\n", startDate.Format("2006-01-02"), endDate.Format("2006-01-02"), serviceName)
-	input := &costexplorer.GetCostAndUsageInput{
-		TimePeriod: &types.DateInterval{
-			Start: aws.String(startDate.Format("2006-01-02")), // Specify the start date
-			End:   aws.String(endDate.Format("2006-01-02")),   // Specify the end date
-		},
-		Granularity: types.GranularityDaily,
-		Metrics:     []string{"UsageQuantity", "UnblendedCost"},
-		// NB: You can only pass in one USAGE_TYPE per query
-		GroupBy: []types.GroupDefinition{
-			{
-				Type: types.GroupDefinitionTypeDimension,
-				Key:  aws.String("USAGE_TYPE"),
-			},
-		},
-		Filter: &types.Expression{
-			Dimensions: &types.DimensionValues{
-				Key:    types.DimensionService,
-				Values: []string{serviceName},
-			},
-		},
-	}
+func (b *billing) getBillingData(ctx context.Context, startDate time.Time, endDate time.Time, filterKey types.Dimension, filterValue string) (*BillingData, error) {
+	input := makeCostAndUsageInput(startDate, endDate, filterKey, filterValue)
 
 	var outputs []*costexplorer.GetCostAndUsageOutput
 	for {
-		b.m.RequestCount.Inc()
-		output, err := b.costExplorerService.GetCostAndUsage(ctx, input)
+		var output *costexplorer.GetCostAndUsageOutput
+		// Use generic retry with exponential backoff for BillExpirationException
+		err := utils.Retry(5, 200*time.Millisecond, 3*time.Second, func(err error) bool {
+			return isBillExpirationError(err)
+		}, func() error {
+			b.m.RequestCount.Inc()
+			log.Printf("Getting billing data for %s to %s for %s=%s\n", startDate.Format("2006-01-02"), endDate.Format("2006-01-02"), filterKey, filterValue)
+			resp, err := b.costExplorerService.GetCostAndUsage(ctx, input)
+			if err != nil {
+				log.Printf("Error getting cost and usage: %v\n", err)
+				b.m.RequestErrorsCount.Inc()
+				return err
+			}
+			output = resp
+			return nil
+		})
 		if err != nil {
 			log.Printf("Error getting cost and usage: %v\n", err)
 			b.m.RequestErrorsCount.Inc()
@@ -136,4 +133,41 @@ func getComponentFromKey(key string) string {
 		val += "-" + split[2]
 	}
 	return val
+}
+
+// isBillExpirationError determines whether the error returned by Cost Explorer
+// indicates that the bill changed during pagination and the request should be retried.
+func isBillExpirationError(err error) bool {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		if apiErr.ErrorCode() == "BillExpirationException" {
+			return true
+		}
+	}
+	// Fallback on message substring in case the error is not typed
+	return strings.Contains(strings.ToLower(err.Error()), "bill has been updated since last call")
+}
+
+func makeCostAndUsageInput(startDate time.Time, endDate time.Time, filterKey types.Dimension, filterValue string) *costexplorer.GetCostAndUsageInput {
+	return &costexplorer.GetCostAndUsageInput{
+		TimePeriod: &types.DateInterval{
+			Start: aws.String(startDate.Format("2006-01-02")), // Specify the start date
+			End:   aws.String(endDate.Format("2006-01-02")),   // Specify the end date
+		},
+		Granularity: types.GranularityDaily,
+		Metrics:     []string{"UsageQuantity", "UnblendedCost"},
+		// NB: You can only pass in one USAGE_TYPE per query
+		GroupBy: []types.GroupDefinition{
+			{
+				Type: types.GroupDefinitionTypeDimension,
+				Key:  aws.String("USAGE_TYPE"),
+			},
+		},
+		Filter: &types.Expression{
+			Dimensions: &types.DimensionValues{
+				Key:    filterKey,
+				Values: []string{filterValue},
+			},
+		},
+	}
 }

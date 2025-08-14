@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -120,7 +121,7 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 		endDate := time.Now().AddDate(0, 0, -1)
 		// Current assumption is that we're going to pull 30 days worth of billing data
 		startDate := endDate.AddDate(0, 0, -30)
-		billingData, err := c.client.GetBillingData(context.Background(), startDate, endDate, "Amazon Simple Storage Service")
+		billingData, err := c.client.GetBillingData(context.Background(), startDate, endDate, types.DimensionService, "Amazon Simple Storage Service")
 		if err != nil {
 			log.Printf("Error getting billing data: %v\n", err)
 			return 0
