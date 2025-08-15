@@ -2,16 +2,13 @@ package natgateway
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/sync/errgroup"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	awsclient "github.com/grafana/cloudcost-exporter/pkg/aws/client"
@@ -26,10 +23,6 @@ const (
 
 var (
 	subsystem = fmt.Sprintf("aws_%s", serviceName)
-
-	ErrListPrices         = errors.New("error listing prices")
-	ErrClientNotFound     = errors.New("no client found")
-	ErrGeneratePricingMap = errors.New("error generating pricing map")
 
 	HourlyGaugeDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
@@ -52,12 +45,7 @@ type Collector struct {
 	// Collector fields
 	scrapeInterval time.Duration
 	nextScrape     time.Time
-
-	// Pricing fields
-	// TODO: Split this into separate struct
-	regions            []ec2Types.Region
-	pricingMap         *PricingStore
-	awsRegionClientMap map[string]awsclient.Client
+	pricingMap     *PricingStore
 
 	logger *slog.Logger
 }
@@ -66,11 +54,9 @@ func New(config *Config) *Collector {
 	logger := config.Logger.With("logger", serviceName)
 
 	return &Collector{
-		logger:             logger,
-		scrapeInterval:     config.ScrapeInterval,
-		regions:            config.Regions,
-		awsRegionClientMap: config.RegionMap,
-		pricingMap:         NewPricingStore(logger),
+		logger:         logger,
+		scrapeInterval: config.ScrapeInterval,
+		pricingMap:     NewPricingStore(logger, config.Regions, config.RegionMap),
 	}
 }
 
@@ -98,7 +84,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 
 	start := time.Now()
 	if c.pricingMap == nil || start.After(c.nextScrape) {
-		err := c.populatePricingMap(ctx, c.logger)
+		err := c.pricingMap.populatePricingMap(ctx)
 		if err != nil {
 			return fmt.Errorf("error populating pricing map: %w", err)
 		}
@@ -124,46 +110,4 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 // Deprecated: CollectMetrics is deprecated and will be removed in a future release.
 func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	return 0
-}
-
-func (c *Collector) populatePricingMap(ctx context.Context, logger *slog.Logger) error {
-	logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing pricing map")
-	var prices []string
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(errGroupLimit)
-	m := sync.Mutex{}
-	for _, region := range c.regions {
-		eg.Go(func() error {
-			logger.LogAttrs(ctx, slog.LevelDebug, "fetching pricing info", slog.String("region", *region.RegionName))
-
-			regionClient, ok := c.awsRegionClientMap[*region.RegionName]
-			if !ok {
-				return ErrClientNotFound
-			}
-
-			// TODO: Create a generic ListPrices endpoint
-			// that takes a awsPricing.GetProductsInput{}
-			// with a helper func to build the input
-			priceList, err := regionClient.ListNATGatewayPrices(ctx, *region.RegionName)
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrListPrices, err)
-			}
-
-			m.Lock()
-			prices = append(prices, priceList...)
-			m.Unlock()
-			return nil
-		})
-	}
-	err := eg.Wait()
-	if err != nil {
-		return err
-	}
-
-	c.pricingMap = NewPricingStore(logger)
-	if err := c.pricingMap.PopulatePriceStore(prices); err != nil {
-		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
-	}
-
-	return nil
 }
