@@ -126,15 +126,15 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	return 0
 }
 
-func (c *Collector) populatePricingMap(errGroupCtx context.Context, logger *slog.Logger) error {
-	logger.LogAttrs(errGroupCtx, slog.LevelInfo, "Refreshing pricing map")
+func (c *Collector) populatePricingMap(ctx context.Context, logger *slog.Logger) error {
+	logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing pricing map")
 	var prices []string
-	eg, errGroupCtx := errgroup.WithContext(errGroupCtx)
+	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(errGroupLimit)
 	m := sync.Mutex{}
 	for _, region := range c.regions {
 		eg.Go(func() error {
-			logger.LogAttrs(errGroupCtx, slog.LevelDebug, "fetching pricing info", slog.String("region", *region.RegionName))
+			logger.LogAttrs(ctx, slog.LevelDebug, "fetching pricing info", slog.String("region", *region.RegionName))
 
 			regionClient, ok := c.awsRegionClientMap[*region.RegionName]
 			if !ok {
@@ -144,7 +144,7 @@ func (c *Collector) populatePricingMap(errGroupCtx context.Context, logger *slog
 			// TODO: Create a generic ListPrices endpoint
 			// that takes a awsPricing.GetProductsInput{}
 			// with a helper func to build the input
-			priceList, err := regionClient.ListNATGatewayPrices(errGroupCtx, *region.RegionName)
+			priceList, err := regionClient.ListNATGatewayPrices(ctx, *region.RegionName)
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrListPrices, err)
 			}
