@@ -18,7 +18,8 @@ type Client interface {
 	ListSpotPrices(ctx context.Context) ([]types.SpotPrice, error)
 	ListOnDemandPrices(ctx context.Context, region string) ([]string, error)
 	ListStoragePrices(ctx context.Context, region string) ([]string, error)
+	ListNATGatewayPrices(ctx context.Context, region string) ([]string, error)
 
-	// Metrics should be an independent interface
+	// TODO: Break out Metrics into an independent interface
 	Metrics() []prometheus.Collector
 }

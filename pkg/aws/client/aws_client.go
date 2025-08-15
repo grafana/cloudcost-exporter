@@ -69,3 +69,7 @@ func (c *AWSClient) ListOnDemandPrices(ctx context.Context, region string) ([]st
 func (c *AWSClient) ListStoragePrices(ctx context.Context, region string) ([]string, error) {
 	return c.priceService.listStoragePrices(ctx, region)
 }
+
+func (c *AWSClient) ListNATGatewayPrices(ctx context.Context, region string) ([]string, error) {
+	return c.priceService.listNATGatewayPrices(ctx, region)
+}

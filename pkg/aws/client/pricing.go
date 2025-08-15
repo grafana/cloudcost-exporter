@@ -124,6 +124,26 @@ func (p *pricing) listStoragePrices(ctx context.Context, region string) ([]strin
 	return p.getPricesFromProductList(ctx, input)
 }
 
+func (p *pricing) listNATGatewayPrices(ctx context.Context, region string) ([]string, error) {
+	input := &awsPricing.GetProductsInput{
+		ServiceCode: aws.String("AmazonEC2"),
+		Filters: []types.Filter{
+			{
+				Field: aws.String("regionCode"),
+				Type:  types.FilterTypeTermMatch,
+				Value: aws.String(region),
+			},
+			{
+				Field: aws.String("productFamily"),
+				Type:  types.FilterTypeTermMatch,
+				Value: aws.String("NAT Gateway"),
+			},
+		},
+	}
+
+	return p.getPricesFromProductList(ctx, input)
+}
+
 func (p *pricing) getPricesFromProductList(ctx context.Context, input *awsPricing.GetProductsInput) ([]string, error) {
 	var productOutputs []string
 
