@@ -102,8 +102,8 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	for _, service := range config.Services {
 		service = strings.ToUpper(service)
 
-		// region API is shared between EC2 and RDS
-		if service == serviceRDS || service == serviceEC2 {
+		// region API is shared between EC2, RDS, and NATGW
+		if service == serviceRDS || service == serviceEC2 || service == serviceNATGW {
 			regions, err = awsClient.DescribeRegions(ctx, false)
 			if err != nil {
 				return nil, fmt.Errorf("error getting regions: %w", err)
@@ -136,9 +136,13 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			// TODO: append new aws rds collectors next
 			// collectors = append(collectors, collector)
 		case serviceNATGW:
-			ceClient := costexplorer.NewFromConfig(ac)
-			gwCollector := awsgwnat.New(config.ScrapeInterval, ceClient)
-			collectors = append(collectors, gwCollector)
+			natGwCollector := awsgwnat.New(&awsgwnat.Config{
+				ScrapeInterval: config.ScrapeInterval,
+				Logger:         logger,
+				Regions:        regions,
+				RegionMap:      awsClientPerRegion,
+			}, awsClient)
+			collectors = append(collectors, natGwCollector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",
 				slog.String("service", service),
