@@ -62,7 +62,7 @@ type Collector struct {
 	logger *slog.Logger
 }
 
-func New(config *Config, client awsclient.Client) *Collector {
+func New(config *Config) *Collector {
 	logger := config.Logger.With("logger", serviceName)
 
 	return &Collector{

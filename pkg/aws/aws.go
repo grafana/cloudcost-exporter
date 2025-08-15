@@ -135,13 +135,14 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			}, awsClient)
 			// TODO: append new aws rds collectors next
 			// collectors = append(collectors, collector)
+			// and remove the awsClient from the config
 		case serviceNATGW:
 			natGwCollector := awsgwnat.New(&awsgwnat.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
 				Regions:        regions,
 				RegionMap:      awsClientPerRegion,
-			}, awsClient)
+			})
 			collectors = append(collectors, natGwCollector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",
