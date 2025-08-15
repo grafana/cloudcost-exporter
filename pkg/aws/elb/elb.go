@@ -2,10 +2,8 @@ package elb
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"sync"
 	"time"
 
@@ -22,10 +20,7 @@ import (
 )
 
 const (
-	subsystem            = "aws_elb"
-	ALBHourlyRateDefault = 0.0225
-	NLBHourlyRateDefault = 0.0225
-	CLBHourlyRateDefault = 0.025
+	subsystem = "aws_elb"
 )
 
 var (
@@ -88,7 +83,7 @@ func New(config *Config, client client.Client) *Collector {
 		client:           client,
 		elbRegionClients: config.RegionClients,
 		logger:           config.Logger,
-		pricingMap:       NewELBPricingMap(),
+		pricingMap:       NewELBPricingMap(config.Logger),
 	}
 }
 
@@ -105,7 +100,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	c.logger.Info("Starting ELB collection")
 
 	if c.shouldScrape() {
-		if err := c.refreshPricing(); err != nil {
+		if err := c.pricingMap.refresh(c.client, c.Regions); err != nil {
 			c.logger.Error("Failed to refresh pricing", "error", err)
 			return err
 		}
@@ -150,89 +145,6 @@ func (c *Collector) Name() string {
 
 func (c *Collector) shouldScrape() bool {
 	return time.Now().After(c.NextScrape)
-}
-
-func (c *Collector) refreshPricing() error {
-	c.logger.Info("Refreshing ELB pricing data")
-
-	eg := errgroup.Group{}
-	var mu sync.Mutex
-
-	for _, region := range c.Regions {
-		region := region
-		eg.Go(func() error {
-			pricing, err := c.fetchRegionPricing(context.Background(), *region.RegionName)
-			if err != nil {
-				return fmt.Errorf("failed to fetch pricing for region %s: %w", *region.RegionName, err)
-			}
-
-			mu.Lock()
-			c.pricingMap.SetRegionPricing(*region.RegionName, pricing)
-			mu.Unlock()
-
-			return nil
-		})
-	}
-
-	return eg.Wait()
-}
-
-func (c *Collector) fetchRegionPricing(ctx context.Context, region string) (*RegionPricing, error) {
-	regionPricing := &RegionPricing{
-		ALBHourlyRate: make(map[string]float64),
-		NLBHourlyRate: make(map[string]float64),
-		CLBHourlyRate: make(map[string]float64),
-	}
-
-	prices, err := c.client.ListELBPrices(ctx, region)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get ELB pricing: %w", err)
-	}
-
-	for _, product := range prices {
-		var productInfo elbProduct
-		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
-			c.logger.Warn("Failed to unmarshal pricing product", "error", err)
-			continue
-		}
-
-		// Extract pricing information
-		for _, term := range productInfo.Terms.OnDemand {
-			for _, priceDimension := range term.PriceDimensions {
-				price, err := strconv.ParseFloat(priceDimension.PricePerUnit["USD"], 64)
-				if err != nil {
-					continue
-				}
-
-				// Determine the load balancer type based on product family or attributes
-				switch productInfo.Product.Attributes.ProductFamily {
-				case "Load Balancer-Application":
-					regionPricing.ALBHourlyRate["default"] = price
-				case "Load Balancer-Network":
-					regionPricing.NLBHourlyRate["default"] = price
-				case "Load Balancer":
-					// Classic Load Balancer
-					regionPricing.CLBHourlyRate["default"] = price
-				}
-			}
-		}
-	}
-
-	// Set default rates if not found (fallback values)
-	if len(regionPricing.ALBHourlyRate) == 0 {
-		c.logger.Warn("No ALB pricing data available for region", "region", region)
-		regionPricing.ALBHourlyRate["default"] = ALBHourlyRateDefault // Default ALB rate
-	}
-	if len(regionPricing.NLBHourlyRate) == 0 {
-		c.logger.Warn("No NLB pricing data available for region", "region", region)
-		regionPricing.NLBHourlyRate["default"] = NLBHourlyRateDefault // Default NLB rate
-	}
-	if len(regionPricing.CLBHourlyRate) == 0 {
-		c.logger.Warn("No CLB pricing data available for region", "region", region)
-		regionPricing.CLBHourlyRate["default"] = CLBHourlyRateDefault // Default CLB rate
-	}
-
-	return regionPricing, nil
 }
 
 func (c *Collector) collectLoadBalancers() ([]LoadBalancerInfo, error) {
@@ -292,9 +204,9 @@ func (c *Collector) collectRegionLoadBalancers(region string, client elbv2client
 }
 
 func (c *Collector) calculateLoadBalancerCost(lb types.LoadBalancer, region string) float64 {
-	pricing := c.pricingMap.GetRegionPricing(region)
-	if pricing == nil {
-		c.logger.Warn("No pricing data available for region", "region", region)
+	pricing, err := c.pricingMap.GetRegionPricing(region)
+	if err != nil {
+		c.logger.Warn("Failed to get pricing data for region", "error", err)
 		return 0
 	}
 
