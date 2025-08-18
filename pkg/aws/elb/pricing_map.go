@@ -55,22 +55,22 @@ func (pm *ELBPricingMap) GetRegionPricing(region string) (*RegionPricing, error)
 	return pricing, nil
 }
 
-func (pm *ELBPricingMap) refresh(client client.Client, regions []ec2Types.Region) error {
+func (pm *ELBPricingMap) refresh(client map[string]client.Client, regions []ec2Types.Region) error {
 	pm.logger.Info("Refreshing ELB pricing data")
 
 	eg := errgroup.Group{}
 	var mu sync.Mutex
 
 	for _, region := range regions {
-		region := region
+		regionName := *region.RegionName
 		eg.Go(func() error {
-			pricing, err := pm.FetchRegionPricing(client, context.Background(), *region.RegionName)
+			pricing, err := pm.FetchRegionPricing(client[regionName], context.Background(), regionName)
 			if err != nil {
-				return fmt.Errorf("failed to fetch pricing for region %s: %w", *region.RegionName, err)
+				return fmt.Errorf("failed to fetch pricing for region %s: %w", regionName, err)
 			}
 
 			mu.Lock()
-			pm.SetRegionPricing(*region.RegionName, pricing)
+			pm.SetRegionPricing(regionName, pricing)
 			mu.Unlock()
 
 			return nil

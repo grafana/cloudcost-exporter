@@ -15,6 +15,7 @@ import (
 	time "time"
 
 	types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	types0 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	types0 "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	client "github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	prometheus "github.com/prometheus/client_golang/prometheus"
@@ -43,6 +44,21 @@ func NewMockClient(ctrl *gomock.Controller) *MockClient {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockClient) EXPECT() *MockClientMockRecorder {
 	return m.recorder
+}
+
+// DescribeLoadBalancers mocks base method.
+func (m *MockClient) DescribeLoadBalancers(ctx context.Context) ([]types0.LoadBalancer, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DescribeLoadBalancers", ctx)
+	ret0, _ := ret[0].([]types0.LoadBalancer)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DescribeLoadBalancers indicates an expected call of DescribeLoadBalancers.
+func (mr *MockClientMockRecorder) DescribeLoadBalancers(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeLoadBalancers", reflect.TypeOf((*MockClient)(nil).DescribeLoadBalancers), ctx)
 }
 
 // DescribeRegions mocks base method.
@@ -118,6 +134,21 @@ func (m *MockClient) ListEC2ServicePrices(ctx context.Context, region string, fi
 func (mr *MockClientMockRecorder) ListEC2ServicePrices(ctx, region, filters any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEC2ServicePrices", reflect.TypeOf((*MockClient)(nil).ListEC2ServicePrices), ctx, region, filters)
+}
+
+// ListELBPrices mocks base method.
+func (m *MockClient) ListELBPrices(ctx context.Context, region string) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListELBPrices", ctx, region)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListELBPrices indicates an expected call of ListELBPrices.
+func (mr *MockClientMockRecorder) ListELBPrices(ctx, region any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListELBPrices", reflect.TypeOf((*MockClient)(nil).ListELBPrices), ctx, region)
 }
 
 // ListOnDemandPrices mocks base method.

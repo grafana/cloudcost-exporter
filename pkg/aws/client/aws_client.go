@@ -5,10 +5,12 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	elbTypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	c "github.com/grafana/cloudcost-exporter/pkg/aws/services/costexplorer"
 	e "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
+	elbv2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/elbv2"
 	p "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -18,6 +20,7 @@ type Config struct {
 	EC2Service     e.EC2
 	BillingService c.CostExplorer
 	RDSService     *rds.Client
+	ELBService     elbv2client.ELBv2
 }
 
 type AWSClient struct {
@@ -25,6 +28,7 @@ type AWSClient struct {
 	computeService *compute
 	billing        *billing
 	rdsClient      *rds.Client
+	elbService     *elb
 	metrics        *Metrics
 }
 
@@ -34,6 +38,7 @@ func NewAWSClient(cfg Config) *AWSClient {
 		priceService:   newPricing(cfg.PricingService, cfg.EC2Service),
 		computeService: newCompute(cfg.EC2Service),
 		billing:        newBilling(cfg.BillingService, m),
+		elbService:     newELB(cfg.ELBService),
 		rdsClient:      cfg.RDSService,
 		metrics:        m,
 	}
@@ -77,4 +82,8 @@ func (c *AWSClient) ListEC2ServicePrices(ctx context.Context, region string, fil
 
 func (c *AWSClient) ListELBPrices(ctx context.Context, region string) ([]string, error) {
 	return c.priceService.listELBPrices(ctx, region)
+}
+
+func (c *AWSClient) DescribeLoadBalancers(ctx context.Context) ([]elbTypes.LoadBalancer, error) {
+	return c.elbService.describeLoadBalancers(ctx)
 }

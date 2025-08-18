@@ -17,7 +17,7 @@ Note: Classic Load Balancers (CLB) are not supported as they use the ELB v1 API.
 
 | Metric Name | Type | Description | Labels |
 |-------------|------|-------------|--------|
-| `cloudcost_aws_elb_loadbalancer_total_usd_per_hour` | Gauge | Total hourly cost of the load balancer in USD | `name`, `arn`, `region`, `type`, `scheme` |
+| `cloudcost_aws_elb_loadbalancer_total_usd_per_hour` | Gauge | Total hourly cost of the load balancer in USD | `name`, `arn`, `region`, `type` |
 
 ### Metric Labels
 
@@ -25,7 +25,6 @@ Note: Classic Load Balancers (CLB) are not supported as they use the ELB v1 API.
 - `arn`: The full ARN of the load balancer
 - `region`: The AWS region where the load balancer is deployed
 - `type`: The type of load balancer (`application` or `network`)
-- `scheme`: The load balancer scheme (`internet-facing` or `internal`)
 
 ## Configuration
 

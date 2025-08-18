@@ -1,67 +1,43 @@
 package elb
 
 import (
-	"context"
 	"log/slog"
 	"testing"
 	"time"
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	elbTypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
-	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"go.uber.org/mock/gomock"
 
-	elbv2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/elbv2"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
+	mock_client "github.com/grafana/cloudcost-exporter/pkg/aws/client/mocks"
 )
 
-// MockELBv2Client is a mock implementation of the ELBv2 interface
-type MockELBv2Client struct {
-	mock.Mock
-}
-
-func (m *MockELBv2Client) DescribeLoadBalancers(ctx context.Context, params *elasticloadbalancingv2.DescribeLoadBalancersInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeLoadBalancersOutput, error) {
-	args := m.Called(ctx, params)
-	return args.Get(0).(*elasticloadbalancingv2.DescribeLoadBalancersOutput), args.Error(1)
-}
-
-func (m *MockELBv2Client) DescribeTargetGroups(ctx context.Context, params *elasticloadbalancingv2.DescribeTargetGroupsInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeTargetGroupsOutput, error) {
-	args := m.Called(ctx, params)
-	return args.Get(0).(*elasticloadbalancingv2.DescribeTargetGroupsOutput), args.Error(1)
-}
-
-// MockPricingClient is a mock implementation of the Pricing interface
-type MockPricingClient struct {
-	mock.Mock
-}
-
-func (m *MockPricingClient) GetProducts(ctx context.Context, input *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
-	args := m.Called(ctx, input)
-	return args.Get(0).(*pricing.GetProductsOutput), args.Error(1)
-}
-
 func TestNew(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockClient := mock_client.NewMockClient(ctrl)
+
 	config := &Config{
 		ScrapeInterval: time.Minute,
 		Regions: []ec2Types.Region{
 			{RegionName: stringPtr("us-east-1")},
 		},
-		RegionClients: map[string]elbv2client.ELBv2{
-			"us-east-1": &MockELBv2Client{},
+		RegionClients: map[string]client.Client{
+			"us-east-1": mockClient,
 		},
 		Logger: slog.Default(),
 	}
 
-	mockPricing := &MockPricingClient{}
-	collector := New(config, mockPricing)
+	collector := New(config)
 
 	assert.NotNil(t, collector)
 	assert.Equal(t, config.ScrapeInterval, collector.ScrapeInterval)
 	assert.Equal(t, config.Regions, collector.Regions)
-	assert.Equal(t, mockPricing, collector.pricingService)
+	assert.Equal(t, mockClient, collector.awsRegionClientMap["us-east-1"])
 	assert.NotNil(t, collector.pricingMap)
 }
 
@@ -69,11 +45,11 @@ func TestCollectorName(t *testing.T) {
 	config := &Config{
 		ScrapeInterval: time.Minute,
 		Regions:        []ec2Types.Region{},
-		RegionClients:  map[string]elbv2client.ELBv2{},
+		RegionClients:  map[string]client.Client{},
 		Logger:         slog.Default(),
 	}
 
-	collector := New(config, &MockPricingClient{})
+	collector := New(config)
 	assert.Equal(t, subsystem, collector.Name())
 }
 
@@ -81,11 +57,11 @@ func TestCollectorDescribe(t *testing.T) {
 	config := &Config{
 		ScrapeInterval: time.Minute,
 		Regions:        []ec2Types.Region{},
-		RegionClients:  map[string]elbv2client.ELBv2{},
+		RegionClients:  map[string]client.Client{},
 		Logger:         slog.Default(),
 	}
 
-	collector := New(config, &MockPricingClient{})
+	collector := New(config)
 	ch := make(chan *prometheus.Desc, 1)
 
 	err := collector.Describe(ch)
@@ -131,11 +107,11 @@ func TestCollectorRegister(t *testing.T) {
 	config := &Config{
 		ScrapeInterval: time.Minute,
 		Regions:        []ec2Types.Region{},
-		RegionClients:  map[string]elbv2client.ELBv2{},
+		RegionClients:  map[string]client.Client{},
 		Logger:         slog.Default(),
 	}
 
-	collector := New(config, &MockPricingClient{})
+	collector := New(config)
 	registry := &MockRegistry{}
 	registry.On("Register", mock.Anything).Return(nil)
 
@@ -144,14 +120,29 @@ func TestCollectorRegister(t *testing.T) {
 }
 
 func TestCollectRegionLoadBalancers(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockClient := mock_client.NewMockClient(ctrl)
+	mockClient.EXPECT().DescribeLoadBalancers(gomock.Any()).Return([]elbTypes.LoadBalancer{
+		{
+			LoadBalancerName: stringPtr("test-alb"),
+			Type:             elbTypes.LoadBalancerTypeEnumApplication,
+		},
+		{
+			LoadBalancerName: stringPtr("test-nlb"),
+			Type:             elbTypes.LoadBalancerTypeEnumNetwork,
+		},
+	}, nil)
+
 	config := &Config{
 		ScrapeInterval: time.Minute,
 		Regions:        []ec2Types.Region{},
-		RegionClients:  map[string]elbv2client.ELBv2{},
-		Logger:         slog.Default(),
+		RegionClients: map[string]client.Client{
+			"us-east-1": mockClient,
+		},
+		Logger: slog.Default(),
 	}
 
-	collector := New(config, &MockPricingClient{})
+	collector := New(config)
 
 	// Set up mock pricing data
 	collector.pricingMap.SetRegionPricing("us-east-1", &RegionPricing{
@@ -160,26 +151,7 @@ func TestCollectRegionLoadBalancers(t *testing.T) {
 		CLBHourlyRate: map[string]float64{"default": 0.025},
 	})
 
-	mockClient := &MockELBv2Client{}
-	mockClient.On("DescribeLoadBalancers", mock.Anything, (*elasticloadbalancingv2.DescribeLoadBalancersInput)(nil)).Return(
-		&elasticloadbalancingv2.DescribeLoadBalancersOutput{
-			LoadBalancers: []elbTypes.LoadBalancer{
-				{
-					LoadBalancerName: stringPtr("test-alb"),
-					LoadBalancerArn:  stringPtr("arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/test-alb/1234567890123456"),
-					Type:             elbTypes.LoadBalancerTypeEnumApplication,
-					Scheme:           elbTypes.LoadBalancerSchemeEnumInternetFacing,
-				},
-				{
-					LoadBalancerName: stringPtr("test-nlb"),
-					LoadBalancerArn:  stringPtr("arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/test-nlb/1234567890123456"),
-					Type:             elbTypes.LoadBalancerTypeEnumNetwork,
-					Scheme:           elbTypes.LoadBalancerSchemeEnumInternal,
-				},
-			},
-		}, nil)
-
-	loadBalancers, err := collector.collectRegionLoadBalancers("us-east-1", mockClient)
+	loadBalancers, err := collector.collectRegionLoadBalancers("us-east-1")
 
 	assert.NoError(t, err)
 	assert.Len(t, loadBalancers, 2)
@@ -187,16 +159,13 @@ func TestCollectRegionLoadBalancers(t *testing.T) {
 	// Check ALB
 	assert.Equal(t, "test-alb", loadBalancers[0].Name)
 	assert.Equal(t, elbTypes.LoadBalancerTypeEnumApplication, loadBalancers[0].Type)
-	assert.Equal(t, elbTypes.LoadBalancerSchemeEnumInternetFacing, loadBalancers[0].Scheme)
 	assert.Equal(t, 0.0225, loadBalancers[0].Cost)
 
 	// Check NLB
 	assert.Equal(t, "test-nlb", loadBalancers[1].Name)
 	assert.Equal(t, elbTypes.LoadBalancerTypeEnumNetwork, loadBalancers[1].Type)
-	assert.Equal(t, elbTypes.LoadBalancerSchemeEnumInternal, loadBalancers[1].Scheme)
 	assert.Equal(t, 0.0225, loadBalancers[1].Cost)
 
-	mockClient.AssertExpectations(t)
 }
 
 func stringPtr(s string) *string {

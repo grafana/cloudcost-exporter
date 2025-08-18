@@ -14,7 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	awsPricing "github.com/aws/aws-sdk-go-v2/service/pricing"
 	rds2 "github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -28,7 +28,6 @@ import (
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
-	elbv2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/elbv2"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
@@ -99,6 +98,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 		EC2Service:     ec2.NewFromConfig(ac),
 		BillingService: costexplorer.NewFromConfig(ac),
 		RDSService:     rds2.NewFromConfig(ac),
+		ELBService:     elbv2.NewFromConfig(ac),
 	})
 	var regions []types.Region
 	for _, service := range config.Services {
@@ -147,25 +147,12 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			})
 			collectors = append(collectors, natGwCollector)
 		case serviceELB:
-			regionClientMap := make(map[string]elbv2client.ELBv2)
-			for _, region := range regions {
-				logger.LogAttrs(ctx, slog.LevelInfo, "creating elbv2 client",
-					slog.String("region", *region.RegionName),
-					slog.String("profile", config.Profile),
-					slog.String("roleARN", config.RoleARN),
-				)
-				client, err := newELBv2Client(*region.RegionName, config.Profile, config.RoleARN)
-				if err != nil {
-					return nil, fmt.Errorf("error creating elbv2 client: %w", err)
-				}
-				regionClientMap[*region.RegionName] = client
-			}
 			collector := elb.New(&elb.Config{
 				Regions:        regions,
-				RegionClients:  regionClientMap,
+				RegionClients:  awsClientPerRegion,
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
-			}, awsClient)
+			})
 			collectors = append(collectors, collector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",
@@ -243,35 +230,11 @@ func newRegionClientMap(ctx context.Context, globalConfig aws.Config, regions []
 				EC2Service:     ec2.NewFromConfig(ac),
 				BillingService: costexplorer.NewFromConfig(globalConfig),
 				RDSService:     rds2.NewFromConfig(globalConfig),
+				ELBService:     elbv2.NewFromConfig(ac),
 			})
 	}
 
 	return awsClientPerRegion, nil
-}
-
-func newELBv2Client(region, profile, roleARN string) (*elasticloadbalancingv2.Client, error) {
-	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithEC2IMDSRegion()}
-	maxRetryAttempts := 10
-	options = append(options, awsconfig.WithRegion(region))
-	if profile != "" {
-		options = append(options, awsconfig.WithSharedConfigProfile(profile))
-	}
-	options = append(options, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
-
-	if roleARN != "" {
-		roleOption, err := assumeRole(roleARN, options)
-		if err != nil {
-			return nil, err
-		}
-		options = append(options, roleOption)
-	}
-
-	cfg, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
-	if err != nil {
-		return nil, err
-	}
-
-	return elasticloadbalancingv2.NewFromConfig(cfg), nil
 }
 
 func createAWSConfig(ctx context.Context, region, profile, roleARN string) (aws.Config, error) {

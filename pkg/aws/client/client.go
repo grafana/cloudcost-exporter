@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	elbTypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -21,6 +22,7 @@ type Client interface {
 	ListStoragePrices(ctx context.Context, region string) ([]string, error)
 	ListEC2ServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error)
 	ListELBPrices(ctx context.Context, region string) ([]string, error)
+	DescribeLoadBalancers(ctx context.Context) ([]elbTypes.LoadBalancer, error)
 
 	// TODO: Break out Metrics into an independent interface
 	Metrics() []prometheus.Collector
