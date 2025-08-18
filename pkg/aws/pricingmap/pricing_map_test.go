@@ -1,4 +1,4 @@
-package pricingmap
+package pricingmap_test
 
 import (
 	"context"
@@ -6,13 +6,16 @@ import (
 	"os"
 	"testing"
 
-	aws "github.com/aws/aws-sdk-go-v2/aws"
-	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 
+	aws "github.com/aws/aws-sdk-go-v2/aws"
+	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
+
 	awsclient "github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	mock_client "github.com/grafana/cloudcost-exporter/pkg/aws/client/mocks"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/pricingmap"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -41,7 +44,7 @@ func TestNewPricingStore(t *testing.T) {
 			regionClient: func() *mock_client.MockClient {
 				m := mock_client.NewMockClient(ctrl)
 				m.EXPECT().
-					ListNATGatewayPrices(gomock.Any(), "us-east-1").
+					ListEC2ServicePrices(gomock.Any(), "us-east-1", []pricingTypes.Filter{}).
 					Return([]string{
 						`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.004"}}}}}}}`,
 						`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Bytes","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.045"}}}}}}}`,
@@ -60,14 +63,14 @@ func TestNewPricingStore(t *testing.T) {
 			regionClient: func() *mock_client.MockClient {
 				m := mock_client.NewMockClient(ctrl)
 				m.EXPECT().
-					ListNATGatewayPrices(gomock.Any(), "us-east-1").
+					ListEC2ServicePrices(gomock.Any(), "us-east-1", []pricingTypes.Filter{}).
 					Return([]string{
 						`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.004"}}}}}}}`,
 						`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Bytes","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.045"}}}}}}}`,
 					}, nil).
 					Times(1)
 				m.EXPECT().
-					ListNATGatewayPrices(gomock.Any(), "us-west-2").
+					ListEC2ServicePrices(gomock.Any(), "us-west-2", []pricingTypes.Filter{}).
 					Return([]string{
 						`{"product":{"attributes":{"usagetype":"USW2-NatGateway-Hours","regionCode":"us-west-2"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.005"}}}}}}}`,
 						`{"product":{"attributes":{"usagetype":"USW2-NatGateway-Bytes","regionCode":"us-west-2"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.055"}}}}}}}`,
@@ -87,7 +90,7 @@ func TestNewPricingStore(t *testing.T) {
 				awsRegionClientMap[regionName] = tt.regionClient
 			}
 
-			store := NewPricingStore(context.Background(), tt.logger, tt.regions, awsRegionClientMap)
+			store := pricingmap.NewPricingStore(context.Background(), tt.logger, tt.regions, awsRegionClientMap, []pricingTypes.Filter{})
 
 			assert.NotNil(t, store)
 			assert.NotNil(t, store.GetPricePerUnitPerRegion())

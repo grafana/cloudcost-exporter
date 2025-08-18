@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	c "github.com/grafana/cloudcost-exporter/pkg/aws/services/costexplorer"
 	e "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
@@ -70,6 +71,6 @@ func (c *AWSClient) ListStoragePrices(ctx context.Context, region string) ([]str
 	return c.priceService.listStoragePrices(ctx, region)
 }
 
-func (c *AWSClient) ListNATGatewayPrices(ctx context.Context, region string) ([]string, error) {
-	return c.priceService.listNATGatewayPrices(ctx, region)
+func (c *AWSClient) ListEC2ServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
+	return c.priceService.listEC2ServicePrices(ctx, region, filters)
 }

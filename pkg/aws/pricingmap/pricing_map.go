@@ -11,6 +11,7 @@ import (
 	"time"
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	awsclient "github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"golang.org/x/sync/errgroup"
 )
@@ -59,6 +60,8 @@ type PricingStore struct {
 	// Maps a region to a map of units to prices
 	pricePerUnitPerRegion map[string]*map[string]float64
 	regionPricingMapLock  *sync.RWMutex
+
+	filters []pricingTypes.Filter
 }
 
 type PricingStoreRefresher interface {
@@ -68,12 +71,13 @@ type PricingStoreRefresher interface {
 
 // NewPricingStore creates a new PricingStore.
 // It populates the store before it is used by the Collector.
-func NewPricingStore(ctx context.Context, logger *slog.Logger, regions []ec2Types.Region, awsRegionClientMap map[string]awsclient.Client) *PricingStore {
+func NewPricingStore(ctx context.Context, logger *slog.Logger, regions []ec2Types.Region, awsRegionClientMap map[string]awsclient.Client, filters []pricingTypes.Filter) *PricingStore {
 	p := &PricingStore{
 		logger:                logger,
 		pricePerUnitPerRegion: make(map[string]*map[string]float64),
 		regions:               regions,
 		awsRegionClientMap:    awsRegionClientMap,
+		filters:               filters,
 
 		regionPricingMapLock: &sync.RWMutex{},
 	}
@@ -103,10 +107,7 @@ func (p *PricingStore) PopulatePricingMap(ctx context.Context) error {
 				return errClientNotFound
 			}
 
-			// TODO: Create a generic ListPrices endpoint
-			// that takes a awsPricing.GetProductsInput{}
-			// with a helper func to build the input
-			priceList, err := regionClient.ListNATGatewayPrices(ctx, *region.RegionName)
+			priceList, err := regionClient.ListEC2ServicePrices(ctx, *region.RegionName, p.filters)
 			if err != nil {
 				return fmt.Errorf("%w: %w", errListPrices, err)
 			}
@@ -163,7 +164,8 @@ func (p *PricingStore) populatePriceStore(priceList []string) error {
 					continue
 				}
 
-				// TODO: Make this generic
+				// The UsageType is the unit of the price.
+				// Metrics should be created per UsageType unit of work.
 				unit := productInfo.Product.Attributes.UsageType
 				(*p.pricePerUnitPerRegion[region])[unit] = price
 			}

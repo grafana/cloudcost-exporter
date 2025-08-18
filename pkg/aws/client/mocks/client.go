@@ -15,6 +15,7 @@ import (
 	time "time"
 
 	types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	types0 "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	client "github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	prometheus "github.com/prometheus/client_golang/prometheus"
 	gomock "go.uber.org/mock/gomock"
@@ -104,19 +105,19 @@ func (mr *MockClientMockRecorder) ListEBSVolumes(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEBSVolumes", reflect.TypeOf((*MockClient)(nil).ListEBSVolumes), ctx)
 }
 
-// ListNATGatewayPrices mocks base method.
-func (m *MockClient) ListNATGatewayPrices(ctx context.Context, region string) ([]string, error) {
+// ListEC2ServicePrices mocks base method.
+func (m *MockClient) ListEC2ServicePrices(ctx context.Context, region string, filters []types0.Filter) ([]string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListNATGatewayPrices", ctx, region)
+	ret := m.ctrl.Call(m, "ListEC2ServicePrices", ctx, region, filters)
 	ret0, _ := ret[0].([]string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// ListNATGatewayPrices indicates an expected call of ListNATGatewayPrices.
-func (mr *MockClientMockRecorder) ListNATGatewayPrices(ctx, region any) *gomock.Call {
+// ListEC2ServicePrices indicates an expected call of ListEC2ServicePrices.
+func (mr *MockClientMockRecorder) ListEC2ServicePrices(ctx, region, filters any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListNATGatewayPrices", reflect.TypeOf((*MockClient)(nil).ListNATGatewayPrices), ctx, region)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEC2ServicePrices", reflect.TypeOf((*MockClient)(nil).ListEC2ServicePrices), ctx, region, filters)
 }
 
 // ListOnDemandPrices mocks base method.

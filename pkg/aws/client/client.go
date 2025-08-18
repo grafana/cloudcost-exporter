@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -18,7 +19,7 @@ type Client interface {
 	ListSpotPrices(ctx context.Context) ([]types.SpotPrice, error)
 	ListOnDemandPrices(ctx context.Context, region string) ([]string, error)
 	ListStoragePrices(ctx context.Context, region string) ([]string, error)
-	ListNATGatewayPrices(ctx context.Context, region string) ([]string, error)
+	ListEC2ServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error)
 
 	// TODO: Break out Metrics into an independent interface
 	Metrics() []prometheus.Collector

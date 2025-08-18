@@ -1,4 +1,4 @@
-package natgateway
+package natgateway_test
 
 import (
 	"context"
@@ -7,17 +7,30 @@ import (
 	"testing"
 	"time"
 
-	aws "github.com/aws/aws-sdk-go-v2/aws"
-	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 
+	aws "github.com/aws/aws-sdk-go-v2/aws"
+	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
+
 	awsclient "github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	mock_client "github.com/grafana/cloudcost-exporter/pkg/aws/client/mocks"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/natgateway"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
-var testLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+var (
+	testLogger            = slog.New(slog.NewTextHandler(os.Stdout, nil))
+	testNATGatewayFilters = []pricingTypes.Filter{
+		{
+			Field: aws.String("productFamily"),
+			Type:  pricingTypes.FilterTypeTermMatch,
+			Value: aws.String("NAT Gateway"),
+		},
+	}
+)
 
 func TestNew(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -37,7 +50,7 @@ func TestNew(t *testing.T) {
 			regionClient: func() *mock_client.MockClient {
 				m := mock_client.NewMockClient(ctrl)
 				m.EXPECT().
-					ListNATGatewayPrices(gomock.Any(), "us-east-1").
+					ListEC2ServicePrices(gomock.Any(), "us-east-1", testNATGatewayFilters).
 					Return([]string{
 						`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.045"}}}}}}}`,
 					}, nil).
@@ -49,7 +62,7 @@ func TestNew(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			collector := New(context.Background(), &Config{
+			collector := natgateway.New(context.Background(), &natgateway.Config{
 				ScrapeInterval: tt.ScrapeInterval,
 				Regions:        []ec2Types.Region{{RegionName: aws.String(tt.regionName)}},
 				Logger:         tt.Logger,
@@ -59,7 +72,7 @@ func TestNew(t *testing.T) {
 			})
 			assert.NotNil(t, collector)
 			assert.NotNil(t, collector.PricingStore)
-			assert.Equal(t, tt.ScrapeInterval, collector.scrapeInterval)
+			assert.Equal(t, tt.ScrapeInterval, utils.DefaultScrapeInterval)
 		})
 	}
 }
@@ -75,7 +88,7 @@ func TestCollector_Name(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			c := &Collector{}
+			c := &natgateway.Collector{}
 			assert.Equal(t, tt.expectedName, c.Name())
 		})
 	}
@@ -89,15 +102,15 @@ func TestCollector_Describe(t *testing.T) {
 		"expect correct descriptions": {
 			expectedDescCount: 2, // HourlyGaugeDesc and DataProcessingGaugeDesc
 			expectedDescs: []string{
-				HourlyGaugeDesc.String(),
-				DataProcessingGaugeDesc.String(),
+				natgateway.HourlyGaugeDesc.String(),
+				natgateway.DataProcessingGaugeDesc.String(),
 			},
 		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			c := &Collector{}
+			c := &natgateway.Collector{}
 			ch := make(chan *prometheus.Desc, tt.expectedDescCount)
 
 			err := c.Describe(ch)
@@ -130,7 +143,7 @@ func TestCollector_Collect(t *testing.T) {
 			regionClient: func() *mock_client.MockClient {
 				m := mock_client.NewMockClient(ctrl)
 				m.EXPECT().
-					ListNATGatewayPrices(gomock.Any(), "us-east-1").
+					ListEC2ServicePrices(gomock.Any(), "us-east-1", testNATGatewayFilters).
 					Return([]string{
 						`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.045"}}}}}}}`,
 						`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Bytes","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.045"}}}}}}}`,
@@ -139,8 +152,8 @@ func TestCollector_Collect(t *testing.T) {
 				return m
 			}(),
 			expectedMetrics: []prometheus.Metric{
-				prometheus.MustNewConstMetric(HourlyGaugeDesc, prometheus.GaugeValue, 0.045, "us-east-1"),
-				prometheus.MustNewConstMetric(DataProcessingGaugeDesc, prometheus.GaugeValue, 0.045, "us-east-1"),
+				prometheus.MustNewConstMetric(natgateway.HourlyGaugeDesc, prometheus.GaugeValue, 0.045, "us-east-1"),
+				prometheus.MustNewConstMetric(natgateway.DataProcessingGaugeDesc, prometheus.GaugeValue, 0.045, "us-east-1"),
 			},
 		},
 	}
@@ -148,7 +161,7 @@ func TestCollector_Collect(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			region := "us-east-1"
-			collector := New(context.Background(), &Config{
+			collector := natgateway.New(context.Background(), &natgateway.Config{
 				ScrapeInterval: 1 * time.Hour,
 				Regions:        []ec2Types.Region{{RegionName: aws.String(region)}},
 				Logger:         testLogger,

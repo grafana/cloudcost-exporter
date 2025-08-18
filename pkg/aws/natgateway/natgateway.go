@@ -53,7 +53,7 @@ func New(ctx context.Context, config *Config) *Collector {
 	logger := config.Logger.With("logger", serviceName)
 
 	priceTicker := time.NewTicker(pricingmap.PriceRefreshInterval)
-	pricingStore := pricingmap.NewPricingStore(ctx, logger, config.Regions, config.RegionMap)
+	pricingStore := pricingmap.NewPricingStore(ctx, logger, config.Regions, config.RegionMap, NATGatewayFilters)
 
 	go func(ctx context.Context) {
 		for {
