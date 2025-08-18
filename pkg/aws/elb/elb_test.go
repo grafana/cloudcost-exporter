@@ -8,9 +8,7 @@ import (
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	elbTypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"go.uber.org/mock/gomock"
 
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
@@ -60,63 +58,24 @@ func TestCollectorDescribe(t *testing.T) {
 		RegionClients:  map[string]client.Client{},
 		Logger:         slog.Default(),
 	}
-
+	expectedDescs := []string{
+		LoadBalancerUsageHourlyCostDesc.String(),
+		LoadBalancerCapacityUnitsUsageHourlyCostDesc.String(),
+	}
 	collector := New(config)
-	ch := make(chan *prometheus.Desc, 1)
+	ch := make(chan *prometheus.Desc, len(expectedDescs))
 
 	err := collector.Describe(ch)
+	close(ch)
+
 	assert.NoError(t, err)
 
-	desc := <-ch
-	assert.Contains(t, desc.String(), "cloudcost_aws_elb_loadbalancer_total_usd_per_hour")
-}
-
-// MockRegistry is a simple mock for the provider.Registry interface
-type MockRegistry struct {
-	mock.Mock
-}
-
-func (m *MockRegistry) Register(c prometheus.Collector) error {
-	args := m.Called(c)
-	return args.Error(0)
-}
-
-func (m *MockRegistry) MustRegister(cs ...prometheus.Collector) {
-	m.Called(cs)
-}
-
-func (m *MockRegistry) Unregister(c prometheus.Collector) bool {
-	args := m.Called(c)
-	return args.Bool(0)
-}
-
-func (m *MockRegistry) Gather() ([]*dto.MetricFamily, error) {
-	args := m.Called()
-	return args.Get(0).([]*dto.MetricFamily), args.Error(1)
-}
-
-func (m *MockRegistry) Describe(ch chan<- *prometheus.Desc) {
-	m.Called(ch)
-}
-
-func (m *MockRegistry) Collect(ch chan<- prometheus.Metric) {
-	m.Called(ch)
-}
-
-func TestCollectorRegister(t *testing.T) {
-	config := &Config{
-		ScrapeInterval: time.Minute,
-		Regions:        []ec2Types.Region{},
-		RegionClients:  map[string]client.Client{},
-		Logger:         slog.Default(),
+	var descs []string
+	for desc := range ch {
+		assert.NotNil(t, desc)
+		descs = append(descs, desc.String())
 	}
-
-	collector := New(config)
-	registry := &MockRegistry{}
-	registry.On("Register", mock.Anything).Return(nil)
-
-	err := collector.Register(registry)
-	assert.NoError(t, err)
+	assert.Equal(t, expectedDescs, descs)
 }
 
 func TestCollectRegionLoadBalancers(t *testing.T) {
@@ -146,8 +105,8 @@ func TestCollectRegionLoadBalancers(t *testing.T) {
 
 	// Set up mock pricing data
 	collector.pricingMap.SetRegionPricing("us-east-1", &RegionPricing{
-		ALBHourlyRate: map[string]float64{"default": 0.0225},
-		NLBHourlyRate: map[string]float64{"default": 0.0225},
+		ALBHourlyRate: map[string]float64{LCUUsage: 0.0225, LoadBalancerUsage: 0.0225},
+		NLBHourlyRate: map[string]float64{LCUUsage: 0.0225, LoadBalancerUsage: 0.0225},
 	})
 
 	loadBalancers, err := collector.collectRegionLoadBalancers("us-east-1")

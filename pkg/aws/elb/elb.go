@@ -27,14 +27,14 @@ var (
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		"loadbalancer_usage_total_usd_per_hour",
-		"The total cost of the load balancer in USD/h",
+		"The total cost of hourly usage of the load balancer in USD/h",
 		[]string{"name", "region", "type"},
 	)
 	LoadBalancerCapacityUnitsUsageHourlyCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		"loadbalancer_capacity_units_total_usd_per_hour",
-		"The total cost of the load balancer in USD/h",
+		"The total cost of Load Balancer Capacity units (LCU) used in USD/hour",
 		[]string{"name", "region", "type"},
 	)
 )
