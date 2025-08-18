@@ -1,4 +1,4 @@
-package pricingmap
+package pricingstore
 
 import (
 	"context"

@@ -124,7 +124,7 @@ func (p *pricing) listStoragePrices(ctx context.Context, region string) ([]strin
 	return p.getPricesFromProductList(ctx, input)
 }
 
-func (p *pricing) makeEC2ServiceInput(ctx context.Context, region string) *awsPricing.GetProductsInput {
+func (p *pricing) makeEC2ServiceInput(region string) *awsPricing.GetProductsInput {
 	input := &awsPricing.GetProductsInput{
 		ServiceCode: aws.String("AmazonEC2"),
 		Filters: []types.Filter{
@@ -139,7 +139,7 @@ func (p *pricing) makeEC2ServiceInput(ctx context.Context, region string) *awsPr
 }
 
 func (p *pricing) listEC2ServicePrices(ctx context.Context, region string, filters []types.Filter) ([]string, error) {
-	input := p.makeEC2ServiceInput(ctx, region)
+	input := p.makeEC2ServiceInput(region)
 	input.Filters = append(input.Filters, filters...)
 
 	return p.getPricesFromProductList(ctx, input)

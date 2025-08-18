@@ -1,4 +1,4 @@
-package pricingmap_test
+package pricingstore_test
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 
 	awsclient "github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	mock_client "github.com/grafana/cloudcost-exporter/pkg/aws/client/mocks"
-	"github.com/grafana/cloudcost-exporter/pkg/aws/pricingmap"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/pricingstore"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -90,7 +90,7 @@ func TestNewPricingStore(t *testing.T) {
 				awsRegionClientMap[regionName] = tt.regionClient
 			}
 
-			store := pricingmap.NewPricingStore(context.Background(), tt.logger, tt.regions, awsRegionClientMap, []pricingTypes.Filter{})
+			store := pricingstore.NewPricingStore(context.Background(), tt.logger, tt.regions, awsRegionClientMap, []pricingTypes.Filter{})
 
 			assert.NotNil(t, store)
 			assert.NotNil(t, store.GetPricePerUnitPerRegion())

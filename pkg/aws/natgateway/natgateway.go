@@ -12,7 +12,7 @@ import (
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	awsclient "github.com/grafana/cloudcost-exporter/pkg/aws/client"
-	"github.com/grafana/cloudcost-exporter/pkg/aws/pricingmap"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/pricingstore"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
@@ -44,7 +44,7 @@ var (
 type Collector struct {
 	// Collector fields
 	scrapeInterval time.Duration
-	PricingStore   pricingmap.PricingStoreRefresher
+	PricingStore   pricingstore.PricingStoreRefresher
 
 	logger *slog.Logger
 }
@@ -52,8 +52,8 @@ type Collector struct {
 func New(ctx context.Context, config *Config) *Collector {
 	logger := config.Logger.With("logger", serviceName)
 
-	priceTicker := time.NewTicker(pricingmap.PriceRefreshInterval)
-	pricingStore := pricingmap.NewPricingStore(ctx, logger, config.Regions, config.RegionMap, NATGatewayFilters)
+	priceTicker := time.NewTicker(pricingstore.PriceRefreshInterval)
+	pricingStore := pricingstore.NewPricingStore(ctx, logger, config.Regions, config.RegionMap, NATGatewayFilters)
 
 	go func(ctx context.Context) {
 		for {
