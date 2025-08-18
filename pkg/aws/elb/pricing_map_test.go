@@ -24,7 +24,6 @@ func TestSetAndGetRegionPricing(t *testing.T) {
 	pricing := &RegionPricing{
 		ALBHourlyRate: map[string]float64{"default": 0.0225},
 		NLBHourlyRate: map[string]float64{"default": 0.0225},
-		CLBHourlyRate: map[string]float64{"default": 0.025},
 	}
 
 	// Test setting pricing
@@ -47,13 +46,11 @@ func TestConcurrentAccess(t *testing.T) {
 	pricing1 := &RegionPricing{
 		ALBHourlyRate: map[string]float64{"default": 0.0225},
 		NLBHourlyRate: map[string]float64{"default": 0.0225},
-		CLBHourlyRate: map[string]float64{"default": 0.025},
 	}
 
 	pricing2 := &RegionPricing{
 		ALBHourlyRate: map[string]float64{"default": 0.0250},
 		NLBHourlyRate: map[string]float64{"default": 0.0250},
-		CLBHourlyRate: map[string]float64{"default": 0.028},
 	}
 
 	var wg sync.WaitGroup

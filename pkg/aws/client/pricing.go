@@ -157,7 +157,7 @@ func (p *pricing) listELBPrices(ctx context.Context, region string) ([]string, e
 			},
 			{
 				Field: aws.String("productFamily"),
-				Type:  pricingTypes.FilterTypeTermMatch,
+				Type:  pricingTypes.FilterTypeContains,
 				Value: aws.String("Load Balancer"),
 			},
 		},

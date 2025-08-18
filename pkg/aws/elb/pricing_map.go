@@ -16,13 +16,17 @@ import (
 const (
 	ALBHourlyRateDefault = 0.0225
 	NLBHourlyRateDefault = 0.0225
-	CLBHourlyRateDefault = 0.025
+
+	// "Used load balancer capacity units (LCU) per hour"
+	LCUUsage = "LCUUsage"
+
+	// "LoadBalancer hourly usage by Load Balancer (ALB, NLB) per hour"
+	LoadBalancerUsage = "LoadBalancerUsage"
 )
 
 type RegionPricing struct {
 	ALBHourlyRate map[string]float64
 	NLBHourlyRate map[string]float64
-	CLBHourlyRate map[string]float64
 }
 
 type ELBPricingMap struct {
@@ -84,7 +88,6 @@ func (pm *ELBPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 	regionPricing := &RegionPricing{
 		ALBHourlyRate: make(map[string]float64),
 		NLBHourlyRate: make(map[string]float64),
-		CLBHourlyRate: make(map[string]float64),
 	}
 
 	prices, err := client.ListELBPrices(ctx, region)
@@ -107,15 +110,13 @@ func (pm *ELBPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 					continue
 				}
 
-				// Determine the load balancer type based on product family or attributes
-				switch productInfo.Product.Attributes.ProductFamily {
-				case "Load Balancer-Application":
-					regionPricing.ALBHourlyRate["default"] = price
-				case "Load Balancer-Network":
-					regionPricing.NLBHourlyRate["default"] = price
-				case "Load Balancer":
-					// Classic Load Balancer
-					regionPricing.CLBHourlyRate["default"] = price
+				unit := productInfo.Product.Attributes.UsageType
+				// Determine the load balancer type based on the attribute "operation"
+				switch productInfo.Product.Attributes.Operation {
+				case "LoadBalancing:Application":
+					regionPricing.ALBHourlyRate[unit] = price
+				case "LoadBalancing:Network":
+					regionPricing.NLBHourlyRate[unit] = price
 				}
 			}
 		}
@@ -129,10 +130,6 @@ func (pm *ELBPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 	if len(regionPricing.NLBHourlyRate) == 0 {
 		pm.logger.Warn("No NLB pricing data available for region", "region", region)
 		regionPricing.NLBHourlyRate["default"] = NLBHourlyRateDefault // Default NLB rate
-	}
-	if len(regionPricing.CLBHourlyRate) == 0 {
-		pm.logger.Warn("No CLB pricing data available for region", "region", region)
-		regionPricing.CLBHourlyRate["default"] = CLBHourlyRateDefault // Default CLB rate
 	}
 
 	return regionPricing, nil

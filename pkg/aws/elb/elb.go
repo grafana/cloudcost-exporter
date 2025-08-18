@@ -23,10 +23,17 @@ const (
 )
 
 var (
-	LoadBalancerHourlyCostDesc = utils.GenerateDesc(
+	LoadBalancerUsageHourlyCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
-		"loadbalancer_total_usd_per_hour",
+		"loadbalancer_usage_total_usd_per_hour",
+		"The total cost of the load balancer in USD/h",
+		[]string{"name", "region", "type"},
+	)
+	LoadBalancerCapacityUnitsUsageHourlyCostDesc = utils.GenerateDesc(
+		cloudcostexporter.MetricPrefix,
+		subsystem,
+		"loadbalancer_capacity_units_total_usd_per_hour",
 		"The total cost of the load balancer in USD/h",
 		[]string{"name", "region", "type"},
 	)
@@ -49,18 +56,19 @@ type Config struct {
 }
 
 type LoadBalancerInfo struct {
-	Name   string
-	Type   elbTypes.LoadBalancerTypeEnum
-	Region string
-	Cost   float64
+	Name      string
+	Type      elbTypes.LoadBalancerTypeEnum
+	Region    string
+	Cost      float64
+	UsageType string
 }
 
 type elbProduct struct {
 	Product struct {
 		Attributes struct {
-			Region        string `json:"regionCode"`
-			ProductFamily string `json:"productFamily"`
-			LoadBalancer  string `json:"loadBalancer"`
+			RegionCode string `json:"regionCode"`
+			UsageType  string `json:"usageType"`
+			Operation  string `json:"operation"`
 		}
 	}
 	Terms struct {
@@ -87,7 +95,8 @@ func (c *Collector) Register(_ provider.Registry) error {
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
-	ch <- LoadBalancerHourlyCostDesc
+	ch <- LoadBalancerUsageHourlyCostDesc
+	ch <- LoadBalancerCapacityUnitsUsageHourlyCostDesc
 	return nil
 }
 
@@ -109,14 +118,26 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	}
 
 	for _, lb := range loadBalancers {
-		ch <- prometheus.MustNewConstMetric(
-			LoadBalancerHourlyCostDesc,
-			prometheus.GaugeValue,
-			lb.Cost,
-			lb.Name,
-			lb.Region,
-			string(lb.Type),
-		)
+		switch lb.UsageType {
+		case LoadBalancerUsage:
+			ch <- prometheus.MustNewConstMetric(
+				LoadBalancerUsageHourlyCostDesc,
+				prometheus.GaugeValue,
+				lb.Cost,
+				lb.Name,
+				lb.Region,
+				string(lb.Type),
+			)
+		case LCUUsage:
+			ch <- prometheus.MustNewConstMetric(
+				LoadBalancerCapacityUnitsUsageHourlyCostDesc,
+				prometheus.GaugeValue,
+				lb.Cost,
+				lb.Name,
+				lb.Region,
+				string(lb.Type),
+			)
+		}
 	}
 
 	c.logger.Info("Completed ELB collection", "load_balancers", len(loadBalancers))
@@ -198,11 +219,15 @@ func (c *Collector) calculateLoadBalancerCost(lb elbTypes.LoadBalancer, region s
 
 	switch lb.Type {
 	case elbTypes.LoadBalancerTypeEnumApplication:
-		if rate, exists := pricing.ALBHourlyRate["default"]; exists {
+		if rate, exists := pricing.ALBHourlyRate[LCUUsage]; exists {
+			return rate
+		} else if rate, exists := pricing.ALBHourlyRate[LoadBalancerUsage]; exists {
 			return rate
 		}
 	case elbTypes.LoadBalancerTypeEnumNetwork:
-		if rate, exists := pricing.NLBHourlyRate["default"]; exists {
+		if rate, exists := pricing.NLBHourlyRate[LCUUsage]; exists {
+			return rate
+		} else if rate, exists := pricing.NLBHourlyRate[LoadBalancerUsage]; exists {
 			return rate
 		}
 	}

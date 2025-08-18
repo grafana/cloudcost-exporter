@@ -148,7 +148,6 @@ func TestCollectRegionLoadBalancers(t *testing.T) {
 	collector.pricingMap.SetRegionPricing("us-east-1", &RegionPricing{
 		ALBHourlyRate: map[string]float64{"default": 0.0225},
 		NLBHourlyRate: map[string]float64{"default": 0.0225},
-		CLBHourlyRate: map[string]float64{"default": 0.025},
 	})
 
 	loadBalancers, err := collector.collectRegionLoadBalancers("us-east-1")
