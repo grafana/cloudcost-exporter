@@ -137,7 +137,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			// collectors = append(collectors, collector)
 			// and remove the awsClient from the config
 		case serviceNATGW:
-			natGwCollector := awsgwnat.New(&awsgwnat.Config{
+			natGwCollector := awsgwnat.New(ctx, &awsgwnat.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
 				Regions:        regions,

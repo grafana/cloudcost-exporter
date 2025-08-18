@@ -12,13 +12,13 @@ import (
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	awsclient "github.com/grafana/cloudcost-exporter/pkg/aws/client"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/pricingmap"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 const (
-	serviceName   = "natgateway"
-	errGroupLimit = 5
+	serviceName = "natgateway"
 )
 
 var (
@@ -44,19 +44,33 @@ var (
 type Collector struct {
 	// Collector fields
 	scrapeInterval time.Duration
-	nextScrape     time.Time
-	pricingMap     *PricingStore
+	PricingStore   pricingmap.PricingStoreRefresher
 
 	logger *slog.Logger
 }
 
-func New(config *Config) *Collector {
+func New(ctx context.Context, config *Config) *Collector {
 	logger := config.Logger.With("logger", serviceName)
+
+	priceTicker := time.NewTicker(pricingmap.PriceRefreshInterval)
+	pricingStore := pricingmap.NewPricingStore(ctx, logger, config.Regions, config.RegionMap)
+
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-priceTicker.C:
+				logger.LogAttrs(ctx, slog.LevelInfo, "refreshing pricing map")
+				pricingStore.PopulatePricingMap(ctx)
+			}
+		}
+	}(ctx)
 
 	return &Collector{
 		logger:         logger,
 		scrapeInterval: config.ScrapeInterval,
-		pricingMap:     NewPricingStore(logger, config.Regions, config.RegionMap),
+		PricingStore:   pricingStore,
 	}
 }
 
@@ -75,23 +89,12 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	return nil
 }
 
-func (c *Collector) Register(registry provider.Registry) error { return nil }
-
 // Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	ctx := context.Background()
-	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
-
+	c.logger.LogAttrs(context.Background(), slog.LevelInfo, "calling collect")
 	start := time.Now()
-	if c.pricingMap == nil || start.After(c.nextScrape) {
-		err := c.pricingMap.populatePricingMap(ctx)
-		if err != nil {
-			return fmt.Errorf("error populating pricing map: %w", err)
-		}
-		c.nextScrape = start.Add(c.scrapeInterval)
-	}
 
-	for region, pricePerUnit := range c.pricingMap.pricePerUnitPerRegion {
+	for region, pricePerUnit := range c.PricingStore.GetPricePerUnitPerRegion() {
 		for usageType, price := range *pricePerUnit {
 			switch {
 			case strings.Contains(usageType, NATGatewayHours):
@@ -111,3 +114,5 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	return 0
 }
+
+func (c *Collector) Register(registry provider.Registry) error { return nil }
