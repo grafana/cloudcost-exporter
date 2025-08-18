@@ -60,23 +60,3 @@ func (mr *MockELBv2MockRecorder) DescribeLoadBalancers(ctx, params any, optFns .
 	varargs := append([]any{ctx, params}, optFns...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeLoadBalancers", reflect.TypeOf((*MockELBv2)(nil).DescribeLoadBalancers), varargs...)
 }
-
-// DescribeTargetGroups mocks base method.
-func (m *MockELBv2) DescribeTargetGroups(ctx context.Context, params *elasticloadbalancingv2.DescribeTargetGroupsInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeTargetGroupsOutput, error) {
-	m.ctrl.T.Helper()
-	varargs := []any{ctx, params}
-	for _, a := range optFns {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "DescribeTargetGroups", varargs...)
-	ret0, _ := ret[0].(*elasticloadbalancingv2.DescribeTargetGroupsOutput)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// DescribeTargetGroups indicates an expected call of DescribeTargetGroups.
-func (mr *MockELBv2MockRecorder) DescribeTargetGroups(ctx, params any, optFns ...any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	varargs := append([]any{ctx, params}, optFns...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeTargetGroups", reflect.TypeOf((*MockELBv2)(nil).DescribeTargetGroups), varargs...)
-}

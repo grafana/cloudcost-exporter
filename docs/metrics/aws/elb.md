@@ -70,7 +70,6 @@ Required permissions for ELB metrics collection:
             "Effect": "Allow",
             "Action": [
                 "elasticloadbalancing:DescribeLoadBalancers",
-                "elasticloadbalancing:DescribeTargetGroups"
             ],
             "Resource": "*"
         },

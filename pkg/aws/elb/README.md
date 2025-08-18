@@ -57,7 +57,6 @@ The following AWS IAM permissions are required:
             "Effect": "Allow",
             "Action": [
                 "elasticloadbalancing:DescribeLoadBalancers",
-                "elasticloadbalancing:DescribeTargetGroups"
             ],
             "Resource": "*"
         },

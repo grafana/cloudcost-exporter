@@ -26,7 +26,7 @@ var (
 	LoadBalancerHourlyCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
-		"total_usd_per_hour",
+		"loadbalancer_total_usd_per_hour",
 		"The total cost of the load balancer in USD/h",
 		[]string{"name", "region", "type"},
 	)
