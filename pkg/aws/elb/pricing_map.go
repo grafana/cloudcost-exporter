@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"sync"
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -111,6 +112,13 @@ func (pm *ELBPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 				}
 
 				unit := productInfo.Product.Attributes.UsageType
+				if strings.Contains(unit, LCUUsage) {
+					unit = LCUUsage
+				}
+				if strings.Contains(unit, LoadBalancerUsage) {
+					unit = LoadBalancerUsage
+				}
+
 				// Determine the load balancer type based on the attribute "operation"
 				switch productInfo.Product.Attributes.Operation {
 				case "LoadBalancing:Application":
@@ -120,16 +128,6 @@ func (pm *ELBPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 				}
 			}
 		}
-	}
-
-	// Set default rates if not found (fallback values)
-	if len(regionPricing.ALBHourlyRate) == 0 {
-		pm.logger.Warn("No ALB pricing data available for region", "region", region)
-		regionPricing.ALBHourlyRate["default"] = ALBHourlyRateDefault // Default ALB rate
-	}
-	if len(regionPricing.NLBHourlyRate) == 0 {
-		pm.logger.Warn("No NLB pricing data available for region", "region", region)
-		regionPricing.NLBHourlyRate["default"] = NLBHourlyRateDefault // Default NLB rate
 	}
 
 	return regionPricing, nil
