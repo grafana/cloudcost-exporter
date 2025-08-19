@@ -96,10 +96,11 @@ func (pm *ELBPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 		return nil, fmt.Errorf("failed to get ELB pricing: %w", err)
 	}
 
+	pricingErr := fmt.Sprintf("error fetching pricing: %s", region)
 	for _, product := range prices {
 		var productInfo elbProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
-			pm.logger.Warn("Failed to unmarshal pricing product", "error", err)
+			pm.logger.Warn(pricingErr, "failed to unmarshal pricing product", "error", err)
 			continue
 		}
 
@@ -108,27 +109,37 @@ func (pm *ELBPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 			for _, priceDimension := range term.PriceDimensions {
 				price, err := strconv.ParseFloat(priceDimension.PricePerUnit["USD"], 64)
 				if err != nil {
+					pm.logger.Warn(pricingErr, "failed to parse price")
+					continue
+				}
+
+				operation := productInfo.Product.Attributes.Operation
+
+				// skip pricing for Classic Load Balancers
+				if operation == "LoadBalancing" {
 					continue
 				}
 
 				unit := productInfo.Product.Attributes.UsageType
 				if strings.Contains(unit, LCUUsage) {
 					unit = LCUUsage
-				}
-				if strings.Contains(unit, LoadBalancerUsage) {
+				} else if strings.Contains(unit, LoadBalancerUsage) {
 					unit = LoadBalancerUsage
+				} else if strings.Contains(unit, "DataProcessing-Bytes") || strings.Contains(unit, "IdleProvisionedLBCapacity") {
+					continue
+				} else {
+					pm.logger.Warn(pricingErr, "unknown usage type", "usageType", unit)
+					continue
 				}
 
 				// Determine the load balancer type based on the attribute "operation"
-				switch productInfo.Product.Attributes.Operation {
+				switch operation {
 				case "LoadBalancing:Application":
 					regionPricing.ALBHourlyRate[unit] = price
 				case "LoadBalancing:Network":
 					regionPricing.NLBHourlyRate[unit] = price
-				case "LoadBalancing":
-					continue
 				default:
-					pm.logger.Warn("Unknown operation", "operation", productInfo.Product.Attributes.Operation)
+					pm.logger.Warn(pricingErr, "unknown operation", "operation", productInfo.Product.Attributes.Operation)
 				}
 			}
 		}

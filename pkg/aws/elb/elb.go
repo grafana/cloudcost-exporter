@@ -56,11 +56,11 @@ type Config struct {
 }
 
 type LoadBalancerInfo struct {
-	Name      string
-	Type      elbTypes.LoadBalancerTypeEnum
-	Region    string
-	Cost      float64
-	UsageType string
+	Name                  string
+	Type                  elbTypes.LoadBalancerTypeEnum
+	Region                string
+	LCUUsageCost          float64
+	LoadBalancerUsageCost float64
 }
 
 type elbProduct struct {
@@ -118,27 +118,30 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	}
 
 	for _, lb := range loadBalancers {
-		switch lb.UsageType {
-		case LoadBalancerUsage:
+		if lb.LCUUsageCost > 0 {
 			ch <- prometheus.MustNewConstMetric(
 				LoadBalancerUsageHourlyCostDesc,
 				prometheus.GaugeValue,
-				lb.Cost,
+				lb.LoadBalancerUsageCost,
 				lb.Name,
 				lb.Region,
 				string(lb.Type),
 			)
-		case LCUUsage:
+		} else {
+			c.logger.Warn("No LCUUsage cost data available for load balancer", "name", lb.Name, "region", lb.Region, "type", lb.Type)
+		}
+
+		if lb.LoadBalancerUsageCost > 0 {
 			ch <- prometheus.MustNewConstMetric(
 				LoadBalancerCapacityUnitsUsageHourlyCostDesc,
 				prometheus.GaugeValue,
-				lb.Cost,
+				lb.LCUUsageCost,
 				lb.Name,
 				lb.Region,
 				string(lb.Type),
 			)
-		default:
-			c.logger.Warn("Unknown usage type", "usageType", lb.UsageType)
+		} else {
+			c.logger.Warn("No LoadBalancerUsage cost data available for load balancer", "name", lb.Name, "region", lb.Region, "type", lb.Type)
 		}
 	}
 
@@ -200,40 +203,48 @@ func (c *Collector) collectRegionLoadBalancers(region string) ([]LoadBalancerInf
 	}
 
 	for _, lb := range lbList {
-		cost := c.calculateLoadBalancerCost(lb, region)
+		lcuUsageCost, loadBalancerUsageCost := c.calculateLoadBalancerCost(lb, region)
 		loadBalancers = append(loadBalancers, LoadBalancerInfo{
-			Name:   *lb.LoadBalancerName,
-			Type:   lb.Type,
-			Region: region,
-			Cost:   cost,
+			Name:                  *lb.LoadBalancerName,
+			Type:                  lb.Type,
+			Region:                region,
+			LCUUsageCost:          lcuUsageCost,
+			LoadBalancerUsageCost: loadBalancerUsageCost,
 		})
 	}
 
 	return loadBalancers, nil
 }
 
-func (c *Collector) calculateLoadBalancerCost(lb elbTypes.LoadBalancer, region string) float64 {
+func (c *Collector) calculateLoadBalancerCost(lb elbTypes.LoadBalancer, region string) (float64, float64) {
 	pricing, err := c.pricingMap.GetRegionPricing(region)
 	if err != nil {
 		c.logger.Warn("Failed to get pricing data for region", "error", err)
-		return 0
+		return 0, 0
 	}
 
+	lcuUsageCost, loadBalancerUsageCost := 0.0, 0.0
 	switch lb.Type {
 	case elbTypes.LoadBalancerTypeEnumApplication:
 		if rate, exists := pricing.ALBHourlyRate[LCUUsage]; exists {
-			return rate
-		} else if rate, exists := pricing.ALBHourlyRate[LoadBalancerUsage]; exists {
-			return rate
+			lcuUsageCost = rate
+		}
+		if rate, exists := pricing.ALBHourlyRate[LoadBalancerUsage]; exists {
+			loadBalancerUsageCost = rate
 		}
 	case elbTypes.LoadBalancerTypeEnumNetwork:
 		if rate, exists := pricing.NLBHourlyRate[LCUUsage]; exists {
-			return rate
-		} else if rate, exists := pricing.NLBHourlyRate[LoadBalancerUsage]; exists {
-			return rate
+			lcuUsageCost = rate
 		}
+		if rate, exists := pricing.NLBHourlyRate[LoadBalancerUsage]; exists {
+			loadBalancerUsageCost = rate
+		}
+	default:
+		c.logger.Warn("Unknown load balancer type", "type", lb.Type)
 	}
 
-	c.logger.Warn("No pricing data available for load balancer type", "type", lb.Type, "region", region)
-	return 0
+	if lcuUsageCost == 0 && loadBalancerUsageCost == 0 {
+		// c.logger.Warn("No pricing data available for load balancer type", "type", lb.Type, "region", region)
+	}
+	return lcuUsageCost, loadBalancerUsageCost
 }
