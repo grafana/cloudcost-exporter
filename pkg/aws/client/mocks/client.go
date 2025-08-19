@@ -16,7 +16,7 @@ import (
 
 	types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	types0 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
-	types0 "github.com/aws/aws-sdk-go-v2/service/pricing/types"
+	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	client "github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	prometheus "github.com/prometheus/client_golang/prometheus"
 	gomock "go.uber.org/mock/gomock"
@@ -122,7 +122,7 @@ func (mr *MockClientMockRecorder) ListEBSVolumes(ctx any) *gomock.Call {
 }
 
 // ListEC2ServicePrices mocks base method.
-func (m *MockClient) ListEC2ServicePrices(ctx context.Context, region string, filters []types0.Filter) ([]string, error) {
+func (m *MockClient) ListEC2ServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListEC2ServicePrices", ctx, region, filters)
 	ret0, _ := ret[0].([]string)
