@@ -125,6 +125,8 @@ func (pm *ELBPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 					regionPricing.ALBHourlyRate[unit] = price
 				case "LoadBalancing:Network":
 					regionPricing.NLBHourlyRate[unit] = price
+				case "LoadBalancing":
+					continue
 				default:
 					pm.logger.Warn("Unknown operation", "operation", productInfo.Product.Attributes.Operation)
 				}
