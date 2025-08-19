@@ -4,13 +4,13 @@ The AWS ELB (Elastic Load Balancer) module exports cost metrics for Application 
 
 ## Configuration
 
-To enable ELB metrics collection, add `"ELB"` to the AWS services configuration:
+To enable ELB metrics collection, add `"elb"` to the AWS services configuration:
 
 ```yaml
 providers:
   aws:
     services:
-      - "ELB"
+      - "elb"
     # other configuration...
 ```
 
@@ -18,36 +18,14 @@ providers:
 
 | Metric Name | Type | Description | Labels |
 |-------------|------|-------------|--------|
-| `cloudcost_aws_elb_loadbalancer_total_usd_per_hour` | Gauge | Total hourly cost of the load balancer in USD | `name`, `arn`, `region`, `type` |
+| `cloudcost_aws_elb_loadbalancer_usage_total_usd_per_hour` | Gauge | The total cost of hourly usage of the load balancer in USD/h | `name`, `region`, `type` |
+| `cloudcost_aws_elb_loadbalancer_capacity_units_total_usd_per_hour` | Gauge | The total cost of Load Balancer Capacity units (LCU) used in USD/hour | `name`, `region`, `type` |
 
 ### Labels
 
 - **name**: Load balancer name
-- **arn**: Full ARN of the load balancer
 - **region**: AWS region (e.g., `us-east-1`)
 - **type**: Load balancer type (`application` or `network`)
-
-## Example Queries
-
-### Total ELB costs by region
-```promql
-sum by (region) (cloudcost_aws_elb_loadbalancer_total_usd_per_hour)
-```
-
-### Most expensive load balancers
-```promql
-topk(10, cloudcost_aws_elb_loadbalancer_total_usd_per_hour)
-```
-
-### ALB vs NLB cost comparison
-```promql
-sum by (type) (cloudcost_aws_elb_loadbalancer_total_usd_per_hour)
-```
-
-### Monthly cost estimation
-```promql
-cloudcost_aws_elb_loadbalancer_total_usd_per_hour * 24 * 30
-```
 
 ## Pricing Notes
 
@@ -56,7 +34,7 @@ cloudcost_aws_elb_loadbalancer_total_usd_per_hour * 24 * 30
 - Default fallback rates are used if pricing data is unavailable:
   - ALB: $0.0225/hour
   - NLB: $0.0225/hour
-- Classic Load Balancers are not supported (use ELB v1 API)
+- Classic Load Balancers are not supported (they use ELB v1 API)
 
 ## IAM Permissions
 
@@ -69,7 +47,7 @@ Required permissions for ELB metrics collection:
         {
             "Effect": "Allow",
             "Action": [
-                "elasticloadbalancing:DescribeLoadBalancers",
+                "elasticloadbalancing:DescribeLoadBalancers"
             ],
             "Resource": "*"
         },
