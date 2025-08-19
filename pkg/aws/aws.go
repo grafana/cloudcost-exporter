@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
+	awsgwnat "github.com/grafana/cloudcost-exporter/pkg/aws/natgateway"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/rds"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
@@ -69,9 +70,10 @@ const (
 	maxRetryAttempts = 10
 
 	// AWS service names used across the AWS provider.
-	serviceS3  = "S3"
-	serviceEC2 = "EC2"
-	serviceRDS = "RDS"
+	serviceS3    = "S3"
+	serviceEC2   = "EC2"
+	serviceRDS   = "RDS"
+	serviceNATGW = "NATGATEWAY"
 )
 
 func New(ctx context.Context, config *Config) (*AWS, error) {
@@ -100,8 +102,8 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	for _, service := range config.Services {
 		service = strings.ToUpper(service)
 
-		// region API is shared between EC2 and RDS
-		if service == serviceRDS || service == serviceEC2 {
+		// region API is shared between EC2, RDS, and NATGW
+		if service == serviceRDS || service == serviceEC2 || service == serviceNATGW {
 			regions, err = awsClient.DescribeRegions(ctx, false)
 			if err != nil {
 				return nil, fmt.Errorf("error getting regions: %w", err)
@@ -133,6 +135,15 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			}, awsClient)
 			// TODO: append new aws rds collectors next
 			// collectors = append(collectors, collector)
+			// and remove the awsClient from the config
+		case serviceNATGW:
+			natGwCollector := awsgwnat.New(ctx, &awsgwnat.Config{
+				ScrapeInterval: config.ScrapeInterval,
+				Logger:         logger,
+				Regions:        regions,
+				RegionMap:      awsClientPerRegion,
+			})
+			collectors = append(collectors, natGwCollector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",
 				slog.String("service", service),
@@ -216,16 +227,16 @@ func newRegionClientMap(ctx context.Context, globalConfig aws.Config, regions []
 }
 
 func createAWSConfig(ctx context.Context, region, profile, roleARN string) (aws.Config, error) {
-	optionsFunc := make([]func(options *config.LoadOptions) error, 0)
-	optionsFunc = append(optionsFunc, config.WithEC2IMDSRegion())
-	optionsFunc = append(optionsFunc, config.WithRetryMaxAttempts(maxRetryAttempts))
+	optionsFunc := make([]func(options *awsconfig.LoadOptions) error, 0)
+	optionsFunc = append(optionsFunc, awsconfig.WithEC2IMDSRegion())
+	optionsFunc = append(optionsFunc, awsconfig.WithRetryMaxAttempts(maxRetryAttempts))
 
 	if region != "" {
-		optionsFunc = append(optionsFunc, config.WithRegion(region))
+		optionsFunc = append(optionsFunc, awsconfig.WithRegion(region))
 	}
 
 	if profile != "" {
-		optionsFunc = append(optionsFunc, config.WithSharedConfigProfile(profile))
+		optionsFunc = append(optionsFunc, awsconfig.WithSharedConfigProfile(profile))
 	}
 
 	if roleARN != "" {
@@ -236,19 +247,19 @@ func createAWSConfig(ctx context.Context, region, profile, roleARN string) (aws.
 		optionsFunc = append(optionsFunc, role)
 	}
 
-	return config.LoadDefaultConfig(ctx, optionsFunc...)
+	return awsconfig.LoadDefaultConfig(ctx, optionsFunc...)
 }
 
-func assumeRole(roleARN string, options []func(*config.LoadOptions) error) (config.LoadOptionsFunc, error) {
+func assumeRole(roleARN string, options []func(*awsconfig.LoadOptions) error) (awsconfig.LoadOptionsFunc, error) {
 	// Add the credentials to assume the role specified in config.RoleARN
-	ac, err := config.LoadDefaultConfig(context.Background(), options...)
+	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
 	if err != nil {
 		return nil, err
 	}
 
 	stsService := sts.NewFromConfig(ac)
 
-	return config.WithCredentialsProvider(
+	return awsconfig.WithCredentialsProvider(
 		aws.NewCredentialsCache(
 			stscreds.NewAssumeRoleProvider(
 				stsService,

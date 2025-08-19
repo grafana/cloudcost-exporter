@@ -1,9 +1,15 @@
 // Package utils contains shared helpers for metric construction and constants.
 package utils
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 const (
+	// DefaultScrapeInterval is the default scrape interval for the collectors.
+	DefaultScrapeInterval = 1 * time.Hour
 	// HoursInMonth is an approximate average number of hours in a month.
 	// 24.35 is the average number of hours per day over a year.
 	HoursInMonth = 24.35 * 30

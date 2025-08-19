@@ -12,7 +12,7 @@ import (
 // billingToRegionMap maps the AWS billing region code to the AWS region
 // Billing codes: https://docs.aws.amazon.com/AmazonS3/latest/userguide/aws-usage-report-understand.html
 // Regions: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions
-var billingToRegionMap = map[string]string{
+var BillingToRegionMap = map[string]string{
 	"APE1":                   "ap-east-1",      // Hong Kong
 	"APN1":                   "ap-northeast-1", // Tokyo
 	"APN2":                   "ap-northeast-2", // Seoul

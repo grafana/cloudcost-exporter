@@ -107,7 +107,7 @@ func getRegionFromKey(key string) string {
 	}
 
 	billingRegion := split[0]
-	if region, ok := billingToRegionMap[billingRegion]; ok {
+	if region, ok := BillingToRegionMap[billingRegion]; ok {
 		return region
 	}
 	log.Printf("Could not find mapped region: %s:%s\n", key, billingRegion)
@@ -128,7 +128,7 @@ func getComponentFromKey(key string) string {
 	val = split[1]
 	// Check to see if the value is a region. If so, set val to empty string to skip the dimension
 	// Currently this is such a minor part of our bill that it's not worth it.
-	if _, ok := billingToRegionMap[val]; ok {
+	if _, ok := BillingToRegionMap[val]; ok {
 		val = ""
 	}
 	// If it's requests, we want to include if it's tier 1 or tier 2
