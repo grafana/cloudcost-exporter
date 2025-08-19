@@ -137,6 +137,8 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				lb.Region,
 				string(lb.Type),
 			)
+		default:
+			c.logger.Warn("Unknown usage type", "usageType", lb.UsageType)
 		}
 	}
 
