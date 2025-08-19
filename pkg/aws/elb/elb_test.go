@@ -105,8 +105,8 @@ func TestCollectRegionLoadBalancers(t *testing.T) {
 
 	// Set up mock pricing data
 	collector.pricingMap.SetRegionPricing("us-east-1", &RegionPricing{
-		ALBHourlyRate: map[string]float64{LCUUsage: 0.0225, LoadBalancerUsage: 0.0225},
-		NLBHourlyRate: map[string]float64{LCUUsage: 0.0225, LoadBalancerUsage: 0.0225},
+		ALBHourlyRate: map[string]float64{LCUUsage: 0.008, LoadBalancerUsage: 0.0225},
+		NLBHourlyRate: map[string]float64{LCUUsage: 0.008, LoadBalancerUsage: 0.0225},
 	})
 
 	loadBalancers, err := collector.collectRegionLoadBalancers("us-east-1")
@@ -117,12 +117,14 @@ func TestCollectRegionLoadBalancers(t *testing.T) {
 	// Check ALB
 	assert.Equal(t, "test-alb", loadBalancers[0].Name)
 	assert.Equal(t, elbTypes.LoadBalancerTypeEnumApplication, loadBalancers[0].Type)
-	assert.Equal(t, 0.0225, loadBalancers[0].Cost)
+	assert.Equal(t, 0.008, loadBalancers[0].LCUUsageCost)
+	assert.Equal(t, 0.0225, loadBalancers[0].LoadBalancerUsageCost)
 
 	// Check NLB
 	assert.Equal(t, "test-nlb", loadBalancers[1].Name)
 	assert.Equal(t, elbTypes.LoadBalancerTypeEnumNetwork, loadBalancers[1].Type)
-	assert.Equal(t, 0.0225, loadBalancers[1].Cost)
+	assert.Equal(t, 0.008, loadBalancers[1].LCUUsageCost)
+	assert.Equal(t, 0.0225, loadBalancers[1].LoadBalancerUsageCost)
 
 }
 

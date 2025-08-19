@@ -100,7 +100,7 @@ func (pm *ELBPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 	for _, product := range prices {
 		var productInfo elbProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
-			pm.logger.Warn(pricingErr, "failed to unmarshal pricing product", "error", err)
+			pm.logger.Warn(pricingErr, "failed to unmarshal pricing product", err)
 			continue
 		}
 
@@ -109,7 +109,7 @@ func (pm *ELBPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 			for _, priceDimension := range term.PriceDimensions {
 				price, err := strconv.ParseFloat(priceDimension.PricePerUnit["USD"], 64)
 				if err != nil {
-					pm.logger.Warn(pricingErr, "failed to parse price")
+					pm.logger.Warn(pricingErr, "failed to parse price", err)
 					continue
 				}
 
@@ -128,7 +128,7 @@ func (pm *ELBPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 				} else if strings.Contains(unit, "DataProcessing-Bytes") || strings.Contains(unit, "IdleProvisionedLBCapacity") {
 					continue
 				} else {
-					pm.logger.Warn(pricingErr, "unknown usage type", "usageType", unit)
+					pm.logger.Warn(pricingErr, "unknown usage type", unit)
 					continue
 				}
 
@@ -139,7 +139,7 @@ func (pm *ELBPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 				case "LoadBalancing:Network":
 					regionPricing.NLBHourlyRate[unit] = price
 				default:
-					pm.logger.Warn(pricingErr, "unknown operation", "operation", productInfo.Product.Attributes.Operation)
+					pm.logger.Warn(pricingErr, "unknown operation", productInfo.Product.Attributes.Operation)
 				}
 			}
 		}
