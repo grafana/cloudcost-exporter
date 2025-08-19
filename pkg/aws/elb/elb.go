@@ -244,7 +244,9 @@ func (c *Collector) calculateLoadBalancerCost(lb elbTypes.LoadBalancer, region s
 	}
 
 	if lcuUsageCost == 0 && loadBalancerUsageCost == 0 {
-		// c.logger.Warn("No pricing data available for load balancer type", "type", lb.Type, "region", region)
+		c.logger.Warn("No pricing data available for load balancer type, using default pricing", "type", lb.Type, "region", region)
+		lcuUsageCost = LCUUsageHourlyRateDefault
+		loadBalancerUsageCost = LoadBalancerUsageHourlyRateDefault
 	}
 	return lcuUsageCost, loadBalancerUsageCost
 }

@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	ALBHourlyRateDefault = 0.0225
-	NLBHourlyRateDefault = 0.0225
+	LCUUsageHourlyRateDefault          = 0.0225
+	LoadBalancerUsageHourlyRateDefault = 0.008
 
 	// "Used load balancer capacity units (LCU) per hour"
 	LCUUsage = "LCUUsage"
