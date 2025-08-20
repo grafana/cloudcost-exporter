@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	awsPricing "github.com/aws/aws-sdk-go-v2/service/pricing"
 	rds2 "github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -21,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/elb"
 	awsgwnat "github.com/grafana/cloudcost-exporter/pkg/aws/natgateway"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/rds"
 
@@ -74,12 +76,13 @@ const (
 	serviceEC2   = "EC2"
 	serviceRDS   = "RDS"
 	serviceNATGW = "NATGATEWAY"
+	serviceELB   = "ELB"
 )
 
 func New(ctx context.Context, config *Config) (*AWS, error) {
 	var collectors []provider.Collector
-	logger := config.Logger.With("provider", subsystem)
 
+	logger := config.Logger.With("provider", subsystem)
 	// There are two scenarios:
 	// 1. Running locally, the user must pass in a region and profile to use
 	// 2. Running within an EC2 instance and the region and profile can be derived
@@ -90,20 +93,19 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	awsClient := client.NewAWSClient(client.Config{
 		PricingService: awsPricing.NewFromConfig(ac),
 		EC2Service:     ec2.NewFromConfig(ac),
 		BillingService: costexplorer.NewFromConfig(ac),
 		RDSService:     rds2.NewFromConfig(ac),
+		ELBService:     elbv2.NewFromConfig(ac),
 	})
-
 	var regions []types.Region
 	for _, service := range config.Services {
 		service = strings.ToUpper(service)
 
 		// region API is shared between EC2, RDS, and NATGW
-		if service == serviceRDS || service == serviceEC2 || service == serviceNATGW {
+		if service == serviceRDS || service == serviceEC2 || service == serviceNATGW || service == serviceELB {
 			regions, err = awsClient.DescribeRegions(ctx, false)
 			if err != nil {
 				return nil, fmt.Errorf("error getting regions: %w", err)
@@ -144,6 +146,14 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 				RegionMap:      awsClientPerRegion,
 			})
 			collectors = append(collectors, natGwCollector)
+		case serviceELB:
+			collector := elb.New(&elb.Config{
+				Regions:        regions,
+				RegionClients:  awsClientPerRegion,
+				ScrapeInterval: config.ScrapeInterval,
+				Logger:         logger,
+			})
+			collectors = append(collectors, collector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",
 				slog.String("service", service),
@@ -220,6 +230,7 @@ func newRegionClientMap(ctx context.Context, globalConfig aws.Config, regions []
 				EC2Service:     ec2.NewFromConfig(ac),
 				BillingService: costexplorer.NewFromConfig(globalConfig),
 				RDSService:     rds2.NewFromConfig(globalConfig),
+				ELBService:     elbv2.NewFromConfig(ac),
 			})
 	}
 
