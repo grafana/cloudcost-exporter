@@ -228,25 +228,35 @@ func (c *Collector) calculateLoadBalancerCost(lb elbTypes.LoadBalancer, region s
 	case elbTypes.LoadBalancerTypeEnumApplication:
 		if rate, exists := pricing.ALBHourlyRate[LCUUsage]; exists {
 			lcuUsageCost = rate
+		} else {
+			c.logger.Warn("No LCUUsage cost data available for ALB", "region", region)
+			lcuUsageCost = ALCUUsageHourlyRateDefault
 		}
+
 		if rate, exists := pricing.ALBHourlyRate[LoadBalancerUsage]; exists {
 			loadBalancerUsageCost = rate
+		} else {
+			c.logger.Warn("No LoadBalancerUsage cost data available for ALB", "region", region)
+			loadBalancerUsageCost = LoadBalancerUsageHourlyRateDefault
 		}
+
 	case elbTypes.LoadBalancerTypeEnumNetwork:
 		if rate, exists := pricing.NLBHourlyRate[LCUUsage]; exists {
 			lcuUsageCost = rate
+		} else {
+			c.logger.Warn("No LCUUsage cost data available for NLB", "region", region)
+			lcuUsageCost = NLCUUsageHourlyRateDefault
 		}
+
 		if rate, exists := pricing.NLBHourlyRate[LoadBalancerUsage]; exists {
 			loadBalancerUsageCost = rate
+		} else {
+			c.logger.Warn("No LoadBalancerUsage cost data available for NLB", "region", region)
+			loadBalancerUsageCost = LoadBalancerUsageHourlyRateDefault
 		}
 	default:
 		c.logger.Warn("Unknown load balancer type", "type", lb.Type)
 	}
 
-	if lcuUsageCost == 0 && loadBalancerUsageCost == 0 {
-		c.logger.Warn("No pricing data available for load balancer type, using default pricing", "type", lb.Type, "region", region)
-		lcuUsageCost = LCUUsageHourlyRateDefault
-		loadBalancerUsageCost = LoadBalancerUsageHourlyRateDefault
-	}
 	return lcuUsageCost, loadBalancerUsageCost
 }
