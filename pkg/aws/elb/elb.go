@@ -118,7 +118,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	}
 
 	for _, lb := range loadBalancers {
-		if lb.LCUUsageCost > 0 {
+		if lb.LoadBalancerUsageCost > 0 {
 			ch <- prometheus.MustNewConstMetric(
 				LoadBalancerUsageHourlyCostDesc,
 				prometheus.GaugeValue,
@@ -128,10 +128,10 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				string(lb.Type),
 			)
 		} else {
-			c.logger.Warn("No LCUUsage cost data available for load balancer", "name", lb.Name, "region", lb.Region, "type", lb.Type)
+			c.logger.Warn("No LoadBalancerUsage cost data available for load balancer", "name", lb.Name, "region", lb.Region, "type", lb.Type)
 		}
 
-		if lb.LoadBalancerUsageCost > 0 {
+		if lb.LCUUsageCost > 0 {
 			ch <- prometheus.MustNewConstMetric(
 				LoadBalancerCapacityUnitsUsageHourlyCostDesc,
 				prometheus.GaugeValue,
@@ -141,7 +141,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				string(lb.Type),
 			)
 		} else {
-			c.logger.Warn("No LoadBalancerUsage cost data available for load balancer", "name", lb.Name, "region", lb.Region, "type", lb.Type)
+			c.logger.Warn("No LCUUsage cost data available for load balancer", "name", lb.Name, "region", lb.Region, "type", lb.Type)
 		}
 	}
 
