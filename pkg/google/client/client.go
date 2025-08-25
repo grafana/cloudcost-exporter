@@ -15,6 +15,8 @@ type Client interface {
 	ExportBucketInfo(ctx context.Context, projects []string, m *metrics.Metrics) error
 	GetPricing(ctx context.Context, serviceName string) []*billingpb.Sku
 	GetZones(project string) ([]*compute.Zone, error)
+	GetRegions(project string) ([]*compute.Region, error)
 	ListInstancesInZone(projectId, zone string) ([]*MachineSpec, error)
 	ListDisks(ctx context.Context, project string, zone string) ([]*compute.Disk, error)
+	ListForwardingRules(ctx context.Context, project string, region string) ([]*compute.ForwardingRule, error)
 }
