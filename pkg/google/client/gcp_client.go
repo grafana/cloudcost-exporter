@@ -78,10 +78,18 @@ func (c *GCPClient) GetZones(projectId string) ([]*computev1.Zone, error) {
 	return c.compute.getZones(projectId)
 }
 
+func (c *GCPClient) GetRegions(projectId string) ([]*computev1.Region, error) {
+	return c.compute.getRegions(projectId)
+}
+
 func (c *GCPClient) ListInstancesInZone(projectId, zone string) ([]*MachineSpec, error) {
 	return c.compute.listInstancesInZone(projectId, zone)
 }
 
 func (c *GCPClient) ListDisks(ctx context.Context, projectId string, zone string) ([]*computev1.Disk, error) {
 	return c.compute.listDisks(ctx, projectId, zone)
+}
+
+func (c *GCPClient) ListForwardingRules(ctx context.Context, projectId string, region string) ([]*computev1.ForwardingRule, error) {
+	return c.compute.listForwardingRules(ctx, projectId, region)
 }
