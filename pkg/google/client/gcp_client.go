@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
@@ -84,4 +85,8 @@ func (c *GCPClient) ListInstancesInZone(projectId, zone string) ([]*MachineSpec,
 
 func (c *GCPClient) ListDisks(ctx context.Context, projectId string, zone string) ([]*computev1.Disk, error) {
 	return c.compute.listDisks(ctx, projectId, zone)
+}
+
+func (c *GCPClient) ListForwardingRules(ctx context.Context, logger *slog.Logger, projectId string) {
+	c.compute.listForwardingRules(ctx, logger, projectId)
 }
