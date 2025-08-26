@@ -16,7 +16,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.55.1
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.239.0
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.49.0
-	github.com/aws/aws-sdk-go-v2/service/pricing v1.36.1
+	github.com/aws/aws-sdk-go-v2/service/pricing v1.39.0
 	github.com/aws/aws-sdk-go-v2/service/rds v1.100.1
 	github.com/aws/aws-sdk-go-v2/service/sts v1.35.1
 	github.com/google/go-cmp v0.7.0
