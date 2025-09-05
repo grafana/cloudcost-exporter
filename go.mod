@@ -18,7 +18,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.49.0
 	github.com/aws/aws-sdk-go-v2/service/pricing v1.39.0
 	github.com/aws/aws-sdk-go-v2/service/rds v1.104.1
-	github.com/aws/aws-sdk-go-v2/service/sts v1.35.1
+	github.com/aws/aws-sdk-go-v2/service/sts v1.38.2
 	github.com/google/go-cmp v0.7.0
 	github.com/googleapis/gax-go/v2 v2.15.0
 	github.com/grafana/grafana-foundation-sdk/go v0.0.0-20241213004919-4516aa9d3732
