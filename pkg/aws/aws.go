@@ -137,10 +137,8 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			}
 			awsRDSClient := client.NewAWSClient(client.Config{
 				PricingService: awsPricing.NewFromConfig(pricingConfig),
-				EC2Service:     ec2.NewFromConfig(ac),
-				BillingService: costexplorer.NewFromConfig(ac),
+				EC2Service:     ec2.NewFromConfig(ac), //we also need to pass in the ec2 client in order to describe regions, as they are shared between RDS and EC2
 				RDSService:     rds2.NewFromConfig(ac),
-				ELBService:     elbv2.NewFromConfig(ac),
 			})
 			regions, err = awsRDSClient.DescribeRegions(ctx, false)
 			if err != nil {
