@@ -103,12 +103,9 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	var regions []types.Region
 	for _, service := range config.Services {
 		service = strings.ToUpper(service)
-		// region API is shared between EC2, and NATGW
-		if service == serviceEC2 || service == serviceNATGW || service == serviceELB {
-			regions, err = awsClient.DescribeRegions(ctx, false)
-			if err != nil {
-				return nil, fmt.Errorf("error getting regions: %w", err)
-			}
+		regions, err = awsClient.DescribeRegions(ctx, false)
+		if err != nil {
+			return nil, fmt.Errorf("error getting regions: %w", err)
 		}
 
 		awsClientPerRegion, err := newRegionClientMap(ctx, ac, regions, config.Profile, config.RoleARN)
@@ -137,15 +134,8 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			}
 			awsRDSClient := client.NewAWSClient(client.Config{
 				PricingService: awsPricing.NewFromConfig(pricingConfig),
-				EC2Service:     ec2.NewFromConfig(ac),
-				BillingService: costexplorer.NewFromConfig(ac),
 				RDSService:     rds2.NewFromConfig(ac),
-				ELBService:     elbv2.NewFromConfig(ac),
 			})
-			regions, err = awsRDSClient.DescribeRegions(ctx, false)
-			if err != nil {
-				return nil, fmt.Errorf("error getting regions: %w", err)
-			}
 			collector := rds.New(ctx, &rds.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
