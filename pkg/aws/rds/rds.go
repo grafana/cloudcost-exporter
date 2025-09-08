@@ -68,12 +68,11 @@ func NewMetrics() Metrics {
 
 // Collector is a prometheus collector that collects metrics from AWS RDS clusters.
 type Collector struct {
-	regions            []types.Region
-	scrapeInterval     time.Duration
-	awsRegionClientMap map[string]client.Client
-	NextComputeScrape  time.Time
-	NextStorageScrape  time.Time
-	logger             *slog.Logger
+	regions           []types.Region
+	scrapeInterval    time.Duration
+	NextComputeScrape time.Time
+	NextStorageScrape time.Time
+	logger            *slog.Logger
 }
 
 type Config struct {
