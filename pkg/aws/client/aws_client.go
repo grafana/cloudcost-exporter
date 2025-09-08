@@ -87,3 +87,7 @@ func (c *AWSClient) ListELBPrices(ctx context.Context, region string) ([]string,
 func (c *AWSClient) DescribeLoadBalancers(ctx context.Context) ([]elbTypes.LoadBalancer, error) {
 	return c.elbService.describeLoadBalancers(ctx)
 }
+
+func (c *AWSClient) ListRDSPrices(ctx context.Context) ([]string, error) {
+	return c.priceService.listRDSPrices(ctx)
+}
