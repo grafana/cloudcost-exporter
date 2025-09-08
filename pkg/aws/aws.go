@@ -93,7 +93,6 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	awsClient := client.NewAWSClient(client.Config{
 		PricingService: awsPricing.NewFromConfig(ac),
 		EC2Service:     ec2.NewFromConfig(ac),
@@ -233,7 +232,7 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	wg.Wait()
 }
 
-func newRegionClientMap(ctx context.Context, cfg aws.Config, regions []types.Region, profile string, roleARN string) (map[string]client.Client, error) {
+func newRegionClientMap(ctx context.Context, globalConfig aws.Config, regions []types.Region, profile string, roleARN string) (map[string]client.Client, error) {
 	awsClientPerRegion := make(map[string]client.Client)
 	for _, region := range regions {
 		ac, err := createAWSConfig(ctx, *region.RegionName, profile, roleARN)
@@ -242,10 +241,10 @@ func newRegionClientMap(ctx context.Context, cfg aws.Config, regions []types.Reg
 		}
 		awsClientPerRegion[*region.RegionName] = client.NewAWSClient(
 			client.Config{
-				PricingService: awsPricing.NewFromConfig(cfg),
+				PricingService: awsPricing.NewFromConfig(globalConfig),
 				EC2Service:     ec2.NewFromConfig(ac),
-				BillingService: costexplorer.NewFromConfig(cfg),
-				RDSService:     rds2.NewFromConfig(cfg),
+				BillingService: costexplorer.NewFromConfig(globalConfig),
+				RDSService:     rds2.NewFromConfig(globalConfig),
 				ELBService:     elbv2.NewFromConfig(ac),
 			})
 	}
