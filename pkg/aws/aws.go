@@ -93,6 +93,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	awsClient := client.NewAWSClient(client.Config{
 		PricingService: awsPricing.NewFromConfig(ac),
 		EC2Service:     ec2.NewFromConfig(ac),
@@ -103,9 +104,8 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	var regions []types.Region
 	for _, service := range config.Services {
 		service = strings.ToUpper(service)
-
-		// region API is shared between EC2, RDS, and NATGW
-		if service == serviceRDS || service == serviceEC2 || service == serviceNATGW || service == serviceELB {
+		// region API is shared between EC2, and NATGW
+		if service == serviceEC2 || service == serviceNATGW || service == serviceELB {
 			regions, err = awsClient.DescribeRegions(ctx, false)
 			if err != nil {
 				return nil, fmt.Errorf("error getting regions: %w", err)
@@ -130,14 +130,30 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			})
 			collectors = append(collectors, collector)
 		case serviceRDS:
-			_ = rds.New(&rds.Config{
+			// pricing API for RDS client needs to use always the same region
+			// as for RDS , the pricing data is only available in the us-east-1
+			pricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
+			if err != nil {
+				return nil, err
+			}
+			awsRDSClient := client.NewAWSClient(client.Config{
+				PricingService: awsPricing.NewFromConfig(pricingConfig),
+				EC2Service:     ec2.NewFromConfig(ac),
+				BillingService: costexplorer.NewFromConfig(ac),
+				RDSService:     rds2.NewFromConfig(ac),
+				ELBService:     elbv2.NewFromConfig(ac),
+			})
+			regions, err = awsRDSClient.DescribeRegions(ctx, false)
+			if err != nil {
+				return nil, fmt.Errorf("error getting regions: %w", err)
+			}
+			collector := rds.New(ctx, &rds.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
 				Regions:        regions,
-			}, awsClient)
-			// TODO: append new aws rds collectors next
-			// collectors = append(collectors, collector)
-			// and remove the awsClient from the config
+				Client:         awsRDSClient,
+			})
+			collectors = append(collectors, collector)
 		case serviceNATGW:
 			natGwCollector := awsgwnat.New(ctx, &awsgwnat.Config{
 				ScrapeInterval: config.ScrapeInterval,
@@ -217,7 +233,7 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	wg.Wait()
 }
 
-func newRegionClientMap(ctx context.Context, globalConfig aws.Config, regions []types.Region, profile string, roleARN string) (map[string]client.Client, error) {
+func newRegionClientMap(ctx context.Context, cfg aws.Config, regions []types.Region, profile string, roleARN string) (map[string]client.Client, error) {
 	awsClientPerRegion := make(map[string]client.Client)
 	for _, region := range regions {
 		ac, err := createAWSConfig(ctx, *region.RegionName, profile, roleARN)
@@ -226,10 +242,10 @@ func newRegionClientMap(ctx context.Context, globalConfig aws.Config, regions []
 		}
 		awsClientPerRegion[*region.RegionName] = client.NewAWSClient(
 			client.Config{
-				PricingService: awsPricing.NewFromConfig(globalConfig),
+				PricingService: awsPricing.NewFromConfig(cfg),
 				EC2Service:     ec2.NewFromConfig(ac),
-				BillingService: costexplorer.NewFromConfig(globalConfig),
-				RDSService:     rds2.NewFromConfig(globalConfig),
+				BillingService: costexplorer.NewFromConfig(cfg),
+				RDSService:     rds2.NewFromConfig(cfg),
 				ELBService:     elbv2.NewFromConfig(ac),
 			})
 	}

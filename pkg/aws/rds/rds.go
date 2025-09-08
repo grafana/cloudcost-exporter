@@ -1,6 +1,7 @@
 package rds
 
 import (
+	"context"
 	"log/slog"
 	"time"
 
@@ -67,27 +68,37 @@ func NewMetrics() Metrics {
 
 // Collector is a prometheus collector that collects metrics from AWS RDS clusters.
 type Collector struct {
-	regions           []types.Region
-	client            client.Client
-	scrapeInterval    time.Duration
-	NextComputeScrape time.Time
-	NextStorageScrape time.Time
-	logger            *slog.Logger
+	regions            []types.Region
+	scrapeInterval     time.Duration
+	awsRegionClientMap map[string]client.Client
+	NextComputeScrape  time.Time
+	NextStorageScrape  time.Time
+	logger             *slog.Logger
 }
 
 type Config struct {
 	Regions        []types.Region
+	Client         client.Client
 	ScrapeInterval time.Duration
 	Logger         *slog.Logger
 }
 
+const (
+	serviceName = "rds"
+)
+
 // New creates an rds collector
-func New(config *Config, client client.Client) *Collector {
+func New(ctx context.Context, config *Config) *Collector {
+	logger := config.Logger.With("logger", serviceName)
+
+	_, err := config.Client.ListRDSPrices(ctx)
+	if err != nil {
+		logger.Error("error listing rds prices", "error", err)
+	}
 	return &Collector{
-		scrapeInterval: config.ScrapeInterval,
 		regions:        config.Regions,
-		logger:         config.Logger.With("logger", "rds"),
-		client:         client,
+		scrapeInterval: config.ScrapeInterval,
+		logger:         config.Logger.With("logger", serviceName),
 	}
 }
 

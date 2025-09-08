@@ -203,3 +203,17 @@ func (p *pricing) getPricesFromProductList(ctx context.Context, input *awsPricin
 	}
 	return productOutputs, nil
 }
+
+func (p *pricing) listRDSPrices(ctx context.Context) ([]string, error) {
+	input := &awsPricing.GetProductsInput{
+		ServiceCode: aws.String("AmazonRDS"),
+		Filters: []pricingTypes.Filter{
+			{
+				Field: aws.String("productFamily"),
+				Type:  pricingTypes.FilterTypeTermMatch,
+				Value: aws.String("Database Instance"),
+			},
+		},
+	}
+	return p.getPricesFromProductList(ctx, input)
+}
