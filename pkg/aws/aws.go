@@ -134,8 +134,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			}
 			awsRDSClient := client.NewAWSClient(client.Config{
 				PricingService: awsPricing.NewFromConfig(pricingConfig),
-				// EC2Service:     ec2.NewFromConfig(ac), //we also need to pass in the ec2 client in order to describe regions, as they are shared between RDS and EC2
-				RDSService: rds2.NewFromConfig(ac),
+				RDSService:     rds2.NewFromConfig(ac),
 			})
 			collector := rds.New(ctx, &rds.Config{
 				ScrapeInterval: config.ScrapeInterval,
