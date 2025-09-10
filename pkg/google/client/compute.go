@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"google.golang.org/api/compute/v1"
 )
@@ -65,4 +66,24 @@ func (c *Compute) listDisks(ctx context.Context, project string, zone string) ([
 		return nil, err
 	}
 	return disks, nil
+}
+
+func (c *Compute) listForwardingRules(ctx context.Context, logger *slog.Logger, projectId string) {
+	forwardingRules, err := c.computeService.GlobalForwardingRules.List(projectId).Do()
+	if err != nil {
+		logger.LogAttrs(ctx, slog.LevelError, "Error listing forwarding rules",
+			slog.String("error", err.Error()))
+		return
+	}
+
+	for _, forwardingRule := range forwardingRules.Items {
+		logger.LogAttrs(ctx, slog.LevelInfo, "Forwarding rule",
+			slog.String("name", forwardingRule.Name),
+			slog.String("target", forwardingRule.Target),
+			slog.String("ipAddress", forwardingRule.IPAddress),
+			slog.String("ipProtocol", forwardingRule.IPProtocol),
+			slog.String("portRange", forwardingRule.PortRange),
+		)
+	}
+
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
+	clb "github.com/grafana/cloudcost-exporter/pkg/google/networking/clb"
 	"github.com/prometheus/client_golang/prometheus"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
@@ -90,6 +91,16 @@ func New(config *Config) (*GCP, error) {
 			collector, err = gke.New(&gke.Config{
 				Projects:       config.Projects,
 				Logger:         config.Logger,
+				ScrapeInterval: config.ScrapeInterval,
+			}, gcpClient)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
+		case "CLB":
+			collector, err = clb.New(&clb.Config{
 				ScrapeInterval: config.ScrapeInterval,
 			}, gcpClient)
 			if err != nil {
