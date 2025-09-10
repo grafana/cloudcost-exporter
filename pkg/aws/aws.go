@@ -18,9 +18,9 @@ import (
 	awsPricing "github.com/aws/aws-sdk-go-v2/service/pricing"
 	rds2 "github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/elb"
 	awsgwnat "github.com/grafana/cloudcost-exporter/pkg/aws/natgateway"
