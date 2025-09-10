@@ -8,6 +8,7 @@ import (
 	elbTypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
+	rdsTypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	c "github.com/grafana/cloudcost-exporter/pkg/aws/services/costexplorer"
 	e "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	elbv2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/elbv2"
@@ -27,7 +28,7 @@ type AWSClient struct {
 	priceService   *pricing
 	computeService *compute
 	billing        *billing
-	rdsClient      *rds.Client
+	rdsClient      *rdsClient
 	elbService     *elb
 	metrics        *Metrics
 }
@@ -39,7 +40,7 @@ func NewAWSClient(cfg Config) *AWSClient {
 		computeService: newCompute(cfg.EC2Service),
 		billing:        newBilling(cfg.BillingService, m),
 		elbService:     newELB(cfg.ELBService),
-		rdsClient:      cfg.RDSService,
+		rdsClient:      newRDS(cfg.RDSService),
 		metrics:        m,
 	}
 }
@@ -86,6 +87,10 @@ func (c *AWSClient) ListELBPrices(ctx context.Context, region string) ([]string,
 
 func (c *AWSClient) DescribeLoadBalancers(ctx context.Context) ([]elbTypes.LoadBalancer, error) {
 	return c.elbService.describeLoadBalancers(ctx)
+}
+
+func (c *AWSClient) ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstance, error) {
+	return c.rdsClient.listRDSInstances(ctx)
 }
 
 func (c *AWSClient) ListRDSPrices(ctx context.Context) ([]string, error) {
