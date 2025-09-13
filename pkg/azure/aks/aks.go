@@ -79,6 +79,13 @@ var (
 		"The total cost of a compute instance in USD/h",
 		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
 	)
+	PersistentVolumeHourlyCostDesc = utils.GenerateDesc(
+		cloudcost_exporter.MetricPrefix,
+		subsystem,
+		utils.PersistentVolumeCostSuffix,
+		"The cost of an Azure Managed Disk in USD/(GiB*h)",
+		[]string{"persistentvolume", "region", "availability_zone", "disk", "type", "size_gib", "state"},
+	)
 )
 
 // Collector is a prometheus collector that collects metrics from AKS clusters.
@@ -88,6 +95,7 @@ type Collector struct {
 
 	PriceStore   *PriceStore
 	MachineStore *MachineStore
+	DiskStore    *DiskStore
 }
 
 type Config struct {
@@ -101,9 +109,11 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 	if err != nil {
 		return nil, err
 	}
+	diskStore := NewDiskStore(ctx, logger, azClientWrapper)
 
 	priceTicker := time.NewTicker(priceRefreshInterval)
 	machineTicker := time.NewTicker(machineRefreshInterval)
+	diskTicker := time.NewTicker(diskRefreshInterval)
 
 	go func(ctx context.Context) {
 		for {
@@ -125,6 +135,17 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 			}
 		}
 	}(ctx)
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-diskTicker.C:
+				diskStore.PopulateDiskStore(ctx)
+				diskStore.PopulateDiskPricing(ctx)
+			}
+		}
+	}(ctx)
 
 	return &Collector{
 		context: ctx,
@@ -132,6 +153,7 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 
 		PriceStore:   priceStore,
 		MachineStore: machineStore,
+		DiskStore:    diskStore,
 	}, nil
 }
 
@@ -162,11 +184,16 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 
 	machineList := c.MachineStore.GetListOfVmsForSubscription()
 
+	machineMetricsCount := 0
 	for _, vmInfo := range machineList {
 		vmId := vmInfo.Id
 		price, err := c.getMachinePrices(vmId)
 		if err != nil {
-			return err
+			c.logger.LogAttrs(c.context, slog.LevelWarn, "failed to get machine pricing, skipping VM metric", 
+				slog.String("vmId", vmId),
+				slog.String("region", vmInfo.Region),
+				slog.String("error", err.Error()))
+			continue
 		}
 
 		labelValues := []string{
@@ -182,9 +209,39 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerCore, labelValues...)
 		ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerGiB, labelValues...)
 		ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.RetailPrice, labelValues...)
+		machineMetricsCount++
 	}
 
-	c.logger.LogAttrs(c.context, slog.LevelInfo, "metrics collected", slog.Duration("duration", time.Since(now)))
+	kubernetesDisks := c.DiskStore.GetKubernetesDisks()
+	for _, disk := range kubernetesDisks {
+		diskPricing, err := c.DiskStore.GetDiskPricing(disk)
+		if err != nil {
+			c.logger.LogAttrs(c.context, slog.LevelWarn, "failed to get disk pricing", 
+				slog.String("disk", disk.Name),
+				slog.String("error", err.Error()))
+			continue
+		}
+
+		pricePerGBHour := diskPricing.RetailPrice / float64(disk.Size)
+
+		diskLabelValues := []string{
+			disk.PersistentVolumeName,
+			disk.Location,
+			disk.Zone,
+			disk.Name,
+			disk.GetSKUForPricing(),
+			fmt.Sprintf("%d", disk.Size),
+			disk.State,
+		}
+
+		ch <- prometheus.MustNewConstMetric(PersistentVolumeHourlyCostDesc, prometheus.GaugeValue, pricePerGBHour, diskLabelValues...)
+	}
+
+	c.logger.LogAttrs(c.context, slog.LevelInfo, "metrics collected", 
+		slog.Duration("duration", time.Since(now)),
+		slog.Int("machines_total", len(machineList)),
+		slog.Int("machines_with_pricing", machineMetricsCount),
+		slog.Int("persistent_volumes", len(kubernetesDisks)))
 	return nil
 }
 
@@ -192,6 +249,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- InstanceCPUHourlyCostDesc
 	ch <- InstanceMemoryHourlyCostDesc
 	ch <- InstanceTotalHourlyCostDesc
+	ch <- PersistentVolumeHourlyCostDesc
 	return nil
 }
 
