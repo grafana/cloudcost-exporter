@@ -79,11 +79,11 @@ var (
 		"The total cost of a compute instance in USD/h",
 		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
 	)
-	PersistentVolumeHourlyCostDesc = utils.GenerateDesc(
+	StorageByLocationHourlyCostDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
-		utils.PersistentVolumeCostSuffix,
-		"The cost of an Azure Managed Disk in USD/(GiB*h)",
+		utils.StorageByLocationCostSuffix,
+		"The cost of an Azure Managed Disk in USD per GiByte per hour",
 		[]string{"persistentvolume", "region", "availability_zone", "disk", "type", "size_gib", "state"},
 	)
 )
@@ -222,7 +222,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			continue
 		}
 
-		pricePerGBHour := diskPricing.RetailPrice / float64(disk.Size)
+		// Convert monthly price to hourly, then divide by disk size to get per-GB per-hour
+		monthlyPricePerGB := diskPricing.RetailPrice / float64(disk.Size)
+		pricePerGBHour := monthlyPricePerGB / utils.HoursInMonth
 
 		diskLabelValues := []string{
 			disk.PersistentVolumeName,
@@ -234,7 +236,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			disk.State,
 		}
 
-		ch <- prometheus.MustNewConstMetric(PersistentVolumeHourlyCostDesc, prometheus.GaugeValue, pricePerGBHour, diskLabelValues...)
+		ch <- prometheus.MustNewConstMetric(StorageByLocationHourlyCostDesc, prometheus.GaugeValue, pricePerGBHour, diskLabelValues...)
 	}
 
 	c.logger.LogAttrs(c.context, slog.LevelInfo, "metrics collected", 
@@ -249,7 +251,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- InstanceCPUHourlyCostDesc
 	ch <- InstanceMemoryHourlyCostDesc
 	ch <- InstanceTotalHourlyCostDesc
-	ch <- PersistentVolumeHourlyCostDesc
+	ch <- StorageByLocationHourlyCostDesc
 	return nil
 }
 

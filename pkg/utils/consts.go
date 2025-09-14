@@ -21,6 +21,8 @@ const (
 	InstanceTotalCostSuffix = "instance_total_usd_per_hour"
 	// PersistentVolumeCostSuffix is the suffix for per-hour EBS volume cost metrics.
 	PersistentVolumeCostSuffix = "persistent_volume_usd_per_hour"
+	// StorageByLocationCostSuffix is the suffix for per-GiB-hour storage cost metrics.
+	StorageByLocationCostSuffix = "storage_by_location_usd_per_gibyte_hour"
 )
 
 // GenerateDesc creates a Prometheus metric descriptor with a standardized fqname.

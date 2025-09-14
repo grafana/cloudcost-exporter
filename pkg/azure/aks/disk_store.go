@@ -171,7 +171,52 @@ func (ds *DiskStore) GetKubernetesDisks() map[string]*Disk {
 
 func (ds *DiskStore) buildDiskPricingKey(disk *Disk) string {
 	skuForPricing := ds.mapDiskSKUToPricingSKU(disk.SKU, disk.Size)
-	return ds.buildPricingKey(skuForPricing, disk.Location)
+	pricingRegion := ds.mapClusterRegionToPricingRegion(disk.Location)
+	return ds.buildPricingKey(skuForPricing, pricingRegion)
+}
+
+func (ds *DiskStore) mapClusterRegionToPricingRegion(clusterRegion string) string {
+	// Map cluster region names to pricing API region names
+	regionMap := map[string]string{
+		"centralus":   "US Central",
+		"eastus":      "US East",
+		"eastus2":     "US East 2", 
+		"westus":      "US West",
+		"westus2":     "US West 2",
+		"westus3":     "US West 3",
+		"northcentralus": "US North Central",
+		"southcentralus": "US South Central",
+		"westcentralus":  "US West Central",
+		
+		"westeurope":     "West Europe",
+		"northeurope":    "North Europe",
+		"uksouth":        "UK South",
+		"ukwest":         "UK West",
+		"francecentral":  "France Central",
+		"francesouth":    "France South",
+		"germanywestcentral": "Germany West Central",
+		"norwayeast":     "Norway East",
+		"switzerlandnorth": "Switzerland North",
+		
+		"eastasia":       "East Asia",
+		"southeastasia":  "Southeast Asia",
+		"japaneast":      "Japan East",
+		"japanwest":      "Japan West",
+		"australiaeast":  "Australia East",
+		"australiasoutheast": "Australia Southeast",
+		"koreacentral":   "Korea Central",
+		"koreasouth":     "Korea South",
+		"southindia":     "South India",
+		"centralindia":   "Central India",
+		"westindia":      "West India",
+	}
+	
+	if pricingRegion, ok := regionMap[clusterRegion]; ok {
+		return pricingRegion
+	}
+	
+	// If no mapping found, return original (might work)
+	return clusterRegion
 }
 
 func (ds *DiskStore) buildPricingKey(sku, location string) string {
@@ -197,85 +242,85 @@ func (ds *DiskStore) mapDiskSKUToPricingSKU(diskSKU string, sizeGB int32) string
 
 func (ds *DiskStore) getStandardHDDSKU(sizeGB int32) string {
 	if sizeGB <= 32 {
-		return "S4 Disk"
+		return "S4 LRS Disk"
 	} else if sizeGB <= 64 {
-		return "S6 Disk"
+		return "S6 LRS Disk"
 	} else if sizeGB <= 128 {
-		return "S10 Disk"
+		return "S10 LRS Disk"
 	} else if sizeGB <= 256 {
-		return "S15 Disk"
+		return "S15 LRS Disk"
 	} else if sizeGB <= 512 {
-		return "S20 Disk"
+		return "S20 LRS Disk"
 	} else if sizeGB <= 1024 {
-		return "S30 Disk"
+		return "S30 LRS Disk"
 	} else if sizeGB <= 2048 {
-		return "S40 Disk"
+		return "S40 LRS Disk"
 	} else if sizeGB <= 4096 {
-		return "S50 Disk"
+		return "S50 LRS Disk"
 	} else if sizeGB <= 8192 {
-		return "S60 Disk"
+		return "S60 LRS Disk"
 	} else if sizeGB <= 16384 {
-		return "S70 Disk"
+		return "S70 LRS Disk"
 	} else {
-		return "S80 Disk"
+		return "S80 LRS Disk"
 	}
 }
 
 func (ds *DiskStore) getStandardSSDSKU(sizeGB int32) string {
 	if sizeGB <= 4 {
-		return "E1 Disk"
+		return "E1 LRS Disk"
 	} else if sizeGB <= 8 {
-		return "E2 Disk"
+		return "E2 LRS Disk"
 	} else if sizeGB <= 16 {
-		return "E3 Disk"
+		return "E3 LRS Disk"
 	} else if sizeGB <= 32 {
-		return "E4 Disk"
+		return "E4 LRS Disk"
 	} else if sizeGB <= 64 {
-		return "E6 Disk"
+		return "E6 LRS Disk"
 	} else if sizeGB <= 128 {
-		return "E10 Disk"
+		return "E10 LRS Disk"
 	} else if sizeGB <= 256 {
-		return "E15 Disk"
+		return "E15 LRS Disk"
 	} else if sizeGB <= 512 {
-		return "E20 Disk"
+		return "E20 LRS Disk"
 	} else if sizeGB <= 1024 {
-		return "E30 Disk"
+		return "E30 LRS Disk"
 	} else if sizeGB <= 2048 {
-		return "E40 Disk"
+		return "E40 LRS Disk"
 	} else if sizeGB <= 4096 {
-		return "E50 Disk"
+		return "E50 LRS Disk"
 	} else if sizeGB <= 8192 {
-		return "E60 Disk"
+		return "E60 LRS Disk"
 	} else if sizeGB <= 16384 {
-		return "E70 Disk"
+		return "E70 LRS Disk"
 	} else {
-		return "E80 Disk"
+		return "E80 LRS Disk"
 	}
 }
 
 func (ds *DiskStore) getPremiumSSDSKU(sizeGB int32) string {
 	if sizeGB <= 32 {
-		return "P4 Disk"
+		return "P4 LRS Disk"
 	} else if sizeGB <= 64 {
-		return "P6 Disk"
+		return "P6 LRS Disk"
 	} else if sizeGB <= 128 {
-		return "P10 Disk"
+		return "P10 LRS Disk"
 	} else if sizeGB <= 256 {
-		return "P15 Disk"
+		return "P15 LRS Disk"
 	} else if sizeGB <= 512 {
-		return "P20 Disk"
+		return "P20 LRS Disk"
 	} else if sizeGB <= 1024 {
-		return "P30 Disk"
+		return "P30 LRS Disk"
 	} else if sizeGB <= 2048 {
-		return "P40 Disk"
+		return "P40 LRS Disk"
 	} else if sizeGB <= 4096 {
-		return "P50 Disk"
+		return "P50 LRS Disk"
 	} else if sizeGB <= 8192 {
-		return "P60 Disk"
+		return "P60 LRS Disk"
 	} else if sizeGB <= 16384 {
-		return "P70 Disk"
+		return "P70 LRS Disk"
 	} else {
-		return "P80 Disk"
+		return "P80 LRS Disk"
 	}
 }
 
