@@ -208,7 +208,6 @@ func (p *pricing) getPricesFromProductList(ctx context.Context, input *awsPricin
 }
 
 func (p *pricing) getRDSUnitData(ctx context.Context, instType, region, deploymentOption, databaseEngine, locationType string) (string, error) {
-	fmt.Println("Getting RDS unit price", instType, region, deploymentOption, databaseEngine, locationType)
 	input := &awsPricing.GetProductsInput{
 		ServiceCode: aws.String("AmazonRDS"),
 		Filters: []pricingTypes.Filter{
