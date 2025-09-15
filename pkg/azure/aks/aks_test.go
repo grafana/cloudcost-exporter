@@ -77,7 +77,7 @@ func TestCollect(t *testing.T) {
 				diskPricing: make(map[string]*DiskPricing),
 			},
 
-			expectedErr: ErrPriceInformationNotFound,
+			expectedErr: nil,
 		},
 
 		"base case": {

@@ -85,14 +85,14 @@ var (
 		subsystem,
 		utils.StorageByLocationCostSuffix,
 		"The cost of an Azure Managed Disk in USD per GiByte per hour",
-		[]string{"persistentvolume", "region", "availability_zone", "disk", "type", "sku", "size_gib", "state", "cluster_name", "namespace"},
+		[]string{"persistentvolume", "region", "availability_zone", "disk", "sku", "price_tier", "size_gib", "state", "cluster_name", "namespace"},
 	)
 	StorageByLocationTotalHourlyCostDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
 		utils.StorageByLocationTotalCostSuffix,
 		"The total cost of an Azure Managed Disk in USD per hour",
-		[]string{"persistentvolume", "region", "availability_zone", "disk", "type", "sku", "size_gib", "state", "cluster_name", "namespace"},
+		[]string{"persistentvolume", "region", "availability_zone", "disk", "sku", "price_tier", "size_gib", "state", "cluster_name", "namespace"},
 	)
 )
 
@@ -221,9 +221,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		machineMetricsCount++
 	}
 
-	// Collect Azure Managed Disk metrics for Kubernetes persistent volumes
-	kubernetesDisks := c.DiskStore.GetKubernetesDisks()
-	for _, disk := range kubernetesDisks {
+	// Collect Azure Managed Disk metrics for all persistent volumes
+	allDisks := c.DiskStore.GetAllDisks()
+	for _, disk := range allDisks {
 		diskPricing, err := c.DiskStore.GetDiskPricing(disk)
 		if err != nil {
 			c.logger.LogAttrs(c.context, slog.LevelWarn, "failed to get disk pricing",
@@ -240,13 +240,19 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		// Total hourly cost for the entire disk (regardless of size)
 		totalHourlyCost := diskPricing.RetailPrice / utils.HoursInMonth
 
+		// Set persistent volume name or disk name for non-PV disks
+		pvName := disk.PersistentVolumeName
+		if pvName == "" {
+			pvName = disk.Name
+		}
+
 		diskLabelValues := []string{
-			disk.PersistentVolumeName,
+			pvName,
 			disk.Location,
 			disk.Zone,
 			disk.Name,
-			disk.GetSKUForPricing(),
 			disk.SKU,
+			disk.GetPriceTier(c.DiskStore),
 			fmt.Sprintf("%d", disk.Size),
 			disk.State,
 			disk.ClusterName,
@@ -264,7 +270,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		slog.Duration("duration", time.Since(now)),
 		slog.Int("machines_total", len(machineList)),
 		slog.Int("machines_with_pricing", machineMetricsCount),
-		slog.Int("persistent_volumes", len(kubernetesDisks)))
+		slog.Int("persistent_volumes", len(allDisks)))
 	return nil
 }
 

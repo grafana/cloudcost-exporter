@@ -75,16 +75,65 @@ func (d *Disk) extractKubernetesInfo() {
 		return
 	}
 
-	if clusterName, ok := d.Tags[clusterNameTag]; ok && clusterName != nil {
-		d.ClusterName = *clusterName
-	}
-
-	if pvName, ok := d.Tags[pvNameTag]; ok && pvName != nil {
+	// Extract PV name
+	if pvName, ok := d.Tags["kubernetes.io-created-for-pv-name"]; ok && pvName != nil {
 		d.PersistentVolumeName = *pvName
 	}
 
+	// Extract namespace
 	if namespace, ok := d.Tags["kubernetes.io-created-for-pvc-namespace"]; ok && namespace != nil {
 		d.Namespace = *namespace
+	}
+
+	// Extract cluster name from kubernetes.io-cluster-<cluster-name> tags
+	// Azure CSI driver creates tags like "kubernetes.io-cluster-<cluster-name>: owned"
+	for tagName, tagValue := range d.Tags {
+		if strings.HasPrefix(tagName, "kubernetes.io-cluster-") && tagValue != nil && *tagValue == "owned" {
+			// Extract cluster name from tag like "kubernetes.io-cluster-my-cluster"
+			clusterName := strings.TrimPrefix(tagName, "kubernetes.io-cluster-")
+			if clusterName != "" {
+				d.ClusterName = strings.ToLower(clusterName)
+				break
+			}
+		}
+	}
+	
+	// If this is a Kubernetes disk but we don't have cluster name, try inference methods
+	if d.PersistentVolumeName != "" && d.ClusterName == "" {
+		// Try common alternative tag patterns for cluster identification
+		alternatePatterns := map[string]string{
+			"cluster":                      "",
+			"cluster-name":                 "",
+			"aks-cluster":                  "",
+			"aks-cluster-name":             "",
+			"kubernetes-cluster":           "",
+			"k8s-cluster":                  "",
+			"kubernetes.io/cluster":        "",
+			"kubernetes.io/cluster-name":   "",
+		}
+		
+		for tagName, tagValue := range d.Tags {
+			if tagValue != nil {
+				for pattern := range alternatePatterns {
+					if strings.Contains(strings.ToLower(tagName), pattern) {
+						d.ClusterName = strings.ToLower(*tagValue)
+						break
+					}
+				}
+				if d.ClusterName != "" {
+					break
+				}
+			}
+		}
+		
+		// If still no cluster name, try to infer from resource group name
+		// AKS typically creates resource groups like "MC_<resource-group>_<cluster-name>_<region>"
+		if d.ClusterName == "" && strings.HasPrefix(d.ResourceGroup, "MC_") {
+			parts := strings.Split(d.ResourceGroup, "_")
+			if len(parts) >= 3 {
+				d.ClusterName = strings.ToLower(parts[2]) // cluster name is typically the 3rd part, lowercase
+			}
+		}
 	}
 }
 
@@ -120,6 +169,27 @@ func (d *Disk) GetSKUForPricing() string {
 		return d.SKU
 	}
 }
+
+// GetPriceTier returns the Azure pricing tier for this disk based on size and SKU.
+// Maps disk size to Azure pricing tiers like "P15", "E10", "S4", etc.
+// Reuses existing pricing functions from DiskStore to extract tier information.
+func (d *Disk) GetPriceTier(ds *DiskStore) string {
+	switch d.SKU {
+	case "Standard_LRS":
+		return extractTierFromSKU(ds.getStandardHDDSKU(d.Size))
+	case "StandardSSD_LRS":
+		return extractTierFromSKU(ds.getStandardSSDSKU(d.Size))
+	case "Premium_LRS":
+		return extractTierFromSKU(ds.getPremiumSSDSKU(d.Size))
+	case "PremiumV2_LRS":
+		return "PremiumV2"
+	case "UltraSSD_LRS":
+		return "Ultra"
+	default:
+		return "Unknown"
+	}
+}
+
 
 // getStringValue safely dereferences a string pointer, returning empty string if nil.
 func getStringValue(s *string) string {

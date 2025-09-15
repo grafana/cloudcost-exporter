@@ -349,6 +349,16 @@ func (ds *DiskStore) mapDiskSKUToPricingSKU(diskSKU string, sizeGB int32) string
 
 // getStandardHDDSKU maps disk size to Standard HDD pricing tier.
 // Azure Standard HDD pricing tiers: S4(32GB), S6(64GB), S10(128GB), etc.
+// extractTierFromSKU extracts the tier prefix from an Azure SKU string.
+// Example: "P15 LRS Disk" -> "P15", "E10 LRS Disk" -> "E10"
+func extractTierFromSKU(sku string) string {
+	parts := strings.Fields(sku)
+	if len(parts) > 0 {
+		return parts[0]
+	}
+	return "Unknown"
+}
+
 func (ds *DiskStore) getStandardHDDSKU(sizeGB int32) string {
 	if sizeGB <= 32 {
 		return "S4 LRS Disk"
