@@ -35,10 +35,10 @@ type Metrics struct {
 func NewMetrics() Metrics {
 	return Metrics{
 		HourlyCost: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "db_by_location_usd_per_hour"),
-			Help: "Hourly cost of RDS databases by region, class, and tier. Cost represented in USD/(h)",
+			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "rds_usd_per_hour"),
+			Help: "Hourly cost of RDS databases by region, tier and  db name. Cost represented in USD/(h)",
 		},
-			[]string{"region", "tier", "az", "engine", "location_type"},
+			[]string{"region", "tier", "name"},
 		),
 
 		RequestCount: prometheus.NewCounter(prometheus.CounterOpts{
@@ -129,35 +129,28 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		var region = az[:len(az)-1]
 		depOption := multiOrSingleAZ(*instance.MultiAZ)
 		locationType := isOutpostsInstance(instance) // outposts locations have a different unit price
-		createPricingKey := createPricingKey(az, region, depOption, locationType)
+		createPricingKey := createPricingKey(az, *instance.DBInstanceClass, region, depOption, locationType)
 		if _, ok := c.pricingMap[createPricingKey]; !ok {
-			fmt.Println("new key", createPricingKey)
 			v, err := c.Client.GetRDSUnitData(ctx, *instance.DBInstanceClass, region, depOption, *instance.Engine, locationType)
 			if err != nil {
 				c.logger.Error("error listing rds prices", "error", err)
 				return err
 			}
 			hourlyPrice, err := validateRDSPriceData(ctx, v)
-			fmt.Println("hourlyPrice", hourlyPrice)
 			if err != nil {
 				c.logger.Error("error validating RDS price data", "error", err)
 				return err
 			}
 			c.pricingMap[createPricingKey] = hourlyPrice
-			fmt.Println("pricingMap", c.pricingMap)
 		}
 
-		fmt.Printf("instance: %f \n", c.pricingMap[createPricingKey])
-
 		ch <- prometheus.MustNewConstMetric(
-			c.metrics.HourlyCost.WithLabelValues(region, depOption, az, *instance.Engine, locationType).Desc(),
+			c.metrics.HourlyCost.WithLabelValues(region, *instance.DBInstanceClass, *instance.DBInstanceIdentifier).Desc(),
 			prometheus.GaugeValue,
 			c.pricingMap[createPricingKey],
 			region,
-			depOption,
-			az,
-			*instance.Engine,
-			locationType,
+			*instance.DBInstanceClass,
+			*instance.DBInstanceIdentifier,
 		)
 	}
 	return nil
@@ -184,8 +177,8 @@ func isOutpostsInstance(instance rdsTypes.DBInstance) string {
 	return "AWS Region"
 }
 
-func createPricingKey(az, region, depOption, locationType string) string {
-	return fmt.Sprintf("%s-%s-%s-%s", az, region, depOption, locationType)
+func createPricingKey(az, tier, region, depOption, locationType string) string {
+	return fmt.Sprintf("%s-%s-%s-%s-%s", az, tier, region, depOption, locationType)
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
