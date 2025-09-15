@@ -47,8 +47,15 @@ func NewDiskStore(ctx context.Context, logger *slog.Logger, azClient client.Azur
 		diskPricing: make(map[string]*DiskPricing),
 	}
 
+	// Populate disk inventory immediately (this is fast)
 	ds.PopulateDiskStore(ctx)
-	ds.PopulateDiskPricing(ctx)
+
+	// Populate pricing in background (this can be slow)
+	go func() {
+		if err := ds.PopulateDiskPricing(ctx); err != nil {
+			ds.logger.LogAttrs(ctx, slog.LevelError, "failed to populate disk pricing in background", slog.String("error", err.Error()))
+		}
+	}()
 
 	return ds
 }
@@ -83,25 +90,76 @@ func (ds *DiskStore) PopulateDiskStore(ctx context.Context) error {
 func (ds *DiskStore) PopulateDiskPricing(ctx context.Context) error {
 	ds.logger.LogAttrs(ctx, slog.LevelInfo, "populating disk pricing")
 
-	// Create a context with a longer timeout specifically for pricing API calls
-	pricingCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	// For now, load global pricing data (without region filtering) to test if the API works
+	// TODO: Re-implement region-specific loading once we verify the API filter works
+	
+	// Clear existing pricing data
+	ds.mu.Lock()
+	ds.diskPricing = make(map[string]*DiskPricing)
+	ds.mu.Unlock()
+
+	// Load global pricing data with shorter timeout
+	if err := ds.loadGlobalPricing(ctx); err != nil {
+		ds.logger.LogAttrs(ctx, slog.LevelError, "failed to load global disk pricing", slog.String("error", err.Error()))
+		return err
+	}
+
+	ds.mu.RLock()
+	pricingCount := len(ds.diskPricing)
+	ds.mu.RUnlock()
+
+	ds.logger.LogAttrs(ctx, slog.LevelInfo, "disk pricing populated", 
+		slog.Int("pricing_count", pricingCount))
+	return nil
+}
+
+func (ds *DiskStore) getUniqueRegionsFromDisks() []string {
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+
+	regionSet := make(map[string]bool)
+	for _, disk := range ds.disks {
+		if disk.Location != "" {
+			regionSet[disk.Location] = true
+		}
+	}
+
+	regions := make([]string, 0, len(regionSet))
+	for region := range regionSet {
+		regions = append(regions, region)
+	}
+	return regions
+}
+
+func (ds *DiskStore) loadGlobalPricing(ctx context.Context) error {
+	// Use shorter timeout for global pricing (5 minutes)
+	pricingCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	filter := "serviceName eq 'Storage' and priceType eq 'Consumption'"
+	// Build global filter for managed disks
+	filter := "serviceName eq 'Storage' and contains(productName, 'Managed Disk') and priceType eq 'Consumption'"
+	
 	opts := &retailPriceSdk.RetailPricesClientListOptions{
 		APIVersion: to.StringPtr(AZ_API_VERSION),
 		Filter:     to.StringPtr(filter),
 	}
 
+	ds.logger.LogAttrs(ctx, slog.LevelDebug, "loading global disk pricing", 
+		slog.String("filter", filter))
+
 	prices, err := ds.azClient.ListPrices(pricingCtx, opts)
 	if err != nil {
-		ds.logger.LogAttrs(ctx, slog.LevelError, "failed to list disk prices", slog.String("error", err.Error()))
-		return err
+		return fmt.Errorf("failed to list global disk prices: %w", err)
 	}
 
+	ds.logger.LogAttrs(ctx, slog.LevelDebug, "received global pricing data", 
+		slog.Int("price_count", len(prices)))
+
+	// Store pricing data
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 
+	storedCount := 0
 	for _, price := range prices {
 		if price.MeterName != "" && price.Location != "" {
 			key := ds.buildPricingKey(price.MeterName, price.Location)
@@ -111,6 +169,7 @@ func (ds *DiskStore) PopulateDiskPricing(ctx context.Context) error {
 				RetailPrice: price.RetailPrice,
 				Unit:        price.UnitOfMeasure,
 			}
+			storedCount++
 
 			// Debug: log first few pricing entries to see the format
 			if len(ds.diskPricing) <= 5 {
@@ -121,11 +180,12 @@ func (ds *DiskStore) PopulateDiskPricing(ctx context.Context) error {
 					slog.String("serviceName", price.ServiceName),
 					slog.Float64("retailPrice", price.RetailPrice))
 			}
-
 		}
 	}
 
-	ds.logger.LogAttrs(ctx, slog.LevelInfo, "disk pricing populated", slog.Int("pricing_count", len(ds.diskPricing)))
+	ds.logger.LogAttrs(ctx, slog.LevelDebug, "stored global pricing", 
+		slog.Int("stored_prices", storedCount))
+
 	return nil
 }
 
@@ -183,16 +243,16 @@ func (ds *DiskStore) buildDiskPricingKey(disk *Disk) string {
 func (ds *DiskStore) mapClusterRegionToPricingRegion(clusterRegion string) string {
 	// Map cluster region names to pricing API region names
 	regionMap := map[string]string{
-		"centralus":          "US Central",
-		"eastus":             "US East",
-		"eastus2":            "US East 2",
-		"westus":             "US West",
-		"westus2":            "US West 2",
-		"westus3":            "US West 3",
-		"northcentralus":     "US North Central",
-		"southcentralus":     "US South Central",
-		"westcentralus":      "US West Central",
-		
+		"centralus":      "US Central",
+		"eastus":         "US East",
+		"eastus2":        "US East 2",
+		"westus":         "US West",
+		"westus2":        "US West 2",
+		"westus3":        "US West 3",
+		"northcentralus": "US North Central",
+		"southcentralus": "US South Central",
+		"westcentralus":  "US West Central",
+
 		// European regions - corrected based on Azure Retail Prices API format
 		"westeurope":         "EU West",
 		"northeurope":        "EU North",
@@ -206,7 +266,7 @@ func (ds *DiskStore) mapClusterRegionToPricingRegion(clusterRegion string) strin
 		"norwaywest":         "NO West",
 		"switzerlandnorth":   "CH North",
 		"switzerlandwest":    "CH West",
-		
+
 		// Asian regions - based on observed API format
 		"eastasia":           "AP East",
 		"southeastasia":      "AP Southeast",
@@ -221,16 +281,16 @@ func (ds *DiskStore) mapClusterRegionToPricingRegion(clusterRegion string) strin
 		"southindia":         "IN South",
 		"centralindia":       "IN Central",
 		"westindia":          "IN West",
-		
+
 		// Additional regions based on observed API patterns
-		"canadacentral":      "CA Central",
-		"canadaeast":         "CA East",
-		"brazilsouth":        "BR South",
-		"brazilsoutheast":    "BR Southeast",
-		"southafricanorth":   "ZA North",
-		"southafricawest":    "ZA West",
-		"uaenorth":           "AE North",
-		"uaecentral":         "AE Central",
+		"canadacentral":    "CA Central",
+		"canadaeast":       "CA East",
+		"brazilsouth":      "BR South",
+		"brazilsoutheast":  "BR Southeast",
+		"southafricanorth": "ZA North",
+		"southafricawest":  "ZA West",
+		"uaenorth":         "AE North",
+		"uaecentral":       "AE Central",
 	}
 
 	if pricingRegion, ok := regionMap[clusterRegion]; ok {

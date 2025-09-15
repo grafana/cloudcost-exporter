@@ -173,7 +173,7 @@ func (p *PriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, 
 
 	skuName := sku.SkuName
 	if len(skuName) == 0 || strings.Contains(skuName, "Low Priority") {
-		p.logger.LogAttrs(ctx, slog.LevelDebug, "disregarding low priority machines", slog.String("sku", sku.SkuName))
+		p.logger.LogAttrs(ctx, slog.LevelDebug, "disregarding low priority aka Spot machines", slog.String("sku", sku.SkuName))
 		return false
 	}
 
@@ -215,7 +215,7 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
 	p.regionMapLock.Lock()
 	defer p.regionMapLock.Unlock()
 	clear(p.RegionMap)
-	
+
 	regionsFound := make(map[string]bool)
 
 	for _, price := range prices {
@@ -257,13 +257,13 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
 	for region := range regionsFound {
 		foundRegions = append(foundRegions, region)
 	}
-	
+
 	var loadedRegions []string
 	for region := range p.RegionMap {
 		loadedRegions = append(loadedRegions, region)
 	}
-	
-	p.logger.LogAttrs(ctx, slog.LevelInfo, "price store populated", 
+
+	p.logger.LogAttrs(ctx, slog.LevelInfo, "price store populated",
 		slog.Duration("duration", time.Since(startTime)),
 		slog.Int("totalPrices", len(prices)),
 		slog.Int("regionsFound", len(regionsFound)),

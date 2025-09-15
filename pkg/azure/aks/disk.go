@@ -14,17 +14,17 @@ const (
 )
 
 type Disk struct {
-	Name                string
-	ResourceGroup       string
-	Location            string
-	Size                int32
-	SKU                 string
-	State               string
-	Zone                string
+	Name                 string
+	ResourceGroup        string
+	Location             string
+	Size                 int32
+	SKU                  string
+	State                string
+	Zone                 string
 	PersistentVolumeName string
-	Namespace           string
-	ClusterName         string
-	Tags                map[string]*string
+	Namespace            string
+	ClusterName          string
+	Tags                 map[string]*string
 }
 
 func NewDisk(disk *armcompute.Disk) *Disk {
@@ -52,7 +52,7 @@ func NewDisk(disk *armcompute.Disk) *Disk {
 		d.SKU = string(*disk.SKU.Name)
 	}
 
-	if disk.Zones != nil && len(disk.Zones) > 0 && disk.Zones[0] != nil {
+	if len(disk.Zones) > 0 && disk.Zones[0] != nil {
 		d.Zone = *disk.Zones[0]
 	}
 

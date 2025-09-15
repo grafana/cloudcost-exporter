@@ -196,7 +196,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		vmId := vmInfo.Id
 		price, err := c.getMachinePrices(vmId)
 		if err != nil {
-			c.logger.LogAttrs(c.context, slog.LevelWarn, "failed to get machine pricing, skipping VM metric", 
+			c.logger.LogAttrs(c.context, slog.LevelWarn, "failed to get machine pricing, skipping VM metric",
 				slog.String("vmId", vmId),
 				slog.String("region", vmInfo.Region),
 				slog.String("error", err.Error()))
@@ -223,7 +223,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	for _, disk := range kubernetesDisks {
 		diskPricing, err := c.DiskStore.GetDiskPricing(disk)
 		if err != nil {
-			c.logger.LogAttrs(c.context, slog.LevelWarn, "failed to get disk pricing", 
+			c.logger.LogAttrs(c.context, slog.LevelWarn, "failed to get disk pricing",
 				slog.String("disk", disk.Name),
 				slog.String("error", err.Error()))
 			continue
@@ -232,7 +232,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		// Convert monthly price to hourly, then divide by disk size to get per-GB per-hour
 		monthlyPricePerGB := diskPricing.RetailPrice / float64(disk.Size)
 		pricePerGBHour := monthlyPricePerGB / utils.HoursInMonth
-		
+
 		// Also calculate total hourly cost (not divided by size)
 		totalHourlyCost := diskPricing.RetailPrice / utils.HoursInMonth
 
@@ -251,7 +251,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		ch <- prometheus.MustNewConstMetric(StorageByLocationTotalHourlyCostDesc, prometheus.GaugeValue, totalHourlyCost, diskLabelValues...)
 	}
 
-	c.logger.LogAttrs(c.context, slog.LevelInfo, "metrics collected", 
+	c.logger.LogAttrs(c.context, slog.LevelInfo, "metrics collected",
 		slog.Duration("duration", time.Since(now)),
 		slog.Int("machines_total", len(machineList)),
 		slog.Int("machines_with_pricing", machineMetricsCount),
