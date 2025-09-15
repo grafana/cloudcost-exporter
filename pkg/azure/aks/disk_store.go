@@ -1,6 +1,14 @@
 // Package aks provides Azure Kubernetes Service (AKS) cost collection functionality.
 // This file implements disk pricing store with chunked/background pricing population
 // to prevent startup hangs while providing comprehensive pricing data.
+//
+// Region mapping maintenance:
+// The mapClusterRegionToPricingRegion function is auto-generated from the Azure Retail Prices API.
+// To update the region mapping with the latest Azure regions, run: go generate ./pkg/azure/aks
+// This will fetch current regions from the Azure Retail Prices API and regenerate the mapping.
+
+//go:generate go run -tags generate generate_regions.go
+
 package aks
 
 import (
@@ -259,69 +267,9 @@ func (ds *DiskStore) buildDiskPricingKey(disk *Disk) string {
 	return ds.buildPricingKey(skuForPricing, pricingRegion)
 }
 
-// mapClusterRegionToPricingRegion maps Azure cluster region names to Azure Retail Prices API region names.
-// The pricing API uses different region naming conventions than ARM resources.
-// Example: "centralus" (ARM) -> "US Central" (Pricing API)
-func (ds *DiskStore) mapClusterRegionToPricingRegion(clusterRegion string) string {
-	// Comprehensive mapping based on observed Azure Retail Prices API region names
-	regionMap := map[string]string{
-		"centralus":      "US Central",
-		"eastus":         "US East",
-		"eastus2":        "US East 2",
-		"westus":         "US West",
-		"westus2":        "US West 2",
-		"westus3":        "US West 3",
-		"northcentralus": "US North Central",
-		"southcentralus": "US South Central",
-		"westcentralus":  "US West Central",
-
-		// European regions - corrected based on Azure Retail Prices API format
-		"westeurope":         "EU West",
-		"northeurope":        "EU North",
-		"uksouth":            "UK South",
-		"ukwest":             "UK West",
-		"francecentral":      "FR Central",
-		"francesouth":        "FR South",
-		"germanywestcentral": "DE West Central",
-		"germanynorth":       "DE North",
-		"norwayeast":         "NO East",
-		"norwaywest":         "NO West",
-		"switzerlandnorth":   "CH North",
-		"switzerlandwest":    "CH West",
-
-		// Asian regions - based on observed API format
-		"eastasia":           "AP East",
-		"southeastasia":      "AP Southeast",
-		"japaneast":          "JA East",
-		"japanwest":          "JA West",
-		"australiaeast":      "AU East",
-		"australiasoutheast": "AU Southeast",
-		"australiacentral":   "AU Central",
-		"australiacentral2":  "AU Central 2",
-		"koreacentral":       "KR Central",
-		"koreasouth":         "KR South",
-		"southindia":         "IN South",
-		"centralindia":       "IN Central",
-		"westindia":          "IN West",
-
-		// Additional regions based on observed API patterns
-		"canadacentral":    "CA Central",
-		"canadaeast":       "CA East",
-		"brazilsouth":      "BR South",
-		"brazilsoutheast":  "BR Southeast",
-		"southafricanorth": "ZA North",
-		"southafricawest":  "ZA West",
-		"uaenorth":         "AE North",
-		"uaecentral":       "AE Central",
-	}
-
-	if pricingRegion, ok := regionMap[clusterRegion]; ok {
-		return pricingRegion
-	}
-
-	// If no mapping found, return original (might work)
-	return clusterRegion
-}
+// mapClusterRegionToPricingRegion is implemented in region_mapping_generated.go
+// This function is auto-generated from the Azure Retail Prices API.
+// To regenerate: go generate ./pkg/azure/aks
 
 func (ds *DiskStore) buildPricingKey(sku, location string) string {
 	return fmt.Sprintf("%s-%s", strings.ToLower(sku), strings.ToLower(location))
