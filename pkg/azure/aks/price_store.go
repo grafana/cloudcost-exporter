@@ -185,6 +185,10 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
 
 	p.logger.Info("populating price store")
 
+	// Create a context with a longer timeout specifically for pricing API calls
+	pricingCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+
 	opts := &retailPriceSdk.RetailPricesClientListOptions{
 		APIVersion: to.StringPtr(AZ_API_VERSION),
 		Filter:     to.StringPtr(AzurePriceSearchFilter),
@@ -193,7 +197,7 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
 	var prices []*retailPriceSdk.ResourceSKU
 	err := try.Do(func(attempt int) (bool, error) {
 		var err error
-		prices, err = p.azureClientWrapper.ListPrices(ctx, opts)
+		prices, err = p.azureClientWrapper.ListPrices(pricingCtx, opts)
 		if attempt == listPricesMaxRetries && err != nil {
 			return false, fmt.Errorf("%w: %w", ErrMaxRetriesReached, err)
 		}

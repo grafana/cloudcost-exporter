@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
 	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
-	"github.com/Azure/go-autorest/autorest/to"
 )
 
 const (
@@ -29,13 +29,13 @@ type DiskPricing struct {
 }
 
 type DiskStore struct {
-	ctx           context.Context
-	logger        *slog.Logger
-	azClient      client.AzureClient
-	mu            sync.RWMutex
-	disks         map[string]*Disk
-	diskPricing   map[string]*DiskPricing
-	lastRefresh   time.Time
+	ctx         context.Context
+	logger      *slog.Logger
+	azClient    client.AzureClient
+	mu          sync.RWMutex
+	disks       map[string]*Disk
+	diskPricing map[string]*DiskPricing
+	lastRefresh time.Time
 }
 
 func NewDiskStore(ctx context.Context, logger *slog.Logger, azClient client.AzureClient) *DiskStore {
@@ -83,13 +83,17 @@ func (ds *DiskStore) PopulateDiskStore(ctx context.Context) error {
 func (ds *DiskStore) PopulateDiskPricing(ctx context.Context) error {
 	ds.logger.LogAttrs(ctx, slog.LevelInfo, "populating disk pricing")
 
+	// Create a context with a longer timeout specifically for pricing API calls
+	pricingCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+
 	filter := "serviceName eq 'Storage' and priceType eq 'Consumption'"
 	opts := &retailPriceSdk.RetailPricesClientListOptions{
 		APIVersion: to.StringPtr(AZ_API_VERSION),
 		Filter:     to.StringPtr(filter),
 	}
 
-	prices, err := ds.azClient.ListPrices(ctx, opts)
+	prices, err := ds.azClient.ListPrices(pricingCtx, opts)
 	if err != nil {
 		ds.logger.LogAttrs(ctx, slog.LevelError, "failed to list disk prices", slog.String("error", err.Error()))
 		return err
@@ -107,16 +111,17 @@ func (ds *DiskStore) PopulateDiskPricing(ctx context.Context) error {
 				RetailPrice: price.RetailPrice,
 				Unit:        price.UnitOfMeasure,
 			}
-			
+
 			// Debug: log first few pricing entries to see the format
 			if len(ds.diskPricing) <= 5 {
-				ds.logger.LogAttrs(ctx, slog.LevelDebug, "disk pricing example", 
+				ds.logger.LogAttrs(ctx, slog.LevelDebug, "disk pricing example",
 					slog.String("meterName", price.MeterName),
 					slog.String("location", price.Location),
 					slog.String("key", key),
 					slog.String("serviceName", price.ServiceName),
 					slog.Float64("retailPrice", price.RetailPrice))
 			}
+
 		}
 	}
 
@@ -132,7 +137,7 @@ func (ds *DiskStore) GetDiskPricing(disk *Disk) (*DiskPricing, error) {
 	if pricing, ok := ds.diskPricing[key]; ok {
 		return pricing, nil
 	}
-	
+
 	// Debug: show what we're looking for vs what we have
 	ds.logger.LogAttrs(context.Background(), slog.LevelDebug, "disk pricing lookup failed",
 		slog.String("diskName", disk.Name),
@@ -178,43 +183,42 @@ func (ds *DiskStore) buildDiskPricingKey(disk *Disk) string {
 func (ds *DiskStore) mapClusterRegionToPricingRegion(clusterRegion string) string {
 	// Map cluster region names to pricing API region names
 	regionMap := map[string]string{
-		"centralus":   "US Central",
-		"eastus":      "US East",
-		"eastus2":     "US East 2", 
-		"westus":      "US West",
-		"westus2":     "US West 2",
-		"westus3":     "US West 3",
-		"northcentralus": "US North Central",
-		"southcentralus": "US South Central",
-		"westcentralus":  "US West Central",
-		
-		"westeurope":     "West Europe",
-		"northeurope":    "North Europe",
-		"uksouth":        "UK South",
-		"ukwest":         "UK West",
-		"francecentral":  "France Central",
-		"francesouth":    "France South",
+		"centralus":          "US Central",
+		"eastus":             "US East",
+		"eastus2":            "US East 2",
+		"westus":             "US West",
+		"westus2":            "US West 2",
+		"westus3":            "US West 3",
+		"northcentralus":     "US North Central",
+		"southcentralus":     "US South Central",
+		"westcentralus":      "US West Central",
+		"westeurope":         "EU West", // storage pricing uses "EU West" for West Europe (?)
+		"northeurope":        "North Europe",
+		"uksouth":            "UK South",
+		"ukwest":             "UK West",
+		"francecentral":      "France Central",
+		"francesouth":        "France South",
 		"germanywestcentral": "Germany West Central",
-		"norwayeast":     "Norway East",
-		"switzerlandnorth": "Switzerland North",
-		
-		"eastasia":       "East Asia",
-		"southeastasia":  "Southeast Asia",
-		"japaneast":      "Japan East",
-		"japanwest":      "Japan West",
-		"australiaeast":  "Australia East",
+		"norwayeast":         "Norway East",
+		"switzerlandnorth":   "Switzerland North",
+
+		"eastasia":           "East Asia",
+		"southeastasia":      "Southeast Asia",
+		"japaneast":          "Japan East",
+		"japanwest":          "Japan West",
+		"australiaeast":      "Australia East",
 		"australiasoutheast": "Australia Southeast",
-		"koreacentral":   "Korea Central",
-		"koreasouth":     "Korea South",
-		"southindia":     "South India",
-		"centralindia":   "Central India",
-		"westindia":      "West India",
+		"koreacentral":       "Korea Central",
+		"koreasouth":         "Korea South",
+		"southindia":         "South India",
+		"centralindia":       "Central India",
+		"westindia":          "West India",
 	}
-	
+
 	if pricingRegion, ok := regionMap[clusterRegion]; ok {
 		return pricingRegion
 	}
-	
+
 	// If no mapping found, return original (might work)
 	return clusterRegion
 }
@@ -323,4 +327,3 @@ func (ds *DiskStore) getPremiumSSDSKU(sizeGB int32) string {
 		return "P80 LRS Disk"
 	}
 }
-

@@ -23,6 +23,8 @@ const (
 	PersistentVolumeCostSuffix = "persistent_volume_usd_per_hour"
 	// StorageByLocationCostSuffix is the suffix for per-GiB-hour storage cost metrics.
 	StorageByLocationCostSuffix = "storage_by_location_usd_per_gibyte_hour"
+	// StorageByLocationTotalCostSuffix is the suffix for total per-hour storage cost metrics.
+	StorageByLocationTotalCostSuffix = "storage_by_location_usd_per_hour"
 )
 
 // GenerateDesc creates a Prometheus metric descriptor with a standardized fqname.
