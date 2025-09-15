@@ -85,14 +85,14 @@ var (
 		subsystem,
 		utils.StorageByLocationCostSuffix,
 		"The cost of an Azure Managed Disk in USD per GiByte per hour",
-		[]string{"persistentvolume", "region", "availability_zone", "disk", "type", "size_gib", "state"},
+		[]string{"persistentvolume", "region", "availability_zone", "disk", "type", "sku", "size_gib", "state", "cluster_name", "namespace"},
 	)
 	StorageByLocationTotalHourlyCostDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
 		utils.StorageByLocationTotalCostSuffix,
 		"The total cost of an Azure Managed Disk in USD per hour",
-		[]string{"persistentvolume", "region", "availability_zone", "disk", "type", "size_gib", "state"},
+		[]string{"persistentvolume", "region", "availability_zone", "disk", "type", "sku", "size_gib", "state", "cluster_name", "namespace"},
 	)
 )
 
@@ -246,8 +246,11 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			disk.Zone,
 			disk.Name,
 			disk.GetSKUForPricing(),
+			disk.SKU,
 			fmt.Sprintf("%d", disk.Size),
 			disk.State,
+			disk.ClusterName,
+			disk.Namespace,
 		}
 
 		// Emit dual storage metrics following AWS/GCP patterns:
