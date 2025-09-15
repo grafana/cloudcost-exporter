@@ -16,15 +16,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	awsPricing "github.com/aws/aws-sdk-go-v2/service/pricing"
-	rds2 "github.com/aws/aws-sdk-go-v2/service/rds"
+	rds "github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	rdsCollector "github.com/grafana/cloudcost-exporter/pkg/aws/rds"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/elb"
 	awsgwnat "github.com/grafana/cloudcost-exporter/pkg/aws/natgateway"
-	"github.com/grafana/cloudcost-exporter/pkg/aws/rds"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
@@ -97,7 +97,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 		PricingService: awsPricing.NewFromConfig(ac),
 		EC2Service:     ec2.NewFromConfig(ac),
 		BillingService: costexplorer.NewFromConfig(ac),
-		RDSService:     rds2.NewFromConfig(ac),
+		RDSService:     rds.NewFromConfig(ac),
 		ELBService:     elbv2.NewFromConfig(ac),
 	})
 	var regions []types.Region
@@ -134,12 +134,13 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			}
 			awsRDSClient := client.NewAWSClient(client.Config{
 				PricingService: awsPricing.NewFromConfig(pricingConfig),
-				RDSService:     rds2.NewFromConfig(ac),
+				RDSService:     rds.NewFromConfig(ac),
 			})
-			collector := rds.New(ctx, &rds.Config{
+			collector := rdsCollector.New(ctx, &rdsCollector.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
 				Regions:        regions,
+				RegionMap:      awsClientPerRegion,
 				Client:         awsRDSClient,
 			})
 			collectors = append(collectors, collector)
@@ -234,7 +235,7 @@ func newRegionClientMap(ctx context.Context, globalConfig aws.Config, regions []
 				PricingService: awsPricing.NewFromConfig(globalConfig),
 				EC2Service:     ec2.NewFromConfig(ac),
 				BillingService: costexplorer.NewFromConfig(globalConfig),
-				RDSService:     rds2.NewFromConfig(globalConfig),
+				RDSService:     rds.NewFromConfig(ac),
 				ELBService:     elbv2.NewFromConfig(ac),
 			})
 	}

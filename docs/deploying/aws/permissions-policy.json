@@ -9,7 +9,8 @@
                 "ec2:DescribeInstances",
                 "ec2:DescribeSpotPriceHistory",
                 "ec2:DescribeVolumes",
-                "pricing:GetProducts"
+                "pricing:GetProducts",
+                "rds:DescribeDBInstances"
             ],
             "Resource": "*"
         }

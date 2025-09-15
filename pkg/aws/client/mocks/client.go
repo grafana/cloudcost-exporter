@@ -219,11 +219,11 @@ func (m *MockClient) ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstanc
 	return ret0, ret1
 }
 
-// ListRDSPrices mocks base method.
-func (m *MockClient) ListRDSPrices(ctx context.Context) ([]string, error) {
+// GetRDSUnitData mocks base method.
+func (m *MockClient) GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, databaseEngine, locationType string) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListRDSPrices", ctx)
-	ret0, _ := ret[0].([]string)
+	ret := m.ctrl.Call(m, "GetRDSUnitPrice", ctx, instType, region, deploymentOption, databaseEngine, locationType)
+	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
