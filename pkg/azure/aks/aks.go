@@ -103,7 +103,7 @@ type Collector struct {
 	logger  *slog.Logger
 
 	PriceStore   *PriceStore   // VM pricing data store
-	MachineStore *MachineStore // VM inventory store  
+	MachineStore *MachineStore // VM inventory store
 	DiskStore    *DiskStore    // Disk inventory and pricing store (persistent volumes)
 }
 

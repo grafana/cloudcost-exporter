@@ -8,14 +8,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
 )
 
-const (
-	// Kubernetes annotations and tags used to identify persistent volumes
-	pvcNamespaceAnnotation = "volume.beta.kubernetes.io/storage-provisioner"
-	pvNameAnnotation       = "pv.kubernetes.io/provisioned-by"
-	clusterNameTag         = "kubernetes.io-cluster-name"
-	pvNameTag              = "kubernetes.io-created-for-pv-name"
-)
-
 // Disk represents an Azure Managed Disk with Kubernetes metadata extracted from tags.
 // Used for cost tracking of persistent volumes in AKS clusters.
 type Disk struct {
@@ -97,21 +89,21 @@ func (d *Disk) extractKubernetesInfo() {
 			}
 		}
 	}
-	
+
 	// If this is a Kubernetes disk but we don't have cluster name, try inference methods
 	if d.PersistentVolumeName != "" && d.ClusterName == "" {
 		// Try common alternative tag patterns for cluster identification
 		alternatePatterns := map[string]string{
-			"cluster":                      "",
-			"cluster-name":                 "",
-			"aks-cluster":                  "",
-			"aks-cluster-name":             "",
-			"kubernetes-cluster":           "",
-			"k8s-cluster":                  "",
-			"kubernetes.io/cluster":        "",
-			"kubernetes.io/cluster-name":   "",
+			"cluster":                    "",
+			"cluster-name":               "",
+			"aks-cluster":                "",
+			"aks-cluster-name":           "",
+			"kubernetes-cluster":         "",
+			"k8s-cluster":                "",
+			"kubernetes.io/cluster":      "",
+			"kubernetes.io/cluster-name": "",
 		}
-		
+
 		for tagName, tagValue := range d.Tags {
 			if tagValue != nil {
 				for pattern := range alternatePatterns {
@@ -125,7 +117,7 @@ func (d *Disk) extractKubernetesInfo() {
 				}
 			}
 		}
-		
+
 		// If still no cluster name, try to infer from resource group name
 		// AKS typically creates resource groups like "MC_<resource-group>_<cluster-name>_<region>"
 		if d.ClusterName == "" && strings.HasPrefix(d.ResourceGroup, "MC_") {
@@ -189,7 +181,6 @@ func (d *Disk) GetPriceTier(ds *DiskStore) string {
 		return "Unknown"
 	}
 }
-
 
 // getStringValue safely dereferences a string pointer, returning empty string if nil.
 func getStringValue(s *string) string {

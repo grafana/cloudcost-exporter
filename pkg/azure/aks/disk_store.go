@@ -47,13 +47,13 @@ type DiskPricing struct {
 // DiskStore manages Azure disk inventory and pricing data with background population.
 // Implements chunked pricing strategy to prevent startup hangs while ensuring comprehensive coverage.
 type DiskStore struct {
-	ctx         context.Context                // Parent context for operations
-	logger      *slog.Logger                   // Logger with "store=disk" context
-	azClient    client.AzureClient             // Azure client for API calls
-	mu          sync.RWMutex                   // Protects concurrent access to maps
-	disks       map[string]*Disk               // Disk inventory keyed by disk name
-	diskPricing map[string]*DiskPricing        // Pricing data keyed by "sku-location"
-	lastRefresh time.Time                      // Last successful disk inventory refresh
+	ctx         context.Context         // Parent context for operations
+	logger      *slog.Logger            // Logger with "store=disk" context
+	azClient    client.AzureClient      // Azure client for API calls
+	mu          sync.RWMutex            // Protects concurrent access to maps
+	disks       map[string]*Disk        // Disk inventory keyed by disk name
+	diskPricing map[string]*DiskPricing // Pricing data keyed by "sku-location"
+	lastRefresh time.Time               // Last successful disk inventory refresh
 }
 
 // NewDiskStore creates a new DiskStore with immediate disk inventory population and background pricing.
@@ -117,7 +117,7 @@ func (ds *DiskStore) PopulateDiskPricing(ctx context.Context) error {
 
 	// Use global pricing strategy for comprehensive coverage and performance.
 	// Regional chunking was attempted but proved slower and less reliable.
-	
+
 	// Clear existing pricing data
 	ds.mu.Lock()
 	ds.diskPricing = make(map[string]*DiskPricing)
@@ -133,27 +133,9 @@ func (ds *DiskStore) PopulateDiskPricing(ctx context.Context) error {
 	pricingCount := len(ds.diskPricing)
 	ds.mu.RUnlock()
 
-	ds.logger.LogAttrs(ctx, slog.LevelInfo, "disk pricing populated", 
+	ds.logger.LogAttrs(ctx, slog.LevelInfo, "disk pricing populated",
 		slog.Int("pricing_count", pricingCount))
 	return nil
-}
-
-func (ds *DiskStore) getUniqueRegionsFromDisks() []string {
-	ds.mu.RLock()
-	defer ds.mu.RUnlock()
-
-	regionSet := make(map[string]bool)
-	for _, disk := range ds.disks {
-		if disk.Location != "" {
-			regionSet[disk.Location] = true
-		}
-	}
-
-	regions := make([]string, 0, len(regionSet))
-	for region := range regionSet {
-		regions = append(regions, region)
-	}
-	return regions
 }
 
 // loadGlobalPricing loads all Azure Managed Disk pricing data using a global filter.
@@ -166,13 +148,13 @@ func (ds *DiskStore) loadGlobalPricing(ctx context.Context) error {
 
 	// Global filter for all managed disk pricing data
 	filter := "serviceName eq 'Storage' and contains(productName, 'Managed Disk') and priceType eq 'Consumption'"
-	
+
 	opts := &retailPriceSdk.RetailPricesClientListOptions{
 		APIVersion: to.StringPtr(AZ_API_VERSION),
 		Filter:     to.StringPtr(filter),
 	}
 
-	ds.logger.LogAttrs(ctx, slog.LevelDebug, "loading global disk pricing", 
+	ds.logger.LogAttrs(ctx, slog.LevelDebug, "loading global disk pricing",
 		slog.String("filter", filter))
 
 	prices, err := ds.azClient.ListPrices(pricingCtx, opts)
@@ -180,7 +162,7 @@ func (ds *DiskStore) loadGlobalPricing(ctx context.Context) error {
 		return fmt.Errorf("failed to list global disk prices: %w", err)
 	}
 
-	ds.logger.LogAttrs(ctx, slog.LevelDebug, "received global pricing data", 
+	ds.logger.LogAttrs(ctx, slog.LevelDebug, "received global pricing data",
 		slog.Int("price_count", len(prices)))
 
 	// Store pricing data
@@ -211,7 +193,7 @@ func (ds *DiskStore) loadGlobalPricing(ctx context.Context) error {
 		}
 	}
 
-	ds.logger.LogAttrs(ctx, slog.LevelDebug, "stored global pricing", 
+	ds.logger.LogAttrs(ctx, slog.LevelDebug, "stored global pricing",
 		slog.Int("stored_prices", storedCount))
 
 	return nil
@@ -297,6 +279,6 @@ func (ds *DiskStore) mapDiskSKUToPricingSKU(diskSKU string, sizeGB int32) string
 }
 
 // Disk SKU functions are implemented in disk_skus_generated.go
-// These functions (getStandardHDDSKU, getStandardSSDSKU, getPremiumSSDSKU, extractTierFromSKU) 
+// These functions (getStandardHDDSKU, getStandardSSDSKU, getPremiumSSDSKU, extractTierFromSKU)
 // are auto-generated from the Azure Retail Prices API.
 // To regenerate: go generate ./pkg/azure/aks
