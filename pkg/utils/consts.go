@@ -22,8 +22,10 @@ const (
 	// PersistentVolumeCostSuffix is the suffix for per-hour EBS volume cost metrics.
 	PersistentVolumeCostSuffix = "persistent_volume_usd_per_hour"
 	// StorageByLocationCostSuffix is the suffix for per-GiB-hour storage cost metrics.
+	// Used for Azure persistent volumes following AWS naming pattern.
 	StorageByLocationCostSuffix = "storage_by_location_usd_per_gibyte_hour"
 	// StorageByLocationTotalCostSuffix is the suffix for total per-hour storage cost metrics.
+	// Used for Azure persistent volumes to show full disk cost regardless of size.
 	StorageByLocationTotalCostSuffix = "storage_by_location_usd_per_hour"
 )
 

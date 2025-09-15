@@ -79,6 +79,7 @@ var (
 		"The total cost of a compute instance in USD/h",
 		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
 	)
+	// Azure Managed Disk storage metrics for persistent volume cost tracking
 	StorageByLocationHourlyCostDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
@@ -95,14 +96,15 @@ var (
 	)
 )
 
-// Collector is a prometheus collector that collects metrics from AKS clusters.
+// Collector is a prometheus collector that collects cost metrics from AKS clusters.
+// Provides comprehensive cost tracking for both virtual machines and persistent volumes.
 type Collector struct {
 	context context.Context
 	logger  *slog.Logger
 
-	PriceStore   *PriceStore
-	MachineStore *MachineStore
-	DiskStore    *DiskStore
+	PriceStore   *PriceStore   // VM pricing data store
+	MachineStore *MachineStore // VM inventory store  
+	DiskStore    *DiskStore    // Disk inventory and pricing store (persistent volumes)
 }
 
 type Config struct {
@@ -219,6 +221,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		machineMetricsCount++
 	}
 
+	// Collect Azure Managed Disk metrics for Kubernetes persistent volumes
 	kubernetesDisks := c.DiskStore.GetKubernetesDisks()
 	for _, disk := range kubernetesDisks {
 		diskPricing, err := c.DiskStore.GetDiskPricing(disk)
@@ -229,11 +232,12 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			continue
 		}
 
-		// Convert monthly price to hourly, then divide by disk size to get per-GB per-hour
+		// Convert Azure monthly pricing to hourly rates for cost metrics
+		// Monthly price divided by disk size gives monthly cost per GB
 		monthlyPricePerGB := diskPricing.RetailPrice / float64(disk.Size)
 		pricePerGBHour := monthlyPricePerGB / utils.HoursInMonth
 
-		// Also calculate total hourly cost (not divided by size)
+		// Total hourly cost for the entire disk (regardless of size)
 		totalHourlyCost := diskPricing.RetailPrice / utils.HoursInMonth
 
 		diskLabelValues := []string{
@@ -246,7 +250,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			disk.State,
 		}
 
-		// Emit both metrics: per-GiB-hour and total-per-hour
+		// Emit dual storage metrics following AWS/GCP patterns:
+		// 1. Per-GiB-hour cost for calculating costs based on volume size from kube-state-metrics
+		// 2. Total hourly cost for understanding full disk expense
 		ch <- prometheus.MustNewConstMetric(StorageByLocationHourlyCostDesc, prometheus.GaugeValue, pricePerGBHour, diskLabelValues...)
 		ch <- prometheus.MustNewConstMetric(StorageByLocationTotalHourlyCostDesc, prometheus.GaugeValue, totalHourlyCost, diskLabelValues...)
 	}

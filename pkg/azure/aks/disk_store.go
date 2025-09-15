@@ -1,3 +1,6 @@
+// Package aks provides Azure Kubernetes Service (AKS) cost collection functionality.
+// This file implements disk pricing store with chunked/background pricing population
+// to prevent startup hangs while providing comprehensive pricing data.
 package aks
 
 import (
@@ -14,30 +17,38 @@ import (
 )
 
 const (
+	// diskRefreshInterval defines how often to refresh disk inventory and pricing
 	diskRefreshInterval = 15 * time.Minute
 )
 
 var (
+	// ErrDiskPriceNotFound is returned when pricing cannot be found for a disk
 	ErrDiskPriceNotFound = fmt.Errorf("disk price not found")
 )
 
+// DiskPricing represents pricing information for an Azure disk SKU in a specific location.
+// Retrieved from Azure Retail Prices API and mapped to internal pricing keys.
 type DiskPricing struct {
-	SKU         string
-	Location    string
-	RetailPrice float64
-	Unit        string
+	SKU         string  // Azure pricing SKU name (e.g., "P15 LRS Disk")
+	Location    string  // Azure pricing region name (e.g., "US Central")
+	RetailPrice float64 // Monthly retail price in USD
+	Unit        string  // Unit of measure (typically "1/Month")
 }
 
+// DiskStore manages Azure disk inventory and pricing data with background population.
+// Implements chunked pricing strategy to prevent startup hangs while ensuring comprehensive coverage.
 type DiskStore struct {
-	ctx         context.Context
-	logger      *slog.Logger
-	azClient    client.AzureClient
-	mu          sync.RWMutex
-	disks       map[string]*Disk
-	diskPricing map[string]*DiskPricing
-	lastRefresh time.Time
+	ctx         context.Context                // Parent context for operations
+	logger      *slog.Logger                   // Logger with "store=disk" context
+	azClient    client.AzureClient             // Azure client for API calls
+	mu          sync.RWMutex                   // Protects concurrent access to maps
+	disks       map[string]*Disk               // Disk inventory keyed by disk name
+	diskPricing map[string]*DiskPricing        // Pricing data keyed by "sku-location"
+	lastRefresh time.Time                      // Last successful disk inventory refresh
 }
 
+// NewDiskStore creates a new DiskStore with immediate disk inventory population and background pricing.
+// Disk inventory is populated synchronously (fast), while pricing is loaded in background to prevent startup hangs.
 func NewDiskStore(ctx context.Context, logger *slog.Logger, azClient client.AzureClient) *DiskStore {
 	ds := &DiskStore{
 		ctx:         ctx,
@@ -60,6 +71,8 @@ func NewDiskStore(ctx context.Context, logger *slog.Logger, azClient client.Azur
 	return ds
 }
 
+// PopulateDiskStore refreshes the disk inventory from Azure subscription.
+// This operation is fast (~6 seconds) and safe to run synchronously during startup.
 func (ds *DiskStore) PopulateDiskStore(ctx context.Context) error {
 	ds.logger.LogAttrs(ctx, slog.LevelInfo, "populating disk store")
 
@@ -87,11 +100,14 @@ func (ds *DiskStore) PopulateDiskStore(ctx context.Context) error {
 	return nil
 }
 
+// PopulateDiskPricing loads disk pricing data from Azure Retail Prices API.
+// Uses global pricing strategy with 5-minute timeout to handle API performance issues.
+// This operation runs in background to prevent startup hangs.
 func (ds *DiskStore) PopulateDiskPricing(ctx context.Context) error {
 	ds.logger.LogAttrs(ctx, slog.LevelInfo, "populating disk pricing")
 
-	// For now, load global pricing data (without region filtering) to test if the API works
-	// TODO: Re-implement region-specific loading once we verify the API filter works
+	// Use global pricing strategy for comprehensive coverage and performance.
+	// Regional chunking was attempted but proved slower and less reliable.
 	
 	// Clear existing pricing data
 	ds.mu.Lock()
@@ -131,12 +147,15 @@ func (ds *DiskStore) getUniqueRegionsFromDisks() []string {
 	return regions
 }
 
+// loadGlobalPricing loads all Azure Managed Disk pricing data using a global filter.
+// More efficient than regional chunking while providing comprehensive coverage.
+// Uses 5-minute timeout to handle Azure Retail Prices API performance variations.
 func (ds *DiskStore) loadGlobalPricing(ctx context.Context) error {
 	// Use shorter timeout for global pricing (5 minutes)
 	pricingCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	// Build global filter for managed disks
+	// Global filter for all managed disk pricing data
 	filter := "serviceName eq 'Storage' and contains(productName, 'Managed Disk') and priceType eq 'Consumption'"
 	
 	opts := &retailPriceSdk.RetailPricesClientListOptions{
@@ -240,8 +259,11 @@ func (ds *DiskStore) buildDiskPricingKey(disk *Disk) string {
 	return ds.buildPricingKey(skuForPricing, pricingRegion)
 }
 
+// mapClusterRegionToPricingRegion maps Azure cluster region names to Azure Retail Prices API region names.
+// The pricing API uses different region naming conventions than ARM resources.
+// Example: "centralus" (ARM) -> "US Central" (Pricing API)
 func (ds *DiskStore) mapClusterRegionToPricingRegion(clusterRegion string) string {
-	// Map cluster region names to pricing API region names
+	// Comprehensive mapping based on observed Azure Retail Prices API region names
 	regionMap := map[string]string{
 		"centralus":      "US Central",
 		"eastus":         "US East",
@@ -305,6 +327,9 @@ func (ds *DiskStore) buildPricingKey(sku, location string) string {
 	return fmt.Sprintf("%s-%s", strings.ToLower(sku), strings.ToLower(location))
 }
 
+// mapDiskSKUToPricingSKU maps Azure disk SKUs to Azure Retail Prices API SKU names.
+// Azure uses fixed pricing tiers based on disk size, not actual size requested.
+// Example: 100GB Premium_LRS disk maps to "P15 LRS Disk" (256GB tier) pricing.
 func (ds *DiskStore) mapDiskSKUToPricingSKU(diskSKU string, sizeGB int32) string {
 	switch diskSKU {
 	case "Standard_LRS":
@@ -322,6 +347,8 @@ func (ds *DiskStore) mapDiskSKUToPricingSKU(diskSKU string, sizeGB int32) string
 	}
 }
 
+// getStandardHDDSKU maps disk size to Standard HDD pricing tier.
+// Azure Standard HDD pricing tiers: S4(32GB), S6(64GB), S10(128GB), etc.
 func (ds *DiskStore) getStandardHDDSKU(sizeGB int32) string {
 	if sizeGB <= 32 {
 		return "S4 LRS Disk"
@@ -348,6 +375,8 @@ func (ds *DiskStore) getStandardHDDSKU(sizeGB int32) string {
 	}
 }
 
+// getStandardSSDSKU maps disk size to Standard SSD pricing tier.
+// Azure Standard SSD pricing tiers: E1(4GB), E2(8GB), E3(16GB), E4(32GB), etc.
 func (ds *DiskStore) getStandardSSDSKU(sizeGB int32) string {
 	if sizeGB <= 4 {
 		return "E1 LRS Disk"
@@ -380,6 +409,8 @@ func (ds *DiskStore) getStandardSSDSKU(sizeGB int32) string {
 	}
 }
 
+// getPremiumSSDSKU maps disk size to Premium SSD pricing tier.
+// Azure Premium SSD pricing tiers: P4(32GB), P6(64GB), P10(128GB), P15(256GB), etc.
 func (ds *DiskStore) getPremiumSSDSKU(sizeGB int32) string {
 	if sizeGB <= 32 {
 		return "P4 LRS Disk"

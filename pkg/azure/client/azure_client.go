@@ -142,6 +142,8 @@ func (a *AzClientWrapper) ListMachineTypesByLocation(ctx context.Context, region
 	return machineList, nil
 }
 
+// ListDisksInSubscription retrieves all Azure Managed Disks in the subscription.
+// Used for persistent volume cost tracking and Kubernetes metadata extraction.
 func (a *AzClientWrapper) ListDisksInSubscription(ctx context.Context) ([]*armcompute.Disk, error) {
 	logger := a.logger.With("pager", "listDisksInSubscription")
 
