@@ -25,7 +25,7 @@ type Client interface {
 	ListELBPrices(ctx context.Context, region string) ([]string, error)
 	DescribeLoadBalancers(ctx context.Context) ([]elbTypes.LoadBalancer, error)
 	ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstance, error)
-	ListRDSPrices(ctx context.Context) ([]string, error)
+	GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, engineCode, isOutpost string) (string, error)
 
 	// TODO: Break out Metrics into an independent interface
 	Metrics() []prometheus.Collector
