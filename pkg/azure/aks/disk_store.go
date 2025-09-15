@@ -2,12 +2,13 @@
 // This file implements disk pricing store with chunked/background pricing population
 // to prevent startup hangs while providing comprehensive pricing data.
 //
-// Region mapping maintenance:
-// The mapClusterRegionToPricingRegion function is auto-generated from the Azure Retail Prices API.
-// To update the region mapping with the latest Azure regions, run: go generate ./pkg/azure/aks
-// This will fetch current regions from the Azure Retail Prices API and regenerate the mapping.
+// Auto-generation maintenance:
+// The mapClusterRegionToPricingRegion function and disk SKU functions are auto-generated from the Azure Retail Prices API.
+// To update the region mapping and disk SKU/tier functions, run: go generate ./pkg/azure/aks
+// This will fetch current data from the Azure Retail Prices API and regenerate both mappings.
 
 //go:generate go run -tags generate generate_regions.go
+//go:generate go run -tags generate generate_disk_skus.go
 
 package aks
 
@@ -295,102 +296,7 @@ func (ds *DiskStore) mapDiskSKUToPricingSKU(diskSKU string, sizeGB int32) string
 	}
 }
 
-// getStandardHDDSKU maps disk size to Standard HDD pricing tier.
-// Azure Standard HDD pricing tiers: S4(32GB), S6(64GB), S10(128GB), etc.
-// extractTierFromSKU extracts the tier prefix from an Azure SKU string.
-// Example: "P15 LRS Disk" -> "P15", "E10 LRS Disk" -> "E10"
-func extractTierFromSKU(sku string) string {
-	parts := strings.Fields(sku)
-	if len(parts) > 0 {
-		return parts[0]
-	}
-	return "Unknown"
-}
-
-func (ds *DiskStore) getStandardHDDSKU(sizeGB int32) string {
-	if sizeGB <= 32 {
-		return "S4 LRS Disk"
-	} else if sizeGB <= 64 {
-		return "S6 LRS Disk"
-	} else if sizeGB <= 128 {
-		return "S10 LRS Disk"
-	} else if sizeGB <= 256 {
-		return "S15 LRS Disk"
-	} else if sizeGB <= 512 {
-		return "S20 LRS Disk"
-	} else if sizeGB <= 1024 {
-		return "S30 LRS Disk"
-	} else if sizeGB <= 2048 {
-		return "S40 LRS Disk"
-	} else if sizeGB <= 4096 {
-		return "S50 LRS Disk"
-	} else if sizeGB <= 8192 {
-		return "S60 LRS Disk"
-	} else if sizeGB <= 16384 {
-		return "S70 LRS Disk"
-	} else {
-		return "S80 LRS Disk"
-	}
-}
-
-// getStandardSSDSKU maps disk size to Standard SSD pricing tier.
-// Azure Standard SSD pricing tiers: E1(4GB), E2(8GB), E3(16GB), E4(32GB), etc.
-func (ds *DiskStore) getStandardSSDSKU(sizeGB int32) string {
-	if sizeGB <= 4 {
-		return "E1 LRS Disk"
-	} else if sizeGB <= 8 {
-		return "E2 LRS Disk"
-	} else if sizeGB <= 16 {
-		return "E3 LRS Disk"
-	} else if sizeGB <= 32 {
-		return "E4 LRS Disk"
-	} else if sizeGB <= 64 {
-		return "E6 LRS Disk"
-	} else if sizeGB <= 128 {
-		return "E10 LRS Disk"
-	} else if sizeGB <= 256 {
-		return "E15 LRS Disk"
-	} else if sizeGB <= 512 {
-		return "E20 LRS Disk"
-	} else if sizeGB <= 1024 {
-		return "E30 LRS Disk"
-	} else if sizeGB <= 2048 {
-		return "E40 LRS Disk"
-	} else if sizeGB <= 4096 {
-		return "E50 LRS Disk"
-	} else if sizeGB <= 8192 {
-		return "E60 LRS Disk"
-	} else if sizeGB <= 16384 {
-		return "E70 LRS Disk"
-	} else {
-		return "E80 LRS Disk"
-	}
-}
-
-// getPremiumSSDSKU maps disk size to Premium SSD pricing tier.
-// Azure Premium SSD pricing tiers: P4(32GB), P6(64GB), P10(128GB), P15(256GB), etc.
-func (ds *DiskStore) getPremiumSSDSKU(sizeGB int32) string {
-	if sizeGB <= 32 {
-		return "P4 LRS Disk"
-	} else if sizeGB <= 64 {
-		return "P6 LRS Disk"
-	} else if sizeGB <= 128 {
-		return "P10 LRS Disk"
-	} else if sizeGB <= 256 {
-		return "P15 LRS Disk"
-	} else if sizeGB <= 512 {
-		return "P20 LRS Disk"
-	} else if sizeGB <= 1024 {
-		return "P30 LRS Disk"
-	} else if sizeGB <= 2048 {
-		return "P40 LRS Disk"
-	} else if sizeGB <= 4096 {
-		return "P50 LRS Disk"
-	} else if sizeGB <= 8192 {
-		return "P60 LRS Disk"
-	} else if sizeGB <= 16384 {
-		return "P70 LRS Disk"
-	} else {
-		return "P80 LRS Disk"
-	}
-}
+// Disk SKU functions are implemented in disk_skus_generated.go
+// These functions (getStandardHDDSKU, getStandardSSDSKU, getPremiumSSDSKU, extractTierFromSKU) 
+// are auto-generated from the Azure Retail Prices API.
+// To regenerate: go generate ./pkg/azure/aks
