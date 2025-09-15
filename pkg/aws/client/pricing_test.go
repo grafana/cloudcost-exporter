@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -299,6 +300,94 @@ func TestListStoragePrices(t *testing.T) {
 				assert.Equal(t, tt.err, err)
 			}
 			assert.Equal(t, tt.expected, resp)
+		})
+	}
+}
+
+func Test_GetRDSUnitData(t *testing.T) {
+	tests := []struct {
+		name string
+		// priceList awsPricing.GetProductsOutput
+		GetProducts func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error)
+		want        string
+		wantErr     bool
+	}{
+		{
+			name: "only one price",
+			GetProducts: func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error) {
+				return &awsPricing.GetProductsOutput{
+						PriceList: []string{
+							`{
+							"terms": {
+								"OnDemand": {
+									"term1": {
+										"priceDimensions": {
+											"dim1": {
+												"pricePerUnit": {"USD": "0.0840000000"}
+											}
+										}
+									}
+								}
+							}
+						}`,
+						},
+					},
+					nil
+			},
+			want:    `{"terms":{"OnDemand":{"term1":{"priceDimensions":{"dim1":{"pricePerUnit":{"USD":"0.0840000000"}}}}}}}`,
+			wantErr: false,
+		},
+		{
+			name: "multiple prices",
+			GetProducts: func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error) {
+				return &awsPricing.GetProductsOutput{
+					PriceList: []string{
+						`{"terms": {"OnDemand": {"term1": {"priceDimensions": {"dim1": {"pricePerUnit": {"USD": "0.0840000000"}}}}}}}`,
+						`{"terms": {"OnDemand": {"term2": {"priceDimensions": {"dim2": {"pricePerUnit": {"USD": "0.0240000000"}}}}}}}`,
+					},
+				}, nil
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "empty price list",
+			GetProducts: func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error) {
+				return &awsPricing.GetProductsOutput{
+					PriceList: []string{},
+				}, nil
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "pricing API errors",
+			GetProducts: func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error) {
+				return &awsPricing.GetProductsOutput{}, errors.New("test error")
+			},
+			want:    "",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			client := mocks.NewMockPricing(ctrl)
+
+			client.EXPECT().
+				GetProducts(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(tt.GetProducts).
+				Times(1)
+			c := newPricing(client, nil)
+			result, err := c.getRDSUnitData(context.Background(), "input1", "input2", "input3", "input4", "input5")
+
+			t.Logf("Test: %s, Result: %s, Error: %v, WantErr: %v", tt.name, result, err, tt.wantErr)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
 		})
 	}
 }

@@ -11,6 +11,7 @@ import (
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -18,45 +19,50 @@ const (
 	subsystem = "aws_rds"
 )
 
-type Metrics struct {
-	// HourlyCost measures the hourly cost of RDS databases in $/h, per region and class.
-	HourlyCost *prometheus.GaugeVec
+// type Metrics struct {
+// 	// HourlyCost measures the hourly cost of RDS databases in $/h, per region and class.
+// 	HourlyCost *prometheus.GaugeVec
 
-	// RequestCount is a counter that tracks the number of requests made to the AWS Cost Explorer API
-	RequestCount prometheus.Counter
+// 	// RequestCount is a counter that tracks the number of requests made to the AWS Cost Explorer API
+// 	RequestCount prometheus.Counter
 
-	// RequestErrorsCount is a counter that tracks the number of errors when making requests to the AWS Cost Explorer API
-	RequestErrorsCount prometheus.Counter
+// 	// RequestErrorsCount is a counter that tracks the number of errors when making requests to the AWS Cost Explorer API
+// 	RequestErrorsCount prometheus.Counter
 
-	// NextScrapeGauge is a gauge that tracks the next time the exporter will scrape AWS billing data
-	NextScrape prometheus.Gauge
-}
+// 	// NextScrapeGauge is a gauge that tracks the next time the exporter will scrape AWS billing data
+// 	NextScrape prometheus.Gauge
+// }
 
-func NewMetrics() Metrics {
-	return Metrics{
-		HourlyCost: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "rds_usd_per_hour"),
-			Help: "Hourly cost of RDS databases by region, tier and  db name. Cost represented in USD/(h)",
-		},
-			[]string{"region", "tier", "name"},
-		),
-
-		RequestCount: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "cost_api_requests_total"),
-			Help: "Total number of requests made to the AWS Cost Explorer API",
-		}),
-
-		RequestErrorsCount: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "cost_api_requests_errors_total"),
-			Help: "Total number of errors when making requests to the AWS Cost Explorer API",
-		}),
-
-		NextScrape: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "next_scrape"),
-			Help: "The next time the exporter will scrape AWS billing data. Can be used to trigger alerts if now - nextScrape > interval",
-		}),
-	}
-}
+var (
+	HourlyGaugeDesc = utils.GenerateDesc(
+		cloudcost_exporter.MetricPrefix,
+		subsystem,
+		"hourly_rate_usd_per_hour",
+		"Hourly cost of NAT Gateway by region. Cost represented in USD/hour",
+		[]string{"region", "tier", "name"},
+	)
+	RequestCountDesc = utils.GenerateDesc(
+		cloudcost_exporter.MetricPrefix,
+		subsystem,
+		"cost_api_requests_total",
+		"Total number of requests made to the AWS Cost Explorer API",
+		[]string{},
+	)
+	RequestErrorsCountDesc = utils.GenerateDesc(
+		cloudcost_exporter.MetricPrefix,
+		subsystem,
+		"cost_api_requests_errors_total",
+		"Total number of errors when making requests to the AWS Cost Explorer API",
+		[]string{},
+	)
+	NextScrapeDesc = utils.GenerateDesc(
+		cloudcost_exporter.MetricPrefix,
+		subsystem,
+		"next_scrape",
+		"The next time the exporter will scrape AWS billing data. Can be used to trigger alerts if now - nextScrape > interval",
+		[]string{},
+	)
+)
 
 // Collector is a prometheus collector that collects metrics from AWS RDS clusters.
 type Collector struct {
@@ -68,7 +74,6 @@ type Collector struct {
 	logger            *slog.Logger
 	Client            client.Client
 	pricingMap        map[string]float64
-	metrics           Metrics
 }
 
 type Config struct {
@@ -92,7 +97,6 @@ func New(ctx context.Context, config *Config) *Collector {
 		scrapeInterval: config.ScrapeInterval,
 		logger:         config.Logger.With("logger", serviceName),
 		Client:         config.Client,
-		metrics:        NewMetrics(),
 	}
 }
 
@@ -145,7 +149,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		}
 
 		ch <- prometheus.MustNewConstMetric(
-			c.metrics.HourlyCost.WithLabelValues(region, *instance.DBInstanceClass, *instance.DBInstanceIdentifier).Desc(),
+			HourlyGaugeDesc,
 			prometheus.GaugeValue,
 			c.pricingMap[createPricingKey],
 			region,
@@ -190,9 +194,5 @@ func (c *Collector) Name() string {
 }
 
 func (c *Collector) Register(registry provider.Registry) error {
-	registry.MustRegister(c.metrics.HourlyCost)
-	// registry.MustRegister(c.metrics.RequestCount)
-	// registry.MustRegister(c.metrics.RequestErrorsCount)
-	// registry.MustRegister(c.metrics.NextScrape)
 	return nil
 }
