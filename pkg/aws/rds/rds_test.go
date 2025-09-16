@@ -114,7 +114,7 @@ func TestCollector_Collect(t *testing.T) {
 	}{
 		{
 			name: "instance without price in cache",
-			ListRDSInstances: []rdsTypes.DBInstance{rdsTypes.DBInstance{
+			ListRDSInstances: []rdsTypes.DBInstance{{
 				DBSubnetGroup: &rdsTypes.DBSubnetGroup{
 					Subnets: []rdsTypes.Subnet{
 						{
@@ -134,7 +134,7 @@ func TestCollector_Collect(t *testing.T) {
 		},
 		{
 			name: "instance with price in cache",
-			ListRDSInstances: []rdsTypes.DBInstance{rdsTypes.DBInstance{
+			ListRDSInstances: []rdsTypes.DBInstance{{
 				DBSubnetGroup: &rdsTypes.DBSubnetGroup{
 					Subnets: []rdsTypes.Subnet{
 						{
