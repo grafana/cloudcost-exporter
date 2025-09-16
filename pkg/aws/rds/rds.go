@@ -94,7 +94,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		var region = az[:len(az)-1]
 		depOption := multiOrSingleAZ(*instance.MultiAZ)
 		locationType := isOutpostsInstance(instance) // outposts locations have a different unit price
-		createPricingKey := createPricingKey(az, *instance.DBInstanceClass, *instance.Engine, depOption, locationType)
+		createPricingKey := createPricingKey(region, *instance.DBInstanceClass, *instance.Engine, depOption, locationType)
 		if _, ok := c.pricingMap[createPricingKey]; !ok {
 			v, err := c.Client.GetRDSUnitData(ctx, *instance.DBInstanceClass, region, depOption, *instance.Engine, locationType)
 			if err != nil {
@@ -142,8 +142,8 @@ func isOutpostsInstance(instance rdsTypes.DBInstance) string {
 	return "AWS Region"
 }
 
-func createPricingKey(az, tier, engine, depOption, locationType string) string {
-	return fmt.Sprintf("%s-%s-%s-%s-%s", az, tier, engine, depOption, locationType)
+func createPricingKey(region, tier, engine, depOption, locationType string) string {
+	return fmt.Sprintf("%s-%s-%s-%s-%s", region, tier, engine, depOption, locationType)
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
