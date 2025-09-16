@@ -219,11 +219,20 @@ func (m *MockClient) ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstanc
 	return ret0, ret1
 }
 
-// GetRDSUnitData mocks base method.
+func (mr *MockClientMockRecorder) ListRDSInstances(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRDSInstances", reflect.TypeOf((*MockClient)(nil).ListRDSInstances), ctx)
+}
+
 func (m *MockClient) GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, databaseEngine, locationType string) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRDSUnitPrice", ctx, instType, region, deploymentOption, databaseEngine, locationType)
+	ret := m.ctrl.Call(m, "GetRDSUnitData", ctx, instType, region, deploymentOption, databaseEngine, locationType)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
+}
+
+func (mr *MockClientMockRecorder) GetRDSUnitData(ctx, instType, region, deploymentOption, databaseEngine, locationType any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRDSUnitData", reflect.TypeOf((*MockClient)(nil).GetRDSUnitData), ctx, instType, region, deploymentOption, databaseEngine, locationType)
 }
