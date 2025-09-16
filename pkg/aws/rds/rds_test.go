@@ -106,7 +106,7 @@ func TestMultiOrSingleAZ(t *testing.T) {
 }
 
 func TestCollector_Collect(t *testing.T) {
-	const cacheKey = "us-east-1a-db.t3.medium-mysql-Single-AZ-AWS Outposts"
+	const cacheKey = "us-east-1-db.t3.medium-mysql-Single-AZ-AWS Outposts"
 	tests := []struct {
 		name             string
 		ListRDSInstances []rdsTypes.DBInstance
