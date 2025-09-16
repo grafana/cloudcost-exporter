@@ -138,7 +138,6 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			})
 			collector := rdsCollector.New(ctx, &rdsCollector.Config{
 				ScrapeInterval: config.ScrapeInterval,
-				Logger:         logger,
 				Regions:        regions,
 				RegionMap:      awsClientPerRegion,
 				Client:         awsRDSClient,

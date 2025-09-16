@@ -71,7 +71,6 @@ type Collector struct {
 	scrapeInterval    time.Duration
 	NextComputeScrape time.Time
 	NextStorageScrape time.Time
-	logger            *slog.Logger
 	Client            client.Client
 	pricingMap        map[string]float64
 }
@@ -81,7 +80,6 @@ type Config struct {
 	RegionMap      map[string]client.Client
 	Client         client.Client
 	ScrapeInterval time.Duration
-	Logger         *slog.Logger
 }
 
 const (
@@ -95,7 +93,6 @@ func New(ctx context.Context, config *Config) *Collector {
 		regions:        config.Regions,
 		regionMap:      config.RegionMap,
 		scrapeInterval: config.ScrapeInterval,
-		logger:         config.Logger.With("logger", serviceName),
 		Client:         config.Client,
 	}
 }
@@ -108,19 +105,20 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 
 // Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+	logger := slog.With("logger", serviceName)
 	ctx := context.Background()
 	var instances = []rdsTypes.DBInstance{}
 	for _, region := range c.regions {
 		regionName := *region.RegionName
 		regionClient, ok := c.regionMap[regionName]
 		if !ok {
-			c.logger.Warn("no client found for region", "region", regionName)
+			logger.Error("no client found for region", "region", regionName)
 			continue
 		}
 
 		is, err := regionClient.ListRDSInstances(ctx)
 		if err != nil {
-			c.logger.Error("error listing RDS instances", "region", regionName, "error", err)
+			logger.Error("error listing RDS instances", "region", regionName, "error", err)
 			continue
 		}
 
@@ -133,16 +131,16 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		var region = az[:len(az)-1]
 		depOption := multiOrSingleAZ(*instance.MultiAZ)
 		locationType := isOutpostsInstance(instance) // outposts locations have a different unit price
-		createPricingKey := createPricingKey(az, *instance.DBInstanceClass, region, depOption, locationType)
+		createPricingKey := createPricingKey(az, *instance.DBInstanceClass, *instance.Engine, depOption, locationType)
 		if _, ok := c.pricingMap[createPricingKey]; !ok {
 			v, err := c.Client.GetRDSUnitData(ctx, *instance.DBInstanceClass, region, depOption, *instance.Engine, locationType)
 			if err != nil {
-				c.logger.Error("error listing rds prices", "error", err)
+				logger.Error("error listing rds prices", "error", err)
 				return err
 			}
 			hourlyPrice, err := validateRDSPriceData(ctx, v)
 			if err != nil {
-				c.logger.Error("error validating RDS price data", "error", err)
+				logger.Error("error validating RDS price data", "error", err)
 				return err
 			}
 			c.pricingMap[createPricingKey] = hourlyPrice
@@ -181,8 +179,8 @@ func isOutpostsInstance(instance rdsTypes.DBInstance) string {
 	return "AWS Region"
 }
 
-func createPricingKey(az, tier, region, depOption, locationType string) string {
-	return fmt.Sprintf("%s-%s-%s-%s-%s", az, tier, region, depOption, locationType)
+func createPricingKey(az, tier, engine, depOption, locationType string) string {
+	return fmt.Sprintf("%s-%s-%s-%s-%s", az, tier, engine, depOption, locationType)
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
