@@ -31,13 +31,11 @@ var (
 
 // Collector is a prometheus collector that collects metrics from AWS RDS clusters.
 type Collector struct {
-	regions           []types.Region
-	regionMap         map[string]client.Client
-	scrapeInterval    time.Duration
-	NextComputeScrape time.Time
-	NextStorageScrape time.Time
-	Client            client.Client
-	pricingMap        map[string]float64
+	regions        []types.Region
+	regionMap      map[string]client.Client
+	scrapeInterval time.Duration
+	Client         client.Client
+	pricingMap     map[string]float64
 }
 
 type Config struct {
