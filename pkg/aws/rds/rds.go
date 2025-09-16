@@ -19,20 +19,6 @@ const (
 	subsystem = "aws_rds"
 )
 
-// type Metrics struct {
-// 	// HourlyCost measures the hourly cost of RDS databases in $/h, per region and class.
-// 	HourlyCost *prometheus.GaugeVec
-
-// 	// RequestCount is a counter that tracks the number of requests made to the AWS Cost Explorer API
-// 	RequestCount prometheus.Counter
-
-// 	// RequestErrorsCount is a counter that tracks the number of errors when making requests to the AWS Cost Explorer API
-// 	RequestErrorsCount prometheus.Counter
-
-// 	// NextScrapeGauge is a gauge that tracks the next time the exporter will scrape AWS billing data
-// 	NextScrape prometheus.Gauge
-// }
-
 var (
 	HourlyGaugeDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
@@ -40,27 +26,6 @@ var (
 		"hourly_rate_usd_per_hour",
 		"Hourly cost of NAT Gateway by region. Cost represented in USD/hour",
 		[]string{"region", "tier", "name"},
-	)
-	RequestCountDesc = utils.GenerateDesc(
-		cloudcost_exporter.MetricPrefix,
-		subsystem,
-		"cost_api_requests_total",
-		"Total number of requests made to the AWS Cost Explorer API",
-		[]string{},
-	)
-	RequestErrorsCountDesc = utils.GenerateDesc(
-		cloudcost_exporter.MetricPrefix,
-		subsystem,
-		"cost_api_requests_errors_total",
-		"Total number of errors when making requests to the AWS Cost Explorer API",
-		[]string{},
-	)
-	NextScrapeDesc = utils.GenerateDesc(
-		cloudcost_exporter.MetricPrefix,
-		subsystem,
-		"next_scrape",
-		"The next time the exporter will scrape AWS billing data. Can be used to trigger alerts if now - nextScrape > interval",
-		[]string{},
 	)
 )
 
