@@ -35,7 +35,7 @@ type Collector struct {
 	regionMap      map[string]client.Client
 	scrapeInterval time.Duration
 	Client         client.Client
-	pricingMap     map[string]float64
+	pricingMap     *rdsPricingMap
 }
 
 type Config struct {
@@ -52,7 +52,7 @@ const (
 // New creates an rds collector
 func New(ctx context.Context, config *Config) *Collector {
 	return &Collector{
-		pricingMap:     make(map[string]float64),
+		pricingMap:     newRDSPricingMap(),
 		regions:        config.Regions,
 		regionMap:      config.RegionMap,
 		scrapeInterval: config.ScrapeInterval,
@@ -95,7 +95,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		depOption := multiOrSingleAZ(*instance.MultiAZ)
 		locationType := isOutpostsInstance(instance) // outposts locations have a different unit price
 		createPricingKey := createPricingKey(region, *instance.DBInstanceClass, *instance.Engine, depOption, locationType)
-		if _, ok := c.pricingMap[createPricingKey]; !ok {
+		if _, ok := c.pricingMap.GetRDSPricingMap(createPricingKey); !ok {
 			v, err := c.Client.GetRDSUnitData(ctx, *instance.DBInstanceClass, region, depOption, *instance.Engine, locationType)
 			if err != nil {
 				logger.Error("error listing rds prices", "error", err)

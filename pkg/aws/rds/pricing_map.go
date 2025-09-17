@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync"
 )
 
 type AWSPriceData struct {
@@ -89,5 +90,33 @@ func validateRDSPriceData(ctx context.Context, priceList string) (float64, error
 		return 0, fmt.Errorf("error parsing price string '%s' to float: %w", priceStr, err)
 	}
 
+	return price, nil
+}
+
+type rdsPricingMap struct {
+	mu      sync.RWMutex
+	pricing map[string]float64
+}
+
+func newRDSPricingMap() *rdsPricingMap {
+	return &rdsPricingMap{
+		pricing: make(map[string]float64),
+		mu:      sync.RWMutex{},
+	}
+}
+
+func (r *rdsPricingMap) AddToRDSPricingMap(price float64, key string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pricing[key] = price
+}
+
+func (r *rdsPricingMap) GetRDSPricingMap(key string) (float64, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	price, ok := r.pricing[key]
+	if !ok {
+		return 0, fmt.Errorf("price not found for key: %s", key)
+	}
 	return price, nil
 }
