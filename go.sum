@@ -86,8 +86,8 @@ github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.7 h1:mLgc5QIgO
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.7/go.mod h1:wXb/eQnqt8mDQIQTTmcw58B5mYGxzLGZGK8PWNFZ0BA=
 github.com/aws/aws-sdk-go-v2/service/pricing v1.39.3 h1:2Vs4rdjtC3C2yv9I8ZSa6SBDK8HthRDBr5deAQ5Pb3s=
 github.com/aws/aws-sdk-go-v2/service/pricing v1.39.3/go.mod h1:EWTrh/FVF3sDmcK5tKy1ETFPn6VX2nfLy5gDTsCy2+s=
-github.com/aws/aws-sdk-go-v2/service/rds v1.106.1 h1:z/PNnuOCKZDfeaSHwRUiP6GxsP4m6dQYOZNgqyYDj2o=
-github.com/aws/aws-sdk-go-v2/service/rds v1.106.1/go.mod h1:EVYMTmrAQr0LbGPy3FxHJHvPcP8x6byBwFJ9fUZKU3Q=
+github.com/aws/aws-sdk-go-v2/service/rds v1.107.0 h1:PcG+YEp/ADK4JBq21G2I/PYlsq6wuDvUQqw2YEtECU8=
+github.com/aws/aws-sdk-go-v2/service/rds v1.107.0/go.mod h1:EVYMTmrAQr0LbGPy3FxHJHvPcP8x6byBwFJ9fUZKU3Q=
 github.com/aws/aws-sdk-go-v2/service/sso v1.29.1 h1:8OLZnVJPvjnrxEwHFg9hVUof/P4sibH+Ea4KKuqAGSg=
 github.com/aws/aws-sdk-go-v2/service/sso v1.29.1/go.mod h1:27M3BpVi0C02UiQh1w9nsBEit6pLhlaH3NHna6WUbDE=
 github.com/aws/aws-sdk-go-v2/service/ssooidc v1.34.2 h1:gKWSTnqudpo8dAxqBqZnDoDWCiEh/40FziUjr/mo6uA=
