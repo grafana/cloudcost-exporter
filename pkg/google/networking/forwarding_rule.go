@@ -18,7 +18,7 @@ import (
 const (
 	collectorName        = "ForwardingRule"
 	PriceRefreshInterval = 24 * time.Hour
-	subsystem            = "gcp_forwarding_rule"
+	subsystem            = "gcp_clb_forwarding_rule"
 
 	fwdRuleDescription             = "The unit cost of a forwarding rule per hour in USD"
 	fwdRuleInboundDataDescription  = "The inbound data processed unit cost of a forwarding rule in USD/GiB"
