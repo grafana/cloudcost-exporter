@@ -28,6 +28,14 @@ func (c *Compute) getZones(project string) ([]*compute.Zone, error) {
 	return zones.Items, nil
 }
 
+func (c *Compute) getRegions(project string) ([]*compute.Region, error) {
+	regions, err := c.computeService.Regions.List(project).Do()
+	if err != nil {
+		return nil, err
+	}
+	return regions.Items, nil
+}
+
 func (c *Compute) listInstancesInZone(projectId, zone string) ([]*MachineSpec, error) {
 	var allInstances []*MachineSpec
 	var nextPageToken string
@@ -65,4 +73,21 @@ func (c *Compute) listDisks(ctx context.Context, project string, zone string) ([
 		return nil, err
 	}
 	return disks, nil
+}
+
+func (c *Compute) listForwardingRules(ctx context.Context, project string, region string) ([]*compute.ForwardingRule, error) {
+	var forwardingRules []*compute.ForwardingRule
+
+	err := c.computeService.ForwardingRules.List(project, region).Pages(ctx, func(page *compute.ForwardingRuleList) error {
+		if page == nil {
+			return nil
+		}
+		forwardingRules = append(forwardingRules, page.Items...)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return forwardingRules, nil
 }
