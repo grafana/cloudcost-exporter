@@ -17,6 +17,9 @@ type AzureClient interface {
 	ListVirtualMachineScaleSetsFromResourceGroup(context.Context, string) ([]*armcompute.VirtualMachineScaleSet, error)
 	ListMachineTypesByLocation(context.Context, string) ([]*armcompute.VirtualMachineSize, error)
 
+	// Disk Store - Azure Managed Disk operations for persistent volume cost tracking
+	ListDisksInSubscription(context.Context) ([]*armcompute.Disk, error)
+
 	// Price Store
 	ListPrices(context.Context, *retailPriceSdk.RetailPricesClientListOptions) ([]*retailPriceSdk.ResourceSKU, error)
 }

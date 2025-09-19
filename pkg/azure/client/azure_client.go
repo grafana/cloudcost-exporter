@@ -26,6 +26,7 @@ type AzClientWrapper struct {
 	azVMSSClient    *armcompute.VirtualMachineScaleSetsClient
 	azVMSSVmClient  *armcompute.VirtualMachineScaleSetVMsClient
 	azAksClient     *armcontainerservice.ManagedClustersClient
+	azDisksClient   *armcompute.DisksClient
 
 	retailPricesClient *retailPriceSdk.RetailPricesClient
 }
@@ -57,6 +58,7 @@ func NewAzureClientWrapper(logger *slog.Logger, subscriptionId string, credentia
 		azVMSSClient:    computeClientFactory.NewVirtualMachineScaleSetsClient(),
 		azVMSSVmClient:  computeClientFactory.NewVirtualMachineScaleSetVMsClient(),
 		azAksClient:     containerClientFactory.NewManagedClustersClient(),
+		azDisksClient:   computeClientFactory.NewDisksClient(),
 
 		retailPricesClient: retailPricesClient,
 	}, nil
@@ -138,6 +140,27 @@ func (a *AzClientWrapper) ListMachineTypesByLocation(ctx context.Context, region
 	}
 
 	return machineList, nil
+}
+
+// ListDisksInSubscription retrieves all Azure Managed Disks in the subscription.
+// Used for persistent volume cost tracking and Kubernetes metadata extraction.
+func (a *AzClientWrapper) ListDisksInSubscription(ctx context.Context) ([]*armcompute.Disk, error) {
+	logger := a.logger.With("pager", "listDisksInSubscription")
+
+	diskList := make([]*armcompute.Disk, 0)
+
+	pager := a.azDisksClient.NewListPager(nil)
+	for pager.More() {
+		nextResult, err := pager.NextPage(ctx)
+		if err != nil {
+			logger.LogAttrs(ctx, slog.LevelError, "unable to advance page", slog.String("err", err.Error()))
+			return nil, fmt.Errorf("%w: %w", ErrPageAdvanceFailure, err)
+		}
+
+		diskList = append(diskList, nextResult.Value...)
+	}
+
+	return diskList, nil
 }
 
 func (a *AzClientWrapper) ListPrices(ctx context.Context, searchOptions *retailPriceSdk.RetailPricesClientListOptions) ([]*retailPriceSdk.ResourceSKU, error) {

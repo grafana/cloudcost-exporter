@@ -79,15 +79,32 @@ var (
 		"The total cost of a compute instance in USD/h",
 		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
 	)
+	// Azure Managed Disk storage metrics for persistent volume cost tracking
+	StorageByLocationHourlyCostDesc = utils.GenerateDesc(
+		cloudcost_exporter.MetricPrefix,
+		subsystem,
+		utils.PersistentVolumeCostPerGiBSuffix,
+		"The cost of an Azure Managed Disk in USD GiByte per hour",
+		[]string{"persistentvolume", "region", "availability_zone", "disk", "sku", "price_tier", "size_gib", "state", "cluster_name", "namespace"},
+	)
+	StorageByLocationTotalHourlyCostDesc = utils.GenerateDesc(
+		cloudcost_exporter.MetricPrefix,
+		subsystem,
+		utils.PersistentVolumeCostSuffix,
+		"The total cost of an Azure Managed Disk in USD per hour",
+		[]string{"persistentvolume", "region", "availability_zone", "disk", "sku", "price_tier", "size_gib", "state", "cluster_name", "namespace"},
+	)
 )
 
-// Collector is a prometheus collector that collects metrics from AKS clusters.
+// Collector is a prometheus collector that collects cost metrics from AKS clusters.
+// Provides comprehensive cost tracking for both virtual machines and persistent volumes.
 type Collector struct {
 	context context.Context
 	logger  *slog.Logger
 
-	PriceStore   *PriceStore
-	MachineStore *MachineStore
+	PriceStore   *PriceStore   // VM pricing data store
+	MachineStore *MachineStore // VM inventory store
+	DiskStore    *DiskStore    // Disk inventory and pricing store (persistent volumes)
 }
 
 type Config struct {
@@ -101,9 +118,11 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 	if err != nil {
 		return nil, err
 	}
+	diskStore := NewDiskStore(ctx, logger, azClientWrapper)
 
 	priceTicker := time.NewTicker(priceRefreshInterval)
 	machineTicker := time.NewTicker(machineRefreshInterval)
+	diskTicker := time.NewTicker(diskRefreshInterval)
 
 	go func(ctx context.Context) {
 		for {
@@ -125,6 +144,17 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 			}
 		}
 	}(ctx)
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-diskTicker.C:
+				diskStore.PopulateDiskStore(ctx)
+				diskStore.PopulateDiskPricing(ctx)
+			}
+		}
+	}(ctx)
 
 	return &Collector{
 		context: ctx,
@@ -132,6 +162,7 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 
 		PriceStore:   priceStore,
 		MachineStore: machineStore,
+		DiskStore:    diskStore,
 	}, nil
 }
 
@@ -162,11 +193,16 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 
 	machineList := c.MachineStore.GetListOfVmsForSubscription()
 
+	machineMetricsCount := 0
 	for _, vmInfo := range machineList {
 		vmId := vmInfo.Id
 		price, err := c.getMachinePrices(vmId)
 		if err != nil {
-			return err
+			c.logger.LogAttrs(c.context, slog.LevelWarn, "failed to get machine pricing, skipping VM metric",
+				slog.String("vmId", vmId),
+				slog.String("region", vmInfo.Region),
+				slog.String("error", err.Error()))
+			continue
 		}
 
 		labelValues := []string{
@@ -182,9 +218,59 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerCore, labelValues...)
 		ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerGiB, labelValues...)
 		ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.RetailPrice, labelValues...)
+		machineMetricsCount++
 	}
 
-	c.logger.LogAttrs(c.context, slog.LevelInfo, "metrics collected", slog.Duration("duration", time.Since(now)))
+	// Collect Azure Managed Disk metrics for all persistent volumes
+	allDisks := c.DiskStore.GetAllDisks()
+	for _, disk := range allDisks {
+		diskPricing, err := c.DiskStore.GetDiskPricing(disk)
+		if err != nil {
+			c.logger.LogAttrs(c.context, slog.LevelWarn, "failed to get disk pricing",
+				slog.String("disk", disk.Name),
+				slog.String("error", err.Error()))
+			continue
+		}
+
+		// Convert Azure monthly pricing to hourly rates for cost metrics
+		// Monthly price divided by disk size gives monthly cost per GB
+		monthlyPricePerGB := diskPricing.RetailPrice / float64(disk.Size)
+		pricePerGBHour := monthlyPricePerGB / utils.HoursInMonth
+
+		// Total hourly cost for the entire disk (regardless of size)
+		totalHourlyCost := diskPricing.RetailPrice / utils.HoursInMonth
+
+		// Set persistent volume name or disk name for non-PV disks
+		pvName := disk.PersistentVolumeName
+		if pvName == "" {
+			pvName = disk.Name
+		}
+
+		diskLabelValues := []string{
+			pvName,
+			disk.Location,
+			disk.Zone,
+			disk.Name,
+			disk.SKU,
+			disk.GetPriceTier(c.DiskStore),
+			fmt.Sprintf("%d", disk.Size),
+			disk.State,
+			disk.ClusterName,
+			disk.Namespace,
+		}
+
+		// Emit dual storage metrics following AWS/GCP patterns:
+		// 1. Per-GiB-hour cost for calculating costs based on volume size from kube-state-metrics
+		// 2. Total hourly cost for understanding full disk expense
+		ch <- prometheus.MustNewConstMetric(StorageByLocationHourlyCostDesc, prometheus.GaugeValue, pricePerGBHour, diskLabelValues...)
+		ch <- prometheus.MustNewConstMetric(StorageByLocationTotalHourlyCostDesc, prometheus.GaugeValue, totalHourlyCost, diskLabelValues...)
+	}
+
+	c.logger.LogAttrs(c.context, slog.LevelInfo, "metrics collected",
+		slog.Duration("duration", time.Since(now)),
+		slog.Int("machines_total", len(machineList)),
+		slog.Int("machines_with_pricing", machineMetricsCount),
+		slog.Int("persistent_volumes", len(allDisks)))
 	return nil
 }
 
@@ -192,6 +278,8 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- InstanceCPUHourlyCostDesc
 	ch <- InstanceMemoryHourlyCostDesc
 	ch <- InstanceTotalHourlyCostDesc
+	ch <- StorageByLocationHourlyCostDesc
+	ch <- StorageByLocationTotalHourlyCostDesc
 	return nil
 }
 

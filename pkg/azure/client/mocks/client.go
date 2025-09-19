@@ -58,6 +58,21 @@ func (mr *MockAzureClientMockRecorder) ListClustersInSubscription(arg0 any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListClustersInSubscription", reflect.TypeOf((*MockAzureClient)(nil).ListClustersInSubscription), arg0)
 }
 
+// ListDisksInSubscription mocks base method.
+func (m *MockAzureClient) ListDisksInSubscription(arg0 context.Context) ([]*armcompute.Disk, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListDisksInSubscription", arg0)
+	ret0, _ := ret[0].([]*armcompute.Disk)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListDisksInSubscription indicates an expected call of ListDisksInSubscription.
+func (mr *MockAzureClientMockRecorder) ListDisksInSubscription(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListDisksInSubscription", reflect.TypeOf((*MockAzureClient)(nil).ListDisksInSubscription), arg0)
+}
+
 // ListMachineTypesByLocation mocks base method.
 func (m *MockAzureClient) ListMachineTypesByLocation(arg0 context.Context, arg1 string) ([]*armcompute.VirtualMachineSize, error) {
 	m.ctrl.T.Helper()
