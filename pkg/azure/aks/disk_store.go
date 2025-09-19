@@ -199,6 +199,7 @@ func (ds *DiskStore) loadGlobalPricing(ctx context.Context) error {
 	return nil
 }
 
+// GetDiskPricing retrieves pricing for a specific disk based on its SKU, and location.
 func (ds *DiskStore) GetDiskPricing(disk *Disk) (*DiskPricing, error) {
 	ds.mu.RLock()
 	defer ds.mu.RUnlock()
@@ -220,6 +221,7 @@ func (ds *DiskStore) GetDiskPricing(disk *Disk) (*DiskPricing, error) {
 	return nil, fmt.Errorf("%w: key=%s", ErrDiskPriceNotFound, key)
 }
 
+// GetAllDisks returns a _copy_ of all disks in the store.
 func (ds *DiskStore) GetAllDisks() map[string]*Disk {
 	ds.mu.RLock()
 	defer ds.mu.RUnlock()
@@ -231,19 +233,7 @@ func (ds *DiskStore) GetAllDisks() map[string]*Disk {
 	return result
 }
 
-func (ds *DiskStore) GetKubernetesDisks() map[string]*Disk {
-	ds.mu.RLock()
-	defer ds.mu.RUnlock()
-
-	result := make(map[string]*Disk)
-	for k, v := range ds.disks {
-		if v.IsKubernetesPV() {
-			result[k] = v
-		}
-	}
-	return result
-}
-
+// buildDiskPricingKey builds a _unique_ key for disk pricing lookup from SKU and location.
 func (ds *DiskStore) buildDiskPricingKey(disk *Disk) string {
 	skuForPricing := ds.mapDiskSKUToPricingSKU(disk.SKU, disk.Size)
 	pricingRegion := ds.mapClusterRegionToPricingRegion(disk.Location)
@@ -281,4 +271,4 @@ func (ds *DiskStore) mapDiskSKUToPricingSKU(diskSKU string, sizeGB int32) string
 // Disk SKU functions are implemented in disk_skus_generated.go
 // These functions (getStandardHDDSKU, getStandardSSDSKU, getPremiumSSDSKU, extractTierFromSKU)
 // are auto-generated from the Azure Retail Prices API.
-// To regenerate: go generate ./pkg/azure/aks
+// To regenerate: make generate

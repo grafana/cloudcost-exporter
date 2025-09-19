@@ -132,12 +132,6 @@ func (d *Disk) extractKubernetesInfo() {
 	}
 }
 
-// IsKubernetesPV returns true if this disk is a Kubernetes persistent volume.
-// Determined by presence of cluster name or PV name tags.
-func (d *Disk) IsKubernetesPV() bool {
-	return d.PersistentVolumeName != "" || d.ClusterName != ""
-}
-
 // GetSKUForPricing maps Azure disk SKUs to user-friendly names for pricing metrics.
 // Maps technical SKUs like "Premium_LRS" to "Premium SSD" for consistent naming.
 func (d *Disk) GetSKUForPricing() string {
