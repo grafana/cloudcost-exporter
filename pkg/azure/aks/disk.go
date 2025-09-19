@@ -8,6 +8,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
 )
 
+const aksPVTagName = "kubernetes.io-created-for-pv-name"
+const aksPVCNamespaceTagName = "kubernetes.io-created-for-pvc-namespace"
+
 // Disk represents an Azure Managed Disk with Kubernetes metadata extracted from tags.
 // Used for cost tracking of persistent volumes in AKS clusters.
 type Disk struct {
@@ -68,12 +71,12 @@ func (d *Disk) extractKubernetesInfo() {
 	}
 
 	// Extract PV name
-	if pvName, ok := d.Tags["kubernetes.io-created-for-pv-name"]; ok && pvName != nil {
+	if pvName, ok := d.Tags[aksPVTagName]; ok && pvName != nil {
 		d.PersistentVolumeName = *pvName
 	}
 
 	// Extract namespace
-	if namespace, ok := d.Tags["kubernetes.io-created-for-pvc-namespace"]; ok && namespace != nil {
+	if namespace, ok := d.Tags[aksPVCNamespaceTagName]; ok && namespace != nil {
 		d.Namespace = *namespace
 	}
 
@@ -133,14 +136,6 @@ func (d *Disk) extractKubernetesInfo() {
 // Determined by presence of cluster name or PV name tags.
 func (d *Disk) IsKubernetesPV() bool {
 	return d.PersistentVolumeName != "" || d.ClusterName != ""
-}
-
-// DiskType returns a string classification of the disk type for metrics.
-func (d *Disk) DiskType() string {
-	if d.IsKubernetesPV() {
-		return "persistent_volume"
-	}
-	return "unattached_disk"
 }
 
 // GetSKUForPricing maps Azure disk SKUs to user-friendly names for pricing metrics.

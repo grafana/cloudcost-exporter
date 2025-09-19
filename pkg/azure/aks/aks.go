@@ -83,14 +83,14 @@ var (
 	StorageByLocationHourlyCostDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
-		utils.StorageByLocationCostSuffix,
-		"The cost of an Azure Managed Disk in USD per GiByte per hour",
+		utils.PersistentVolumeCostPerGiBSuffix,
+		"The cost of an Azure Managed Disk in USD GiByte per hour",
 		[]string{"persistentvolume", "region", "availability_zone", "disk", "sku", "price_tier", "size_gib", "state", "cluster_name", "namespace"},
 	)
 	StorageByLocationTotalHourlyCostDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
-		utils.StorageByLocationTotalCostSuffix,
+		utils.PersistentVolumeCostSuffix,
 		"The total cost of an Azure Managed Disk in USD per hour",
 		[]string{"persistentvolume", "region", "availability_zone", "disk", "sku", "price_tier", "size_gib", "state", "cluster_name", "namespace"},
 	)

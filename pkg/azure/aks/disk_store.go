@@ -7,8 +7,8 @@
 // To update the region mapping and disk SKU/tier functions, run: go generate ./pkg/azure/aks
 // This will fetch current data from the Azure Retail Prices API and regenerate both mappings.
 
-//go:generate go run -tags generate generate_regions.go
-//go:generate go run -tags generate generate_disk_skus.go
+//go:generate go run -tags generate ../generate/generate_regions.go
+//go:generate go run -tags generate ../generate/generate_disk_skus.go
 
 package aks
 
