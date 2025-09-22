@@ -1,6 +1,6 @@
 module github.com/grafana/cloudcost-exporter
 
-go 1.24
+go 1.24.0
 
 require (
 	cloud.google.com/go/billing v1.20.4
@@ -27,7 +27,7 @@ require (
 	github.com/prometheus/common v0.66.1
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/mock v0.6.0
-	golang.org/x/sync v0.16.0
+	golang.org/x/sync v0.17.0
 	gomodules.xyz/azure-retail-prices-sdk-for-go v0.0.3
 	google.golang.org/api v0.248.0
 	google.golang.org/genproto v0.0.0-20250728155136-f173205681a0
