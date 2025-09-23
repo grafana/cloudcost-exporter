@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -36,6 +37,7 @@ type Collector struct {
 	scrapeInterval time.Duration
 	Client         client.Client
 	pricingMap     map[string]float64
+	pricingMu      sync.RWMutex // protects pricingMap across concurrent scrapes
 }
 
 type Config struct {
@@ -95,24 +97,39 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		depOption := multiOrSingleAZ(*instance.MultiAZ)
 		locationType := isOutpostsInstance(instance) // outposts locations have a different unit price
 		createPricingKey := createPricingKey(region, *instance.DBInstanceClass, *instance.Engine, depOption, locationType)
-		if _, ok := c.pricingMap[createPricingKey]; !ok {
+
+		// Read-fast path with RLock
+		c.pricingMu.RLock()
+		hourlyPrice, ok := c.pricingMap[createPricingKey]
+		c.pricingMu.RUnlock()
+
+		if !ok {
+			// Compute price without holding the lock
 			v, err := c.Client.GetRDSUnitData(ctx, *instance.DBInstanceClass, region, depOption, *instance.Engine, locationType)
 			if err != nil {
 				logger.Error("error listing rds prices", "error", err)
 				return err
 			}
-			hourlyPrice, err := validateRDSPriceData(ctx, v)
+			computedPrice, err := validateRDSPriceData(ctx, v)
 			if err != nil {
 				logger.Error("error validating RDS price data", "error", err)
 				return err
 			}
-			c.pricingMap[createPricingKey] = hourlyPrice
+			// Write with exclusive lock, and re-check in case another goroutine already populated it
+			c.pricingMu.Lock()
+			if p, exists := c.pricingMap[createPricingKey]; exists {
+				hourlyPrice = p
+			} else {
+				c.pricingMap[createPricingKey] = computedPrice
+				hourlyPrice = computedPrice
+			}
+			c.pricingMu.Unlock()
 		}
 
 		ch <- prometheus.MustNewConstMetric(
 			HourlyGaugeDesc,
 			prometheus.GaugeValue,
-			c.pricingMap[createPricingKey],
+			hourlyPrice,
 			region,
 			*instance.DBInstanceClass,
 			*instance.DBInstanceIdentifier,
