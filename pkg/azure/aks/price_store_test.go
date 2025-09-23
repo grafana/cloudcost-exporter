@@ -92,7 +92,7 @@ func TestPopulatePriceStore(t *testing.T) {
 
 	for name, tc := range testTable {
 		t.Run(name, func(t *testing.T) {
-			call := mockAzureClient.EXPECT().ListPrices(priceStoreCtx, tc.listOpts)
+			call := mockAzureClient.EXPECT().ListPrices(gomock.Any(), gomock.Any())
 			call.Times(tc.timesToCallListPrices).Return(tc.apiReturns, tc.expectedErr)
 
 			p := &PriceStore{
