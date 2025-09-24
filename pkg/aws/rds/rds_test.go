@@ -184,7 +184,7 @@ func TestCollector_Collect(t *testing.T) {
 			}
 
 			c := &Collector{
-				pricingMap:     map[string]float64{tt.pricingKey: 0.456, cacheKey: 0.123},
+				pricingMap:     &pricingMap{pricingMap: map[string]float64{tt.pricingKey: 0.456, cacheKey: 0.123}},
 				regions:        []types.Region{{RegionName: aws.String("us-east-1")}},
 				regionMap:      map[string]client.Client{"us-east-1": mockClient},
 				scrapeInterval: time.Minute,
@@ -201,9 +201,10 @@ func TestCollector_Collect(t *testing.T) {
 				close(ch)
 				assert.NoError(t, err)
 				labels := metricResult.Labels
+				hourlyPrice, _ := c.pricingMap.Get(tt.pricingKey)
 				assert.Equal(t, *tt.ListRDSInstances[0].DBInstanceClass, labels["tier"])
 				assert.Equal(t, *tt.ListRDSInstances[0].DBInstanceIdentifier, labels["name"])
-				assert.Equal(t, c.pricingMap[tt.pricingKey], metricResult.Value)
+				assert.Equal(t, hourlyPrice, metricResult.Value)
 			default:
 				t.Fatal("expected a metric to be collected")
 			}

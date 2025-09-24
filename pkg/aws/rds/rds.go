@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -36,8 +35,7 @@ type Collector struct {
 	regionMap      map[string]client.Client
 	scrapeInterval time.Duration
 	Client         client.Client
-	pricingMap     map[string]float64
-	pricingMu      sync.RWMutex // protects pricingMap across concurrent scrapes
+	pricingMap     *pricingMap
 }
 
 type Config struct {
@@ -54,7 +52,7 @@ const (
 // New creates an rds collector
 func New(ctx context.Context, config *Config) *Collector {
 	return &Collector{
-		pricingMap:     make(map[string]float64),
+		pricingMap:     newPricingMap(),
 		regions:        config.Regions,
 		regionMap:      config.RegionMap,
 		scrapeInterval: config.ScrapeInterval,
@@ -98,10 +96,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		locationType := isOutpostsInstance(instance) // outposts locations have a different unit price
 		createPricingKey := createPricingKey(region, *instance.DBInstanceClass, *instance.Engine, depOption, locationType)
 
-		// Read-fast path with RLock
-		c.pricingMu.RLock()
-		hourlyPrice, ok := c.pricingMap[createPricingKey]
-		c.pricingMu.RUnlock()
+		hourlyPrice, ok := c.pricingMap.Get(createPricingKey)
 
 		if !ok {
 			// Compute price without holding the lock
@@ -110,20 +105,13 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 				logger.Error("error listing rds prices", "error", err)
 				return err
 			}
-			computedPrice, err := validateRDSPriceData(ctx, v)
+			validatedPrice, err := validateRDSPriceData(ctx, v)
 			if err != nil {
 				logger.Error("error validating RDS price data", "error", err)
 				return err
 			}
-			// Write with exclusive lock, and re-check in case another goroutine already populated it
-			c.pricingMu.Lock()
-			if p, exists := c.pricingMap[createPricingKey]; exists {
-				hourlyPrice = p
-			} else {
-				c.pricingMap[createPricingKey] = computedPrice
-				hourlyPrice = computedPrice
-			}
-			c.pricingMu.Unlock()
+			c.pricingMap.Set(createPricingKey, validatedPrice)
+			hourlyPrice = validatedPrice
 		}
 
 		ch <- prometheus.MustNewConstMetric(

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync"
 )
 
 type AWSPriceData struct {
@@ -22,6 +23,31 @@ type AWSTerm struct {
 
 type AWSPriceDimension struct {
 	PricePerUnit map[string]string `json:"pricePerUnit"`
+}
+
+type pricingMap struct {
+	pricingMap map[string]float64
+	mu         sync.RWMutex
+}
+
+func newPricingMap() *pricingMap {
+	return &pricingMap{
+		pricingMap: make(map[string]float64),
+		mu:         sync.RWMutex{},
+	}
+}
+
+func (pm *pricingMap) Set(key string, value float64) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.pricingMap[key] = value
+}
+
+func (pm *pricingMap) Get(key string) (float64, bool) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	v, ok := pm.pricingMap[key]
+	return v, ok
 }
 
 func validateRDSPriceData(ctx context.Context, priceList string) (float64, error) {
