@@ -167,20 +167,20 @@ func TestPricingMap_SetAndGet(t *testing.T) {
 	tests := []struct {
 		name       string
 		key        string
-		pricingMap pricingMap
+		pricingMap *pricingMap
 		wantValue  float64
 		wantOk     bool
 	}{
 		{
 			name:       "set and get existing key",
-			pricingMap: pricingMap{pricingMap: map[string]float64{"test": 1.0}},
+			pricingMap: &pricingMap{pricingMap: map[string]float64{"test": 1.0}},
 			key:        "test",
 			wantValue:  1.0,
 			wantOk:     true,
 		},
 		{
 			name:       "get non-existing key",
-			pricingMap: pricingMap{pricingMap: map[string]float64{}},
+			pricingMap: &pricingMap{pricingMap: map[string]float64{}},
 			key:        "test",
 			wantValue:  0.0,
 			wantOk:     false,
