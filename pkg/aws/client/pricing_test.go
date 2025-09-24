@@ -306,8 +306,7 @@ func TestListStoragePrices(t *testing.T) {
 
 func Test_GetRDSUnitData(t *testing.T) {
 	tests := []struct {
-		name string
-		// priceList awsPricing.GetProductsOutput
+		name        string
 		GetProducts func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error)
 		want        string
 		wantErr     bool
