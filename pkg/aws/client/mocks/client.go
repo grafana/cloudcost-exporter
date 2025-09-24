@@ -16,6 +16,7 @@ import (
 
 	types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	types0 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	types1 "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	rdsTypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	client "github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	prometheus "github.com/prometheus/client_golang/prometheus"
