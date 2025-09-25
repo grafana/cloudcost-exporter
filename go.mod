@@ -10,7 +10,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4 v4.2.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v5 v5.0.0
 	github.com/Azure/go-autorest/autorest/to v0.4.1
-	github.com/aws/aws-sdk-go-v2 v1.39.0
+	github.com/aws/aws-sdk-go-v2 v1.39.1
 	github.com/aws/aws-sdk-go-v2/config v1.31.9
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.13
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.56.0
@@ -18,7 +18,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.50.4
 	github.com/aws/aws-sdk-go-v2/service/pricing v1.39.4
 	github.com/aws/aws-sdk-go-v2/service/rds v1.107.0
-	github.com/aws/aws-sdk-go-v2/service/sts v1.38.4
+	github.com/aws/aws-sdk-go-v2/service/sts v1.38.5
 	github.com/google/go-cmp v0.7.0
 	github.com/googleapis/gax-go/v2 v2.15.0
 	github.com/grafana/grafana-foundation-sdk/go v0.0.0-20241213004919-4516aa9d3732
@@ -52,11 +52,11 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.53.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.53.0 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.7 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.7 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.7 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.8 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.8 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.1 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.7 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.8 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.29.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.34.5 // indirect
 	github.com/aws/smithy-go v1.23.0 // indirect
