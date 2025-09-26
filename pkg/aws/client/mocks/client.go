@@ -17,6 +17,7 @@ import (
 	types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	types0 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	types1 "github.com/aws/aws-sdk-go-v2/service/pricing/types"
+	rdsTypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	client "github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	prometheus "github.com/prometheus/client_golang/prometheus"
 	gomock "go.uber.org/mock/gomock"
@@ -208,4 +209,31 @@ func (m *MockClient) Metrics() []prometheus.Collector {
 func (mr *MockClientMockRecorder) Metrics() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Metrics", reflect.TypeOf((*MockClient)(nil).Metrics))
+}
+
+// ListRDSInstances mocks base method.
+func (m *MockClient) ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstance, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListRDSInstances", ctx)
+	ret0, _ := ret[0].([]rdsTypes.DBInstance)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+func (mr *MockClientMockRecorder) ListRDSInstances(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRDSInstances", reflect.TypeOf((*MockClient)(nil).ListRDSInstances), ctx)
+}
+
+func (m *MockClient) GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, databaseEngine, locationType string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRDSUnitData", ctx, instType, region, deploymentOption, databaseEngine, locationType)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+func (mr *MockClientMockRecorder) GetRDSUnitData(ctx, instType, region, deploymentOption, databaseEngine, locationType any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRDSUnitData", reflect.TypeOf((*MockClient)(nil).GetRDSUnitData), ctx, instType, region, deploymentOption, databaseEngine, locationType)
 }
