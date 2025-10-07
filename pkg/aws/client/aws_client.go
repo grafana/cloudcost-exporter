@@ -28,7 +28,7 @@ type AWSClient struct {
 	priceService   *pricing
 	computeService *compute
 	billing        *billing
-	rdsClient      *rdsClient
+	rdsService      *rds
 	elbService     *elb
 	metrics        *Metrics
 }
