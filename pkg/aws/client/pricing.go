@@ -2,7 +2,10 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"time"
+
+	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -202,4 +205,54 @@ func (p *pricing) getPricesFromProductList(ctx context.Context, input *awsPricin
 		input.NextToken = products.NextToken
 	}
 	return productOutputs, nil
+}
+
+func (p *pricing) getRDSUnitData(ctx context.Context, instType, region, deploymentOption, databaseEngine, locationType string) (string, error) {
+	input := &awsPricing.GetProductsInput{
+		ServiceCode: aws.String("AmazonRDS"),
+		Filters: []pricingTypes.Filter{
+			{
+				Field: aws.String("productFamily"),
+				Type:  pricingTypes.FilterTypeTermMatch,
+				Value: aws.String("Database Instance"),
+			},
+			{
+				Field: aws.String("instanceType"),
+				Type:  pricingTypes.FilterTypeTermMatch,
+				Value: aws.String(instType),
+			},
+			{
+				Field: aws.String("regionCode"),
+				Type:  pricingTypes.FilterTypeTermMatch,
+				Value: aws.String(region),
+			},
+			{
+				Field: aws.String("deploymentOption"),
+				Type:  pricingTypes.FilterTypeTermMatch,
+				Value: aws.String(deploymentOption),
+			},
+			{
+				Field: aws.String("databaseEngine"),
+				Type:  pricingTypes.FilterTypeContains,
+				Value: aws.String(databaseEngine),
+			},
+			{
+				Field: aws.String("locationType"),
+				Type:  pricingTypes.FilterTypeTermMatch,
+				Value: aws.String(locationType),
+			},
+		},
+	}
+
+	products, err := p.client.GetProducts(ctx, input)
+	if err != nil {
+		slog.ErrorContext(ctx, "error getting rds prices", "error", err)
+		return "", err
+	}
+
+	if len(products.PriceList) != 1 {
+		slog.ErrorContext(ctx, "expected 1 price list, got", "count", len(products.PriceList))
+		return "", fmt.Errorf("expected 1 price list, got %d", len(products.PriceList))
+	}
+	return products.PriceList[0], nil
 }

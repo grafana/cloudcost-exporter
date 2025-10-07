@@ -16,15 +16,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	awsPricing "github.com/aws/aws-sdk-go-v2/service/pricing"
-	rds2 "github.com/aws/aws-sdk-go-v2/service/rds"
+	rds "github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
+	rdsCollector "github.com/grafana/cloudcost-exporter/pkg/aws/rds"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/elb"
 	awsgwnat "github.com/grafana/cloudcost-exporter/pkg/aws/natgateway"
-	"github.com/grafana/cloudcost-exporter/pkg/aws/rds"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
@@ -97,19 +97,15 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 		PricingService: awsPricing.NewFromConfig(ac),
 		EC2Service:     ec2.NewFromConfig(ac),
 		BillingService: costexplorer.NewFromConfig(ac),
-		RDSService:     rds2.NewFromConfig(ac),
+		RDSService:     rds.NewFromConfig(ac),
 		ELBService:     elbv2.NewFromConfig(ac),
 	})
 	var regions []types.Region
 	for _, service := range config.Services {
 		service = strings.ToUpper(service)
-
-		// region API is shared between EC2, RDS, and NATGW
-		if service == serviceRDS || service == serviceEC2 || service == serviceNATGW || service == serviceELB {
-			regions, err = awsClient.DescribeRegions(ctx, false)
-			if err != nil {
-				return nil, fmt.Errorf("error getting regions: %w", err)
-			}
+		regions, err = awsClient.DescribeRegions(ctx, false)
+		if err != nil {
+			return nil, fmt.Errorf("error getting regions: %w", err)
 		}
 
 		awsClientPerRegion, err := newRegionClientMap(ctx, ac, regions, config.Profile, config.RoleARN)
@@ -130,14 +126,23 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			})
 			collectors = append(collectors, collector)
 		case serviceRDS:
-			_ = rds.New(&rds.Config{
+			// pricing API for RDS client needs to use always the same region
+			// as for RDS , the pricing data is only available in the us-east-1
+			pricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
+			if err != nil {
+				return nil, err
+			}
+			awsRDSClient := client.NewAWSClient(client.Config{
+				PricingService: awsPricing.NewFromConfig(pricingConfig),
+				RDSService:     rds.NewFromConfig(ac),
+			})
+			collector := rdsCollector.New(ctx, &rdsCollector.Config{
 				ScrapeInterval: config.ScrapeInterval,
-				Logger:         logger,
 				Regions:        regions,
-			}, awsClient)
-			// TODO: append new aws rds collectors next
-			// collectors = append(collectors, collector)
-			// and remove the awsClient from the config
+				RegionMap:      awsClientPerRegion,
+				Client:         awsRDSClient,
+			})
+			collectors = append(collectors, collector)
 		case serviceNATGW:
 			natGwCollector := awsgwnat.New(ctx, &awsgwnat.Config{
 				ScrapeInterval: config.ScrapeInterval,
@@ -229,7 +234,7 @@ func newRegionClientMap(ctx context.Context, globalConfig aws.Config, regions []
 				PricingService: awsPricing.NewFromConfig(globalConfig),
 				EC2Service:     ec2.NewFromConfig(ac),
 				BillingService: costexplorer.NewFromConfig(globalConfig),
-				RDSService:     rds2.NewFromConfig(globalConfig),
+				RDSService:     rds.NewFromConfig(ac),
 				ELBService:     elbv2.NewFromConfig(ac),
 			})
 	}
