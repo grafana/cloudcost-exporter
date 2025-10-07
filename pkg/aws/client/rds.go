@@ -8,15 +8,15 @@ import (
 	rdsTypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 )
 
-type rdsClient struct {
+type rdsService struct {
 	client *rds.Client
 }
 
-func newRDS(client *rds.Client) *rdsClient {
-	return &rdsClient{client: client}
+func newRDS(client *rds.Client) *rdsService {
+	return &rdsService{client: client}
 }
 
-func (e *rdsClient) listRDSInstances(ctx context.Context) ([]rdsTypes.DBInstance, error) {
+func (e *rdsService) listRDSInstances(ctx context.Context) ([]rdsTypes.DBInstance, error) {
 	var rdsInstances []rdsTypes.DBInstance
 	pager := rds.NewDescribeDBInstancesPaginator(e.client, &rds.DescribeDBInstancesInput{
 		MaxRecords: aws.Int32(100),

@@ -28,7 +28,7 @@ type AWSClient struct {
 	priceService   *pricing
 	computeService *compute
 	billing        *billing
-	rdsService      *rds
+	rdsService     *rdsService
 	elbService     *elb
 	metrics        *Metrics
 }
@@ -40,7 +40,7 @@ func NewAWSClient(cfg Config) *AWSClient {
 		computeService: newCompute(cfg.EC2Service),
 		billing:        newBilling(cfg.BillingService, m),
 		elbService:     newELB(cfg.ELBService),
-		rdsClient:      newRDS(cfg.RDSService),
+		rdsService:     newRDS(cfg.RDSService),
 		metrics:        m,
 	}
 }
@@ -90,7 +90,7 @@ func (c *AWSClient) DescribeLoadBalancers(ctx context.Context) ([]elbTypes.LoadB
 }
 
 func (c *AWSClient) ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstance, error) {
-	return c.rdsClient.listRDSInstances(ctx)
+	return c.rdsService.listRDSInstances(ctx)
 }
 
 func (c *AWSClient) GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, databaseEngine, locationType string) (string, error) {
