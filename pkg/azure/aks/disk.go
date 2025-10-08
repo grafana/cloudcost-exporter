@@ -5,7 +5,7 @@ package aks
 import (
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 )
 
 const aksPVTagName = "kubernetes.io-created-for-pv-name"
