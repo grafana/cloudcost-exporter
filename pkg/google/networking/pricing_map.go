@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
@@ -58,7 +57,6 @@ func NewPricing() *pricing {
 type pricingMap struct {
 	pricing   map[string]*pricing
 	logger    *slog.Logger
-	m         sync.RWMutex
 	gcpClient client.Client
 }
 
@@ -66,7 +64,6 @@ func newPricingMap(logger *slog.Logger, gcpClient client.Client) (*pricingMap, e
 	pm := &pricingMap{
 		pricing:   make(map[string]*pricing),
 		logger:    logger,
-		m:         sync.RWMutex{},
 		gcpClient: gcpClient,
 	}
 
@@ -122,7 +119,7 @@ func (pm *pricingMap) parseSku(skus []*billingpb.Sku) ([]*ParsedSkuData, error) 
 				continue
 			}
 			region := sku.GeoTaxonomy.Regions[0]
-			price := float32(sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos) * 1e-9
+			price := float64(sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos) * 1e-9
 
 			for _, desc := range []string{
 				forwardingRuleDescription,
