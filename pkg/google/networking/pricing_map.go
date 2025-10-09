@@ -114,7 +114,7 @@ func (pm *pricingMap) populate(ctx context.Context) error {
 }
 
 func (pm *pricingMap) parseSku(ctx context.Context, skus []*billingpb.Sku) ([]*ParsedSkuData, error) {
-	skuData := []*ParsedSkuData{}
+	var skuData []*ParsedSkuData
 	for _, sku := range skus {
 		if sku.Category.ResourceGroup == ResourceGroup {
 			if len(sku.GeoTaxonomy.Regions) == 0 || len(sku.PricingInfo) == 0 || len(sku.PricingInfo[0].PricingExpression.TieredRates) == 0 {
