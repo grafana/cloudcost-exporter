@@ -99,7 +99,9 @@ func New(config *Config, gcpClient client.Client) (*Collector, error) {
 			case <-ctx.Done():
 				return
 			case <-priceTicker.C:
-				pm.populate(ctx)
+				if err := pm.populate(ctx); err != nil {
+					logger.Error("failed to refresh pricing map", "error", err)
+				}
 			}
 		}
 	}(ctx)
