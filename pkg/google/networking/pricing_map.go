@@ -113,25 +113,24 @@ func (pm *pricingMap) populate(ctx context.Context) error {
 	return nil
 }
 
-func (pm *pricingMap) parseSku(ctx context.Context, skus []*billingpb.Sku) ([]*ParsedSkuData, error) {
+func (pm *pricingMap) parseSku(skus []*billingpb.Sku) ([]*ParsedSkuData, error) {
 	var skuData []*ParsedSkuData
 	for _, sku := range skus {
 		if sku.Category.ResourceGroup == ResourceGroup {
 			if len(sku.GeoTaxonomy.Regions) == 0 || len(sku.PricingInfo) == 0 || len(sku.PricingInfo[0].PricingExpression.TieredRates) == 0 {
 				continue
 			}
-
 			region := sku.GeoTaxonomy.Regions[0]
 			price := float64(sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos) * 1e-9
 
 			for _, desc := range []string{
-			    forwardingRuleDescription,
-			    outboundDataProcessedDescription,
-			    inboundDataProcessedDescription,
+				forwardingRuleDescription,
+				outboundDataProcessedDescription,
+				inboundDataProcessedDescription,
 			} {
-			    if strings.Contains(description, desc) {
-				    skuData = append(skuData, NewParsedSkuData(region, price, desc))
-			    }
+				if strings.Contains(sku.Description, desc) {
+					skuData = append(skuData, NewParsedSkuData(region, price, desc))
+				}
 			}
 		}
 	}
@@ -143,9 +142,14 @@ func (pm *pricingMap) processSkuData(skuData []*ParsedSkuData) error {
 		if _, ok := pm.pricing[data.Region]; !ok {
 			pm.pricing[data.Region] = NewPricing()
 		}
-		pm.setForwardingRuleCost(data.Region, data.Price)
-		pm.setInboundDataProcessedCost(data.Region, data.Price)
-		pm.setOutboundDataProcessedCost(data.Region, data.Price)
+
+		if data.Description == forwardingRuleDescription {
+			pm.setForwardingRuleCost(data.Region, data.Price)
+		} else if data.Description == inboundDataProcessedDescription {
+			pm.setInboundDataProcessedCost(data.Region, data.Price)
+		} else if data.Description == outboundDataProcessedDescription {
+			pm.setOutboundDataProcessedCost(data.Region, data.Price)
+		}
 
 	}
 	return nil
