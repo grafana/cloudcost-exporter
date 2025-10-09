@@ -24,6 +24,7 @@ var (
 	ErrNoSKUsFoundForNetworkingService = errors.New("no skus found for networking service")
 	ErrParsingSKUs                     = errors.New("error parsing skus")
 	ErrRegionNotFound                  = errors.New("region not found")
+	ErrUnknownDescription              = errors.New("unknown description")
 )
 
 type ParsedSkuData struct {
@@ -121,7 +122,7 @@ func (pm *pricingMap) parseSku(skus []*billingpb.Sku) ([]*ParsedSkuData, error) 
 				continue
 			}
 			region := sku.GeoTaxonomy.Regions[0]
-			price := float64(sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos) * 1e-9
+			price := float32(sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos) * 1e-9
 
 			for _, desc := range []string{
 				forwardingRuleDescription,
@@ -143,12 +144,15 @@ func (pm *pricingMap) processSkuData(skuData []*ParsedSkuData) error {
 			pm.pricing[data.Region] = NewPricing()
 		}
 
-		if data.Description == forwardingRuleDescription {
+		switch data.Description {
+		case forwardingRuleDescription:
 			pm.setForwardingRuleCost(data.Region, data.Price)
-		} else if data.Description == inboundDataProcessedDescription {
+		case inboundDataProcessedDescription:
 			pm.setInboundDataProcessedCost(data.Region, data.Price)
-		} else if data.Description == outboundDataProcessedDescription {
+		case outboundDataProcessedDescription:
 			pm.setOutboundDataProcessedCost(data.Region, data.Price)
+		default:
+			return fmt.Errorf("%w: %s", ErrUnknownDescription, data.Description)
 		}
 
 	}
