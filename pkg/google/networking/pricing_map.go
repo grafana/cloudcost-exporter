@@ -102,7 +102,7 @@ func (pm *pricingMap) populate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	skuData, err := pm.parseSku(ctx, skus)
+	skuData, err := pm.parseSku(skus)
 	if err != nil {
 		return err
 	}
