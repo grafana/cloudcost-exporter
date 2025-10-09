@@ -169,7 +169,7 @@ func (c *Collector) getForwardingRuleInfo() ([]ForwardingRuleInfo, error) {
 	for _, project := range c.projects {
 		regions, err := c.gcpClient.GetRegions(project)
 		if err != nil {
-			c.logger.Error("error getting regions for project", project, "error", err)
+			c.logger.Error("error getting regions for project", "project", project, "error", err)
 			continue
 		}
 
@@ -250,15 +250,15 @@ func (c *Collector) getOutboundDataProcessedCost(region string) (float64, error)
 func (c *Collector) processForwardingRule(forwardingRule *compute.ForwardingRule, region string, project string) ForwardingRuleInfo {
 	fwdRuleCost, err := c.getForwardingRuleCost(region)
 	if err != nil {
-		c.logger.Error("error getting cost of forwarding rule", forwardingRule.Name, region, project, "error", err)
+		c.logger.Error("error getting cost of forwarding rule", "name", forwardingRule.Name, "region", region, "project", project, "error", err)
 	}
 	fwdRuleInboundDataProcessedCost, err := c.getInboundDataProcessedCost(region)
 	if err != nil {
-		c.logger.Error("error getting cost of inbound data processed for forwarding rule", forwardingRule.Name, region, project, "error", err)
+		c.logger.Error("error getting cost of inbound data processed for forwarding rule", "name", forwardingRule.Name, "region", region, "project", project, "error", err)
 	}
 	fwdRuleOutboundDataProcessedCost, err := c.getOutboundDataProcessedCost(region)
 	if err != nil {
-		c.logger.Error("error getting cost of outbound data processed for forwarding rule", forwardingRule.Name, region, project, "error", err)
+		c.logger.Error("error getting cost of outbound data processed for forwarding rule", "name", forwardingRule.Name, "region", region, "project", project, "error", err)
 	}
 	return ForwardingRuleInfo{
 		Name:                      forwardingRule.Name,
