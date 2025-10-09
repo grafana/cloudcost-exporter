@@ -124,16 +124,14 @@ func (pm *pricingMap) parseSku(ctx context.Context, skus []*billingpb.Sku) ([]*P
 			region := sku.GeoTaxonomy.Regions[0]
 			price := float64(sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos) * 1e-9
 
-			if description := sku.Description; strings.Contains(description, forwardingRuleDescription) {
-				skuData = append(skuData, NewParsedSkuData(region, price, forwardingRuleDescription))
-			}
-
-			if description := sku.Description; strings.Contains(description, outboundDataProcessedDescription) {
-				skuData = append(skuData, NewParsedSkuData(region, price, outboundDataProcessedDescription))
-			}
-
-			if description := sku.Description; strings.Contains(description, inboundDataProcessedDescription) {
-				skuData = append(skuData, NewParsedSkuData(region, price, inboundDataProcessedDescription))
+			for _, desc := range []string{
+			    forwardingRuleDescription,
+			    outboundDataProcessedDescription,
+			    inboundDataProcessedDescription,
+			} {
+			    if strings.Contains(description, desc) {
+				    skuData = append(skuData, NewParsedSkuData(region, price, desc))
+			    }
 			}
 		}
 	}
