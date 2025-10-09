@@ -163,9 +163,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 
 func (c *Collector) getForwardingRuleInfo() ([]ForwardingRuleInfo, error) {
 	var allForwardingRuleInfo = []ForwardingRuleInfo{}
-	waitGroup := sync.WaitGroup{}
 	var mu sync.Mutex
 
+	// Process projects sequentially
 	for _, project := range c.projects {
 		regions, err := c.gcpClient.GetRegions(project)
 		if err != nil {
@@ -173,26 +173,66 @@ func (c *Collector) getForwardingRuleInfo() ([]ForwardingRuleInfo, error) {
 			continue
 		}
 
+		// Process regions in parallel with limited concurrency
+		regionChan := make(chan *compute.Region, len(regions))
 		for _, region := range regions {
-			forwardingRules, err := c.gcpClient.ListForwardingRules(c.ctx, project, region.Name)
-			if err != nil {
-				c.logger.Error("error listing forwarding rules for project", project, "region", region.Name, "error", err)
-				continue
-			}
-			waitGroup.Add(len(forwardingRules))
-			for _, forwardingRule := range forwardingRules {
-				go func(forwardingRule *compute.ForwardingRule) {
-					defer waitGroup.Done()
-					forwardingRuleInfo := c.processForwardingRule(forwardingRule, region.Name, project)
-					mu.Lock()
-					allForwardingRuleInfo = append(allForwardingRuleInfo, forwardingRuleInfo)
-					mu.Unlock()
-				}(forwardingRule)
-			}
+			regionChan <- region
 		}
+		close(regionChan)
+
+		// Limit concurrent region processing to avoid overwhelming the API
+		maxConcurrentRegions := 5
+		if len(regions) < maxConcurrentRegions {
+			maxConcurrentRegions = len(regions)
+		}
+
+		regionWaitGroup := sync.WaitGroup{}
+		for i := 0; i < maxConcurrentRegions; i++ {
+			regionWaitGroup.Add(1)
+			go func() {
+				defer regionWaitGroup.Done()
+				for region := range regionChan {
+					c.processRegion(project, region, &allForwardingRuleInfo, &mu)
+				}
+			}()
+		}
+		regionWaitGroup.Wait()
 	}
-	waitGroup.Wait()
+
 	return allForwardingRuleInfo, nil
+}
+
+// processRegion processes a single region
+func (c *Collector) processRegion(project string, region *compute.Region, allForwardingRuleInfo *[]ForwardingRuleInfo, mu *sync.Mutex) {
+	// Always fetch fresh forwarding rules (no caching)
+	forwardingRules, err := c.gcpClient.ListForwardingRules(c.ctx, project, region.Name)
+	if err != nil {
+		c.logger.Error("error listing forwarding rules for project", "project", project, "region", region.Name, "error", err)
+		return
+	}
+
+	// Process forwarding rules in batches to reduce goroutine overhead
+	batchSize := 10
+	for i := 0; i < len(forwardingRules); i += batchSize {
+		end := i + batchSize
+		if end > len(forwardingRules) {
+			end = len(forwardingRules)
+		}
+
+		batch := forwardingRules[i:end]
+		ruleInfos := make([]ForwardingRuleInfo, 0, len(batch))
+
+		// Process batch synchronously to avoid excessive goroutines
+		for _, forwardingRule := range batch {
+			ruleInfo := c.processForwardingRule(forwardingRule, region.Name, project)
+			ruleInfos = append(ruleInfos, ruleInfo)
+		}
+
+		// Add batch results atomically
+		mu.Lock()
+		*allForwardingRuleInfo = append(*allForwardingRuleInfo, ruleInfos...)
+		mu.Unlock()
+	}
 }
 
 func (c *Collector) getForwardingRuleCost(region string) (float64, error) {
