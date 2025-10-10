@@ -197,6 +197,21 @@ func (mr *MockClientMockRecorder) ListStoragePrices(ctx, region any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListStoragePrices", reflect.TypeOf((*MockClient)(nil).ListStoragePrices), ctx, region)
 }
 
+// ListVPCServicePrices mocks base method.
+func (m *MockClient) ListVPCServicePrices(ctx context.Context, region string, filters []types1.Filter) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListVPCServicePrices", ctx, region, filters)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListVPCServicePrices indicates an expected call of ListVPCServicePrices.
+func (mr *MockClientMockRecorder) ListVPCServicePrices(ctx, region, filters any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListVPCServicePrices", reflect.TypeOf((*MockClient)(nil).ListVPCServicePrices), ctx, region, filters)
+}
+
 // Metrics mocks base method.
 func (m *MockClient) Metrics() []prometheus.Collector {
 	m.ctrl.T.Helper()

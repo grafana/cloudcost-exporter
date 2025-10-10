@@ -1,0 +1,199 @@
+package vpc
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"strings"
+	"time"
+
+	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/prometheus/client_golang/prometheus"
+
+	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
+	awsclient "github.com/grafana/cloudcost-exporter/pkg/aws/client"
+	"github.com/grafana/cloudcost-exporter/pkg/provider"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
+)
+
+const (
+	serviceName = "vpc"
+)
+
+var (
+	subsystem = fmt.Sprintf("aws_%s", serviceName)
+
+	VPCEndpointHourlyGaugeDesc = utils.GenerateDesc(
+		cloudcost_exporter.MetricPrefix,
+		subsystem,
+		"endpoint_hourly_rate_usd_per_hour",
+		"Hourly cost of VPC endpoints by region and type. Cost represented in USD/hour",
+		[]string{"region", "endpoint_type"},
+	)
+	VPCEndpointServiceHourlyGaugeDesc = utils.GenerateDesc(
+		cloudcost_exporter.MetricPrefix,
+		subsystem,
+		"endpoint_service_hourly_rate_usd_per_hour",
+		"Hourly cost of VPC service endpoints by region. Cost represented in USD/hour",
+		[]string{"region"},
+	)
+	TransitGatewayHourlyGaugeDesc = utils.GenerateDesc(
+		cloudcost_exporter.MetricPrefix,
+		subsystem,
+		"transit_gateway_hourly_rate_usd_per_hour",
+		"Hourly cost of Transit Gateway by region. Cost represented in USD/hour",
+		[]string{"region"},
+	)
+	ElasticIPInUseGaugeDesc = utils.GenerateDesc(
+		cloudcost_exporter.MetricPrefix,
+		subsystem,
+		"elastic_ip_in_use_hourly_rate_usd_per_hour",
+		"Hourly cost of in-use Elastic IPs by region. Cost represented in USD/hour",
+		[]string{"region"},
+	)
+	ElasticIPIdleGaugeDesc = utils.GenerateDesc(
+		cloudcost_exporter.MetricPrefix,
+		subsystem,
+		"elastic_ip_idle_hourly_rate_usd_per_hour",
+		"Hourly cost of idle Elastic IPs by region. Cost represented in USD/hour",
+		[]string{"region"},
+	)
+)
+
+// Collector implements provider.Collector
+type Collector struct {
+	regions        []ec2Types.Region
+	regionClients  map[string]awsclient.Client
+	scrapeInterval time.Duration
+	pricingMap     *VPCPricingMap
+	logger         *slog.Logger
+}
+
+func New(ctx context.Context, config *Config) *Collector {
+	logger := config.Logger.With("logger", serviceName)
+	pricingMap := NewVPCPricingMap(logger)
+
+	// Use the dedicated client with us-east-1 pricing service for all regions
+	clientMap := make(map[string]awsclient.Client)
+	for _, region := range config.Regions {
+		clientMap[*region.RegionName] = config.Client
+	}
+
+	// Initial pricing data load
+	if err := pricingMap.Refresh(ctx, config.Regions, clientMap); err != nil {
+		logger.Error("Failed to load initial VPC pricing data", "error", err)
+	}
+
+	// Set up periodic pricing refresh
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour) // Refresh daily
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				logger.Info("Refreshing VPC pricing data")
+				if err := pricingMap.Refresh(ctx, config.Regions, clientMap); err != nil {
+					logger.Error("Failed to refresh VPC pricing data", "error", err)
+				}
+			}
+		}
+	}()
+
+	return &Collector{
+		regions:        config.Regions,
+		regionClients:  config.RegionMap,
+		scrapeInterval: config.ScrapeInterval,
+		pricingMap:     pricingMap,
+		logger:         logger,
+	}
+}
+
+type Config struct {
+	ScrapeInterval time.Duration
+	Regions        []ec2Types.Region
+	Logger         *slog.Logger
+	RegionMap      map[string]awsclient.Client
+	Client         awsclient.Client // Dedicated client with us-east-1 pricing service
+}
+
+func (c *Collector) Name() string { return strings.ToUpper(serviceName) }
+
+func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
+	ch <- VPCEndpointHourlyGaugeDesc
+	ch <- VPCEndpointServiceHourlyGaugeDesc
+	ch <- TransitGatewayHourlyGaugeDesc
+	ch <- ElasticIPInUseGaugeDesc
+	ch <- ElasticIPIdleGaugeDesc
+	return nil
+}
+
+// Collect satisfies the provider.Collector interface.
+func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+	c.logger.LogAttrs(context.Background(), slog.LevelInfo, "calling collect")
+	start := time.Now()
+
+	// Collect VPC Endpoint pricing for all regions
+	for _, region := range c.regions {
+		regionName := *region.RegionName
+
+		// VPC Endpoint metrics - both standard and service-specific
+		vpcEndpointRate := c.pricingMap.GetVPCEndpointHourlyRate(regionName)
+		ch <- prometheus.MustNewConstMetric(
+			VPCEndpointHourlyGaugeDesc,
+			prometheus.GaugeValue,
+			vpcEndpointRate,
+			regionName,
+			"standard",
+		)
+
+		// VPC Service Endpoint metrics
+		vpcServiceEndpointRate := c.pricingMap.GetVPCServiceEndpointHourlyRate(regionName)
+		ch <- prometheus.MustNewConstMetric(
+			VPCEndpointServiceHourlyGaugeDesc,
+			prometheus.GaugeValue,
+			vpcServiceEndpointRate,
+			regionName,
+		)
+
+		// Transit Gateway metrics
+		transitGatewayRate := c.pricingMap.GetTransitGatewayHourlyRate(regionName)
+		ch <- prometheus.MustNewConstMetric(
+			TransitGatewayHourlyGaugeDesc,
+			prometheus.GaugeValue,
+			transitGatewayRate,
+			regionName,
+		)
+
+		// Elastic IP (In Use) metrics
+		elasticIPInUseRate := c.pricingMap.GetElasticIPInUseRate(regionName)
+		ch <- prometheus.MustNewConstMetric(
+			ElasticIPInUseGaugeDesc,
+			prometheus.GaugeValue,
+			elasticIPInUseRate,
+			regionName,
+		)
+
+		// Elastic IP (Idle) metrics
+		elasticIPIdleRate := c.pricingMap.GetElasticIPIdleRate(regionName)
+		ch <- prometheus.MustNewConstMetric(
+			ElasticIPIdleGaugeDesc,
+			prometheus.GaugeValue,
+			elasticIPIdleRate,
+			regionName,
+		)
+	}
+
+	c.logger.Info("Finished collect", "subsystem", subsystem, "duration", time.Since(start))
+	return nil
+}
+
+// CollectMetrics is a no-op function that satisfies the provider.Collector interface.
+// Deprecated: CollectMetrics is deprecated and will be removed in a future release.
+func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
+	return 0
+}
+
+func (c *Collector) Register(registry provider.Registry) error { return nil }
