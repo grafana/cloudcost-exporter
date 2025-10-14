@@ -67,20 +67,15 @@ type Collector struct {
 	scrapeInterval time.Duration
 	pricingMap     *VPCPricingMap
 	logger         *slog.Logger
+	ctx            context.Context
 }
 
 func New(ctx context.Context, config *Config) *Collector {
 	logger := config.Logger.With("logger", serviceName)
 	pricingMap := NewVPCPricingMap(logger)
 
-	// Use the dedicated client with us-east-1 pricing service for all regions
-	clientMap := make(map[string]awsclient.Client)
-	for _, region := range config.Regions {
-		clientMap[*region.RegionName] = config.Client
-	}
-
-	// Initial pricing data load
-	if err := pricingMap.Refresh(ctx, config.Regions, clientMap); err != nil {
+	// Initial pricing data load using the dedicated us-east-1 pricing client
+	if err := pricingMap.Refresh(ctx, config.Regions, config.Client); err != nil {
 		logger.Error("Failed to load initial VPC pricing data", "error", err)
 	}
 
@@ -95,7 +90,7 @@ func New(ctx context.Context, config *Config) *Collector {
 				return
 			case <-ticker.C:
 				logger.Info("Refreshing VPC pricing data")
-				if err := pricingMap.Refresh(ctx, config.Regions, clientMap); err != nil {
+				if err := pricingMap.Refresh(ctx, config.Regions, config.Client); err != nil {
 					logger.Error("Failed to refresh VPC pricing data", "error", err)
 				}
 			}
@@ -108,6 +103,7 @@ func New(ctx context.Context, config *Config) *Collector {
 		scrapeInterval: config.ScrapeInterval,
 		pricingMap:     pricingMap,
 		logger:         logger,
+		ctx:            ctx, // Store the context for cancellation checks
 	}
 }
 
@@ -132,11 +128,20 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 
 // Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	c.logger.LogAttrs(context.Background(), slog.LevelInfo, "calling collect")
+	c.logger.LogAttrs(c.ctx, slog.LevelInfo, "calling collect")
 	start := time.Now()
 
 	// Collect VPC Endpoint pricing for all regions
 	for _, region := range c.regions {
+		// Check if context is cancelled (e.g., during shutdown)
+		select {
+		case <-c.ctx.Done():
+			c.logger.Info("Collect cancelled, stopping region iteration", "processed_regions", "partial")
+			return c.ctx.Err()
+		default:
+			// Continue with collection
+		}
+
 		regionName := *region.RegionName
 
 		// VPC Endpoint metrics - both standard and service-specific
