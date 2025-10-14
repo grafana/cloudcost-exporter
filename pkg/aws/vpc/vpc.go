@@ -145,50 +145,70 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		regionName := *region.RegionName
 
 		// VPC Endpoint metrics - both standard and service-specific
-		vpcEndpointRate := c.pricingMap.GetVPCEndpointHourlyRate(regionName)
-		ch <- prometheus.MustNewConstMetric(
-			VPCEndpointHourlyGaugeDesc,
-			prometheus.GaugeValue,
-			vpcEndpointRate,
-			regionName,
-			"standard",
-		)
+		vpcEndpointRate, err := c.pricingMap.GetVPCEndpointHourlyRate(regionName)
+		if err != nil {
+			c.logger.Warn("No VPC endpoint pricing available", "region", regionName, "error", err)
+		} else {
+			ch <- prometheus.MustNewConstMetric(
+				VPCEndpointHourlyGaugeDesc,
+				prometheus.GaugeValue,
+				vpcEndpointRate,
+				regionName,
+				"standard",
+			)
+		}
 
 		// VPC Service Endpoint metrics
-		vpcServiceEndpointRate := c.pricingMap.GetVPCServiceEndpointHourlyRate(regionName)
-		ch <- prometheus.MustNewConstMetric(
-			VPCEndpointServiceHourlyGaugeDesc,
-			prometheus.GaugeValue,
-			vpcServiceEndpointRate,
-			regionName,
-		)
+		vpcServiceEndpointRate, err := c.pricingMap.GetVPCServiceEndpointHourlyRate(regionName)
+		if err != nil {
+			c.logger.Warn("No VPC service endpoint pricing available", "region", regionName, "error", err)
+		} else {
+			ch <- prometheus.MustNewConstMetric(
+				VPCEndpointServiceHourlyGaugeDesc,
+				prometheus.GaugeValue,
+				vpcServiceEndpointRate,
+				regionName,
+			)
+		}
 
 		// Transit Gateway metrics
-		transitGatewayRate := c.pricingMap.GetTransitGatewayHourlyRate(regionName)
-		ch <- prometheus.MustNewConstMetric(
-			TransitGatewayHourlyGaugeDesc,
-			prometheus.GaugeValue,
-			transitGatewayRate,
-			regionName,
-		)
+		transitGatewayRate, err := c.pricingMap.GetTransitGatewayHourlyRate(regionName)
+		if err != nil {
+			c.logger.Warn("No Transit Gateway pricing available", "region", regionName, "error", err)
+		} else {
+			ch <- prometheus.MustNewConstMetric(
+				TransitGatewayHourlyGaugeDesc,
+				prometheus.GaugeValue,
+				transitGatewayRate,
+				regionName,
+			)
+		}
 
 		// Elastic IP (In Use) metrics
-		elasticIPInUseRate := c.pricingMap.GetElasticIPInUseRate(regionName)
-		ch <- prometheus.MustNewConstMetric(
-			ElasticIPInUseGaugeDesc,
-			prometheus.GaugeValue,
-			elasticIPInUseRate,
-			regionName,
-		)
+		elasticIPInUseRate, err := c.pricingMap.GetElasticIPInUseRate(regionName)
+		if err != nil {
+			c.logger.Warn("No Elastic IP in-use pricing available", "region", regionName, "error", err)
+		} else {
+			ch <- prometheus.MustNewConstMetric(
+				ElasticIPInUseGaugeDesc,
+				prometheus.GaugeValue,
+				elasticIPInUseRate,
+				regionName,
+			)
+		}
 
 		// Elastic IP (Idle) metrics
-		elasticIPIdleRate := c.pricingMap.GetElasticIPIdleRate(regionName)
-		ch <- prometheus.MustNewConstMetric(
-			ElasticIPIdleGaugeDesc,
-			prometheus.GaugeValue,
-			elasticIPIdleRate,
-			regionName,
-		)
+		elasticIPIdleRate, err := c.pricingMap.GetElasticIPIdleRate(regionName)
+		if err != nil {
+			c.logger.Warn("No Elastic IP idle pricing available", "region", regionName, "error", err)
+		} else {
+			ch <- prometheus.MustNewConstMetric(
+				ElasticIPIdleGaugeDesc,
+				prometheus.GaugeValue,
+				elasticIPIdleRate,
+				regionName,
+			)
+		}
 	}
 
 	c.logger.Info("Finished collect", "subsystem", subsystem, "duration", time.Since(start))

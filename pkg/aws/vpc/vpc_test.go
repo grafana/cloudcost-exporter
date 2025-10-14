@@ -147,15 +147,30 @@ func TestDescribe(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// Test that VPC pricing map methods return defaults when no data is available
-func TestVPCPricingMapDefaults(t *testing.T) {
+// Test that VPC pricing map methods return errors when no data is available
+func TestVPCPricingMapErrors(t *testing.T) {
 	// Use a logger that discards output to reduce test noise
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	pricingMap := NewVPCPricingMap(logger)
 
-	// Test default values when no pricing data is available
-	assert.Equal(t, VPCEndpointHourlyRateDefault, pricingMap.GetVPCEndpointHourlyRate("us-east-1"))
-	assert.Equal(t, TransitGatewayHourlyRateDefault, pricingMap.GetTransitGatewayHourlyRate("us-east-1"))
-	assert.Equal(t, ElasticIPInUseRateDefault, pricingMap.GetElasticIPInUseRate("us-east-1"))
-	assert.Equal(t, ElasticIPIdleRateDefault, pricingMap.GetElasticIPIdleRate("us-east-1"))
+	// Test error values when no pricing data is available
+	_, err := pricingMap.GetVPCEndpointHourlyRate("us-east-1")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get standard VPC endpoint pricing for region us-east-1")
+
+	_, err = pricingMap.GetVPCServiceEndpointHourlyRate("us-east-1")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get VPC service endpoint pricing for region us-east-1")
+
+	_, err = pricingMap.GetTransitGatewayHourlyRate("us-east-1")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get Transit Gateway pricing for region us-east-1")
+
+	_, err = pricingMap.GetElasticIPInUseRate("us-east-1")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get Elastic IP in-use pricing for region us-east-1")
+
+	_, err = pricingMap.GetElasticIPIdleRate("us-east-1")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get Elastic IP idle pricing for region us-east-1")
 }
