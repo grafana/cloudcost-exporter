@@ -119,7 +119,7 @@ func (pm *pricingMap) parseSku(skus []*billingpb.Sku) ([]*ParsedSkuData, error) 
 				continue
 			}
 			region := sku.GeoTaxonomy.Regions[0]
-			price := float64(sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos) * 1e-9
+			price := float64(sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos) / 1e9
 
 			for _, desc := range []string{
 				forwardingRuleDescription,
