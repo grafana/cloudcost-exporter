@@ -80,9 +80,6 @@ const (
 )
 
 func New(ctx context.Context, config *Config) (*AWS, error) {
-	var collectors []provider.Collector
-
-	logger := config.Logger.With("provider", subsystem)
 	// There are two scenarios:
 	// 1. Running locally, the user must pass in a region and profile to use
 	// 2. Running within an EC2 instance and the region and profile can be derived
@@ -100,18 +97,29 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 		RDSService:     rds.NewFromConfig(ac),
 		ELBService:     elbv2.NewFromConfig(ac),
 	})
-	var regions []types.Region
+
+	// Get regions from the client
+	regions, err := awsClient.DescribeRegions(ctx, false)
+	if err != nil {
+		return nil, fmt.Errorf("error getting regions: %w", err)
+	}
+
+	// Create per-region clients
+	awsClientPerRegion, err := newRegionClientMap(ctx, ac, regions, config.Profile, config.RoleARN)
+	if err != nil {
+		return nil, err
+	}
+
+	return newWithDependencies(ctx, config, awsClient, awsClientPerRegion, regions, ac)
+}
+
+// newWithDependencies creates an AWS provider with all dependencies injected as parameters
+func newWithDependencies(ctx context.Context, config *Config, awsClient client.Client, regionClients map[string]client.Client, regions []types.Region, awsConfig aws.Config) (*AWS, error) {
+	var collectors []provider.Collector
+	logger := config.Logger.With("provider", subsystem)
+
 	for _, service := range config.Services {
 		service = strings.ToUpper(service)
-		regions, err = awsClient.DescribeRegions(ctx, false)
-		if err != nil {
-			return nil, fmt.Errorf("error getting regions: %w", err)
-		}
-
-		awsClientPerRegion, err := newRegionClientMap(ctx, ac, regions, config.Profile, config.RoleARN)
-		if err != nil {
-			return nil, err
-		}
 
 		switch service {
 		case serviceS3:
@@ -122,7 +130,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 				Regions:        regions,
 				Logger:         logger,
 				ScrapeInterval: config.ScrapeInterval,
-				RegionMap:      awsClientPerRegion,
+				RegionMap:      regionClients,
 			})
 			collectors = append(collectors, collector)
 		case serviceRDS:
@@ -134,12 +142,12 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			}
 			awsRDSClient := client.NewAWSClient(client.Config{
 				PricingService: awsPricing.NewFromConfig(pricingConfig),
-				RDSService:     rds.NewFromConfig(ac),
+				RDSService:     rds.NewFromConfig(awsConfig),
 			})
 			collector := rdsCollector.New(ctx, &rdsCollector.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Regions:        regions,
-				RegionMap:      awsClientPerRegion,
+				RegionMap:      regionClients,
 				Client:         awsRDSClient,
 			})
 			collectors = append(collectors, collector)
@@ -148,13 +156,13 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
 				Regions:        regions,
-				RegionMap:      awsClientPerRegion,
+				RegionMap:      regionClients,
 			})
 			collectors = append(collectors, natGwCollector)
 		case serviceELB:
 			collector := elb.New(&elb.Config{
 				Regions:        regions,
-				RegionClients:  awsClientPerRegion,
+				RegionClients:  regionClients,
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
 			})
