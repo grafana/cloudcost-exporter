@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
@@ -58,7 +59,7 @@ type pricingMap struct {
 	pricing   map[string]*pricing
 	logger    *slog.Logger
 	gcpClient client.Client
-	mu sync.RWMutex
+	mu        sync.RWMutex
 }
 
 func newPricingMap(logger *slog.Logger, gcpClient client.Client) (*pricingMap, error) {
