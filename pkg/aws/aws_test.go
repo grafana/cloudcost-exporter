@@ -8,12 +8,17 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
+	mock_client "github.com/grafana/cloudcost-exporter/pkg/aws/client/mocks"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
@@ -21,28 +26,166 @@ import (
 
 var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-func Test_New(t *testing.T) {
-	for _, tc := range []struct {
-		name          string
-		expectedError error
+// Test_NewWithDependencies tests the newWithDependencies function with mock clients.
+// This tests the core logic of New() without requiring AWS credentials or network access.
+func Test_NewWithDependencies(t *testing.T) {
+	tests := []struct {
+		name               string
+		services           []string
+		regions            []types.Region
+		setupMockClient    func(*mock_client.MockClient)
+		setupRegionClients map[string]client.Client
+		expectedCollectors int
+		expectedError      string
+		validateAWS        func(t *testing.T, aws *AWS)
 	}{
 		{
-			name: "no error",
+			name:     "empty services list creates no collectors",
+			services: []string{},
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+			},
+			setupRegionClients: map[string]client.Client{},
+			expectedCollectors: 0,
+			validateAWS: func(t *testing.T, aws *AWS) {
+				assert.NotNil(t, aws)
+				assert.NotNil(t, aws.Config)
+				assert.NotNil(t, aws.logger)
+				assert.Equal(t, 0, len(aws.collectors))
+			},
 		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			// TODO refactor New()
-			t.SkipNow()
+		{
+			name:     "single S3 service creates S3 collector",
+			services: []string{"S3"},
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+			},
+			setupMockClient: func(m *mock_client.MockClient) {
+			},
+			setupRegionClients: map[string]client.Client{},
+			expectedCollectors: 1,
+			validateAWS: func(t *testing.T, aws *AWS) {
+				assert.Equal(t, 1, len(aws.collectors))
+			},
+		},
+		{
+			name:     "multiple services create multiple collectors",
+			services: []string{"S3", "EC2"},
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+				{RegionName: stringPtr("us-west-2")},
+			},
+			setupRegionClients: map[string]client.Client{
+				"us-east-1": nil, // EC2 collector needs region map
+				"us-west-2": nil,
+			},
+			expectedCollectors: 2,
+			validateAWS: func(t *testing.T, aws *AWS) {
+				assert.Equal(t, 2, len(aws.collectors))
+			},
+		},
+		{
+			name:     "unknown service is skipped",
+			services: []string{"UNKNOWN_SERVICE"},
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+			},
+			setupRegionClients: map[string]client.Client{},
+			expectedCollectors: 0,
+			validateAWS: func(t *testing.T, aws *AWS) {
+				assert.Equal(t, 0, len(aws.collectors))
+			},
+		},
+		{
+			name:     "case insensitive service names",
+			services: []string{"s3", "S3"},
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+			},
+			setupRegionClients: map[string]client.Client{},
+			expectedCollectors: 2, // Both should create collectors
+			validateAWS: func(t *testing.T, aws *AWS) {
+				assert.Equal(t, 2, len(aws.collectors))
+			},
+		},
+		{
+			name:     "ELB service creates ELB collector",
+			services: []string{"ELB"},
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+			},
+			setupRegionClients: map[string]client.Client{
+				"us-east-1": nil,
+			},
+			expectedCollectors: 1,
+		},
+	}
 
-			a, err := New(context.Background(), &Config{})
-			if tc.expectedError != nil {
-				require.EqualError(t, err, tc.expectedError.Error())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			// Create mock client
+			mockClient := mock_client.NewMockClient(ctrl)
+			if tt.setupMockClient != nil {
+				tt.setupMockClient(mockClient)
+			}
+
+			// Create mock region clients if needed
+			regionClients := tt.setupRegionClients
+			if regionClients == nil {
+				regionClients = make(map[string]client.Client)
+			}
+			// Replace nil clients with mock clients
+			for region := range regionClients {
+				if regionClients[region] == nil {
+					regionClients[region] = mock_client.NewMockClient(ctrl)
+				}
+			}
+
+			// Create config
+			config := &Config{
+				Services:       tt.services,
+				Region:         "us-east-1",
+				ScrapeInterval: 60 * time.Second,
+				Logger:         logger,
+			}
+
+			// Call function
+			awsConfig := aws.Config{}
+			aws, err := newWithDependencies(
+				context.Background(),
+				config,
+				mockClient,
+				regionClients,
+				tt.regions,
+				awsConfig,
+			)
+
+			// Validate results
+			if tt.expectedError != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedError)
 				return
 			}
+
 			require.NoError(t, err)
-			require.NotNil(t, a)
+			require.NotNil(t, aws)
+			assert.Equal(t, tt.expectedCollectors, len(aws.collectors), "unexpected number of collectors")
+			assert.Equal(t, config, aws.Config)
+			assert.NotNil(t, aws.logger)
+
+			if tt.validateAWS != nil {
+				tt.validateAWS(t, aws)
+			}
 		})
 	}
+}
+
+// Helper function to create string pointers
+func stringPtr(s string) *string {
+	return &s
 }
 
 func Test_RegisterCollectors(t *testing.T) {
