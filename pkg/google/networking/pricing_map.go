@@ -172,6 +172,9 @@ func (pm *pricingMap) setOutboundDataProcessedCost(region string, price float64)
 }
 
 func (pm *pricingMap) GetCostOfForwardingRule(region string) (float64, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
 	if _, ok := pm.pricing[region]; !ok {
 		return 0, fmt.Errorf("%w: %s", ErrRegionNotFound, region)
 	}
