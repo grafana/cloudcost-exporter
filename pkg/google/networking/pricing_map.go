@@ -58,6 +58,7 @@ type pricingMap struct {
 	pricing   map[string]*pricing
 	logger    *slog.Logger
 	gcpClient client.Client
+	mu sync.RWMutex
 }
 
 func newPricingMap(logger *slog.Logger, gcpClient client.Client) (*pricingMap, error) {
