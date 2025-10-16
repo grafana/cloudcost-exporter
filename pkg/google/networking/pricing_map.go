@@ -137,6 +137,8 @@ func (pm *pricingMap) parseSku(skus []*billingpb.Sku) ([]*ParsedSkuData, error) 
 }
 
 func (pm *pricingMap) processSkuData(skuData []*ParsedSkuData) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 	for _, data := range skuData {
 		if _, ok := pm.pricing[data.Region]; !ok {
 			pm.pricing[data.Region] = NewPricing()
