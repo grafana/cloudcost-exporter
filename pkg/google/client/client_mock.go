@@ -61,3 +61,11 @@ func (c *Mock) ListInstancesInZone(projectId, zone string) ([]*MachineSpec, erro
 func (c *Mock) ListDisks(ctx context.Context, projectId string, zone string) ([]*compute.Disk, error) {
 	return c.compute.listDisks(ctx, projectId, zone)
 }
+
+func (c *Mock) GetRegions(project string) ([]*compute.Region, error) {
+	return c.compute.getRegions(project)
+}
+
+func (c *Mock) ListForwardingRules(ctx context.Context, project string, region string) ([]*compute.ForwardingRule, error) {
+	return c.compute.listForwardingRules(ctx, project, region)
+}

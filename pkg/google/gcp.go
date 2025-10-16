@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
+	"github.com/grafana/cloudcost-exporter/pkg/google/networking"
 	"github.com/prometheus/client_golang/prometheus"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
@@ -92,6 +93,22 @@ func New(config *Config) (*GCP, error) {
 				Logger:         config.Logger,
 				ScrapeInterval: config.ScrapeInterval,
 			}, gcpClient)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
+		case "CLB":
+			// CLB = Cloud Load Balancer, but we use forwarding rules to calculate price
+			collector, err = networking.New(&networking.Config{
+				ScrapeInterval: config.ScrapeInterval,
+				Logger:         config.Logger,
+				Projects:       config.Projects,
+			}, gcpClient)
+			logger.LogAttrs(ctx, slog.LevelInfo, "Creating collector",
+				slog.String("service", service),
+				slog.String("projects", config.Projects))
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
