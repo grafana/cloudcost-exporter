@@ -137,10 +137,12 @@ func (pm *VPCPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 			continue
 		}
 
-		usageType := productInfo.Product.Attributes.UsageType
-		if usageType == "" {
+		// Check for nil pointer dereference and empty fields
+		if productInfo.Product.Attributes.UsageType == "" ||
+			productInfo.Product.Attributes.RegionCode == "" {
 			continue
 		}
+		usageType := productInfo.Product.Attributes.UsageType
 
 		// Extract pricing information
 		for _, term := range productInfo.Terms.OnDemand {
@@ -162,20 +164,21 @@ func (pm *VPCPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 					continue
 				}
 
-				// Categorize by usage type patterns
-				if strings.Contains(usageType, VPCEndpointUsagePattern) {
+				// Categorize by usage type patterns using switch for better readability
+				switch {
+				case strings.Contains(usageType, VPCEndpointUsagePattern):
 					regionPricing.VPCEndpointRates[usageType] = price
 					pm.logger.Debug("Added VPC Endpoint pricing",
 						"region", region, "usageType", usageType, "price", price)
-				} else if strings.Contains(usageType, TransitGatewayUsagePattern) {
+				case strings.Contains(usageType, TransitGatewayUsagePattern):
 					regionPricing.TransitGatewayRates[usageType] = price
 					pm.logger.Debug("Added Transit Gateway pricing",
 						"region", region, "usageType", usageType, "price", price)
-				} else if strings.Contains(usageType, ElasticIPUsagePattern) {
+				case strings.Contains(usageType, ElasticIPUsagePattern):
 					regionPricing.ElasticIPRates[usageType] = price
 					pm.logger.Debug("Added Elastic IP pricing",
 						"region", region, "usageType", usageType, "price", price)
-				} else {
+				default:
 					pm.logger.Debug("Skipped unknown VPC usage type",
 						"region", region, "usageType", usageType)
 				}
@@ -194,15 +197,13 @@ func (pm *VPCPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 
 // usageTypeMatcher defines how to match usage types for pricing
 type usageTypeMatcher struct {
-	primaryPatterns  []string // Primary patterns to match (in order of preference)
-	fallbackPatterns []string // Fallback patterns if primary not found
-	excludePatterns  []string // Patterns to exclude
+	patterns        []string // Patterns to match (in order of preference)
+	excludePatterns []string // Patterns to exclude
 }
 
 // findRateInMap searches for a rate in the given rates map using the matcher criteria
 func (pm *VPCPricingMap) findRateInMap(region string, rates map[string]float64, matcher usageTypeMatcher, serviceType string) (float64, error) {
-	// Try primary patterns first
-	for _, pattern := range matcher.primaryPatterns {
+	for _, pattern := range matcher.patterns {
 		for usageType, rate := range rates {
 			if strings.Contains(usageType, pattern) {
 				// Check if we should exclude this usage type
@@ -221,31 +222,11 @@ func (pm *VPCPricingMap) findRateInMap(region string, rates map[string]float64, 
 		}
 	}
 
-	// Try fallback patterns
-	for _, pattern := range matcher.fallbackPatterns {
-		for usageType, rate := range rates {
-			if strings.Contains(usageType, pattern) {
-				// Check if we should exclude this usage type
-				excluded := false
-				for _, excludePattern := range matcher.excludePatterns {
-					if strings.Contains(usageType, excludePattern) {
-						excluded = true
-						break
-					}
-				}
-				if !excluded {
-					pm.logger.Debug("Selected fallback "+serviceType+" rate", "region", region, "usageType", usageType, "rate", rate, "pattern", pattern)
-					return rate, nil
-				}
-			}
-		}
-	}
-
 	return 0, fmt.Errorf("no %s rate found for region %s", serviceType, region)
 }
 
-// getRateWithFallback is a generic helper for getting pricing rates
-func (pm *VPCPricingMap) getRateWithFallback(region string, serviceType string, rateMapGetter func(*VPCRegionPricing) map[string]float64, matcher usageTypeMatcher) (float64, error) {
+// getRate is a generic helper for getting pricing rates
+func (pm *VPCPricingMap) getRate(region string, serviceType string, rateMapGetter func(*VPCRegionPricing) map[string]float64, matcher usageTypeMatcher) (float64, error) {
 	pricing, err := pm.GetRegionPricing(region)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get %s pricing for region %s: %w", serviceType, region, err)
@@ -258,11 +239,10 @@ func (pm *VPCPricingMap) getRateWithFallback(region string, serviceType string, 
 // GetVPCEndpointHourlyRate returns the hourly rate for standard VPC endpoints in a region
 func (pm *VPCPricingMap) GetVPCEndpointHourlyRate(region string) (float64, error) {
 	matcher := usageTypeMatcher{
-		primaryPatterns:  []string{VpcEndpointHours},
-		fallbackPatterns: []string{TransitGatewayHours},
-		excludePatterns:  []string{ServicePattern},
+		patterns:        []string{VpcEndpointHours},
+		excludePatterns: []string{ServicePattern},
 	}
-	return pm.getRateWithFallback(region, "standard VPC endpoint", func(p *VPCRegionPricing) map[string]float64 {
+	return pm.getRate(region, "standard VPC endpoint", func(p *VPCRegionPricing) map[string]float64 {
 		return p.VPCEndpointRates
 	}, matcher)
 }
@@ -270,11 +250,10 @@ func (pm *VPCPricingMap) GetVPCEndpointHourlyRate(region string) (float64, error
 // GetVPCServiceEndpointHourlyRate returns the hourly rate for VPC service endpoints in a region
 func (pm *VPCPricingMap) GetVPCServiceEndpointHourlyRate(region string) (float64, error) {
 	matcher := usageTypeMatcher{
-		primaryPatterns:  []string{VpcEndpointServiceHours},
-		fallbackPatterns: []string{ServicePattern, TransitGatewayHours},
-		excludePatterns:  []string{},
+		patterns:        []string{VpcEndpointServiceHours, ServicePattern},
+		excludePatterns: []string{},
 	}
-	return pm.getRateWithFallback(region, "VPC service endpoint", func(p *VPCRegionPricing) map[string]float64 {
+	return pm.getRate(region, "VPC service endpoint", func(p *VPCRegionPricing) map[string]float64 {
 		return p.VPCEndpointRates
 	}, matcher)
 }
@@ -282,11 +261,10 @@ func (pm *VPCPricingMap) GetVPCServiceEndpointHourlyRate(region string) (float64
 // GetTransitGatewayHourlyRate returns the hourly rate for Transit Gateway in a region
 func (pm *VPCPricingMap) GetTransitGatewayHourlyRate(region string) (float64, error) {
 	matcher := usageTypeMatcher{
-		primaryPatterns:  []string{TransitGatewayHours},
-		fallbackPatterns: []string{},
-		excludePatterns:  []string{},
+		patterns:        []string{TransitGatewayHours},
+		excludePatterns: []string{},
 	}
-	return pm.getRateWithFallback(region, "Transit Gateway", func(p *VPCRegionPricing) map[string]float64 {
+	return pm.getRate(region, "Transit Gateway", func(p *VPCRegionPricing) map[string]float64 {
 		return p.TransitGatewayRates
 	}, matcher)
 }
@@ -294,11 +272,10 @@ func (pm *VPCPricingMap) GetTransitGatewayHourlyRate(region string) (float64, er
 // GetElasticIPInUseRate returns the hourly rate for in-use Elastic IPs in a region
 func (pm *VPCPricingMap) GetElasticIPInUseRate(region string) (float64, error) {
 	matcher := usageTypeMatcher{
-		primaryPatterns:  []string{ElasticIPInUseAddress},
-		fallbackPatterns: []string{},
-		excludePatterns:  []string{},
+		patterns:        []string{ElasticIPInUseAddress},
+		excludePatterns: []string{},
 	}
-	return pm.getRateWithFallback(region, "Elastic IP in-use", func(p *VPCRegionPricing) map[string]float64 {
+	return pm.getRate(region, "Elastic IP in-use", func(p *VPCRegionPricing) map[string]float64 {
 		return p.ElasticIPRates
 	}, matcher)
 }
@@ -306,11 +283,10 @@ func (pm *VPCPricingMap) GetElasticIPInUseRate(region string) (float64, error) {
 // GetElasticIPIdleRate returns the hourly rate for idle Elastic IPs in a region
 func (pm *VPCPricingMap) GetElasticIPIdleRate(region string) (float64, error) {
 	matcher := usageTypeMatcher{
-		primaryPatterns:  []string{ElasticIPIdleAddress},
-		fallbackPatterns: []string{},
-		excludePatterns:  []string{},
+		patterns:        []string{ElasticIPIdleAddress},
+		excludePatterns: []string{},
 	}
-	return pm.getRateWithFallback(region, "Elastic IP idle", func(p *VPCRegionPricing) map[string]float64 {
+	return pm.getRate(region, "Elastic IP idle", func(p *VPCRegionPricing) map[string]float64 {
 		return p.ElasticIPRates
 	}, matcher)
 }
