@@ -2,7 +2,7 @@
 
 ## Building images
 
-There is a [github workflow](../../.github/workflows/docker.yml) that publishes images on changes to `main` and new tags.
+There is a [github workflow](../../.github/workflows/build-and-deploy.yml) that publishes images on changes to `main` and new tags.
 
 ## Versioning
 
@@ -29,6 +29,18 @@ Creating and pushing a new tag will trigger the `goreleaser` workflow in [./.git
 The configuration for `goreleaser` itself can be found in [./.goreleaser.yaml](https://github.com/grafana/cloudcost-exporter/blob/main/.goreleaser.yaml).
 
 See https://github.com/grafana/cloudcost-exporter/issues/18 for progress on our path to automating releases.
+
+### Automated Deployment
+
+When a new release is published (by pushing a tag), the workflows automatically:
+1. **[release.yml](../../.github/workflows/release.yml)**: Creates the GitHub release with binaries (via GoReleaser)
+2. **[build-and-deploy.yml](../../.github/workflows/build-and-deploy.yml)**: Builds and pushes the Docker image to Docker Hub
+3. **build-and-deploy.yml deploy job**: Immediately after the image is pushed, triggers an Argo Workflow deployment to platform-monitoring-cd
+4. **Argo Workflow**: Creates deployment PRs for each rollout wave
+
+The deployment happens as a follow-up job in the build-and-deploy workflow, running immediately after the image is successfully built and pushed.
+
+The workflow uses the [grafana/shared-workflows/actions/trigger-argo-workflow](https://github.com/grafana/shared-workflows) action, which handles authentication and workflow submission automatically.
 
 ## GitHub Actions
 
