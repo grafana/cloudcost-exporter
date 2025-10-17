@@ -29,7 +29,7 @@ require (
 	go.uber.org/mock v0.6.0
 	golang.org/x/sync v0.17.0
 	gomodules.xyz/azure-retail-prices-sdk-for-go v0.0.3
-	google.golang.org/api v0.251.0
+	google.golang.org/api v0.252.0
 	google.golang.org/genproto v0.0.0-20251007200510-49b9836ed3ff
 	google.golang.org/grpc v1.76.0
 	gopkg.in/matryer/try.v1 v1.0.0-20150601225556-312d2599e12e
@@ -38,7 +38,7 @@ require (
 require (
 	cel.dev/expr v0.24.0 // indirect
 	cloud.google.com/go v0.121.6 // indirect
-	cloud.google.com/go/auth v0.16.5 // indirect
+	cloud.google.com/go/auth v0.17.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.5.2 // indirect
