@@ -69,5 +69,5 @@ jobs:
           parameters: |
             imageName=grafana/cloudcost-exporter
             dockertag=${{ steps.version.outputs.version }}
-            prCommentContext=Triggered by release ${{ steps.version.outputs.version }} in grafana/cloudcost-exporter
+            prCommentContext= Triggered by release ${{ steps.version.outputs.version }} in grafana/cloudcost-exporter
             commit_author=grafana-delivery-bot
