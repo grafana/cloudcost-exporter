@@ -141,10 +141,30 @@ func (p *pricing) makeEC2ServiceInput(region string) *awsPricing.GetProductsInpu
 	return input
 }
 
+func (p *pricing) makeVPCServiceInput(region string) *awsPricing.GetProductsInput {
+	input := &awsPricing.GetProductsInput{
+		ServiceCode: aws.String("AmazonVPC"),
+		Filters: []pricingTypes.Filter{
+			{
+				Field: aws.String("regionCode"),
+				Type:  pricingTypes.FilterTypeTermMatch,
+				Value: aws.String(region),
+			},
+		},
+	}
+	return input
+}
+
 func (p *pricing) listEC2ServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
 	input := p.makeEC2ServiceInput(region)
 	input.Filters = append(input.Filters, filters...)
+	return p.getPricesFromProductList(ctx, input)
+}
 
+func (p *pricing) listVPCServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
+	// VPC service pricing (VPC Endpoints, Transit Gateway, Elastic IPs)
+	input := p.makeVPCServiceInput(region)
+	input.Filters = append(input.Filters, filters...)
 	return p.getPricesFromProductList(ctx, input)
 }
 
