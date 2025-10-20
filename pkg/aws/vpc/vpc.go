@@ -20,6 +20,9 @@ const (
 	serviceName = "vpc"
 )
 
+// PriceRefreshInterval defines how often to refresh pricing data from AWS Pricing API
+const PriceRefreshInterval = 24 * time.Hour
+
 var (
 	subsystem = fmt.Sprintf("aws_%s", serviceName)
 
@@ -80,7 +83,7 @@ func New(ctx context.Context, config *Config) *Collector {
 
 	// Set up periodic pricing refresh
 	go func() {
-		ticker := time.NewTicker(24 * time.Hour) // Refresh daily
+		ticker := time.NewTicker(PriceRefreshInterval)
 		defer ticker.Stop()
 
 		for {
