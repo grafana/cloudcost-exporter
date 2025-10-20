@@ -25,6 +25,7 @@ import (
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/elb"
 	awsgwnat "github.com/grafana/cloudcost-exporter/pkg/aws/natgateway"
+	awsvpc "github.com/grafana/cloudcost-exporter/pkg/aws/vpc"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/s3"
@@ -77,6 +78,7 @@ const (
 	serviceRDS   = "RDS"
 	serviceNATGW = "NATGATEWAY"
 	serviceELB   = "ELB"
+	serviceVPC   = "VPC"
 )
 
 func New(ctx context.Context, config *Config) (*AWS, error) {
@@ -165,6 +167,24 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				RegionClients:  regionClients,
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
+			})
+			collectors = append(collectors, collector)
+		case serviceVPC:
+			// pricing API for VPC client needs to use always the same region
+			// as for VPC, the pricing data is only available in the us-east-1
+			pricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
+			if err != nil {
+				return nil, err
+			}
+			awsVPCClient := client.NewAWSClient(client.Config{
+				PricingService: awsPricing.NewFromConfig(pricingConfig),
+				EC2Service:     ec2.NewFromConfig(pricingConfig),
+			})
+			collector := awsvpc.New(ctx, &awsvpc.Config{
+				ScrapeInterval: config.ScrapeInterval,
+				Logger:         logger,
+				Regions:        regions,
+				Client:         awsVPCClient,
 			})
 			collectors = append(collectors, collector)
 		default:
