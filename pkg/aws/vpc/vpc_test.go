@@ -115,16 +115,10 @@ func TestNew(t *testing.T) {
 		{RegionName: stringPtr("us-west-2")},
 	}
 
-	regionMap := map[string]awsclient.Client{
-		"us-east-1": mockClient,
-		"us-west-2": mockClient,
-	}
-
 	collector := New(context.Background(), &Config{
 		ScrapeInterval: 1 * time.Hour,
 		Regions:        regions,
 		Logger:         logger,
-		RegionMap:      regionMap,
 		Client:         mockClient, // Add the dedicated client
 	})
 
