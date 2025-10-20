@@ -170,7 +170,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 			}
 			awsVPCClient := client.NewAWSClient(client.Config{
 				PricingService: awsPricing.NewFromConfig(pricingConfig),
-				EC2Service:     ec2.NewFromConfig(ac),
+				EC2Service:     ec2.NewFromConfig(pricingConfig),
 			})
 			collector := awsvpc.New(ctx, &awsvpc.Config{
 				ScrapeInterval: config.ScrapeInterval,
