@@ -158,12 +158,6 @@ func (pm *VPCPricingMap) FetchRegionPricing(client client.Client, ctx context.Co
 					continue
 				}
 
-				// Skip negative prices
-				if price < 0 {
-					pm.logger.Warn(pricingErr, "error", "negative price detected", "price", price, "usageType", usageType, "region", region)
-					continue
-				}
-
 				// Categorize by usage type patterns using switch for better readability
 				switch {
 				case strings.Contains(usageType, VPCEndpointUsagePattern):
