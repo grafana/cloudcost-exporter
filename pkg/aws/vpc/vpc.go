@@ -20,7 +20,6 @@ const (
 	serviceName = "vpc"
 )
 
-// PriceRefreshInterval defines how often to refresh pricing data from AWS Pricing API
 const PriceRefreshInterval = 24 * time.Hour
 
 var (
