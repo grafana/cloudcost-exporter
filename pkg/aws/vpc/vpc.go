@@ -63,7 +63,6 @@ var (
 // Collector implements provider.Collector
 type Collector struct {
 	regions        []ec2Types.Region
-	regionClients  map[string]awsclient.Client
 	scrapeInterval time.Duration
 	pricingMap     *VPCPricingMap
 	logger         *slog.Logger
@@ -99,7 +98,6 @@ func New(ctx context.Context, config *Config) *Collector {
 
 	return &Collector{
 		regions:        config.Regions,
-		regionClients:  config.RegionMap,
 		scrapeInterval: config.ScrapeInterval,
 		pricingMap:     pricingMap,
 		logger:         logger,
@@ -111,7 +109,6 @@ type Config struct {
 	ScrapeInterval time.Duration
 	Regions        []ec2Types.Region
 	Logger         *slog.Logger
-	RegionMap      map[string]awsclient.Client
 	Client         awsclient.Client // Dedicated client with us-east-1 pricing service
 }
 

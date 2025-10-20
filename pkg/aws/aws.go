@@ -176,7 +176,6 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
 				Regions:        regions,
-				RegionMap:      awsClientPerRegion,
 				Client:         awsVPCClient,
 			})
 			collectors = append(collectors, collector)
