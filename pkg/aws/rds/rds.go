@@ -70,7 +70,6 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	logger := slog.With("logger", serviceName)
 	ctx := context.Background()
-	start := time.Now()
 	var instances = []rdsTypes.DBInstance{}
 	for _, region := range c.regions {
 		regionName := *region.RegionName
@@ -124,7 +123,6 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			*instance.DbiResourceId,
 		)
 	}
-	logger.Info("Finished collect", "subsystem", subsystem, "duration", time.Since(start))
 	return nil
 }
 
