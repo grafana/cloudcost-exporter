@@ -24,8 +24,8 @@ var (
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
 		"hourly_rate_usd_per_hour",
-		"Hourly cost of NAT Gateway by region. Cost represented in USD/hour",
-		[]string{"region", "tier", "name"},
+		"Hourly cost of AWS RDS instances by region, tier and id. Cost represented in USD/hour",
+		[]string{"region", "tier", "id"},
 	)
 )
 
@@ -120,7 +120,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			hourlyPrice,
 			region,
 			*instance.DBInstanceClass,
-			*instance.DBInstanceIdentifier,
+			*instance.DbiResourceId,
 		)
 	}
 	return nil
