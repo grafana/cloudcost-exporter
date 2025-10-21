@@ -1,6 +1,7 @@
 package ec2
 
 import (
+	"context"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -10,6 +11,8 @@ import (
 )
 
 func TestComputePricingMap_AddToComputePricingMap(t *testing.T) {
+	// #TODO: set up config properly
+	config := &Config{}
 	tests := map[string]struct {
 		cpm        *ComputePricingMap
 		Attributes []InstanceAttributes
@@ -21,7 +24,7 @@ func TestComputePricingMap_AddToComputePricingMap(t *testing.T) {
 			Attributes: []InstanceAttributes{},
 		},
 		"Single attribute": {
-			cpm: NewComputePricingMap(logger),
+			cpm: NewComputePricingMap(logger, config),
 			Attributes: []InstanceAttributes{
 				{
 					Region:         "us-east-1a",
@@ -56,7 +59,11 @@ func TestComputePricingMap_AddToComputePricingMap(t *testing.T) {
 	}
 }
 
+// #TODO: fix test
 func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
+	// #TODO: set up config properly
+	config := &Config{}
+
 	tests := map[string]struct {
 		csmp       *ComputePricingMap
 		prices     []string
@@ -64,13 +71,13 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 		want       *ComputePricingMap
 	}{
 		"No prices input": {
-			csmp:       NewComputePricingMap(logger),
+			csmp:       NewComputePricingMap(logger, config),
 			prices:     []string{},
 			spotPrices: []ec2Types.SpotPrice{},
-			want:       NewComputePricingMap(logger),
+			want:       NewComputePricingMap(logger, config),
 		},
 		"Just prices as input": {
-			csmp: NewComputePricingMap(logger),
+			csmp: NewComputePricingMap(logger, config),
 			prices: []string{
 				`{"product":{"productFamily":"Compute Instance","attributes":{"enhancedNetworkingSupported":"Yes","intelTurboAvailable":"No","memory":"16 GiB","dedicatedEbsThroughput":"Up to 3170 Mbps","vcpu":"8","classicnetworkingsupport":"false","capacitystatus":"UnusedCapacityReservation","locationType":"AWS Region","storage":"1 x 300 NVMe SSD","instanceFamily":"Compute optimized","operatingSystem":"Linux","intelAvx2Available":"No","regionCode":"af-south-1","physicalProcessor":"AMD EPYC 7R32","clockSpeed":"3.3 GHz","ecu":"NA","networkPerformance":"Up to 10 Gigabit","servicename":"Amazon Elastic Compute Cloud","instancesku":"Q7GDF95MM7MZ7Y5Q","gpuMemory":"NA","vpcnetworkingsupport":"true","instanceType":"c5ad.2xlarge","tenancy":"Shared","usagetype":"AFS1-UnusedBox:c5ad.2xlarge","normalizationSizeFactor":"16","intelAvxAvailable":"No","processorFeatures":"AMD Turbo; AVX; AVX2","servicecode":"AmazonEC2","licenseModel":"No License required","currentGeneration":"Yes","preInstalledSw":"NA","location":"Africa (Cape Town)","processorArchitecture":"64-bit","marketoption":"OnDemand","operation":"RunInstances","availabilityzone":"NA"},"sku":"2257YY4K7BWZ4F46"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"2257YY4K7BWZ4F46.JRTCKXETXF":{"priceDimensions":{"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","endRange":"Inf","description":"$0.468 per Unused Reservation Linux c5ad.2xlarge Instance Hour","appliesTo":[],"rateCode":"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.4680000000"}}},"sku":"2257YY4K7BWZ4F46","effectiveDate":"2024-04-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240508191027","publicationDate":"2024-05-08T19:10:27Z"}`,
 			},
@@ -105,7 +112,7 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 			},
 		},
 		"Price and a spot price": {
-			csmp: NewComputePricingMap(logger),
+			csmp: NewComputePricingMap(logger, config),
 			prices: []string{
 				`{"product":{"productFamily":"Compute Instance","attributes":{"enhancedNetworkingSupported":"Yes","intelTurboAvailable":"No","memory":"16 GiB","dedicatedEbsThroughput":"Up to 3170 Mbps","vcpu":"8","classicnetworkingsupport":"false","capacitystatus":"UnusedCapacityReservation","locationType":"AWS Region","storage":"1 x 300 NVMe SSD","instanceFamily":"Compute optimized","operatingSystem":"Linux","intelAvx2Available":"No","regionCode":"af-south-1","physicalProcessor":"AMD EPYC 7R32","clockSpeed":"3.3 GHz","ecu":"NA","networkPerformance":"Up to 10 Gigabit","servicename":"Amazon Elastic Compute Cloud","instancesku":"Q7GDF95MM7MZ7Y5Q","gpuMemory":"NA","vpcnetworkingsupport":"true","instanceType":"c5ad.2xlarge","tenancy":"Shared","usagetype":"AFS1-UnusedBox:c5ad.2xlarge","normalizationSizeFactor":"16","intelAvxAvailable":"No","processorFeatures":"AMD Turbo; AVX; AVX2","servicecode":"AmazonEC2","licenseModel":"No License required","currentGeneration":"Yes","preInstalledSw":"NA","location":"Africa (Cape Town)","processorArchitecture":"64-bit","marketoption":"OnDemand","operation":"RunInstances","availabilityzone":"NA"},"sku":"2257YY4K7BWZ4F46"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"2257YY4K7BWZ4F46.JRTCKXETXF":{"priceDimensions":{"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","endRange":"Inf","description":"$0.468 per Unused Reservation Linux c5ad.2xlarge Instance Hour","appliesTo":[],"rateCode":"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.4680000000"}}},"sku":"2257YY4K7BWZ4F46","effectiveDate":"2024-04-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240508191027","publicationDate":"2024-05-08T19:10:27Z"}`,
 			},
@@ -157,7 +164,8 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := tt.csmp.GenerateComputePricingMap(tt.prices, tt.spotPrices)
+			// #TODO adapt this test since more stuff is going into the function
+			err := tt.csmp.GenerateComputePricingMap(context.Background(), tt.prices, tt.spotPrices)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want.Regions, tt.csmp.Regions)
 			assert.Equal(t, tt.want.InstanceDetails, tt.csmp.InstanceDetails)
@@ -166,16 +174,19 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 }
 
 func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
+	// #TODO: set up config properly
+	config := &Config{}
+
 	tests := map[string]struct {
 		spm      *StoragePricingMap
 		prices   []string
 		expected map[string]*StoragePricing
 	}{
 		"Empty if AWS returns no volume prices": {
-			spm: NewStoragePricingMap(logger),
+			spm: NewStoragePricingMap(logger, config),
 		},
 		"Parses AWS volume prices response": {
-			spm: NewStoragePricingMap(logger),
+			spm: NewStoragePricingMap(logger, config),
 			prices: []string{
 				`{"product":{"productFamily":"Storage","attributes":{"maxThroughputvolume":"1000 MiB/s","volumeType":"General Purpose","maxIopsvolume":"16000","usagetype":"AFS1-EBS:VolumeUsage.gp3","locationType":"AWS Region","maxVolumeSize":"16 TiB","storageMedia":"SSD-backed","regionCode":"af-south-1","servicecode":"AmazonEC2","volumeApiName":"gp3","location":"Africa (Cape Town)","servicename":"Amazon Elastic Compute Cloud","operation":""},"sku":"XWCTMRRUJM7TGYST"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"XWCTMRRUJM7TGYST.JRTCKXETXF":{"priceDimensions":{"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7":{"unit":"GB-Mo","endRange":"Inf","description":"$0.1047 per GB-month of General Purpose (gp3) provisioned storage - Africa (Cape Town)","appliesTo":[],"rateCode":"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.1047000000"}}},"sku":"XWCTMRRUJM7TGYST","effectiveDate":"2024-07-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240705013454","publicationDate":"2024-07-05T01:34:54Z"}`,
 			},
@@ -190,7 +201,8 @@ func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := tt.spm.GenerateStoragePricingMap(tt.prices)
+			// #TODO adapt this test since more stuff is going into the function
+			err := tt.spm.GenerateStoragePricingMap(context.Background(), tt.prices)
 			assert.NoError(t, err)
 			if tt.expected != nil {
 				assert.Equal(t, tt.expected, tt.spm.Regions)
@@ -200,6 +212,9 @@ func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 }
 
 func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
+	// #TODO: set up config properly
+	config := &Config{}
+
 	tests := map[string]struct {
 		cpm          *ComputePricingMap
 		region       string
@@ -208,7 +223,7 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 		want         *Prices
 	}{
 		"An empty structured pricing map should return a no region found error": {
-			cpm:          NewComputePricingMap(logger),
+			cpm:          NewComputePricingMap(logger, config),
 			region:       "us-east-1",
 			instanceType: "m5.large",
 			err:          ErrRegionNotFound,
@@ -260,6 +275,9 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 }
 
 func TestStoragePricingMap_GetPriceForVolumeType(t *testing.T) {
+	// #TODO: set up config properly
+	config := &Config{}
+
 	tests := map[string]struct {
 		spm        *StoragePricingMap
 		region     string
@@ -269,7 +287,7 @@ func TestStoragePricingMap_GetPriceForVolumeType(t *testing.T) {
 		expected   float64
 	}{
 		"an empty map should return a no region found error": {
-			spm:        NewStoragePricingMap(logger),
+			spm:        NewStoragePricingMap(logger, config),
 			region:     "us-east-1",
 			volumeType: "gp3",
 			size:       100,
