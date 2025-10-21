@@ -68,8 +68,6 @@ type Collector struct {
 	computePricingMap  *ComputePricingMap
 	storagePricingMap  *StoragePricingMap
 	awsRegionClientMap map[string]client.Client
-	nextComputeScrape  time.Time
-	nextStorageScrape  time.Time
 	logger             *slog.Logger
 }
 
@@ -81,7 +79,7 @@ type Config struct {
 }
 
 // New creates an ec2 collector
-func New(ctx context.Context, config *Config, awsClientWrapper client.AWSClient) (*Collector, error) {
+func New(ctx context.Context, config *Config) (*Collector, error) {
 	logger := config.Logger.With("logger", "ec2")
 	computeMap := NewComputePricingMap(logger, config)
 	storageMap := NewStoragePricingMap(logger, config)
