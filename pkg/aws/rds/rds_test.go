@@ -129,6 +129,7 @@ func TestCollector_Collect(t *testing.T) {
 				Engine:               aws.String("postgres"),
 				DBInstanceIdentifier: aws.String("test-db"),
 				MultiAZ:              aws.Bool(false),
+				DbiResourceId:        aws.String("test-db"),
 			}},
 			pricingKey: createPricingKey("us-east-1", "db.t3.medium", "postgres", "Single-AZ", "AWS Region"),
 		},
@@ -149,6 +150,7 @@ func TestCollector_Collect(t *testing.T) {
 				Engine:               aws.String("mysql"),
 				DBInstanceIdentifier: aws.String("test-db-2"),
 				MultiAZ:              aws.Bool(false),
+				DbiResourceId:        aws.String("test-db-2"),
 			}},
 			pricingKey: cacheKey,
 		},
@@ -203,7 +205,7 @@ func TestCollector_Collect(t *testing.T) {
 				labels := metricResult.Labels
 				hourlyPrice, _ := c.pricingMap.Get(tt.pricingKey)
 				assert.Equal(t, *tt.ListRDSInstances[0].DBInstanceClass, labels["tier"])
-				assert.Equal(t, *tt.ListRDSInstances[0].DBInstanceIdentifier, labels["name"])
+				assert.Equal(t, *tt.ListRDSInstances[0].DBInstanceIdentifier, labels["id"])
 				assert.Equal(t, hourlyPrice, metricResult.Value)
 			default:
 				t.Fatal("expected a metric to be collected")
