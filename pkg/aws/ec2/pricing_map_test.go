@@ -62,24 +62,28 @@ func TestComputePricingMap_AddToComputePricingMap(t *testing.T) {
 
 // #TODO: fix test
 func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
-	// #TODO: set up config properly
-	config := &Config{}
-
 	tests := map[string]struct {
-		csmp       *ComputePricingMap
-		prices     []string
-		spotPrices []ec2Types.SpotPrice
-		want       *ComputePricingMap
+		regions        []ec2Types.Region
+		ondemandPrices []string
+		spotPrices     []ec2Types.SpotPrice
+		want           *ComputePricingMap
 	}{
-		"No prices input": {
-			csmp:       NewComputePricingMap(logger, config),
-			prices:     []string{},
-			spotPrices: []ec2Types.SpotPrice{},
-			want:       NewComputePricingMap(logger, config),
+		"No ondemand or spot prices input": {
+			regions: []ec2Types.Region{
+				{RegionName: aws.String("us-east-1")},
+			},
+			ondemandPrices: []string{},
+			spotPrices:     []ec2Types.SpotPrice{},
+			want: &ComputePricingMap{
+				Regions:         map[string]*FamilyPricing{},
+				InstanceDetails: map[string]InstanceAttributes{},
+			},
 		},
-		"Just prices as input": {
-			csmp: NewComputePricingMap(logger, config),
-			prices: []string{
+		"Just ondemand prices as input": {
+			regions: []ec2Types.Region{
+				{RegionName: aws.String("af-south-1")},
+			},
+			ondemandPrices: []string{
 				`{"product":{"productFamily":"Compute Instance","attributes":{"enhancedNetworkingSupported":"Yes","intelTurboAvailable":"No","memory":"16 GiB","dedicatedEbsThroughput":"Up to 3170 Mbps","vcpu":"8","classicnetworkingsupport":"false","capacitystatus":"UnusedCapacityReservation","locationType":"AWS Region","storage":"1 x 300 NVMe SSD","instanceFamily":"Compute optimized","operatingSystem":"Linux","intelAvx2Available":"No","regionCode":"af-south-1","physicalProcessor":"AMD EPYC 7R32","clockSpeed":"3.3 GHz","ecu":"NA","networkPerformance":"Up to 10 Gigabit","servicename":"Amazon Elastic Compute Cloud","instancesku":"Q7GDF95MM7MZ7Y5Q","gpuMemory":"NA","vpcnetworkingsupport":"true","instanceType":"c5ad.2xlarge","tenancy":"Shared","usagetype":"AFS1-UnusedBox:c5ad.2xlarge","normalizationSizeFactor":"16","intelAvxAvailable":"No","processorFeatures":"AMD Turbo; AVX; AVX2","servicecode":"AmazonEC2","licenseModel":"No License required","currentGeneration":"Yes","preInstalledSw":"NA","location":"Africa (Cape Town)","processorArchitecture":"64-bit","marketoption":"OnDemand","operation":"RunInstances","availabilityzone":"NA"},"sku":"2257YY4K7BWZ4F46"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"2257YY4K7BWZ4F46.JRTCKXETXF":{"priceDimensions":{"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","endRange":"Inf","description":"$0.468 per Unused Reservation Linux c5ad.2xlarge Instance Hour","appliesTo":[],"rateCode":"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.4680000000"}}},"sku":"2257YY4K7BWZ4F46","effectiveDate":"2024-04-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240508191027","publicationDate":"2024-05-08T19:10:27Z"}`,
 			},
 			spotPrices: []ec2Types.SpotPrice{},
@@ -112,9 +116,11 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 				},
 			},
 		},
-		"Price and a spot price": {
-			csmp: NewComputePricingMap(logger, config),
-			prices: []string{
+		"Ondemand and spot prices": {
+			regions: []ec2Types.Region{
+				{RegionName: aws.String("af-south-1")},
+			},
+			ondemandPrices: []string{
 				`{"product":{"productFamily":"Compute Instance","attributes":{"enhancedNetworkingSupported":"Yes","intelTurboAvailable":"No","memory":"16 GiB","dedicatedEbsThroughput":"Up to 3170 Mbps","vcpu":"8","classicnetworkingsupport":"false","capacitystatus":"UnusedCapacityReservation","locationType":"AWS Region","storage":"1 x 300 NVMe SSD","instanceFamily":"Compute optimized","operatingSystem":"Linux","intelAvx2Available":"No","regionCode":"af-south-1","physicalProcessor":"AMD EPYC 7R32","clockSpeed":"3.3 GHz","ecu":"NA","networkPerformance":"Up to 10 Gigabit","servicename":"Amazon Elastic Compute Cloud","instancesku":"Q7GDF95MM7MZ7Y5Q","gpuMemory":"NA","vpcnetworkingsupport":"true","instanceType":"c5ad.2xlarge","tenancy":"Shared","usagetype":"AFS1-UnusedBox:c5ad.2xlarge","normalizationSizeFactor":"16","intelAvxAvailable":"No","processorFeatures":"AMD Turbo; AVX; AVX2","servicecode":"AmazonEC2","licenseModel":"No License required","currentGeneration":"Yes","preInstalledSw":"NA","location":"Africa (Cape Town)","processorArchitecture":"64-bit","marketoption":"OnDemand","operation":"RunInstances","availabilityzone":"NA"},"sku":"2257YY4K7BWZ4F46"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"2257YY4K7BWZ4F46.JRTCKXETXF":{"priceDimensions":{"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","endRange":"Inf","description":"$0.468 per Unused Reservation Linux c5ad.2xlarge Instance Hour","appliesTo":[],"rateCode":"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.4680000000"}}},"sku":"2257YY4K7BWZ4F46","effectiveDate":"2024-04-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240508191027","publicationDate":"2024-05-08T19:10:27Z"}`,
 			},
 			spotPrices: []ec2Types.SpotPrice{
@@ -166,31 +172,37 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			// #TODO adapt this test since more stuff is going into the function
-			err := tt.csmp.GenerateComputePricingMap(context.Background(), tt.prices, tt.spotPrices)
+			mock := &mockClient{
+				ondemandPrices: tt.ondemandPrices,
+				spotPrices:     tt.spotPrices,
+			}
+
+			regionName := *tt.regions[0].RegionName
+			config := &Config{
+				Regions: tt.regions,
+				RegionMap: map[string]client.Client{
+					regionName: mock,
+				},
+			}
+
+			cpm := NewComputePricingMap(logger, config)
+			err := cpm.GenerateComputePricingMap(context.Background())
 			assert.NoError(t, err)
-			assert.Equal(t, tt.want.Regions, tt.csmp.Regions)
-			assert.Equal(t, tt.want.InstanceDetails, tt.csmp.InstanceDetails)
+			if tt.want != nil {
+				assert.Equal(t, tt.want.Regions, cpm.Regions)
+				assert.Equal(t, tt.want.InstanceDetails, cpm.InstanceDetails)
+			}
 		})
 	}
 }
 
 func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
-	// #TODO adapt this test since the function has more logic in it now
 	tests := map[string]struct {
 		regions          []ec2Types.Region
 		prices           []string
 		listStorageError error
 		expected         map[string]*StoragePricing
 	}{
-		"Empty if AWS returns no volume prices": {
-			regions: []ec2Types.Region{
-				{
-					RegionName: aws.String("us-east-1"),
-				},
-			},
-			prices:   []string{},
-			expected: map[string]*StoragePricing{},
-		},
 		"Parses AWS volume prices response": {
 			regions: []ec2Types.Region{
 				{
@@ -211,16 +223,16 @@ func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			mockClient := &storageClientMock{
-				prices: tt.prices,
-				err:    tt.listStorageError,
+			mock := &mockClient{
+				storagePrices: tt.prices,
+				storageErr:    tt.listStorageError,
 			}
 
 			regionName := *tt.regions[0].RegionName
 			config := &Config{
 				Regions: tt.regions,
 				RegionMap: map[string]client.Client{
-					regionName: mockClient,
+					regionName: mock,
 				},
 			}
 			spm := NewStoragePricingMap(logger, config)

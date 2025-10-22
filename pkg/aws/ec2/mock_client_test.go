@@ -12,63 +12,70 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type storageClientMock struct {
-	prices []string
-	err    error
+type mockClient struct {
+	// Compute pricing fields
+	ondemandPrices []string
+	spotPrices     []ec2Types.SpotPrice
+	ondemandErr    error
+	spotErr        error
+
+	// Storage pricing fields
+	storagePrices []string
+	storageErr    error
 }
 
-func (m *storageClientMock) ListStoragePrices(ctx context.Context, region string) ([]string, error) {
-	return m.prices, m.err
+func (m *mockClient) ListOnDemandPrices(ctx context.Context, region string) ([]string, error) {
+	return m.ondemandPrices, m.ondemandErr
 }
 
-func (m *storageClientMock) GetBillingData(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
+func (m *mockClient) ListSpotPrices(ctx context.Context) ([]ec2Types.SpotPrice, error) {
+	return m.spotPrices, m.spotErr
+}
+
+func (m *mockClient) ListStoragePrices(ctx context.Context, region string) ([]string, error) {
+	return m.storagePrices, m.storageErr
+}
+
+func (m *mockClient) GetBillingData(ctx context.Context, startDate time.Time, endDate time.Time) (*client.BillingData, error) {
 	panic("not implemented")
 }
 
-func (m *storageClientMock) DescribeRegions(ctx context.Context, allRegions bool) ([]ec2Types.Region, error) {
+func (m *mockClient) DescribeRegions(ctx context.Context, allRegions bool) ([]ec2Types.Region, error) {
 	panic("not implemented")
 }
 
-func (m *storageClientMock) ListComputeInstances(ctx context.Context) ([]ec2Types.Reservation, error) {
+func (m *mockClient) ListComputeInstances(ctx context.Context) ([]ec2Types.Reservation, error) {
 	panic("not implemented")
 }
 
-func (m *storageClientMock) ListEBSVolumes(ctx context.Context) ([]ec2Types.Volume, error) {
+func (m *mockClient) ListEBSVolumes(ctx context.Context) ([]ec2Types.Volume, error) {
 	panic("not implemented")
 }
 
-func (m *storageClientMock) ListSpotPrices(ctx context.Context) ([]ec2Types.SpotPrice, error) {
+func (m *mockClient) ListEC2ServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
 	panic("not implemented")
 }
 
-func (m *storageClientMock) ListOnDemandPrices(ctx context.Context, region string) ([]string, error) {
+func (m *mockClient) ListVPCServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
 	panic("not implemented")
 }
 
-func (m *storageClientMock) ListEC2ServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
+func (m *mockClient) ListELBPrices(ctx context.Context, region string) ([]string, error) {
 	panic("not implemented")
 }
 
-func (m *storageClientMock) ListVPCServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
+func (m *mockClient) DescribeLoadBalancers(ctx context.Context) ([]elbTypes.LoadBalancer, error) {
 	panic("not implemented")
 }
 
-func (m *storageClientMock) ListELBPrices(ctx context.Context, region string) ([]string, error) {
+func (m *mockClient) ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstance, error) {
 	panic("not implemented")
 }
 
-func (m *storageClientMock) DescribeLoadBalancers(ctx context.Context) ([]elbTypes.LoadBalancer, error) {
+func (m *mockClient) GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, engineCode, isOutpost string) (string, error) {
 	panic("not implemented")
 }
 
-func (m *storageClientMock) ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstance, error) {
-	panic("not implemented")
-}
-
-func (m *storageClientMock) GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, engineCode, isOutpost string) (string, error) {
-	panic("not implemented")
-}
-
-func (m *storageClientMock) Metrics() []prometheus.Collector {
+func (m *mockClient) Metrics() []prometheus.Collector {
 	panic("not implemented")
 }

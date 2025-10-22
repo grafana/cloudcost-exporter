@@ -104,10 +104,51 @@ func NewStoragePricingMap(l *slog.Logger, config *Config) *StoragePricingMap {
 // The method needs to
 // 1. Parse out the ondemand prices and generate a productTerm map for each instance type
 // 2. Parse out spot prices and use the productTerm map to generate a spot price map
-func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context, ondemandPrices []string, spotPrices []ec2Types.SpotPrice) error {
+func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context) error {
+	cpm.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing compute pricing map")
+	var ondemandPrices []string
+	var spotPrices []ec2Types.SpotPrice
+	eg, errGroupCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(errGroupLimit)
+	m := sync.Mutex{}
+	// #TODO confirm the regions is the same one as used before, same for region map
+	for _, region := range cpm.config.Regions {
+		region := region
+		eg.Go(func() error {
+			cpm.logger.LogAttrs(errGroupCtx, slog.LevelDebug, "fetching compute pricing info", slog.String("region", *region.RegionName))
+
+			// #TODO figure out if it makes sense to add awsRegionClientMap as a field to this
+			// map and the storage one. or maybe config instead
+			regionClient, ok := cpm.config.RegionMap[*region.RegionName]
+			if !ok {
+				return ErrClientNotFound
+			}
+
+			spotPriceList, err := regionClient.ListSpotPrices(errGroupCtx)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
+			}
+
+			priceList, err := regionClient.ListOnDemandPrices(errGroupCtx, *region.RegionName)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
+			}
+
+			m.Lock()
+			spotPrices = append(spotPrices, spotPriceList...)
+			ondemandPrices = append(ondemandPrices, priceList...)
+			m.Unlock()
+			return nil
+		})
+	}
+	err := eg.Wait()
+	if err != nil {
+		return err
+	}
 	for _, product := range ondemandPrices {
 		var productInfo computeProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
+			// return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 			return err
 		}
 		if productInfo.Product.Attributes.InstanceType == "" {

@@ -11,7 +11,6 @@ import (
 
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
-	"golang.org/x/sync/errgroup"
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -168,46 +167,10 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 }
 
 func (c *Collector) populateComputePricingMap(errGroupCtx context.Context) error {
-	c.logger.LogAttrs(errGroupCtx, slog.LevelInfo, "Refreshing compute pricing map")
-	var prices []string
-	var spotPrices []ec2Types.SpotPrice
-	eg, errGroupCtx := errgroup.WithContext(errGroupCtx)
-	eg.SetLimit(errGroupLimit)
-	m := sync.Mutex{}
-	for _, region := range c.Regions {
-		eg.Go(func() error {
-			c.logger.LogAttrs(errGroupCtx, slog.LevelDebug, "fetching compute pricing info", slog.String("region", *region.RegionName))
-
-			regionClient, ok := c.awsRegionClientMap[*region.RegionName]
-			if !ok {
-				return ErrClientNotFound
-			}
-
-			spotPriceList, err := regionClient.ListSpotPrices(errGroupCtx)
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
-			}
-
-			priceList, err := regionClient.ListOnDemandPrices(errGroupCtx, *region.RegionName)
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
-			}
-
-			m.Lock()
-			spotPrices = append(spotPrices, spotPriceList...)
-			prices = append(prices, priceList...)
-			m.Unlock()
-			return nil
-		})
-	}
-	err := eg.Wait()
-	if err != nil {
-		return err
-	}
 	c.computePricingMap = NewComputePricingMap(c.logger, &Config{
 		Regions:   c.Regions,
 		RegionMap: c.awsRegionClientMap})
-	if err := c.computePricingMap.GenerateComputePricingMap(errGroupCtx, prices, spotPrices); err != nil {
+	if err := c.computePricingMap.GenerateComputePricingMap(errGroupCtx); err != nil {
 		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 	}
 
