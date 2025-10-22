@@ -14,6 +14,7 @@ import (
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
+	"github.com/grafana/cloudcost-exporter/pkg/google/vpc"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
@@ -109,6 +110,18 @@ func New(config *Config) (*GCP, error) {
 			logger.LogAttrs(ctx, slog.LevelInfo, "Creating collector",
 				slog.String("service", service),
 				slog.String("projects", config.Projects))
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
+		case "VPC":
+			collector, err = vpc.New(&vpc.Config{
+				Projects:       config.Projects,
+				Logger:         config.Logger,
+				ScrapeInterval: config.ScrapeInterval,
+			}, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
