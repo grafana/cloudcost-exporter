@@ -1,6 +1,7 @@
 package ec2
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,6 +47,7 @@ type ComputePricingMap struct {
 	InstanceDetails map[string]InstanceAttributes
 	m               sync.RWMutex
 	logger          *slog.Logger
+	config          *Config
 }
 
 // FamilyPricing is a map of instance type to a list of PriceTiers where the key is the ec2 compute instance type
@@ -68,6 +70,7 @@ type StoragePricingMap struct {
 	Regions map[string]*StoragePricing
 	m       sync.RWMutex
 	logger  *slog.Logger
+	config  *Config
 }
 
 // StoragePricing is a map where the key is the storage type and the value is the price
@@ -75,28 +78,31 @@ type StoragePricing struct {
 	Storage map[string]float64
 }
 
-func NewComputePricingMap(l *slog.Logger) *ComputePricingMap {
+func NewComputePricingMap(l *slog.Logger, config *Config) *ComputePricingMap {
 	return &ComputePricingMap{
 		Regions:         make(map[string]*FamilyPricing),
 		InstanceDetails: make(map[string]InstanceAttributes),
 		m:               sync.RWMutex{},
 		logger:          l.With("subsystem", "computePricing"),
+		config:          config,
 	}
 }
 
-func NewStoragePricingMap(l *slog.Logger) *StoragePricingMap {
+func NewStoragePricingMap(l *slog.Logger, config *Config) *StoragePricingMap {
 	return &StoragePricingMap{
 		Regions: make(map[string]*StoragePricing),
 		m:       sync.RWMutex{},
 		logger:  l.With("subsystem", "storagePricing"),
+		config:  config,
 	}
 }
 
+// #TODO update doc comment
 // GenerateComputePricingMap accepts a list of ondemand prices and a list of spot prices.
 // The method needs to
 // 1. Parse out the ondemand prices and generate a productTerm map for each instance type
 // 2. Parse out spot prices and use the productTerm map to generate a spot price map
-func (cpm *ComputePricingMap) GenerateComputePricingMap(ondemandPrices []string, spotPrices []ec2Types.SpotPrice) error {
+func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context, ondemandPrices []string, spotPrices []ec2Types.SpotPrice) error {
 	for _, product := range ondemandPrices {
 		var productInfo computeProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
@@ -146,9 +152,10 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ondemandPrices []string,
 	return nil
 }
 
+// #TODO update doc comment
 // GenerateStoragePricingMap receives a json with all the prices of the available storage options
 // It iterates over the storage classes and parses the price for each one.
-func (spm *StoragePricingMap) GenerateStoragePricingMap(storagePrices []string) error {
+func (spm *StoragePricingMap) GenerateStoragePricingMap(ctx context.Context, storagePrices []string) error {
 	spm.m.Lock()
 	defer spm.m.Unlock()
 

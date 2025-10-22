@@ -84,14 +84,16 @@ type Config struct {
 // New creates an ec2 collector
 func New(ctx context.Context, config *Config) (*Collector, error) {
 	logger := config.Logger.With("logger", "ec2")
+	computeMap := NewComputePricingMap(logger, config)
+	storageMap := NewStoragePricingMap(logger, config)
 
 	return &Collector{
 		ScrapeInterval:     config.ScrapeInterval,
 		Regions:            config.Regions,
 		logger:             logger,
 		awsRegionClientMap: config.RegionMap,
-		computePricingMap:  NewComputePricingMap(logger),
-		storagePricingMap:  NewStoragePricingMap(logger),
+		computePricingMap:  computeMap,
+		storagePricingMap:  storageMap,
 	}, nil
 }
 
@@ -202,8 +204,8 @@ func (c *Collector) populateComputePricingMap(errGroupCtx context.Context) error
 	if err != nil {
 		return err
 	}
-	c.computePricingMap = NewComputePricingMap(c.logger)
-	if err := c.computePricingMap.GenerateComputePricingMap(prices, spotPrices); err != nil {
+	c.computePricingMap = NewComputePricingMap(c.logger, &Config{})
+	if err := c.computePricingMap.GenerateComputePricingMap(context.Background(), prices, spotPrices); err != nil {
 		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 	}
 
@@ -238,8 +240,8 @@ func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	c.storagePricingMap = NewStoragePricingMap(c.logger)
-	if err := c.storagePricingMap.GenerateStoragePricingMap(storagePrices); err != nil {
+	c.storagePricingMap = NewStoragePricingMap(c.logger, &Config{})
+	if err := c.storagePricingMap.GenerateStoragePricingMap(context.Background(), storagePrices); err != nil {
 		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 	}
 
