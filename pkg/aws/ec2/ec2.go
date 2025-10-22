@@ -82,7 +82,7 @@ type Config struct {
 }
 
 // New creates an ec2 collector
-func New(config *Config) *Collector {
+func New(ctx context.Context, config *Config) (*Collector, error) {
 	logger := config.Logger.With("logger", "ec2")
 
 	return &Collector{
@@ -92,7 +92,7 @@ func New(config *Config) *Collector {
 		awsRegionClientMap: config.RegionMap,
 		computePricingMap:  NewComputePricingMap(logger),
 		storagePricingMap:  NewStoragePricingMap(logger),
-	}
+	}, nil
 }
 
 // CollectMetrics is a no-op function that satisfies the provider.Collector interface.
