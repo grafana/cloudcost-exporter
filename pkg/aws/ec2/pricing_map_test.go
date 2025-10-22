@@ -7,10 +7,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
-	mock_client "github.com/grafana/cloudcost-exporter/pkg/aws/client/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
 )
 
 func TestComputePricingMap_AddToComputePricingMap(t *testing.T) {
@@ -178,14 +176,21 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 
 func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 	// #TODO adapt this test since the function has more logic in it now
-	ctrl := gomock.NewController(t)
-
 	tests := map[string]struct {
-		regions  []ec2Types.Region
-		prices   []string
-		expected map[string]*StoragePricing
+		regions          []ec2Types.Region
+		prices           []string
+		listStorageError error
+		expected         map[string]*StoragePricing
 	}{
-		"Empty if AWS returns no volume prices": {},
+		"Empty if AWS returns no volume prices": {
+			regions: []ec2Types.Region{
+				{
+					RegionName: aws.String("us-east-1"),
+				},
+			},
+			prices:   []string{},
+			expected: map[string]*StoragePricing{},
+		},
 		"Parses AWS volume prices response": {
 			regions: []ec2Types.Region{
 				{
@@ -206,21 +211,16 @@ func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			c := mock_client.NewMockClient(ctrl)
-			// #TODO: look into rwwriting this test with our own mocks instead of gomock
-			if tt.prices != nil {
-				c.EXPECT().
-					ListStoragePrices(gomock.Any(), gomock.Eq("af-south-1")).
-					DoAndReturn(func(ctx context.Context, region string) ([]string, error) {
-						return tt.prices, nil
-					}).
-					Times(1)
+			mockClient := &storageClientMock{
+				prices: tt.prices,
+				err:    tt.listStorageError,
 			}
 
+			regionName := *tt.regions[0].RegionName
 			config := &Config{
 				Regions: tt.regions,
 				RegionMap: map[string]client.Client{
-					"af-south-1": c,
+					regionName: mockClient,
 				},
 			}
 			spm := NewStoragePricingMap(logger, config)
