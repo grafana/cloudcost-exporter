@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -70,7 +71,8 @@ type StoragePricingMap struct {
 	Regions map[string]*StoragePricing
 	m       sync.RWMutex
 	logger  *slog.Logger
-	config  *Config
+	// #TODO pass in just the parts of the config we need? (Regions)
+	config *Config
 }
 
 // StoragePricing is a map where the key is the storage type and the value is the price
@@ -155,13 +157,42 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context, ond
 // #TODO update doc comment
 // GenerateStoragePricingMap receives a json with all the prices of the available storage options
 // It iterates over the storage classes and parses the price for each one.
-func (spm *StoragePricingMap) GenerateStoragePricingMap(ctx context.Context, storagePrices []string) error {
+func (spm *StoragePricingMap) GenerateStoragePricingMap(ctx context.Context) error {
+	spm.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing storage pricing map")
+	var storagePrices []string
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.SetLimit(errGroupLimit)
+	m := sync.Mutex{}
+	for _, region := range spm.config.Regions {
+		eg.Go(func() error {
+			regionClient, ok := spm.config.RegionMap[*region.RegionName]
+			if !ok {
+				return ErrClientNotFound
+			}
+			spm.logger.LogAttrs(ctx, slog.LevelDebug, "fetching storage pricing info", slog.String("region", *region.RegionName))
+			storagePriceList, err := regionClient.ListStoragePrices(ctx, *region.RegionName)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrListStoragePrices, err)
+			}
+
+			m.Lock()
+			storagePrices = append(storagePrices, storagePriceList...)
+			m.Unlock()
+			return nil
+		})
+	}
+	err := eg.Wait()
+	if err != nil {
+		return err
+	}
+
 	spm.m.Lock()
 	defer spm.m.Unlock()
 
 	for _, product := range storagePrices {
 		var productInfo storageProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
+			// return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 			return err
 		}
 

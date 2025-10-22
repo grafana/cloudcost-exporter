@@ -6,8 +6,11 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
+	mock_client "github.com/grafana/cloudcost-exporter/pkg/aws/client/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 func TestComputePricingMap_AddToComputePricingMap(t *testing.T) {
@@ -174,19 +177,21 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 }
 
 func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
-	// #TODO: set up config properly
-	config := &Config{}
+	// #TODO adapt this test since the function has more logic in it now
+	ctrl := gomock.NewController(t)
 
 	tests := map[string]struct {
-		spm      *StoragePricingMap
+		regions  []ec2Types.Region
 		prices   []string
 		expected map[string]*StoragePricing
 	}{
-		"Empty if AWS returns no volume prices": {
-			spm: NewStoragePricingMap(logger, config),
-		},
+		"Empty if AWS returns no volume prices": {},
 		"Parses AWS volume prices response": {
-			spm: NewStoragePricingMap(logger, config),
+			regions: []ec2Types.Region{
+				{
+					RegionName: aws.String("af-south-1"),
+				},
+			},
 			prices: []string{
 				`{"product":{"productFamily":"Storage","attributes":{"maxThroughputvolume":"1000 MiB/s","volumeType":"General Purpose","maxIopsvolume":"16000","usagetype":"AFS1-EBS:VolumeUsage.gp3","locationType":"AWS Region","maxVolumeSize":"16 TiB","storageMedia":"SSD-backed","regionCode":"af-south-1","servicecode":"AmazonEC2","volumeApiName":"gp3","location":"Africa (Cape Town)","servicename":"Amazon Elastic Compute Cloud","operation":""},"sku":"XWCTMRRUJM7TGYST"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"XWCTMRRUJM7TGYST.JRTCKXETXF":{"priceDimensions":{"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7":{"unit":"GB-Mo","endRange":"Inf","description":"$0.1047 per GB-month of General Purpose (gp3) provisioned storage - Africa (Cape Town)","appliesTo":[],"rateCode":"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.1047000000"}}},"sku":"XWCTMRRUJM7TGYST","effectiveDate":"2024-07-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240705013454","publicationDate":"2024-07-05T01:34:54Z"}`,
 			},
@@ -201,11 +206,28 @@ func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			// #TODO adapt this test since more stuff is going into the function
-			err := tt.spm.GenerateStoragePricingMap(context.Background(), tt.prices)
+			c := mock_client.NewMockClient(ctrl)
+			// #TODO: look into rwwriting this test with our own mocks instead of gomock
+			if tt.prices != nil {
+				c.EXPECT().
+					ListStoragePrices(gomock.Any(), gomock.Eq("af-south-1")).
+					DoAndReturn(func(ctx context.Context, region string) ([]string, error) {
+						return tt.prices, nil
+					}).
+					Times(1)
+			}
+
+			config := &Config{
+				Regions: tt.regions,
+				RegionMap: map[string]client.Client{
+					"af-south-1": c,
+				},
+			}
+			spm := NewStoragePricingMap(logger, config)
+			err := spm.GenerateStoragePricingMap(context.Background())
 			assert.NoError(t, err)
 			if tt.expected != nil {
-				assert.Equal(t, tt.expected, tt.spm.Regions)
+				assert.Equal(t, tt.expected, spm.Regions)
 			}
 		})
 	}

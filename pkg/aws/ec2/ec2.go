@@ -11,10 +11,10 @@ import (
 
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
+	"golang.org/x/sync/errgroup"
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/sync/errgroup"
 
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -204,8 +204,10 @@ func (c *Collector) populateComputePricingMap(errGroupCtx context.Context) error
 	if err != nil {
 		return err
 	}
-	c.computePricingMap = NewComputePricingMap(c.logger, &Config{})
-	if err := c.computePricingMap.GenerateComputePricingMap(context.Background(), prices, spotPrices); err != nil {
+	c.computePricingMap = NewComputePricingMap(c.logger, &Config{
+		Regions:   c.Regions,
+		RegionMap: c.awsRegionClientMap})
+	if err := c.computePricingMap.GenerateComputePricingMap(errGroupCtx, prices, spotPrices); err != nil {
 		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 	}
 
@@ -213,35 +215,10 @@ func (c *Collector) populateComputePricingMap(errGroupCtx context.Context) error
 }
 
 func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
-	c.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing storage pricing map")
-	var storagePrices []string
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(errGroupLimit)
-	m := sync.Mutex{}
-	for _, region := range c.Regions {
-		eg.Go(func() error {
-			regionClient, ok := c.awsRegionClientMap[*region.RegionName]
-			if !ok {
-				return ErrClientNotFound
-			}
-			c.logger.LogAttrs(ctx, slog.LevelDebug, "fetching storage pricing info", slog.String("region", *region.RegionName))
-			storagePriceList, err := regionClient.ListStoragePrices(ctx, *region.RegionName)
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrListStoragePrices, err)
-			}
-
-			m.Lock()
-			storagePrices = append(storagePrices, storagePriceList...)
-			m.Unlock()
-			return nil
-		})
-	}
-	err := eg.Wait()
-	if err != nil {
-		return err
-	}
-	c.storagePricingMap = NewStoragePricingMap(c.logger, &Config{})
-	if err := c.storagePricingMap.GenerateStoragePricingMap(context.Background(), storagePrices); err != nil {
+	c.storagePricingMap = NewStoragePricingMap(c.logger, &Config{
+		Regions:   c.Regions,
+		RegionMap: c.awsRegionClientMap})
+	if err := c.storagePricingMap.GenerateStoragePricingMap(ctx); err != nil {
 		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 	}
 
