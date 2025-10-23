@@ -110,9 +110,11 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 
 	// TODO: make both maps scraping run async in the background
 	if c.computePricingMap == nil || time.Now().After(c.nextComputeScrape) {
-		err := c.populateComputePricingMap(ctx)
-		if err != nil {
-			return err
+		c.computePricingMap = NewComputePricingMap(c.logger, &Config{
+			Regions:   c.Regions,
+			RegionMap: c.awsRegionClientMap})
+		if err := c.computePricingMap.GenerateComputePricingMap(ctx); err != nil {
+			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 		}
 		c.nextComputeScrape = time.Now().Add(c.ScrapeInterval)
 	}
@@ -163,17 +165,6 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	c.emitMetricsFromReservationsChannel(instanceCh, ch)
 	c.emitMetricsFromVolumesChannel(volumeCh, ch)
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Finished collect", slog.Duration("duration", time.Since(start)))
-	return nil
-}
-
-func (c *Collector) populateComputePricingMap(errGroupCtx context.Context) error {
-	c.computePricingMap = NewComputePricingMap(c.logger, &Config{
-		Regions:   c.Regions,
-		RegionMap: c.awsRegionClientMap})
-	if err := c.computePricingMap.GenerateComputePricingMap(errGroupCtx); err != nil {
-		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
-	}
-
 	return nil
 }
 
