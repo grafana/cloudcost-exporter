@@ -120,9 +120,11 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	}
 
 	if c.storagePricingMap == nil || time.Now().After(c.nextStorageScrape) {
-		err := c.populateStoragePricingMap(ctx)
-		if err != nil {
-			return err
+		c.storagePricingMap = NewStoragePricingMap(c.logger, &Config{
+			Regions:   c.Regions,
+			RegionMap: c.awsRegionClientMap})
+		if err := c.storagePricingMap.GenerateStoragePricingMap(ctx); err != nil {
+			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 		}
 		c.nextStorageScrape = time.Now().Add(c.ScrapeInterval)
 	}
@@ -165,17 +167,6 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	c.emitMetricsFromReservationsChannel(instanceCh, ch)
 	c.emitMetricsFromVolumesChannel(volumeCh, ch)
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Finished collect", slog.Duration("duration", time.Since(start)))
-	return nil
-}
-
-func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
-	c.storagePricingMap = NewStoragePricingMap(c.logger, &Config{
-		Regions:   c.Regions,
-		RegionMap: c.awsRegionClientMap})
-	if err := c.storagePricingMap.GenerateStoragePricingMap(ctx); err != nil {
-		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
-	}
-
 	return nil
 }
 

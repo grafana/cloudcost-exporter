@@ -264,7 +264,7 @@ func TestCollector_Collect(t *testing.T) {
 	})
 }
 
-func Test_PopulateStoragePricingMap(t *testing.T) {
+func Test_PopulationOfStoragePricingMap(t *testing.T) {
 	// #TODO: address this test
 	tests := map[string]struct {
 		regions       []ec2Types.Region
@@ -320,18 +320,18 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 			}
 
 			regionName := *tt.regions[0].RegionName
-			collector, err := New(context.Background(), &Config{
+			config := &Config{
 				Regions: tt.regions,
 				Logger:  logger,
 				RegionMap: map[string]client.Client{
 					regionName: mock,
 				},
-			})
-			require.NoError(t, err)
-			// #TODO: adapt this test to check GenerateComputePricingMap
-			err = collector.populateStoragePricingMap(context.Background())
-			assert.ErrorIs(t, err, tt.expectedErr)
-			assert.Equal(t, tt.expected, collector.storagePricingMap.Regions)
+			}
+
+			spm := NewStoragePricingMap(logger, config)
+			generateErr := spm.GenerateStoragePricingMap(context.Background())
+			assert.ErrorIs(t, generateErr, tt.expectedErr)
+			assert.Equal(t, tt.expected, spm.Regions)
 		})
 	}
 }
