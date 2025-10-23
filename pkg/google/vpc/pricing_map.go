@@ -194,11 +194,6 @@ func (pm *VPCPricingMap) findRateInMap(region string, rates map[string]float64, 
 		}
 	}
 
-	for usageType, rate := range rates {
-		pm.logger.Debug("Using fallback rate", "region", region, "service", serviceType, "usage_type", usageType, "rate", rate)
-		return rate, nil
-	}
-
 	return 0, fmt.Errorf("no %s pricing found for region %s", serviceType, region)
 }
 
