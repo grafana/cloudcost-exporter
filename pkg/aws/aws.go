@@ -128,12 +128,15 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			collector := s3.New(config.ScrapeInterval, awsClient)
 			collectors = append(collectors, collector)
 		case serviceEC2:
-			collector := ec2Collector.New(&ec2Collector.Config{
+			collector, err := ec2Collector.New(ctx, &ec2Collector.Config{
 				Regions:        regions,
 				Logger:         logger,
 				ScrapeInterval: config.ScrapeInterval,
 				RegionMap:      regionClients,
 			})
+			if err != nil {
+				return nil, err
+			}
 			collectors = append(collectors, collector)
 		case serviceRDS:
 			// pricing API for RDS client needs to use always the same region
