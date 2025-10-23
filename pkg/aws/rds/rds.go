@@ -25,7 +25,7 @@ var (
 		subsystem,
 		"hourly_rate_usd_per_hour",
 		"Hourly cost of AWS RDS instances by region, tier and id. Cost represented in USD/hour",
-		[]string{"region", "tier", "id"},
+		[]string{"region", "tier", "id", "arn_name"},
 	)
 )
 
@@ -121,6 +121,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 			region,
 			*instance.DBInstanceClass,
 			*instance.DbiResourceId,
+			*instance.DBInstanceArn,
 		)
 	}
 	return nil
