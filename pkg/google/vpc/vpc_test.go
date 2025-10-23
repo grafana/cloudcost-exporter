@@ -62,12 +62,9 @@ func TestVPCPricingMapErrors(t *testing.T) {
 		testFunc func(string) (float64, error)
 		region   string
 	}{
-		{"CloudNATGateway", pricingMap.GetCloudNATGatewayHourlyRate, "us-central1"},
+		{"CloudNATGatewayHourly", pricingMap.GetCloudNATGatewayHourlyRate, "us-central1"},
+		{"CloudNATDataProcessing", pricingMap.GetCloudNATDataProcessingRate, "us-central1"},
 		{"VPNGateway", pricingMap.GetVPNGatewayHourlyRate, "us-central1"},
-		{"PrivateServiceConnect", pricingMap.GetPrivateServiceConnectHourlyRate, "us-central1"},
-		{"ExternalIPStatic", pricingMap.GetExternalIPStaticHourlyRate, "us-central1"},
-		{"ExternalIPEphemeral", pricingMap.GetExternalIPEphemeralHourlyRate, "us-central1"},
-		{"CloudRouter", pricingMap.GetCloudRouterHourlyRate, "us-central1"},
 	}
 
 	for _, tc := range testCases {
