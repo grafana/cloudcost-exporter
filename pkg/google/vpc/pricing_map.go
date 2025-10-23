@@ -12,36 +12,18 @@ import (
 )
 
 const (
-	CloudNATGatewayPattern        = "Cloud NAT Gateway"
-	CloudNATDataProcessingPattern = "Cloud NAT"
-	VPNGatewayPattern             = "VPN Gateway"
-	PrivateServiceConnectPattern  = "Private Service Connect"
-	ExternalIPStaticPattern       = "Static IP"
-	ExternalIPEphemeralPattern    = "Ephemeral IP"
-	CloudRouterPattern            = "Cloud Router"
+	VPNGatewayPattern = "Cloud VPN"
 )
 
 // VPCRegionPricing holds pricing data for all VPC services in a specific region
 type VPCRegionPricing struct {
-	CloudNATGatewayRates        map[string]float64
-	CloudNATDataProcessingRates map[string]float64
-	VPNGatewayRates             map[string]float64
-	PrivateServiceConnectRates  map[string]float64
-	ExternalIPStaticRates       map[string]float64
-	ExternalIPEphemeralRates    map[string]float64
-	CloudRouterRates            map[string]float64
+	VPNGatewayRates map[string]float64
 }
 
 // NewVPCRegionPricing creates a new VPCRegionPricing instance
 func NewVPCRegionPricing() *VPCRegionPricing {
 	return &VPCRegionPricing{
-		CloudNATGatewayRates:        make(map[string]float64),
-		CloudNATDataProcessingRates: make(map[string]float64),
-		VPNGatewayRates:             make(map[string]float64),
-		PrivateServiceConnectRates:  make(map[string]float64),
-		ExternalIPStaticRates:       make(map[string]float64),
-		ExternalIPEphemeralRates:    make(map[string]float64),
-		CloudRouterRates:            make(map[string]float64),
+		VPNGatewayRates: make(map[string]float64),
 	}
 }
 
@@ -108,6 +90,7 @@ func (pm *VPCPricingMap) processSKUs(skus []*billingpb.Sku) error {
 func (pm *VPCPricingMap) processSingleSKU(sku *billingpb.Sku) error {
 	if len(sku.PricingInfo) == 0 ||
 		len(sku.PricingInfo[0].PricingExpression.TieredRates) == 0 ||
+		sku.GeoTaxonomy == nil ||
 		len(sku.GeoTaxonomy.Regions) == 0 {
 		return nil
 	}
@@ -135,37 +118,8 @@ func (pm *VPCPricingMap) categorizeAndStore(region, description, usageType strin
 
 	regionPricing := pm.regionPricing[region]
 
-	switch {
-	case strings.Contains(description, CloudNATGatewayPattern) || strings.Contains(usageType, "NAT"):
-		if strings.Contains(description, "Data Processing") ||
-			strings.Contains(description, "Data Processed") ||
-			strings.Contains(strings.ToLower(usageType), "dataprocessed") {
-			regionPricing.CloudNATDataProcessingRates[usageType] = price
-			pm.logger.Debug("Added Cloud NAT data processing pricing", "region", region, "usage_type", usageType, "price", price)
-		} else {
-			regionPricing.CloudNATGatewayRates[usageType] = price
-			pm.logger.Debug("Added Cloud NAT Gateway pricing", "region", region, "usage_type", usageType, "price", price)
-		}
-
-	case strings.Contains(description, VPNGatewayPattern) || strings.Contains(usageType, "VPN"):
+	if strings.Contains(description, VPNGatewayPattern) || strings.Contains(usageType, "VPN") {
 		regionPricing.VPNGatewayRates[usageType] = price
-		pm.logger.Debug("Added VPN Gateway pricing", "region", region, "usage_type", usageType, "price", price)
-
-	case strings.Contains(description, PrivateServiceConnectPattern) || strings.Contains(usageType, "PSC"):
-		regionPricing.PrivateServiceConnectRates[usageType] = price
-		pm.logger.Debug("Added Private Service Connect pricing", "region", region, "usage_type", usageType, "price", price)
-
-	case strings.Contains(description, ExternalIPStaticPattern) || strings.Contains(usageType, "Static"):
-		regionPricing.ExternalIPStaticRates[usageType] = price
-		pm.logger.Debug("Added static external IP pricing", "region", region, "usage_type", usageType, "price", price)
-
-	case strings.Contains(description, ExternalIPEphemeralPattern) || strings.Contains(usageType, "Ephemeral"):
-		regionPricing.ExternalIPEphemeralRates[usageType] = price
-		pm.logger.Debug("Added ephemeral external IP pricing", "region", region, "usage_type", usageType, "price", price)
-
-	case strings.Contains(description, CloudRouterPattern) || strings.Contains(usageType, "Router"):
-		regionPricing.CloudRouterRates[usageType] = price
-		pm.logger.Debug("Added Cloud Router pricing", "region", region, "usage_type", usageType, "price", price)
 	}
 
 	return nil
@@ -178,19 +132,36 @@ func (pm *VPCPricingMap) GetRegionPricing(region string) (*VPCRegionPricing, err
 
 	pricing, exists := pm.regionPricing[region]
 	if !exists {
+		availableRegions := make([]string, 0, len(pm.regionPricing))
+		for r := range pm.regionPricing {
+			availableRegions = append(availableRegions, r)
+		}
+		pm.logger.Info("Region not found in pricing map", "requested_region", region, "available_regions_count", len(availableRegions), "sample_regions", availableRegions[:min(5, len(availableRegions))])
 		return nil, fmt.Errorf("no pricing data available for region %s", region)
 	}
 
 	return pricing, nil
 }
 
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func (pm *VPCPricingMap) findRateInMap(region string, rates map[string]float64, matcher usageTypeMatcher, serviceType string) (float64, error) {
 	for _, pattern := range matcher.patterns {
 		for usageType, rate := range rates {
 			if strings.Contains(usageType, pattern) {
-				pm.logger.Debug("Found rate", "region", region, "service", serviceType, "usage_type", usageType, "rate", rate)
 				return rate, nil
 			}
+		}
+	}
+
+	if len(rates) > 0 {
+		for _, rate := range rates {
+			return rate, nil
 		}
 	}
 
@@ -207,26 +178,6 @@ func (pm *VPCPricingMap) getRate(region string, serviceType string, rateMapGette
 	return pm.findRateInMap(region, rates, matcher, serviceType)
 }
 
-// GetCloudNATGatewayHourlyRate returns the hourly rate for Cloud NAT Gateway in the specified region
-func (pm *VPCPricingMap) GetCloudNATGatewayHourlyRate(region string) (float64, error) {
-	matcher := usageTypeMatcher{
-		patterns: []string{"Gateway", "NAT"},
-	}
-	return pm.getRate(region, "Cloud NAT Gateway", func(p *VPCRegionPricing) map[string]float64 {
-		return p.CloudNATGatewayRates
-	}, matcher)
-}
-
-// GetCloudNATDataProcessingRate returns the data processing rate for Cloud NAT Gateway in the specified region
-func (pm *VPCPricingMap) GetCloudNATDataProcessingRate(region string) (float64, error) {
-	matcher := usageTypeMatcher{
-		patterns: []string{"Data", "Processing"},
-	}
-	return pm.getRate(region, "Cloud NAT Data Processing", func(p *VPCRegionPricing) map[string]float64 {
-		return p.CloudNATDataProcessingRates
-	}, matcher)
-}
-
 // GetVPNGatewayHourlyRate returns the hourly rate for VPN Gateway in the specified region
 func (pm *VPCPricingMap) GetVPNGatewayHourlyRate(region string) (float64, error) {
 	matcher := usageTypeMatcher{
@@ -234,45 +185,5 @@ func (pm *VPCPricingMap) GetVPNGatewayHourlyRate(region string) (float64, error)
 	}
 	return pm.getRate(region, "VPN Gateway", func(p *VPCRegionPricing) map[string]float64 {
 		return p.VPNGatewayRates
-	}, matcher)
-}
-
-// GetPrivateServiceConnectHourlyRate returns the hourly rate for Private Service Connect in the specified region
-func (pm *VPCPricingMap) GetPrivateServiceConnectHourlyRate(region string) (float64, error) {
-	matcher := usageTypeMatcher{
-		patterns: []string{"Connect", "PSC", "Endpoint"},
-	}
-	return pm.getRate(region, "Private Service Connect", func(p *VPCRegionPricing) map[string]float64 {
-		return p.PrivateServiceConnectRates
-	}, matcher)
-}
-
-// GetExternalIPStaticHourlyRate returns the hourly rate for static external IPs in the specified region
-func (pm *VPCPricingMap) GetExternalIPStaticHourlyRate(region string) (float64, error) {
-	matcher := usageTypeMatcher{
-		patterns: []string{"Static", "IP"},
-	}
-	return pm.getRate(region, "Static External IP", func(p *VPCRegionPricing) map[string]float64 {
-		return p.ExternalIPStaticRates
-	}, matcher)
-}
-
-// GetExternalIPEphemeralHourlyRate returns the hourly rate for ephemeral external IPs in the specified region
-func (pm *VPCPricingMap) GetExternalIPEphemeralHourlyRate(region string) (float64, error) {
-	matcher := usageTypeMatcher{
-		patterns: []string{"Ephemeral", "IP"},
-	}
-	return pm.getRate(region, "Ephemeral External IP", func(p *VPCRegionPricing) map[string]float64 {
-		return p.ExternalIPEphemeralRates
-	}, matcher)
-}
-
-// GetCloudRouterHourlyRate returns the hourly rate for Cloud Router in the specified region
-func (pm *VPCPricingMap) GetCloudRouterHourlyRate(region string) (float64, error) {
-	matcher := usageTypeMatcher{
-		patterns: []string{"Router", "BGP"},
-	}
-	return pm.getRate(region, "Cloud Router", func(p *VPCRegionPricing) map[string]float64 {
-		return p.CloudRouterRates
 	}, matcher)
 }

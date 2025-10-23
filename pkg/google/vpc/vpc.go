@@ -24,58 +24,11 @@ const PriceRefreshInterval = 24 * time.Hour
 var (
 	subsystem = fmt.Sprintf("gcp_%s", strings.ToLower(collectorName))
 
-	CloudNATGatewayHourlyGaugeDesc = utils.GenerateDesc(
-		cloudcostexporter.MetricPrefix,
-		subsystem,
-		"nat_gateway_hourly_rate_usd_per_hour",
-		"Hourly cost of Cloud NAT Gateway by region and project. Cost represented in USD/hour",
-		[]string{"region", "project"},
-	)
-	CloudNATDataProcessingGaugeDesc = utils.GenerateDesc(
-		cloudcostexporter.MetricPrefix,
-		subsystem,
-		"nat_gateway_data_processing_usd_per_gb",
-		"Data processing cost of Cloud NAT Gateway by region and project. Cost represented in USD/GB",
-		[]string{"region", "project"},
-	)
-
 	VPNGatewayHourlyGaugeDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		"vpn_gateway_hourly_rate_usd_per_hour",
 		"Hourly cost of VPN Gateway by region and project. Cost represented in USD/hour",
-		[]string{"region", "project"},
-	)
-
-	PrivateServiceConnectHourlyGaugeDesc = utils.GenerateDesc(
-		cloudcostexporter.MetricPrefix,
-		subsystem,
-		"private_service_connect_hourly_rate_usd_per_hour",
-		"Hourly cost of Private Service Connect endpoints by region and project. Cost represented in USD/hour",
-		[]string{"region", "project"},
-	)
-
-	ExternalIPStaticHourlyGaugeDesc = utils.GenerateDesc(
-		cloudcostexporter.MetricPrefix,
-		subsystem,
-		"external_ip_static_hourly_rate_usd_per_hour",
-		"Hourly cost of static external IP addresses by region and project. Cost represented in USD/hour",
-		[]string{"region", "project"},
-	)
-
-	ExternalIPEphemeralHourlyGaugeDesc = utils.GenerateDesc(
-		cloudcostexporter.MetricPrefix,
-		subsystem,
-		"external_ip_ephemeral_hourly_rate_usd_per_hour",
-		"Hourly cost of ephemeral external IP addresses by region and project. Cost represented in USD/hour",
-		[]string{"region", "project"},
-	)
-
-	CloudRouterHourlyGaugeDesc = utils.GenerateDesc(
-		cloudcostexporter.MetricPrefix,
-		subsystem,
-		"cloud_router_hourly_rate_usd_per_hour",
-		"Hourly cost of Cloud Router by region and project. Cost represented in USD/hour",
 		[]string{"region", "project"},
 	)
 )
@@ -144,13 +97,7 @@ func (c *Collector) Register(registry provider.Registry) error {
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
-	ch <- CloudNATGatewayHourlyGaugeDesc
-	ch <- CloudNATDataProcessingGaugeDesc
 	ch <- VPNGatewayHourlyGaugeDesc
-	ch <- PrivateServiceConnectHourlyGaugeDesc
-	ch <- ExternalIPStaticHourlyGaugeDesc
-	ch <- ExternalIPEphemeralHourlyGaugeDesc
-	ch <- CloudRouterHourlyGaugeDesc
 	return nil
 }
 
@@ -186,92 +133,14 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 
 			regionName := region.Name
 
-			natGatewayRate, err := c.pricingMap.GetCloudNATGatewayHourlyRate(regionName)
-			if err != nil {
-				c.logger.Error("No Cloud NAT Gateway pricing available", "region", regionName, "project", project, "error", err)
-			} else {
-				ch <- prometheus.MustNewConstMetric(
-					CloudNATGatewayHourlyGaugeDesc,
-					prometheus.GaugeValue,
-					natGatewayRate,
-					regionName,
-					project,
-				)
-			}
-
-			natDataProcessingRate, err := c.pricingMap.GetCloudNATDataProcessingRate(regionName)
-			if err != nil {
-				c.logger.Error("No Cloud NAT data processing pricing available", "region", regionName, "project", project, "error", err)
-			} else {
-				ch <- prometheus.MustNewConstMetric(
-					CloudNATDataProcessingGaugeDesc,
-					prometheus.GaugeValue,
-					natDataProcessingRate,
-					regionName,
-					project,
-				)
-			}
-
 			vpnGatewayRate, err := c.pricingMap.GetVPNGatewayHourlyRate(regionName)
 			if err != nil {
-				c.logger.Error("No VPN Gateway pricing available", "region", regionName, "project", project, "error", err)
+				c.logger.Debug("No VPN Gateway pricing available", "region", regionName, "project", project, "error", err)
 			} else {
 				ch <- prometheus.MustNewConstMetric(
 					VPNGatewayHourlyGaugeDesc,
 					prometheus.GaugeValue,
 					vpnGatewayRate,
-					regionName,
-					project,
-				)
-			}
-
-			pscRate, err := c.pricingMap.GetPrivateServiceConnectHourlyRate(regionName)
-			if err != nil {
-				c.logger.Error("No Private Service Connect pricing available", "region", regionName, "project", project, "error", err)
-			} else {
-				ch <- prometheus.MustNewConstMetric(
-					PrivateServiceConnectHourlyGaugeDesc,
-					prometheus.GaugeValue,
-					pscRate,
-					regionName,
-					project,
-				)
-			}
-
-			staticIPRate, err := c.pricingMap.GetExternalIPStaticHourlyRate(regionName)
-			if err != nil {
-				c.logger.Error("No static external IP pricing available", "region", regionName, "project", project, "error", err)
-			} else {
-				ch <- prometheus.MustNewConstMetric(
-					ExternalIPStaticHourlyGaugeDesc,
-					prometheus.GaugeValue,
-					staticIPRate,
-					regionName,
-					project,
-				)
-			}
-
-			ephemeralIPRate, err := c.pricingMap.GetExternalIPEphemeralHourlyRate(regionName)
-			if err != nil {
-				c.logger.Error("No ephemeral external IP pricing available", "region", regionName, "project", project, "error", err)
-			} else {
-				ch <- prometheus.MustNewConstMetric(
-					ExternalIPEphemeralHourlyGaugeDesc,
-					prometheus.GaugeValue,
-					ephemeralIPRate,
-					regionName,
-					project,
-				)
-			}
-
-			routerRate, err := c.pricingMap.GetCloudRouterHourlyRate(regionName)
-			if err != nil {
-				c.logger.Error("No Cloud Router pricing available", "region", regionName, "project", project, "error", err)
-			} else {
-				ch <- prometheus.MustNewConstMetric(
-					CloudRouterHourlyGaugeDesc,
-					prometheus.GaugeValue,
-					routerRate,
 					regionName,
 					project,
 				)
