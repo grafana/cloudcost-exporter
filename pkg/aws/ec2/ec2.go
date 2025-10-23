@@ -68,8 +68,6 @@ type Collector struct {
 	computePricingMap  *ComputePricingMap
 	storagePricingMap  *StoragePricingMap
 	awsRegionClientMap map[string]client.Client
-	nextComputeScrape  time.Time
-	nextStorageScrape  time.Time
 	logger             *slog.Logger
 }
 
@@ -85,6 +83,33 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 	logger := config.Logger.With("logger", "ec2")
 	computeMap := NewComputePricingMap(logger, config)
 	storageMap := NewStoragePricingMap(logger, config)
+
+	// #TODO: figure out what these intervals should be for ec2
+	priceTicker := time.NewTicker(config.ScrapeInterval)
+	machineTicker := time.NewTicker(config.ScrapeInterval)
+
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-priceTicker.C:
+				// #TODO error handling
+				computeMap.GenerateComputePricingMap(ctx)
+			}
+		}
+	}(ctx)
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-machineTicker.C:
+				// #TODO: error handling
+				storageMap.GenerateStoragePricingMap(ctx)
+			}
+		}
+	}(ctx)
 
 	return &Collector{
 		ScrapeInterval:     config.ScrapeInterval,
@@ -107,27 +132,6 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	start := time.Now()
 	ctx := context.Background()
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
-
-	// TODO: make both maps scraping run async in the background
-	if c.computePricingMap == nil || time.Now().After(c.nextComputeScrape) {
-		c.computePricingMap = NewComputePricingMap(c.logger, &Config{
-			Regions:   c.Regions,
-			RegionMap: c.awsRegionClientMap})
-		if err := c.computePricingMap.GenerateComputePricingMap(ctx); err != nil {
-			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
-		}
-		c.nextComputeScrape = time.Now().Add(c.ScrapeInterval)
-	}
-
-	if c.storagePricingMap == nil || time.Now().After(c.nextStorageScrape) {
-		c.storagePricingMap = NewStoragePricingMap(c.logger, &Config{
-			Regions:   c.Regions,
-			RegionMap: c.awsRegionClientMap})
-		if err := c.storagePricingMap.GenerateStoragePricingMap(ctx); err != nil {
-			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
-		}
-		c.nextStorageScrape = time.Now().Add(c.ScrapeInterval)
-	}
 
 	numOfRegions := len(c.Regions)
 
