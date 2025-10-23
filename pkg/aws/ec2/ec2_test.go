@@ -2,21 +2,23 @@ package ec2
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	mock_client "github.com/grafana/cloudcost-exporter/pkg/aws/client/mocks"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
-
-	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 var (
@@ -25,24 +27,29 @@ var (
 
 func TestCollector_Name(t *testing.T) {
 	t.Run("Name should return the same name as the subsystem const", func(t *testing.T) {
-		collector := New(&Config{
-			Logger: logger,
+		collector, err := New(context.Background(), &Config{
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 		})
+		require.NoError(t, err)
 		assert.Equal(t, subsystem, collector.Name())
 	})
 }
 
 func TestCollector_Collect(t *testing.T) {
 	ctrl := gomock.NewController(t)
+	// #TODO: replace/fix test cases
 	regions := []ec2Types.Region{
 		{
 			RegionName: aws.String("us-east-1"),
 		},
 	}
 	t.Run("Collect should return no error", func(t *testing.T) {
-		collector := New(&Config{
-			Logger: logger,
+		collector, err := New(context.Background(), &Config{
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 		})
+		require.NoError(t, err)
 		ch := make(chan prometheus.Metric)
 		go func() {
 			err := collector.Collect(ch)
@@ -51,6 +58,7 @@ func TestCollector_Collect(t *testing.T) {
 		}()
 	})
 
+	// #TODO: address this test
 	t.Run("Collect should return an error if ListOnDemandPrices returns an error", func(t *testing.T) {
 		c := mock_client.NewMockClient(ctrl)
 		c.EXPECT().ListOnDemandPrices(gomock.Any(), gomock.Any()).DoAndReturn(
@@ -64,29 +72,35 @@ func TestCollector_Collect(t *testing.T) {
 					return []ec2Types.SpotPrice{}, nil
 				}).Times(1)
 
-		collector := New(&Config{
-			Regions: regions,
-			Logger:  logger,
+		collector, err := New(context.Background(), &Config{
+			Regions:        regions,
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 			RegionMap: map[string]client.Client{
 				"us-east-1": c,
 			},
 		})
+		require.NoError(t, err)
 		ch := make(chan prometheus.Metric)
-		err := collector.Collect(ch)
+		err = collector.Collect(ch)
 		close(ch)
 		assert.Error(t, err)
 	})
 	t.Run("Collect should return a ClientNotFound Error if the ec2 client is nil", func(t *testing.T) {
-		collector := New(&Config{
-			Regions:   regions,
-			Logger:    logger,
-			RegionMap: map[string]client.Client{},
+		collector, err := New(context.Background(), &Config{
+			Regions:        regions,
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
+			RegionMap:      map[string]client.Client{},
 		})
+		require.NoError(t, err)
 		ch := make(chan prometheus.Metric)
-		err := collector.Collect(ch)
+		err = collector.Collect(ch)
 		close(ch)
 		assert.ErrorIs(t, err, ErrClientNotFound)
 	})
+
+	// #TODO: address this test
 	t.Run("Collect should return an error if ListSpotPrices returns an error", func(t *testing.T) {
 		c := mock_client.NewMockClient(ctrl)
 		c.EXPECT().ListSpotPrices(gomock.Any()).
@@ -94,18 +108,21 @@ func TestCollector_Collect(t *testing.T) {
 				func(ctx context.Context) ([]ec2Types.SpotPrice, error) {
 					return nil, assert.AnError
 				}).Times(1)
-		collector := New(&Config{
-			Regions: regions,
-			Logger:  logger,
+		collector, err := New(context.Background(), &Config{
+			Regions:        regions,
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 			RegionMap: map[string]client.Client{
 				"us-east-1": c,
 			},
 		})
+		require.NoError(t, err)
 		ch := make(chan prometheus.Metric)
-		err := collector.Collect(ch)
+		err = collector.Collect(ch)
 		close(ch)
 		assert.ErrorIs(t, err, ErrListSpotPrices)
 	})
+	// #TODO: address this test
 	t.Run("Collect should return an error if GenerateComputePricingMap returns an error", func(t *testing.T) {
 		c := mock_client.NewMockClient(ctrl)
 		c.EXPECT().ListSpotPrices(gomock.Any()).
@@ -128,17 +145,20 @@ func TestCollector_Collect(t *testing.T) {
 					}, nil
 				}).Times(1)
 
-		collector := New(&Config{
-			Regions: regions,
-			Logger:  logger,
+		collector, err := New(context.Background(), &Config{
+			Regions:        regions,
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 			RegionMap: map[string]client.Client{
 				"us-east-1": c,
 			},
 		})
+		require.NoError(t, err)
 		ch := make(chan prometheus.Metric)
 		defer close(ch)
 		assert.ErrorIs(t, collector.Collect(ch), ErrGeneratePricingMap)
 	})
+	// #TODO: address this test
 	t.Run("Test cpu, memory and total cost metrics emitted for each valid instance", func(t *testing.T) {
 		c := mock_client.NewMockClient(ctrl)
 		c.EXPECT().ListSpotPrices(gomock.Any()).
@@ -226,14 +246,15 @@ func TestCollector_Collect(t *testing.T) {
 				func(ctx context.Context) ([]ec2Types.Volume, error) {
 					return nil, nil
 				}).Times(1)
-		collector := New(&Config{
-			Regions: regions,
-			Logger:  logger,
+		collector, err := New(context.Background(), &Config{
+			Regions:        regions,
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 			RegionMap: map[string]client.Client{
 				"us-east-1": c,
 			},
 		})
-
+		require.NoError(t, err)
 		ch := make(chan prometheus.Metric)
 		go func() {
 			if err := collector.Collect(ch); err != nil {
@@ -251,29 +272,24 @@ func TestCollector_Collect(t *testing.T) {
 	})
 }
 
-func Test_PopulateStoragePricingMap(t *testing.T) {
-	ctrl := gomock.NewController(t)
+func Test_PopulationOfStoragePricingMap(t *testing.T) {
+	// #TODO: address this test
 	tests := map[string]struct {
-		ctx                 context.Context
-		regions             []ec2Types.Region
-		ListStoragePricesFn func(ctx context.Context, region string) ([]string, error)
-		expectedCalls       int
-		err                 error
-		expected            map[string]*StoragePricing
+		regions       []ec2Types.Region
+		storagePrices []string
+		storageErr    error
+		expectedErr   error
+		expected      map[string]*StoragePricing
 	}{
 		"can populate storage pricing map": {
-			ctx: context.Background(),
 			regions: []ec2Types.Region{
 				{
 					RegionName: aws.String("af-south-1"),
 				},
 			},
-			ListStoragePricesFn: func(ctx context.Context, region string) ([]string, error) {
-				return []string{
-					`{"product":{"productFamily":"Storage","attributes":{"maxThroughputvolume":"1000 MiB/s","volumeType":"General Purpose","maxIopsvolume":"16000","usagetype":"AFS1-EBS:VolumeUsage.gp3","locationType":"AWS Region","maxVolumeSize":"16 TiB","storageMedia":"SSD-backed","regionCode":"af-south-1","servicecode":"AmazonEC2","volumeApiName":"gp3","location":"Africa (Cape Town)","servicename":"Amazon Elastic Compute Cloud","operation":""},"sku":"XWCTMRRUJM7TGYST"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"XWCTMRRUJM7TGYST.JRTCKXETXF":{"priceDimensions":{"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7":{"unit":"GB-Mo","endRange":"Inf","description":"$0.1047 per GB-month of General Purpose (gp3) provisioned storage - Africa (Cape Town)","appliesTo":[],"rateCode":"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.1047000000"}}},"sku":"XWCTMRRUJM7TGYST","effectiveDate":"2024-07-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240705013454","publicationDate":"2024-07-05T01:34:54Z"}`,
-				}, nil
+			storagePrices: []string{
+				`{"product":{"productFamily":"Storage","attributes":{"maxThroughputvolume":"1000 MiB/s","volumeType":"General Purpose","maxIopsvolume":"16000","usagetype":"AFS1-EBS:VolumeUsage.gp3","locationType":"AWS Region","maxVolumeSize":"16 TiB","storageMedia":"SSD-backed","regionCode":"af-south-1","servicecode":"AmazonEC2","volumeApiName":"gp3","location":"Africa (Cape Town)","servicename":"Amazon Elastic Compute Cloud","operation":""},"sku":"XWCTMRRUJM7TGYST"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"XWCTMRRUJM7TGYST.JRTCKXETXF":{"priceDimensions":{"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7":{"unit":"GB-Mo","endRange":"Inf","description":"$0.1047 per GB-month of General Purpose (gp3) provisioned storage - Africa (Cape Town)","appliesTo":[],"rateCode":"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.1047000000"}}},"sku":"XWCTMRRUJM7TGYST","effectiveDate":"2024-07-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240705013454","publicationDate":"2024-07-05T01:34:54Z"}`,
 			},
-			expectedCalls: 1,
 			expected: map[string]*StoragePricing{
 				"af-south-1": {
 					Storage: map[string]float64{
@@ -283,56 +299,47 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 			},
 		},
 		"errors listing storage prices propagate": {
-			ctx: context.Background(),
 			regions: []ec2Types.Region{{
 				RegionName: aws.String("af-south-1"),
 			}},
-			ListStoragePricesFn: func(ctx context.Context, region string) ([]string, error) {
-				return nil, assert.AnError
-			},
-			expectedCalls: 1,
-			err:           ErrListStoragePrices,
-			expected:      map[string]*StoragePricing{},
+			storageErr:  errors.New("listing error"),
+			expectedErr: ErrListStoragePrices,
+			expected:    map[string]*StoragePricing{},
 		},
 		"errors generating the map from listed prices propagate too": {
-			ctx: context.Background(),
 			regions: []ec2Types.Region{
 				{
 					RegionName: aws.String("af-south-1"),
 				},
 			},
-			ListStoragePricesFn: func(ctx context.Context, region string) ([]string, error) {
-				return []string{
-					"invalid json response",
-				}, nil
+			storagePrices: []string{
+				"invalid json response",
 			},
-			expectedCalls: 1,
-			expected:      map[string]*StoragePricing{},
-			err:           ErrGeneratePricingMap,
+			expected:    map[string]*StoragePricing{},
+			expectedErr: ErrGeneratePricingMap,
 		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			c := mock_client.NewMockClient(ctrl)
-			collector := New(&Config{
+			mock := &mockClient{
+				storagePrices: tt.storagePrices,
+				storageErr:    tt.storageErr,
+			}
+
+			regionName := *tt.regions[0].RegionName
+			config := &Config{
 				Regions: tt.regions,
 				Logger:  logger,
 				RegionMap: map[string]client.Client{
-					"af-south-1": c,
+					regionName: mock,
 				},
-			})
-
-			c.EXPECT().
-				ListStoragePrices(gomock.Any(), gomock.Any()).
-				DoAndReturn(tt.ListStoragePricesFn).
-				Times(tt.expectedCalls)
-
-			err := collector.populateStoragePricingMap(tt.ctx)
-			if tt.err != nil {
-				assert.ErrorIs(t, err, tt.err)
 			}
-			assert.Equal(t, tt.expected, collector.storagePricingMap.Regions)
+
+			spm := NewStoragePricingMap(logger, config)
+			generateErr := spm.GenerateStoragePricingMap(context.Background())
+			assert.ErrorIs(t, generateErr, tt.expectedErr)
+			assert.Equal(t, tt.expected, spm.Regions)
 		})
 	}
 }
@@ -346,13 +353,15 @@ func Test_FetchVolumesData(t *testing.T) {
 		}
 
 		c := mock_client.NewMockClient(ctrl)
-		collector := New(&Config{
-			Regions: []ec2Types.Region{region},
-			Logger:  logger,
+		collector, err := New(context.Background(), &Config{
+			Regions:        []ec2Types.Region{region},
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 			RegionMap: map[string]client.Client{
 				regionName: c,
 			},
 		})
+		require.NoError(t, err)
 
 		c.EXPECT().
 			ListEBSVolumes(gomock.Any()).
@@ -396,13 +405,15 @@ func Test_EmitMetricsFromVolumesChannel(t *testing.T) {
 		volumeType := "gp3"
 
 		c := mock_client.NewMockClient(ctrl)
-		collector := New(&Config{
-			Regions: []ec2Types.Region{region},
-			Logger:  logger,
+		collector, err := New(context.Background(), &Config{
+			Regions:        []ec2Types.Region{region},
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 			RegionMap: map[string]client.Client{
 				regionName: c,
 			},
 		})
+		require.NoError(t, err)
 
 		collector.storagePricingMap = &StoragePricingMap{
 			Regions: map[string]*StoragePricing{
