@@ -116,10 +116,6 @@ func (pm *VPCPricingMap) processSingleSKU(sku *billingpb.Sku) error {
 	priceNanos := sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos
 	price := float64(priceNanos) / 1e9
 
-	if price <= 0 {
-		return nil
-	}
-
 	description := sku.Description
 	usageType := ""
 	if sku.Category != nil && sku.Category.UsageType != "" {
