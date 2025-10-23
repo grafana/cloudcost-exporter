@@ -24,7 +24,6 @@ const PriceRefreshInterval = 24 * time.Hour
 var (
 	subsystem = fmt.Sprintf("gcp_%s", strings.ToLower(collectorName))
 
-	// Cloud NAT Gateway metrics
 	CloudNATGatewayHourlyGaugeDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
@@ -40,7 +39,6 @@ var (
 		[]string{"region", "project"},
 	)
 
-	// VPN Gateway metrics
 	VPNGatewayHourlyGaugeDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
@@ -49,7 +47,6 @@ var (
 		[]string{"region", "project"},
 	)
 
-	// Private Service Connect metrics
 	PrivateServiceConnectHourlyGaugeDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
@@ -58,7 +55,6 @@ var (
 		[]string{"region", "project"},
 	)
 
-	// External IP Address metrics
 	ExternalIPStaticHourlyGaugeDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
@@ -75,7 +71,6 @@ var (
 		[]string{"region", "project"},
 	)
 
-	// Cloud Router metrics
 	CloudRouterHourlyGaugeDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
@@ -180,7 +175,6 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 		return 0
 	}
 
-	// Collect metrics for each project and region combination
 	for _, project := range c.projects {
 		for _, region := range regions {
 			select {
@@ -188,12 +182,10 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 				c.logger.LogAttrs(c.ctx, slog.LevelInfo, "VPC collection cancelled", slog.String("processed_regions", "partial"))
 				return 0
 			default:
-				// Continue with collection
 			}
 
 			regionName := region.Name
 
-			// Cloud NAT Gateway rate
 			natGatewayRate, err := c.pricingMap.GetCloudNATGatewayHourlyRate(regionName)
 			if err != nil {
 				c.logger.Error("No Cloud NAT Gateway pricing available", "region", regionName, "project", project, "error", err)
@@ -207,7 +199,6 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 				)
 			}
 
-			// Cloud NAT data processing rate
 			natDataProcessingRate, err := c.pricingMap.GetCloudNATDataProcessingRate(regionName)
 			if err != nil {
 				c.logger.Error("No Cloud NAT data processing pricing available", "region", regionName, "project", project, "error", err)
@@ -221,7 +212,6 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 				)
 			}
 
-			// VPN Gateway rate
 			vpnGatewayRate, err := c.pricingMap.GetVPNGatewayHourlyRate(regionName)
 			if err != nil {
 				c.logger.Error("No VPN Gateway pricing available", "region", regionName, "project", project, "error", err)
@@ -235,7 +225,6 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 				)
 			}
 
-			// Private Service Connect rate
 			pscRate, err := c.pricingMap.GetPrivateServiceConnectHourlyRate(regionName)
 			if err != nil {
 				c.logger.Error("No Private Service Connect pricing available", "region", regionName, "project", project, "error", err)
@@ -249,7 +238,6 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 				)
 			}
 
-			// Static External IP rate
 			staticIPRate, err := c.pricingMap.GetExternalIPStaticHourlyRate(regionName)
 			if err != nil {
 				c.logger.Error("No static external IP pricing available", "region", regionName, "project", project, "error", err)
@@ -263,7 +251,6 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 				)
 			}
 
-			// Ephemeral External IP rate
 			ephemeralIPRate, err := c.pricingMap.GetExternalIPEphemeralHourlyRate(regionName)
 			if err != nil {
 				c.logger.Error("No ephemeral external IP pricing available", "region", regionName, "project", project, "error", err)
@@ -277,7 +264,6 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 				)
 			}
 
-			// Cloud Router rate
 			routerRate, err := c.pricingMap.GetCloudRouterHourlyRate(regionName)
 			if err != nil {
 				c.logger.Error("No Cloud Router pricing available", "region", regionName, "project", project, "error", err)

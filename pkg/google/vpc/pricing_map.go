@@ -11,7 +11,6 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 )
 
-// Usage type patterns for GCP VPC services
 const (
 	CloudNATGatewayPattern        = "Cloud NAT Gateway"
 	CloudNATDataProcessingPattern = "Cloud NAT"
@@ -63,7 +62,6 @@ func NewVPCPricingMap(logger *slog.Logger, gcpClient client.Client) *VPCPricingM
 	}
 }
 
-// usageTypeMatcher defines patterns for matching GCP VPC service usage types
 type usageTypeMatcher struct {
 	patterns []string
 }
@@ -72,20 +70,17 @@ type usageTypeMatcher struct {
 func (pm *VPCPricingMap) Refresh(ctx context.Context) error {
 	pm.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing VPC pricing data")
 
-	// Get service names for VPC-related services
 	services := []string{"Compute Engine", "Networking"}
 
 	for _, serviceName := range services {
 		if err := pm.fetchServicePricing(ctx, serviceName); err != nil {
 			pm.logger.Error("Failed to fetch pricing for service", "service", serviceName, "error", err)
-			// Continue with other services even if one fails
 		}
 	}
 
 	return nil
 }
 
-// fetchServicePricing fetches pricing data for a specific GCP service
 func (pm *VPCPricingMap) fetchServicePricing(ctx context.Context, serviceName string) error {
 	gcpServiceName, err := pm.gcpClient.GetServiceName(ctx, serviceName)
 	if err != nil {
@@ -100,7 +95,6 @@ func (pm *VPCPricingMap) fetchServicePricing(ctx context.Context, serviceName st
 	return pm.processSKUs(skus)
 }
 
-// processSKUs processes SKU data and updates the pricing map
 func (pm *VPCPricingMap) processSKUs(skus []*billingpb.Sku) error {
 	for _, sku := range skus {
 		if err := pm.processSingleSKU(sku); err != nil {
@@ -111,21 +105,17 @@ func (pm *VPCPricingMap) processSKUs(skus []*billingpb.Sku) error {
 	return nil
 }
 
-// processSingleSKU processes a single SKU and adds it to the appropriate pricing map
 func (pm *VPCPricingMap) processSingleSKU(sku *billingpb.Sku) error {
-	// Skip SKUs without pricing information
 	if len(sku.PricingInfo) == 0 ||
 		len(sku.PricingInfo[0].PricingExpression.TieredRates) == 0 ||
 		len(sku.GeoTaxonomy.Regions) == 0 {
 		return nil
 	}
 
-	// Extract pricing information
 	region := sku.GeoTaxonomy.Regions[0]
 	priceNanos := sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos
 	price := float64(priceNanos) / 1e9
 
-	// Skip zero or negative prices (invalid data)
 	if price <= 0 {
 		return nil
 	}
@@ -136,27 +126,21 @@ func (pm *VPCPricingMap) processSingleSKU(sku *billingpb.Sku) error {
 		usageType = sku.Category.UsageType
 	}
 
-	// Categorize by service type and add to appropriate pricing map
 	return pm.categorizeAndStore(region, description, usageType, price)
 }
 
-// categorizeAndStore categorizes the pricing data and stores it in the appropriate map
 func (pm *VPCPricingMap) categorizeAndStore(region, description, usageType string, price float64) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	// Ensure region pricing exists
 	if pm.regionPricing[region] == nil {
 		pm.regionPricing[region] = NewVPCRegionPricing()
 	}
 
 	regionPricing := pm.regionPricing[region]
 
-	// Categorize based on description and usage type
 	switch {
 	case strings.Contains(description, CloudNATGatewayPattern) || strings.Contains(usageType, "NAT"):
-		// Check if this is data processing or gateway hourly pricing
-		// Be specific about data processing patterns to avoid false matches
 		if strings.Contains(description, "Data Processing") ||
 			strings.Contains(description, "Data Processed") ||
 			strings.Contains(strings.ToLower(usageType), "dataprocessed") {
@@ -204,7 +188,6 @@ func (pm *VPCPricingMap) GetRegionPricing(region string) (*VPCRegionPricing, err
 	return pricing, nil
 }
 
-// findRateInMap searches for a rate in the given rate map using the matcher
 func (pm *VPCPricingMap) findRateInMap(region string, rates map[string]float64, matcher usageTypeMatcher, serviceType string) (float64, error) {
 	for _, pattern := range matcher.patterns {
 		for usageType, rate := range rates {
@@ -215,7 +198,6 @@ func (pm *VPCPricingMap) findRateInMap(region string, rates map[string]float64, 
 		}
 	}
 
-	// If no specific pattern matches, return the first available rate
 	for usageType, rate := range rates {
 		pm.logger.Debug("Using fallback rate", "region", region, "service", serviceType, "usage_type", usageType, "rate", rate)
 		return rate, nil
@@ -224,7 +206,6 @@ func (pm *VPCPricingMap) findRateInMap(region string, rates map[string]float64, 
 	return 0, fmt.Errorf("no %s pricing found for region %s", serviceType, region)
 }
 
-// getRate is a generic helper function to get rates for different VPC services
 func (pm *VPCPricingMap) getRate(region string, serviceType string, rateMapGetter func(*VPCRegionPricing) map[string]float64, matcher usageTypeMatcher) (float64, error) {
 	pricing, err := pm.GetRegionPricing(region)
 	if err != nil {
