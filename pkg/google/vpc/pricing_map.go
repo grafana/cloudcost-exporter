@@ -17,19 +17,38 @@ const (
 
 // VPCRegionPricing holds pricing data for all VPC services in a specific region
 type VPCRegionPricing struct {
-	VPNGatewayRates map[string]float64
+	CloudNATGatewayRates        map[string]float64
+	CloudNATDataProcessingRates map[string]float64
+	VPNGatewayRates             map[string]float64
+}
+
+// VPCGlobalPricing holds global pricing that applies to all regions
+type VPCGlobalPricing struct {
+	CloudNATGatewayRates        map[string]float64
+	CloudNATDataProcessingRates map[string]float64
 }
 
 // NewVPCRegionPricing creates a new VPCRegionPricing instance
 func NewVPCRegionPricing() *VPCRegionPricing {
 	return &VPCRegionPricing{
-		VPNGatewayRates: make(map[string]float64),
+		CloudNATGatewayRates:        make(map[string]float64),
+		CloudNATDataProcessingRates: make(map[string]float64),
+		VPNGatewayRates:             make(map[string]float64),
+	}
+}
+
+// NewVPCGlobalPricing creates a new VPCGlobalPricing instance
+func NewVPCGlobalPricing() *VPCGlobalPricing {
+	return &VPCGlobalPricing{
+		CloudNATGatewayRates:        make(map[string]float64),
+		CloudNATDataProcessingRates: make(map[string]float64),
 	}
 }
 
 // VPCPricingMap manages pricing data for all GCP VPC services across regions
 type VPCPricingMap struct {
 	regionPricing map[string]*VPCRegionPricing
+	globalPricing *VPCGlobalPricing
 	gcpClient     client.Client
 	logger        *slog.Logger
 	mu            sync.RWMutex
@@ -39,6 +58,7 @@ type VPCPricingMap struct {
 func NewVPCPricingMap(logger *slog.Logger, gcpClient client.Client) *VPCPricingMap {
 	return &VPCPricingMap{
 		regionPricing: make(map[string]*VPCRegionPricing),
+		globalPricing: NewVPCGlobalPricing(),
 		gcpClient:     gcpClient,
 		logger:        logger,
 	}
@@ -90,12 +110,10 @@ func (pm *VPCPricingMap) processSKUs(skus []*billingpb.Sku) error {
 func (pm *VPCPricingMap) processSingleSKU(sku *billingpb.Sku) error {
 	if len(sku.PricingInfo) == 0 ||
 		len(sku.PricingInfo[0].PricingExpression.TieredRates) == 0 ||
-		sku.GeoTaxonomy == nil ||
-		len(sku.GeoTaxonomy.Regions) == 0 {
+		sku.GeoTaxonomy == nil {
 		return nil
 	}
 
-	region := sku.GeoTaxonomy.Regions[0]
 	priceNanos := sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos
 	price := float64(priceNanos) / 1e9
 
@@ -105,7 +123,33 @@ func (pm *VPCPricingMap) processSingleSKU(sku *billingpb.Sku) error {
 		usageType = sku.Category.UsageType
 	}
 
+	// Handle GLOBAL pricing (applies to all regions)
+	if len(sku.GeoTaxonomy.Regions) == 0 {
+		return pm.categorizeAndStoreGlobal(description, usageType, price)
+	}
+
+	// Handle regional pricing
+	region := sku.GeoTaxonomy.Regions[0]
 	return pm.categorizeAndStore(region, description, usageType, price)
+}
+
+func (pm *VPCPricingMap) categorizeAndStoreGlobal(description, usageType string, price float64) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	descLower := strings.ToLower(description)
+
+	if strings.Contains(descLower, "cloud nat") || strings.Contains(descLower, "nat") {
+		if strings.Contains(descLower, "data processing") || strings.Contains(descLower, "data processed") {
+			pm.globalPricing.CloudNATDataProcessingRates[usageType] = price
+			pm.logger.Info("Stored global Cloud NAT data processing pricing", "usage_type", usageType, "price", price)
+		} else if strings.Contains(descLower, "gateway") || strings.Contains(descLower, "uptime") {
+			pm.globalPricing.CloudNATGatewayRates[usageType] = price
+			pm.logger.Info("Stored global Cloud NAT gateway pricing", "usage_type", usageType, "price", price)
+		}
+	}
+
+	return nil
 }
 
 func (pm *VPCPricingMap) categorizeAndStore(region, description, usageType string, price float64) error {
@@ -118,6 +162,18 @@ func (pm *VPCPricingMap) categorizeAndStore(region, description, usageType strin
 
 	regionPricing := pm.regionPricing[region]
 
+	descLower := strings.ToLower(description)
+
+	// Cloud NAT (regional overrides of global pricing, if they exist)
+	if strings.Contains(descLower, "cloud nat") || strings.Contains(descLower, "nat") {
+		if strings.Contains(descLower, "data processing") || strings.Contains(descLower, "data processed") {
+			regionPricing.CloudNATDataProcessingRates[usageType] = price
+		} else if strings.Contains(descLower, "gateway") || strings.Contains(descLower, "uptime") {
+			regionPricing.CloudNATGatewayRates[usageType] = price
+		}
+	}
+
+	// VPN Gateway
 	if strings.Contains(description, VPNGatewayPattern) || strings.Contains(usageType, "VPN") {
 		regionPricing.VPNGatewayRates[usageType] = price
 	}
@@ -178,6 +234,44 @@ func (pm *VPCPricingMap) getRate(region string, serviceType string, rateMapGette
 	return pm.findRateInMap(region, rates, matcher, serviceType)
 }
 
+// GetCloudNATGatewayHourlyRate returns the hourly rate for Cloud NAT Gateway in the specified region
+func (pm *VPCPricingMap) GetCloudNATGatewayHourlyRate(region string) (float64, error) {
+	matcher := usageTypeMatcher{
+		patterns: []string{"OnDemand"},
+	}
+
+	// Try regional pricing first
+	rate, err := pm.getRate(region, "Cloud NAT Gateway", func(p *VPCRegionPricing) map[string]float64 {
+		return p.CloudNATGatewayRates
+	}, matcher)
+
+	if err == nil {
+		return rate, nil
+	}
+
+	// Fallback to global pricing
+	return pm.getGlobalRate("Cloud NAT Gateway", pm.globalPricing.CloudNATGatewayRates, matcher)
+}
+
+// GetCloudNATDataProcessingRate returns the data processing rate for Cloud NAT in the specified region
+func (pm *VPCPricingMap) GetCloudNATDataProcessingRate(region string) (float64, error) {
+	matcher := usageTypeMatcher{
+		patterns: []string{"OnDemand"},
+	}
+
+	// Try regional pricing first
+	rate, err := pm.getRate(region, "Cloud NAT Data Processing", func(p *VPCRegionPricing) map[string]float64 {
+		return p.CloudNATDataProcessingRates
+	}, matcher)
+
+	if err == nil {
+		return rate, nil
+	}
+
+	// Fallback to global pricing
+	return pm.getGlobalRate("Cloud NAT Data Processing", pm.globalPricing.CloudNATDataProcessingRates, matcher)
+}
+
 // GetVPNGatewayHourlyRate returns the hourly rate for VPN Gateway in the specified region
 func (pm *VPCPricingMap) GetVPNGatewayHourlyRate(region string) (float64, error) {
 	matcher := usageTypeMatcher{
@@ -186,4 +280,12 @@ func (pm *VPCPricingMap) GetVPNGatewayHourlyRate(region string) (float64, error)
 	return pm.getRate(region, "VPN Gateway", func(p *VPCRegionPricing) map[string]float64 {
 		return p.VPNGatewayRates
 	}, matcher)
+}
+
+// getGlobalRate returns a rate from global pricing
+func (pm *VPCPricingMap) getGlobalRate(serviceType string, rates map[string]float64, matcher usageTypeMatcher) (float64, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	return pm.findRateInMap("global", rates, matcher, serviceType)
 }

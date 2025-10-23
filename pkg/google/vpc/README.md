@@ -4,11 +4,21 @@ This collector provides pricing metrics for Google Cloud Platform (GCP) VPC netw
 
 ## Supported Services
 
+### Cloud NAT Gateway
+- **Service**: Network Address Translation gateway for private instances
+- **Metrics**:
+  - `cloudcost_gcp_vpc_nat_gateway_hourly_rate_usd_per_hour`
+  - `cloudcost_gcp_vpc_nat_gateway_data_processing_usd_per_gb`
+- **Equivalent to**: AWS NAT Gateway
+- **Pricing**: Global pricing applies to all regions
+  - Gateway: $0.045 per hour
+  - Data Processing: $0.045 per GB
+
 ### VPN Gateway
 - **Service**: Site-to-site VPN connections
 - **Metric**: `cloudcost_gcp_vpc_vpn_gateway_hourly_rate_usd_per_hour`
 - **Equivalent to**: AWS VPN Gateway
-- **Pricing**: $0.05-$0.08 per hour depending on region
+- **Pricing**: Regional pricing varies ($0.05-$0.08 per hour)
 
 ## Configuration
 
@@ -38,21 +48,45 @@ All metrics include the following labels:
 - **Services Queried**: "Networking"
 - **Error Handling**: Logs warnings for missing pricing data
 
+## Global vs Regional Pricing
+
+GCP uses two types of pricing for VPC services:
+
+### Global Pricing
+- **Cloud NAT Gateway**: Same price applies to all regions worldwide
+- Pricing data has empty `Regions` array in the GCP Billing API
+- The collector applies global rates to all regions automatically
+
+### Regional Pricing
+- **VPN Gateway**: Different prices per region
+- Pricing data includes specific region in the GCP Billing API
+- The collector uses region-specific rates when available
+
 ## Example Grafana Queries
+
+### Cloud NAT Gateway Hourly Rate
+```promql
+cloudcost_gcp_vpc_nat_gateway_hourly_rate_usd_per_hour
+```
+
+### Cloud NAT Data Processing Rate
+```promql
+cloudcost_gcp_vpc_nat_gateway_data_processing_usd_per_gb
+```
 
 ### VPN Gateway Cost by Region
 ```promql
 cloudcost_gcp_vpc_vpn_gateway_hourly_rate_usd_per_hour
 ```
 
-### VPN Gateway Cost for Specific Project
-```promql
-cloudcost_gcp_vpc_vpn_gateway_hourly_rate_usd_per_hour{project="my-project"}
-```
-
 ### Most Expensive VPN Regions
 ```promql
 topk(10, cloudcost_gcp_vpc_vpn_gateway_hourly_rate_usd_per_hour)
+```
+
+### All VPC Costs for a Specific Project
+```promql
+{__name__=~"cloudcost_gcp_vpc_.*",project="my-project"}
 ```
 
 ## Required Permissions
@@ -64,12 +98,13 @@ The GCP service account needs the following IAM roles:
 ## Limitations
 
 The following VPC services do **not** have pricing exposed through the GCP Billing API:
-- Cloud NAT Gateway
 - Private Service Connect
-- External IP Addresses (Static/Ephemeral)
+- External IP Addresses (Static/Ephemeral with non-zero cost)
 - Cloud Router
 
 These services would require manual configuration or alternative pricing sources.
+
+**Note**: External IP addresses may have zero cost in certain cases (e.g., attached to running instances), which is different from being unavailable in the API.
 
 ## Troubleshooting
 
