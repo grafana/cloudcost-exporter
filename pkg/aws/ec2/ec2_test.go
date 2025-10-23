@@ -2,6 +2,7 @@ package ec2
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -264,29 +265,23 @@ func TestCollector_Collect(t *testing.T) {
 }
 
 func Test_PopulateStoragePricingMap(t *testing.T) {
-	ctrl := gomock.NewController(t)
+	// #TODO: address this test
 	tests := map[string]struct {
-		ctx                 context.Context
-		regions             []ec2Types.Region
-		ListStoragePricesFn func(ctx context.Context, region string) ([]string, error)
-		expectedCalls       int
-		err                 error
-		expected            map[string]*StoragePricing
+		regions       []ec2Types.Region
+		storagePrices []string
+		storageErr    error
+		expectedErr   error
+		expected      map[string]*StoragePricing
 	}{
-		// #TODO: address this test
 		"can populate storage pricing map": {
-			ctx: context.Background(),
 			regions: []ec2Types.Region{
 				{
 					RegionName: aws.String("af-south-1"),
 				},
 			},
-			ListStoragePricesFn: func(ctx context.Context, region string) ([]string, error) {
-				return []string{
-					`{"product":{"productFamily":"Storage","attributes":{"maxThroughputvolume":"1000 MiB/s","volumeType":"General Purpose","maxIopsvolume":"16000","usagetype":"AFS1-EBS:VolumeUsage.gp3","locationType":"AWS Region","maxVolumeSize":"16 TiB","storageMedia":"SSD-backed","regionCode":"af-south-1","servicecode":"AmazonEC2","volumeApiName":"gp3","location":"Africa (Cape Town)","servicename":"Amazon Elastic Compute Cloud","operation":""},"sku":"XWCTMRRUJM7TGYST"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"XWCTMRRUJM7TGYST.JRTCKXETXF":{"priceDimensions":{"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7":{"unit":"GB-Mo","endRange":"Inf","description":"$0.1047 per GB-month of General Purpose (gp3) provisioned storage - Africa (Cape Town)","appliesTo":[],"rateCode":"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.1047000000"}}},"sku":"XWCTMRRUJM7TGYST","effectiveDate":"2024-07-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240705013454","publicationDate":"2024-07-05T01:34:54Z"}`,
-				}, nil
+			storagePrices: []string{
+				`{"product":{"productFamily":"Storage","attributes":{"maxThroughputvolume":"1000 MiB/s","volumeType":"General Purpose","maxIopsvolume":"16000","usagetype":"AFS1-EBS:VolumeUsage.gp3","locationType":"AWS Region","maxVolumeSize":"16 TiB","storageMedia":"SSD-backed","regionCode":"af-south-1","servicecode":"AmazonEC2","volumeApiName":"gp3","location":"Africa (Cape Town)","servicename":"Amazon Elastic Compute Cloud","operation":""},"sku":"XWCTMRRUJM7TGYST"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"XWCTMRRUJM7TGYST.JRTCKXETXF":{"priceDimensions":{"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7":{"unit":"GB-Mo","endRange":"Inf","description":"$0.1047 per GB-month of General Purpose (gp3) provisioned storage - Africa (Cape Town)","appliesTo":[],"rateCode":"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.1047000000"}}},"sku":"XWCTMRRUJM7TGYST","effectiveDate":"2024-07-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240705013454","publicationDate":"2024-07-05T01:34:54Z"}`,
 			},
-			expectedCalls: 1,
 			expected: map[string]*StoragePricing{
 				"af-south-1": {
 					Storage: map[string]float64{
@@ -295,59 +290,47 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 				},
 			},
 		},
-		// #TODO: address this test
 		"errors listing storage prices propagate": {
-			ctx: context.Background(),
 			regions: []ec2Types.Region{{
 				RegionName: aws.String("af-south-1"),
 			}},
-			ListStoragePricesFn: func(ctx context.Context, region string) ([]string, error) {
-				return nil, assert.AnError
-			},
-			expectedCalls: 1,
-			err:           ErrListStoragePrices,
-			expected:      map[string]*StoragePricing{},
+			storageErr:  errors.New("listing error"),
+			expectedErr: ErrListStoragePrices,
+			expected:    map[string]*StoragePricing{},
 		},
-		// #TODO: address this test
 		"errors generating the map from listed prices propagate too": {
-			ctx: context.Background(),
 			regions: []ec2Types.Region{
 				{
 					RegionName: aws.String("af-south-1"),
 				},
 			},
-			ListStoragePricesFn: func(ctx context.Context, region string) ([]string, error) {
-				return []string{
-					"invalid json response",
-				}, nil
+			storagePrices: []string{
+				"invalid json response",
 			},
-			expectedCalls: 1,
-			expected:      map[string]*StoragePricing{},
-			err:           ErrGeneratePricingMap,
+			expected:    map[string]*StoragePricing{},
+			expectedErr: ErrGeneratePricingMap,
 		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			c := mock_client.NewMockClient(ctrl)
+			mock := &mockClient{
+				storagePrices: tt.storagePrices,
+				storageErr:    tt.storageErr,
+			}
+
+			regionName := *tt.regions[0].RegionName
 			collector, err := New(context.Background(), &Config{
 				Regions: tt.regions,
 				Logger:  logger,
 				RegionMap: map[string]client.Client{
-					"af-south-1": c,
+					regionName: mock,
 				},
 			})
 			require.NoError(t, err)
-			c.EXPECT().
-				ListStoragePrices(gomock.Any(), gomock.Any()).
-				DoAndReturn(tt.ListStoragePricesFn).
-				Times(tt.expectedCalls)
-
 			// #TODO: adapt this test to check GenerateComputePricingMap
-			err = collector.populateStoragePricingMap(tt.ctx)
-			if tt.err != nil {
-				assert.ErrorIs(t, err, tt.err)
-			}
+			err = collector.populateStoragePricingMap(context.Background())
+			assert.ErrorIs(t, err, tt.expectedErr)
 			assert.Equal(t, tt.expected, collector.storagePricingMap.Regions)
 		})
 	}
