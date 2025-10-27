@@ -99,9 +99,8 @@ func NewStoragePricingMap(l *slog.Logger, config *Config) *StoragePricingMap {
 	}
 }
 
-// #TODO update doc comment
-// GenerateComputePricingMap accepts a list of ondemand prices and a list of spot prices.
-// The method needs to
+// GenerateComputePricingMap fetches spot and ondemand prices from AWS using the
+// configured region clients. It then needs to:
 // 1. Parse out the ondemand prices and generate a productTerm map for each instance type
 // 2. Parse out spot prices and use the productTerm map to generate a spot price map
 func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context) error {
@@ -148,8 +147,7 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context) err
 	for _, product := range ondemandPrices {
 		var productInfo computeProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
-			// return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
-			return err
+			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 		}
 		if productInfo.Product.Attributes.InstanceType == "" {
 			// If there are no instance types, let's just continue on. This is the most important key
@@ -195,9 +193,8 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context) err
 	return nil
 }
 
-// #TODO update doc comment
-// GenerateStoragePricingMap receives a json with all the prices of the available storage options
-// It iterates over the storage classes and parses the price for each one.
+// GenerateStoragePricingMap fetches storage pricing data from AWS for each region. It
+// then iterates over the storage classes and parses the price for each one.
 func (spm *StoragePricingMap) GenerateStoragePricingMap(ctx context.Context) error {
 	spm.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing storage pricing map")
 	var storagePrices []string
@@ -233,7 +230,6 @@ func (spm *StoragePricingMap) GenerateStoragePricingMap(ctx context.Context) err
 	for _, product := range storagePrices {
 		var productInfo storageProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
-			// #TODO remove the duplicated wrapping with ErrGeneratePricingMap
 			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 		}
 

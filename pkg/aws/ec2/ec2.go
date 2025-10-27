@@ -84,7 +84,6 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 	computeMap := NewComputePricingMap(logger, config)
 	storageMap := NewStoragePricingMap(logger, config)
 
-	// #TODO: figure out what these intervals should be for ec2
 	priceTicker := time.NewTicker(config.ScrapeInterval)
 	machineTicker := time.NewTicker(config.ScrapeInterval)
 

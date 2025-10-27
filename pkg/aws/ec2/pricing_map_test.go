@@ -12,8 +12,6 @@ import (
 )
 
 func TestComputePricingMap_AddToComputePricingMap(t *testing.T) {
-	// #TODO: set up config properly
-	config := &Config{}
 	tests := map[string]struct {
 		cpm        *ComputePricingMap
 		Attributes []InstanceAttributes
@@ -25,7 +23,7 @@ func TestComputePricingMap_AddToComputePricingMap(t *testing.T) {
 			Attributes: []InstanceAttributes{},
 		},
 		"Single attribute": {
-			cpm: NewComputePricingMap(logger, config),
+			cpm: NewComputePricingMap(logger, &Config{}),
 			Attributes: []InstanceAttributes{
 				{
 					Region:         "us-east-1a",
@@ -266,9 +264,6 @@ func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 }
 
 func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
-	// #TODO: set up config properly
-	config := &Config{}
-
 	tests := map[string]struct {
 		cpm          *ComputePricingMap
 		region       string
@@ -277,7 +272,7 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 		want         *Prices
 	}{
 		"An empty structured pricing map should return a no region found error": {
-			cpm:          NewComputePricingMap(logger, config),
+			cpm:          NewComputePricingMap(logger, &Config{}),
 			region:       "us-east-1",
 			instanceType: "m5.large",
 			err:          ErrRegionNotFound,
@@ -329,9 +324,6 @@ func TestStructuredPricingMap_GetPriceForInstanceType(t *testing.T) {
 }
 
 func TestStoragePricingMap_GetPriceForVolumeType(t *testing.T) {
-	// #TODO: set up config properly
-	config := &Config{}
-
 	tests := map[string]struct {
 		spm        *StoragePricingMap
 		region     string
@@ -341,7 +333,7 @@ func TestStoragePricingMap_GetPriceForVolumeType(t *testing.T) {
 		expected   float64
 	}{
 		"an empty map should return a no region found error": {
-			spm:        NewStoragePricingMap(logger, config),
+			spm:        NewStoragePricingMap(logger, &Config{}),
 			region:     "us-east-1",
 			volumeType: "gp3",
 			size:       100,

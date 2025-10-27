@@ -190,7 +190,6 @@ func TestCollector_Collect(t *testing.T) {
 }
 
 func Test_PopulationOfStoragePricingMap(t *testing.T) {
-	// #TODO: address this test
 	tests := map[string]struct {
 		regions       []ec2Types.Region
 		storagePrices []string
