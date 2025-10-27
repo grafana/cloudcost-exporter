@@ -86,6 +86,33 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 	computeMap := NewComputePricingMap(logger, config)
 	storageMap := NewStoragePricingMap(logger, config)
 
+	// #TODO: figure out what these intervals should be for ec2
+	priceTicker := time.NewTicker(config.ScrapeInterval)
+	machineTicker := time.NewTicker(config.ScrapeInterval)
+
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-priceTicker.C:
+				// #TODO error handling
+				computeMap.GenerateComputePricingMap(ctx)
+			}
+		}
+	}(ctx)
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-machineTicker.C:
+				// #TODO: error handling
+				storageMap.GenerateStoragePricingMap(ctx)
+			}
+		}
+	}(ctx)
+
 	return &Collector{
 		ScrapeInterval:     config.ScrapeInterval,
 		Regions:            config.Regions,
