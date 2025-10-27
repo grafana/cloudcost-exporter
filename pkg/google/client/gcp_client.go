@@ -11,13 +11,15 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/google/client/cache"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
 	computev1 "google.golang.org/api/compute/v1"
+	sqladmin "google.golang.org/api/sqladmin/v1beta4"
 )
 
 type GCPClient struct {
-	compute *Compute
-	billing *Billing
-	regions *Region
-	bucket  *Bucket
+	compute  *Compute
+	billing  *Billing
+	regions  *Region
+	bucket   *Bucket
+	sqlAdmin *SQLAdmin
 }
 
 type Config struct {
@@ -46,11 +48,17 @@ func NewGCPClient(ctx context.Context, cfg Config) (*GCPClient, error) {
 		return nil, fmt.Errorf("could not create bucket client: %w", err)
 	}
 
+	sqlAdminClient, err := sqladmin.NewService(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not create sql admin client: %w", err)
+	}
+
 	return &GCPClient{
-		compute: newCompute(computeService),
-		billing: newBilling(cloudCatalogClient),
-		regions: newRegion(cfg.ProjectId, cfg.Discount, regionsClient),
-		bucket:  newBucket(storageClient, cache.NewBucketCache()),
+		compute:  newCompute(computeService),
+		billing:  newBilling(cloudCatalogClient),
+		regions:  newRegion(cfg.ProjectId, cfg.Discount, regionsClient),
+		bucket:   newBucket(storageClient, cache.NewBucketCache()),
+		sqlAdmin: newSQLAdmin(sqlAdminClient, cfg.ProjectId),
 	}, nil
 }
 
@@ -92,4 +100,8 @@ func (c *GCPClient) ListDisks(ctx context.Context, projectId string, zone string
 
 func (c *GCPClient) ListForwardingRules(ctx context.Context, projectId string, region string) ([]*computev1.ForwardingRule, error) {
 	return c.compute.listForwardingRules(ctx, projectId, region)
+}
+
+func (c *GCPClient) ListSQLInstances(projectId string) ([]*sqladmin.DatabaseInstance, error) {
+	return c.sqlAdmin.listInstances(projectId)
 }

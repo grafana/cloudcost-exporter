@@ -6,6 +6,7 @@ import (
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
 	"google.golang.org/api/compute/v1"
+	sqladmin "google.golang.org/api/sqladmin/v1beta4"
 )
 
 type Client interface {
@@ -19,4 +20,5 @@ type Client interface {
 	ListInstancesInZone(projectId, zone string) ([]*MachineSpec, error)
 	ListDisks(ctx context.Context, project string, zone string) ([]*compute.Disk, error)
 	ListForwardingRules(ctx context.Context, project string, region string) ([]*compute.ForwardingRule, error)
+	ListSQLInstances(projectId string) ([]*sqladmin.DatabaseInstance, error)
 }
