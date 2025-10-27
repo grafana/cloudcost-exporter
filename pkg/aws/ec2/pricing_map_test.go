@@ -116,6 +116,23 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 				},
 			},
 		},
+		"Just spot prices as input": {
+			regions: []ec2Types.Region{
+				{RegionName: aws.String("af-south-1")},
+			},
+			ondemandPrices: []string{},
+			spotPrices: []ec2Types.SpotPrice{
+				{
+					AvailabilityZone: aws.String("af-south-1a"),
+					InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
+					SpotPrice:        aws.String("0.4680000000"),
+				},
+			},
+			want: &ComputePricingMap{
+				Regions:         map[string]*FamilyPricing{},
+				InstanceDetails: map[string]InstanceAttributes{},
+			},
+		},
 		"Ondemand and spot prices": {
 			regions: []ec2Types.Region{
 				{RegionName: aws.String("af-south-1")},
