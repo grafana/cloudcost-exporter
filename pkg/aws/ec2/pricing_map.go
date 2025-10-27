@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -48,7 +49,8 @@ type ComputePricingMap struct {
 	InstanceDetails map[string]InstanceAttributes
 	m               sync.RWMutex
 	logger          *slog.Logger
-	config          *Config
+	cfgRegions      []ec2Types.Region
+	regionMap       map[string]client.Client
 }
 
 // FamilyPricing is a map of instance type to a list of PriceTiers where the key is the ec2 compute instance type
@@ -68,11 +70,11 @@ type StoragePricingMap struct {
 	// Regions is a map of region code to StoragePricing
 	// key is the region
 	// value is a map of storage classes to prices
-	Regions map[string]*StoragePricing
-	m       sync.RWMutex
-	logger  *slog.Logger
-	// #TODO pass in just the parts of the config we need? (Regions)
-	config *Config
+	Regions    map[string]*StoragePricing
+	m          sync.RWMutex
+	logger     *slog.Logger
+	cfgRegions []ec2Types.Region
+	regionMap  map[string]client.Client
 }
 
 // StoragePricing is a map where the key is the storage type and the value is the price
@@ -86,16 +88,18 @@ func NewComputePricingMap(l *slog.Logger, config *Config) *ComputePricingMap {
 		InstanceDetails: make(map[string]InstanceAttributes),
 		m:               sync.RWMutex{},
 		logger:          l.With("subsystem", "computePricing"),
-		config:          config,
+		cfgRegions:      config.Regions,
+		regionMap:       config.RegionMap,
 	}
 }
 
 func NewStoragePricingMap(l *slog.Logger, config *Config) *StoragePricingMap {
 	return &StoragePricingMap{
-		Regions: make(map[string]*StoragePricing),
-		m:       sync.RWMutex{},
-		logger:  l.With("subsystem", "storagePricing"),
-		config:  config,
+		Regions:    make(map[string]*StoragePricing),
+		m:          sync.RWMutex{},
+		logger:     l.With("subsystem", "storagePricing"),
+		cfgRegions: config.Regions,
+		regionMap:  config.RegionMap,
 	}
 }
 
@@ -110,15 +114,12 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context) err
 	eg, errGroupCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(errGroupLimit)
 	m := sync.Mutex{}
-	// #TODO confirm the regions is the same one as used before, same for region map
-	for _, region := range cpm.config.Regions {
+	for _, region := range cpm.cfgRegions {
 		region := region
 		eg.Go(func() error {
 			cpm.logger.LogAttrs(errGroupCtx, slog.LevelDebug, "fetching compute pricing info", slog.String("region", *region.RegionName))
 
-			// #TODO figure out if it makes sense to add awsRegionClientMap as a field to this
-			// map and the storage one. or maybe config instead
-			regionClient, ok := cpm.config.RegionMap[*region.RegionName]
+			regionClient, ok := cpm.regionMap[*region.RegionName]
 			if !ok {
 				return ErrClientNotFound
 			}
@@ -201,9 +202,9 @@ func (spm *StoragePricingMap) GenerateStoragePricingMap(ctx context.Context) err
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(errGroupLimit)
 	m := sync.Mutex{}
-	for _, region := range spm.config.Regions {
+	for _, region := range spm.cfgRegions {
 		eg.Go(func() error {
-			regionClient, ok := spm.config.RegionMap[*region.RegionName]
+			regionClient, ok := spm.regionMap[*region.RegionName]
 			if !ok {
 				return ErrClientNotFound
 			}

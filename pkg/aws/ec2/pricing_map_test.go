@@ -58,7 +58,6 @@ func TestComputePricingMap_AddToComputePricingMap(t *testing.T) {
 	}
 }
 
-// #TODO: fix test
 func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 	tests := map[string]struct {
 		regions        []ec2Types.Region
@@ -186,7 +185,6 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			// #TODO adapt this test since more stuff is going into the function
 			mock := &mockClient{
 				ondemandPrices: tt.ondemandPrices,
 				spotPrices:     tt.spotPrices,
