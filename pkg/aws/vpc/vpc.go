@@ -128,7 +128,6 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 // Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	c.logger.LogAttrs(c.ctx, slog.LevelInfo, "calling collect")
-	start := time.Now()
 
 	// Collect VPC Endpoint pricing for all regions
 	for _, region := range c.regions {
@@ -210,7 +209,6 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		}
 	}
 
-	c.logger.Info("Finished collect", "subsystem", subsystem, "duration", time.Since(start))
 	return nil
 }
 
