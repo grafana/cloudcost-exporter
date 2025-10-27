@@ -109,39 +109,7 @@ func NewStoragePricingMap(l *slog.Logger, config *Config) *StoragePricingMap {
 // 2. Parse out spot prices and use the productTerm map to generate a spot price map
 func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context) error {
 	cpm.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing compute pricing map")
-	var ondemandPrices []string
-	var spotPrices []ec2Types.SpotPrice
-	eg, errGroupCtx := errgroup.WithContext(ctx)
-	eg.SetLimit(errGroupLimit)
-	m := sync.Mutex{}
-	for _, region := range cpm.cfgRegions {
-		region := region
-		eg.Go(func() error {
-			cpm.logger.LogAttrs(errGroupCtx, slog.LevelDebug, "fetching compute pricing info", slog.String("region", *region.RegionName))
-
-			regionClient, ok := cpm.regionMap[*region.RegionName]
-			if !ok {
-				return ErrClientNotFound
-			}
-
-			spotPriceList, err := regionClient.ListSpotPrices(errGroupCtx)
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
-			}
-
-			priceList, err := regionClient.ListOnDemandPrices(errGroupCtx, *region.RegionName)
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
-			}
-
-			m.Lock()
-			spotPrices = append(spotPrices, spotPriceList...)
-			ondemandPrices = append(ondemandPrices, priceList...)
-			m.Unlock()
-			return nil
-		})
-	}
-	err := eg.Wait()
+	ondemandPrices, spotPrices, err := cpm.fetchPricing(ctx)
 	if err != nil {
 		return err
 	}
@@ -198,29 +166,7 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context) err
 // then iterates over the storage classes and parses the price for each one.
 func (spm *StoragePricingMap) GenerateStoragePricingMap(ctx context.Context) error {
 	spm.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing storage pricing map")
-	var storagePrices []string
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(errGroupLimit)
-	m := sync.Mutex{}
-	for _, region := range spm.cfgRegions {
-		eg.Go(func() error {
-			regionClient, ok := spm.regionMap[*region.RegionName]
-			if !ok {
-				return ErrClientNotFound
-			}
-			spm.logger.LogAttrs(ctx, slog.LevelDebug, "fetching storage pricing info", slog.String("region", *region.RegionName))
-			storagePriceList, err := regionClient.ListStoragePrices(ctx, *region.RegionName)
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrListStoragePrices, err)
-			}
-
-			m.Lock()
-			storagePrices = append(storagePrices, storagePriceList...)
-			m.Unlock()
-			return nil
-		})
-	}
-	err := eg.Wait()
+	storagePrices, err := spm.fetchPricing(ctx)
 	if err != nil {
 		return err
 	}
@@ -254,6 +200,79 @@ func (spm *StoragePricingMap) GenerateStoragePricingMap(ctx context.Context) err
 	}
 
 	return nil
+}
+
+func (cpm *ComputePricingMap) fetchPricing(ctx context.Context) ([]string, []ec2Types.SpotPrice, error) {
+	var ondemandPrices []string
+	var spotPrices []ec2Types.SpotPrice
+	eg, errGroupCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(errGroupLimit)
+	m := sync.Mutex{}
+	for _, region := range cpm.cfgRegions {
+		region := region
+		eg.Go(func() error {
+			cpm.logger.LogAttrs(errGroupCtx, slog.LevelDebug, "fetching compute pricing info", slog.String("region", *region.RegionName))
+
+			regionClient, ok := cpm.regionMap[*region.RegionName]
+			if !ok {
+				return ErrClientNotFound
+			}
+
+			spotPriceList, err := regionClient.ListSpotPrices(errGroupCtx)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
+			}
+
+			priceList, err := regionClient.ListOnDemandPrices(errGroupCtx, *region.RegionName)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
+			}
+
+			m.Lock()
+			spotPrices = append(spotPrices, spotPriceList...)
+			ondemandPrices = append(ondemandPrices, priceList...)
+			m.Unlock()
+			return nil
+		})
+	}
+	err := eg.Wait()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return ondemandPrices, spotPrices, nil
+}
+
+func (spm *StoragePricingMap) fetchPricing(ctx context.Context) ([]string, error) {
+	var storagePrices []string
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.SetLimit(errGroupLimit)
+	m := sync.Mutex{}
+	for _, region := range spm.cfgRegions {
+		region := region
+		eg.Go(func() error {
+			regionClient, ok := spm.regionMap[*region.RegionName]
+			if !ok {
+				return ErrClientNotFound
+			}
+			spm.logger.LogAttrs(ctx, slog.LevelDebug, "fetching storage pricing info", slog.String("region", *region.RegionName))
+			storagePriceList, err := regionClient.ListStoragePrices(ctx, *region.RegionName)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrListStoragePrices, err)
+			}
+
+			m.Lock()
+			storagePrices = append(storagePrices, storagePriceList...)
+			m.Unlock()
+			return nil
+		})
+	}
+	err := eg.Wait()
+	if err != nil {
+		return nil, err
+	}
+
+	return storagePrices, nil
 }
 
 // AddToComputePricingMap adds a price to the compute pricing map. The price is weighted based upon the instance type's CPU and RAM.
