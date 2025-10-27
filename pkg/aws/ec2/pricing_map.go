@@ -115,8 +115,15 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ondemandPrices []string,
 				}
 				err = cpm.AddToComputePricingMap(price, productInfo.Product.Attributes)
 				if err != nil {
-					cpm.logger.Error(fmt.Sprintf("error adding to pricing map: %s", err))
-					continue
+					switch {
+					case errors.Is(err, ErrInstanceTypeAlreadyExists):
+						// Only warn in debug mode about this error, since we only want one price per instance type
+						cpm.logger.Debug(fmt.Sprintf("skipping addition to pricing map: %s", err))
+						continue
+					default:
+						cpm.logger.Error(fmt.Sprintf("error adding to pricing map: %s", err))
+						continue
+					}
 				}
 				cpm.AddInstanceDetails(productInfo.Product.Attributes)
 			}
