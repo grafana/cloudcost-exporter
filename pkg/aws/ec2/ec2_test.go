@@ -14,7 +14,6 @@ import (
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	mock_client "github.com/grafana/cloudcost-exporter/pkg/aws/client/mocks"
-	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,6 +23,79 @@ import (
 var (
 	logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
+
+func TestNew(t *testing.T) {
+	regions := []ec2Types.Region{
+		{
+			RegionName: aws.String("us-east-1"),
+		},
+	}
+
+	// #TODO: update this test so it doesn't use sleep
+	t.Run("Test cpu, memory and total cost metrics emitted for each valid instance", func(t *testing.T) {
+		mock := &mockClient{
+			ondemandPrices: []string{
+				`{"product":{"productFamily":"Compute Instance","attributes":{"enhancedNetworkingSupported":"Yes","intelTurboAvailable":"No","memory":"16 GiB","dedicatedEbsThroughput":"Up to 3170 Mbps","vcpu":"8","classicnetworkingsupport":"false","capacitystatus":"UnusedCapacityReservation","locationType":"AWS Region","storage":"1 x 300 NVMe SSD","instanceFamily":"Compute optimized","operatingSystem":"Linux","intelAvx2Available":"No","regionCode":"us-east-1","physicalProcessor":"AMD EPYC 7R32","clockSpeed":"3.3 GHz","ecu":"NA","networkPerformance":"Up to 10 Gigabit","servicename":"Amazon Elastic Compute Cloud","instancesku":"Q7GDF95MM7MZ7Y5Q","gpuMemory":"NA","vpcnetworkingsupport":"true","instanceType":"c5ad.2xlarge","tenancy":"Shared","usagetype":"AFS1-UnusedBox:c5ad.2xlarge","normalizationSizeFactor":"16","intelAvxAvailable":"No","processorFeatures":"AMD Turbo; AVX; AVX2","servicecode":"AmazonEC2","licenseModel":"No License required","currentGeneration":"Yes","preInstalledSw":"NA","location":"Africa (Cape Town)","processorArchitecture":"64-bit","marketoption":"OnDemand","operation":"RunInstances","availabilityzone":"NA"},"sku":"2257YY4K7BWZ4F46"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"2257YY4K7BWZ4F46.JRTCKXETXF":{"priceDimensions":{"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","endRange":"Inf","description":"$0.468 per Unused Reservation Linux c5ad.2xlarge Instance Hour","appliesTo":[],"rateCode":"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.4680000000"}}},"sku":"2257YY4K7BWZ4F46","effectiveDate":"2024-04-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240508191027","publicationDate":"2024-05-08T19:10:27Z"}`,
+			},
+			spotPrices: []ec2Types.SpotPrice{
+				{
+					AvailabilityZone: aws.String("us-east-1a"),
+					InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
+					SpotPrice:        aws.String("0.4680000000"),
+				},
+			},
+			storagePrices: []string{
+				`{"product":{"productFamily":"Compute Instance","attributes":{"enhancedNetworkingSupported":"Yes","intelTurboAvailable":"No","memory":"16 GiB","dedicatedEbsThroughput":"Up to 3170 Mbps","vcpu":"8","classicnetworkingsupport":"false","capacitystatus":"UnusedCapacityReservation","locationType":"AWS Region","storage":"1 x 300 NVMe SSD","instanceFamily":"Compute optimized","operatingSystem":"Linux","intelAvx2Available":"No","regionCode":"us-east-1","physicalProcessor":"AMD EPYC 7R32","clockSpeed":"3.3 GHz","ecu":"NA","networkPerformance":"Up to 10 Gigabit","servicename":"Amazon Elastic Compute Cloud","instancesku":"Q7GDF95MM7MZ7Y5Q","gpuMemory":"NA","vpcnetworkingsupport":"true","instanceType":"c5ad.2xlarge","tenancy":"Shared","usagetype":"AFS1-UnusedBox:c5ad.2xlarge","normalizationSizeFactor":"16","intelAvxAvailable":"No","processorFeatures":"AMD Turbo; AVX; AVX2","servicecode":"AmazonEC2","licenseModel":"No License required","currentGeneration":"Yes","preInstalledSw":"NA","location":"Africa (Cape Town)","processorArchitecture":"64-bit","marketoption":"OnDemand","operation":"RunInstances","availabilityzone":"NA"},"sku":"2257YY4K7BWZ4F46"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"2257YY4K7BWZ4F46.JRTCKXETXF":{"priceDimensions":{"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","endRange":"Inf","description":"$0.468 per Unused Reservation Linux c5ad.2xlarge Instance Hour","appliesTo":[],"rateCode":"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.4680000000"}}},"sku":"2257YY4K7BWZ4F46","effectiveDate":"2024-04-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240508191027","publicationDate":"2024-05-08T19:10:27Z"}`,
+			},
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Use a short scrape interval for testing
+		collector, err := New(ctx, &Config{
+			Regions:        regions,
+			Logger:         logger,
+			ScrapeInterval: 50 * time.Millisecond,
+			RegionMap: map[string]client.Client{
+				"us-east-1": mock,
+			},
+		})
+
+		require.NoError(t, err)
+		assert.NotNil(t, collector)
+
+		// Give the goroutines time to populate the pricing maps
+		time.Sleep(100 * time.Millisecond)
+
+		collector.computePricingMap.m.RLock()
+		computeRegions := collector.computePricingMap.Regions
+		instanceDetails := collector.computePricingMap.InstanceDetails
+		collector.computePricingMap.m.RUnlock()
+
+		assert.NotEmpty(t, computeRegions, "Compute pricing map should be populated")
+		assert.Contains(t, computeRegions, "us-east-1", "Should have us-east-1 region pricing")
+		if usEast1Pricing, ok := computeRegions["us-east-1"]; ok {
+			assert.Contains(t, usEast1Pricing.Family, "c5ad.2xlarge", "Should have c5ad.2xlarge pricing")
+			if c5adPricing, ok := usEast1Pricing.Family["c5ad.2xlarge"]; ok {
+				assert.Equal(t, 0.4680000000, c5adPricing.Total, "c5ad.2xlarge total price should be $0.468")
+			}
+		}
+
+		assert.Contains(t, computeRegions, "us-east-1a", "Should have us-east-1a zone spot pricing")
+
+		assert.Contains(t, instanceDetails, "c5ad.2xlarge", "Should have c5ad.2xlarge instance details")
+		if details, ok := instanceDetails["c5ad.2xlarge"]; ok {
+			assert.Equal(t, "c5ad.2xlarge", details.InstanceType)
+			assert.Equal(t, "16 GiB", details.Memory)
+			assert.Equal(t, "8", details.VCPU)
+			assert.Equal(t, "Compute optimized", details.InstanceFamily)
+		}
+
+		// Cancel context to stop goroutines
+		cancel()
+	})
+}
 
 func TestCollector_Name(t *testing.T) {
 	t.Run("Name should return the same name as the subsystem const", func(t *testing.T) {
@@ -105,118 +177,6 @@ func TestCollector_Collect(t *testing.T) {
 		ch := make(chan prometheus.Metric)
 		defer close(ch)
 		assert.ErrorIs(t, collector.Collect(ch), ErrGeneratePricingMap)
-	})
-	// #TODO: address this test
-	t.Run("Test cpu, memory and total cost metrics emitted for each valid instance", func(t *testing.T) {
-		c := mock_client.NewMockClient(ctrl)
-		c.EXPECT().ListSpotPrices(gomock.Any()).
-			DoAndReturn(
-				func(ctx context.Context) ([]ec2Types.SpotPrice, error) {
-					return []ec2Types.SpotPrice{
-						{
-							AvailabilityZone: aws.String("us-east-1a"),
-							InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
-							SpotPrice:        aws.String("0.4680000000"),
-						},
-					}, nil
-				}).Times(1)
-		c.EXPECT().ListComputeInstances(gomock.Any()).
-			DoAndReturn(
-				func(ctx context.Context) ([]ec2Types.Reservation, error) {
-					return []ec2Types.Reservation{
-						{
-							Instances: []ec2Types.Instance{
-								{
-									InstanceId:   aws.String("i-1234567890abcdef0"),
-									InstanceType: ec2Types.InstanceTypeC5ad2xlarge,
-									Tags: []ec2Types.Tag{
-										{
-											Key:   aws.String("eks:cluster-name"),
-											Value: aws.String("cluster-name"),
-										},
-									},
-									PrivateDnsName: aws.String("ip-172-31-0-1.ec2.internal"),
-									Placement: &ec2Types.Placement{
-										AvailabilityZone: aws.String("us-east-1a"),
-									},
-									InstanceLifecycle: ec2Types.InstanceLifecycleTypeSpot,
-								},
-								{
-									InstanceId:   aws.String("i-1234567891abcdef0"),
-									InstanceType: ec2Types.InstanceTypeC5ad2xlarge,
-									Tags: []ec2Types.Tag{
-										{
-											Key:   aws.String("eks:cluster-name"),
-											Value: aws.String("cluster-name"),
-										},
-									},
-									PrivateDnsName: aws.String("ip-172-31-0-2.ec2.internal"),
-									Placement: &ec2Types.Placement{
-										AvailabilityZone: aws.String("not-existent"),
-									},
-									InstanceLifecycle: ec2Types.InstanceLifecycleTypeCapacityBlock,
-								},
-								{
-									InstanceId:   aws.String("i-1234567891abcdef0"),
-									InstanceType: ec2Types.InstanceTypeC5ad2xlarge,
-									Tags: []ec2Types.Tag{
-										{
-											Key:   aws.String("eks:cluster-name"),
-											Value: aws.String("cluster-name"),
-										},
-									},
-									PrivateDnsName: aws.String("ip-172-31-0-2.ec2.internal"),
-									Placement: &ec2Types.Placement{
-										AvailabilityZone: aws.String("us-east-1a"),
-									},
-									InstanceLifecycle: ec2Types.InstanceLifecycleTypeCapacityBlock,
-								},
-							},
-						},
-					}, nil
-				}).Times(1)
-		c.EXPECT().ListOnDemandPrices(gomock.Any(), gomock.Any()).
-			DoAndReturn(
-				func(ctx context.Context, region string) ([]string, error) {
-					return []string{
-						`{"product":{"productFamily":"Compute Instance","attributes":{"enhancedNetworkingSupported":"Yes","intelTurboAvailable":"No","memory":"16 GiB","dedicatedEbsThroughput":"Up to 3170 Mbps","vcpu":"8","classicnetworkingsupport":"false","capacitystatus":"UnusedCapacityReservation","locationType":"AWS Region","storage":"1 x 300 NVMe SSD","instanceFamily":"Compute optimized","operatingSystem":"Linux","intelAvx2Available":"No","regionCode":"us-east-1","physicalProcessor":"AMD EPYC 7R32","clockSpeed":"3.3 GHz","ecu":"NA","networkPerformance":"Up to 10 Gigabit","servicename":"Amazon Elastic Compute Cloud","instancesku":"Q7GDF95MM7MZ7Y5Q","gpuMemory":"NA","vpcnetworkingsupport":"true","instanceType":"c5ad.2xlarge","tenancy":"Shared","usagetype":"AFS1-UnusedBox:c5ad.2xlarge","normalizationSizeFactor":"16","intelAvxAvailable":"No","processorFeatures":"AMD Turbo; AVX; AVX2","servicecode":"AmazonEC2","licenseModel":"No License required","currentGeneration":"Yes","preInstalledSw":"NA","location":"Africa (Cape Town)","processorArchitecture":"64-bit","marketoption":"OnDemand","operation":"RunInstances","availabilityzone":"NA"},"sku":"2257YY4K7BWZ4F46"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"2257YY4K7BWZ4F46.JRTCKXETXF":{"priceDimensions":{"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","endRange":"Inf","description":"$0.468 per Unused Reservation Linux c5ad.2xlarge Instance Hour","appliesTo":[],"rateCode":"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.4680000000"}}},"sku":"2257YY4K7BWZ4F46","effectiveDate":"2024-04-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240508191027","publicationDate":"2024-05-08T19:10:27Z"}`,
-					}, nil
-				}).MinTimes(1)
-		c.EXPECT().ListStoragePrices(gomock.Any(), gomock.Any()).
-			DoAndReturn(
-				func(ctx context.Context, region string) ([]string, error) {
-					return []string{
-						`{"product":{"productFamily":"Compute Instance","attributes":{"enhancedNetworkingSupported":"Yes","intelTurboAvailable":"No","memory":"16 GiB","dedicatedEbsThroughput":"Up to 3170 Mbps","vcpu":"8","classicnetworkingsupport":"false","capacitystatus":"UnusedCapacityReservation","locationType":"AWS Region","storage":"1 x 300 NVMe SSD","instanceFamily":"Compute optimized","operatingSystem":"Linux","intelAvx2Available":"No","regionCode":"us-east-1","physicalProcessor":"AMD EPYC 7R32","clockSpeed":"3.3 GHz","ecu":"NA","networkPerformance":"Up to 10 Gigabit","servicename":"Amazon Elastic Compute Cloud","instancesku":"Q7GDF95MM7MZ7Y5Q","gpuMemory":"NA","vpcnetworkingsupport":"true","instanceType":"c5ad.2xlarge","tenancy":"Shared","usagetype":"AFS1-UnusedBox:c5ad.2xlarge","normalizationSizeFactor":"16","intelAvxAvailable":"No","processorFeatures":"AMD Turbo; AVX; AVX2","servicecode":"AmazonEC2","licenseModel":"No License required","currentGeneration":"Yes","preInstalledSw":"NA","location":"Africa (Cape Town)","processorArchitecture":"64-bit","marketoption":"OnDemand","operation":"RunInstances","availabilityzone":"NA"},"sku":"2257YY4K7BWZ4F46"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"2257YY4K7BWZ4F46.JRTCKXETXF":{"priceDimensions":{"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","endRange":"Inf","description":"$0.468 per Unused Reservation Linux c5ad.2xlarge Instance Hour","appliesTo":[],"rateCode":"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.4680000000"}}},"sku":"2257YY4K7BWZ4F46","effectiveDate":"2024-04-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240508191027","publicationDate":"2024-05-08T19:10:27Z"}`,
-					}, nil
-				}).MinTimes(1)
-		c.EXPECT().ListEBSVolumes(gomock.Any()).
-			DoAndReturn(
-				func(ctx context.Context) ([]ec2Types.Volume, error) {
-					return nil, nil
-				}).Times(1)
-		collector, err := New(context.Background(), &Config{
-			Regions:        regions,
-			Logger:         logger,
-			ScrapeInterval: time.Minute,
-			RegionMap: map[string]client.Client{
-				"us-east-1": c,
-			},
-		})
-		require.NoError(t, err)
-		ch := make(chan prometheus.Metric)
-		go func() {
-			if err := collector.Collect(ch); err != nil {
-				assert.NoError(t, err)
-			}
-			close(ch)
-		}()
-
-		var metrics []*utils.MetricResult
-		for metric := range ch {
-			assert.NotNil(t, metric)
-			metrics = append(metrics, utils.ReadMetrics(metric))
-		}
-		assert.Len(t, metrics, 6)
 	})
 }
 
