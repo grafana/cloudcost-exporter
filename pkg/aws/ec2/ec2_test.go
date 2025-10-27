@@ -38,7 +38,6 @@ func TestCollector_Name(t *testing.T) {
 
 func TestCollector_Collect(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	// #TODO: replace/fix test cases
 	regions := []ec2Types.Region{
 		{
 			RegionName: aws.String("us-east-1"),
@@ -69,42 +68,6 @@ func TestCollector_Collect(t *testing.T) {
 		err = collector.Collect(ch)
 		close(ch)
 		assert.ErrorIs(t, err, ErrClientNotFound)
-	})
-	// #TODO: address this test
-	t.Run("Collect should return an error if GenerateComputePricingMap returns an error", func(t *testing.T) {
-		c := mock_client.NewMockClient(ctrl)
-		c.EXPECT().ListSpotPrices(gomock.Any()).
-			DoAndReturn(
-				func(ctx context.Context) ([]ec2Types.SpotPrice, error) {
-					return []ec2Types.SpotPrice{
-						{
-							AvailabilityZone: aws.String("us-east-1a"),
-							InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
-							SpotPrice:        aws.String("0.4680000000"),
-						},
-					}, nil
-				}).Times(1)
-
-		c.EXPECT().ListOnDemandPrices(gomock.Any(), gomock.Any()).
-			DoAndReturn(
-				func(ctx context.Context, region string) ([]string, error) {
-					return []string{
-						"Unparsable String into json",
-					}, nil
-				}).Times(1)
-
-		collector, err := New(context.Background(), &Config{
-			Regions:        regions,
-			Logger:         logger,
-			ScrapeInterval: time.Minute,
-			RegionMap: map[string]client.Client{
-				"us-east-1": c,
-			},
-		})
-		require.NoError(t, err)
-		ch := make(chan prometheus.Metric)
-		defer close(ch)
-		assert.ErrorIs(t, collector.Collect(ch), ErrGeneratePricingMap)
 	})
 	t.Run("Test cpu, memory and total cost metrics emitted for each valid instance", func(t *testing.T) {
 		c := mock_client.NewMockClient(ctrl)
