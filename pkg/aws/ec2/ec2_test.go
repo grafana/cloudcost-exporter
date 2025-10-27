@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -27,7 +28,8 @@ var (
 func TestCollector_Name(t *testing.T) {
 	t.Run("Name should return the same name as the subsystem const", func(t *testing.T) {
 		collector, err := New(context.Background(), &Config{
-			Logger: logger,
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 		})
 		require.NoError(t, err)
 		assert.Equal(t, subsystem, collector.Name())
@@ -44,7 +46,8 @@ func TestCollector_Collect(t *testing.T) {
 	}
 	t.Run("Collect should return no error", func(t *testing.T) {
 		collector, err := New(context.Background(), &Config{
-			Logger: logger,
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 		})
 		require.NoError(t, err)
 		ch := make(chan prometheus.Metric)
@@ -70,8 +73,9 @@ func TestCollector_Collect(t *testing.T) {
 				}).Times(1)
 
 		collector, err := New(context.Background(), &Config{
-			Regions: regions,
-			Logger:  logger,
+			Regions:        regions,
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 			RegionMap: map[string]client.Client{
 				"us-east-1": c,
 			},
@@ -84,9 +88,10 @@ func TestCollector_Collect(t *testing.T) {
 	})
 	t.Run("Collect should return a ClientNotFound Error if the ec2 client is nil", func(t *testing.T) {
 		collector, err := New(context.Background(), &Config{
-			Regions:   regions,
-			Logger:    logger,
-			RegionMap: map[string]client.Client{},
+			Regions:        regions,
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
+			RegionMap:      map[string]client.Client{},
 		})
 		require.NoError(t, err)
 		ch := make(chan prometheus.Metric)
@@ -104,8 +109,9 @@ func TestCollector_Collect(t *testing.T) {
 					return nil, assert.AnError
 				}).Times(1)
 		collector, err := New(context.Background(), &Config{
-			Regions: regions,
-			Logger:  logger,
+			Regions:        regions,
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 			RegionMap: map[string]client.Client{
 				"us-east-1": c,
 			},
@@ -140,8 +146,9 @@ func TestCollector_Collect(t *testing.T) {
 				}).Times(1)
 
 		collector, err := New(context.Background(), &Config{
-			Regions: regions,
-			Logger:  logger,
+			Regions:        regions,
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 			RegionMap: map[string]client.Client{
 				"us-east-1": c,
 			},
@@ -240,8 +247,9 @@ func TestCollector_Collect(t *testing.T) {
 					return nil, nil
 				}).Times(1)
 		collector, err := New(context.Background(), &Config{
-			Regions: regions,
-			Logger:  logger,
+			Regions:        regions,
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 			RegionMap: map[string]client.Client{
 				"us-east-1": c,
 			},
@@ -346,8 +354,9 @@ func Test_FetchVolumesData(t *testing.T) {
 
 		c := mock_client.NewMockClient(ctrl)
 		collector, err := New(context.Background(), &Config{
-			Regions: []ec2Types.Region{region},
-			Logger:  logger,
+			Regions:        []ec2Types.Region{region},
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 			RegionMap: map[string]client.Client{
 				regionName: c,
 			},
@@ -397,8 +406,9 @@ func Test_EmitMetricsFromVolumesChannel(t *testing.T) {
 
 		c := mock_client.NewMockClient(ctrl)
 		collector, err := New(context.Background(), &Config{
-			Regions: []ec2Types.Region{region},
-			Logger:  logger,
+			Regions:        []ec2Types.Region{region},
+			Logger:         logger,
+			ScrapeInterval: time.Minute,
 			RegionMap: map[string]client.Client{
 				regionName: c,
 			},
