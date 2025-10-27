@@ -36,6 +36,65 @@ func TestCollector_Name(t *testing.T) {
 	})
 }
 
+func TestNew(t *testing.T) {
+	regions := []ec2Types.Region{
+		{
+			RegionName: aws.String("us-east-1"),
+		},
+	}
+
+	t.Run("New should start goroutines that populate pricing maps", func(t *testing.T) {
+		mock := &mockClient{
+			ondemandPrices: []string{
+				`{"product":{"productFamily":"Compute Instance","attributes":{"enhancedNetworkingSupported":"Yes","intelTurboAvailable":"No","memory":"16 GiB","dedicatedEbsThroughput":"Up to 3170 Mbps","vcpu":"8","classicnetworkingsupport":"false","capacitystatus":"UnusedCapacityReservation","locationType":"AWS Region","storage":"1 x 300 NVMe SSD","instanceFamily":"Compute optimized","operatingSystem":"Linux","intelAvx2Available":"No","regionCode":"us-east-1","physicalProcessor":"AMD EPYC 7R32","clockSpeed":"3.3 GHz","ecu":"NA","networkPerformance":"Up to 10 Gigabit","servicename":"Amazon Elastic Compute Cloud","instancesku":"Q7GDF95MM7MZ7Y5Q","gpuMemory":"NA","vpcnetworkingsupport":"true","instanceType":"c5ad.2xlarge","tenancy":"Shared","usagetype":"AFS1-UnusedBox:c5ad.2xlarge","normalizationSizeFactor":"16","intelAvxAvailable":"No","processorFeatures":"AMD Turbo; AVX; AVX2","servicecode":"AmazonEC2","licenseModel":"No License required","currentGeneration":"Yes","preInstalledSw":"NA","location":"Africa (Cape Town)","processorArchitecture":"64-bit","marketoption":"OnDemand","operation":"RunInstances","availabilityzone":"NA"},"sku":"2257YY4K7BWZ4F46"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"2257YY4K7BWZ4F46.JRTCKXETXF":{"priceDimensions":{"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","endRange":"Inf","description":"$0.468 per Unused Reservation Linux c5ad.2xlarge Instance Hour","appliesTo":[],"rateCode":"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.4680000000"}}},"sku":"2257YY4K7BWZ4F46","effectiveDate":"2024-04-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240508191027","publicationDate":"2024-05-08T19:10:27Z"}`,
+			},
+			spotPrices: []ec2Types.SpotPrice{
+				{
+					AvailabilityZone: aws.String("us-east-1a"),
+					InstanceType:     ec2Types.InstanceTypeC5ad2xlarge,
+					SpotPrice:        aws.String("0.4680000000"),
+				},
+			},
+			storagePrices: []string{
+				`{"product":{"productFamily":"Storage","attributes":{"maxThroughputvolume":"1000 MiB/s","volumeType":"General Purpose","maxIopsvolume":"16000","usagetype":"AFS1-EBS:VolumeUsage.gp3","locationType":"AWS Region","maxVolumeSize":"16 TiB","storageMedia":"SSD-backed","regionCode":"us-east-1","servicecode":"AmazonEC2","volumeApiName":"gp3","location":"US East (N. Virginia)","servicename":"Amazon Elastic Compute Cloud","operation":""},"sku":"XWCTMRRUJM7TGYST"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"XWCTMRRUJM7TGYST.JRTCKXETXF":{"priceDimensions":{"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7":{"unit":"GB-Mo","endRange":"Inf","description":"$0.08 per GB-month of General Purpose (gp3) provisioned storage","appliesTo":[],"rateCode":"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.0800000000"}}},"sku":"XWCTMRRUJM7TGYST","effectiveDate":"2024-07-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240705013454","publicationDate":"2024-07-05T01:34:54Z"}`,
+			},
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		collector, err := New(ctx, &Config{
+			Regions:        regions,
+			Logger:         logger,
+			ScrapeInterval: 50 * time.Millisecond,
+			RegionMap: map[string]client.Client{
+				"us-east-1": mock,
+			},
+		})
+		require.NoError(t, err)
+		assert.NotNil(t, collector)
+
+		// Give the goroutines time to populate the pricing maps
+		time.Sleep(100 * time.Millisecond)
+
+		collector.computePricingMap.m.RLock()
+		computeRegions := collector.computePricingMap.Regions
+		instanceDetails := collector.computePricingMap.InstanceDetails
+		collector.computePricingMap.m.RUnlock()
+
+		assert.NotEmpty(t, computeRegions, "Compute pricing map should be populated by goroutine")
+		assert.Contains(t, computeRegions, "us-east-1", "Should have us-east-1 region pricing")
+		assert.NotEmpty(t, instanceDetails, "Instance details should be populated")
+
+		collector.storagePricingMap.m.RLock()
+		storageRegions := collector.storagePricingMap.Regions
+		collector.storagePricingMap.m.RUnlock()
+
+		assert.NotEmpty(t, storageRegions, "Storage pricing map should be populated by goroutine")
+		assert.Contains(t, storageRegions, "us-east-1", "Should have us-east-1 storage pricing")
+	})
+}
+
 func TestCollector_Collect(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	regions := []ec2Types.Region{
@@ -157,21 +216,23 @@ func TestCollector_Collect(t *testing.T) {
 					return nil, nil
 				}).Times(1)
 
-		ctx, cancel := context.WithCancel(context.Background()) // #HERE
+		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		collector, err := New(ctx, &Config{
 			Regions:        regions,
 			Logger:         logger,
-			ScrapeInterval: 50 * time.Millisecond, // #HERE
+			ScrapeInterval: time.Minute,
 			RegionMap: map[string]client.Client{
 				"us-east-1": c,
 			},
 		})
 		require.NoError(t, err)
 
-		// #TODO: refactor so we aren't using sleep
-		time.Sleep(100 * time.Millisecond) // #HERE
+		// Pre-populate pricing maps synchronously for the test
+		require.NoError(t, collector.computePricingMap.GenerateComputePricingMap(ctx))
+		require.NoError(t, collector.storagePricingMap.GenerateStoragePricingMap(ctx))
+
 		ch := make(chan prometheus.Metric)
 		go func() {
 			if err := collector.Collect(ch); err != nil {
