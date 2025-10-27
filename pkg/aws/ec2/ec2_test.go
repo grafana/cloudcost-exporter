@@ -57,35 +57,6 @@ func TestCollector_Collect(t *testing.T) {
 			assert.NoError(t, err)
 		}()
 	})
-
-	// #TODO: address this test
-	t.Run("Collect should return an error if ListOnDemandPrices returns an error", func(t *testing.T) {
-		c := mock_client.NewMockClient(ctrl)
-		c.EXPECT().ListOnDemandPrices(gomock.Any(), gomock.Any()).DoAndReturn(
-			func(ctx context.Context, region string) ([]string, error) {
-				return nil, assert.AnError
-			}).Times(1)
-
-		c.EXPECT().ListSpotPrices(gomock.Any()).
-			DoAndReturn(
-				func(ctx context.Context) ([]ec2Types.SpotPrice, error) {
-					return []ec2Types.SpotPrice{}, nil
-				}).Times(1)
-
-		collector, err := New(context.Background(), &Config{
-			Regions:        regions,
-			Logger:         logger,
-			ScrapeInterval: time.Minute,
-			RegionMap: map[string]client.Client{
-				"us-east-1": c,
-			},
-		})
-		require.NoError(t, err)
-		ch := make(chan prometheus.Metric)
-		err = collector.Collect(ch)
-		close(ch)
-		assert.Error(t, err)
-	})
 	t.Run("Collect should return a ClientNotFound Error if the ec2 client is nil", func(t *testing.T) {
 		collector, err := New(context.Background(), &Config{
 			Regions:        regions,
@@ -98,29 +69,6 @@ func TestCollector_Collect(t *testing.T) {
 		err = collector.Collect(ch)
 		close(ch)
 		assert.ErrorIs(t, err, ErrClientNotFound)
-	})
-
-	// #TODO: address this test
-	t.Run("Collect should return an error if ListSpotPrices returns an error", func(t *testing.T) {
-		c := mock_client.NewMockClient(ctrl)
-		c.EXPECT().ListSpotPrices(gomock.Any()).
-			DoAndReturn(
-				func(ctx context.Context) ([]ec2Types.SpotPrice, error) {
-					return nil, assert.AnError
-				}).Times(1)
-		collector, err := New(context.Background(), &Config{
-			Regions:        regions,
-			Logger:         logger,
-			ScrapeInterval: time.Minute,
-			RegionMap: map[string]client.Client{
-				"us-east-1": c,
-			},
-		})
-		require.NoError(t, err)
-		ch := make(chan prometheus.Metric)
-		err = collector.Collect(ch)
-		close(ch)
-		assert.ErrorIs(t, err, ErrListSpotPrices)
 	})
 	// #TODO: address this test
 	t.Run("Collect should return an error if GenerateComputePricingMap returns an error", func(t *testing.T) {

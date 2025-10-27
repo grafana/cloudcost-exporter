@@ -96,8 +96,9 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 			case <-ctx.Done():
 				return
 			case <-priceTicker.C:
-				// #TODO error handling
-				computeMap.GenerateComputePricingMap(ctx)
+				if err := computeMap.GenerateComputePricingMap(ctx); err != nil {
+					logger.Error("failed to refresh compute pricing map", "error", err)
+				}
 			}
 		}
 	}(ctx)
@@ -107,8 +108,9 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 			case <-ctx.Done():
 				return
 			case <-machineTicker.C:
-				// #TODO: error handling
-				storageMap.GenerateStoragePricingMap(ctx)
+				if err := storageMap.GenerateStoragePricingMap(ctx); err != nil {
+					logger.Error("failed to refresh storage pricing map", "error", err)
+				}
 			}
 		}
 	}(ctx)

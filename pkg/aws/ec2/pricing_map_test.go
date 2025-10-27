@@ -67,6 +67,9 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 		ondemandPrices []string
 		spotPrices     []ec2Types.SpotPrice
 		want           *ComputePricingMap
+		ondemandErr    error
+		spotErr        error
+		expectedErr    error
 	}{
 		"No ondemand or spot prices input": {
 			regions: []ec2Types.Region{
@@ -168,6 +171,20 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 				},
 			},
 		},
+		"Returns error when ListOnDemandPrices fails": {
+			regions: []ec2Types.Region{
+				{RegionName: aws.String("us-east-1")},
+			},
+			ondemandErr: assert.AnError,
+			expectedErr: ErrListOnDemandPrices,
+		},
+		"Returns error when ListSpotPrices fails": {
+			regions: []ec2Types.Region{
+				{RegionName: aws.String("us-east-1")},
+			},
+			spotErr:     assert.AnError,
+			expectedErr: ErrListSpotPrices,
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -175,6 +192,8 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 			mock := &mockClient{
 				ondemandPrices: tt.ondemandPrices,
 				spotPrices:     tt.spotPrices,
+				ondemandErr:    tt.ondemandErr,
+				spotErr:        tt.spotErr,
 			}
 
 			regionName := *tt.regions[0].RegionName
@@ -187,7 +206,8 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 
 			cpm := NewComputePricingMap(logger, config)
 			err := cpm.GenerateComputePricingMap(context.Background())
-			assert.NoError(t, err)
+			assert.ErrorIs(t, err, tt.expectedErr)
+
 			if tt.want != nil {
 				assert.Equal(t, tt.want.Regions, cpm.Regions)
 				assert.Equal(t, tt.want.InstanceDetails, cpm.InstanceDetails)
