@@ -218,7 +218,17 @@ func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 		prices           []string
 		listStorageError error
 		expected         map[string]*StoragePricing
+		expectedError    error
 	}{
+		"Empty if AWS returns no volume prices": {
+			regions: []ec2Types.Region{
+				{
+					RegionName: aws.String("us-east-1"),
+				},
+			},
+			prices:   []string{},
+			expected: map[string]*StoragePricing{},
+		},
 		"Parses AWS volume prices response": {
 			regions: []ec2Types.Region{
 				{
@@ -235,6 +245,16 @@ func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 					},
 				},
 			},
+		},
+		"Returns error when ListStoragePrices fails": {
+			regions: []ec2Types.Region{
+				{
+					RegionName: aws.String("us-east-1"),
+				},
+			},
+			listStorageError: assert.AnError,
+			expected:         map[string]*StoragePricing{},
+			expectedError:    ErrListStoragePrices,
 		},
 	}
 	for name, tt := range tests {
@@ -253,10 +273,9 @@ func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 			}
 			spm := NewStoragePricingMap(logger, config)
 			err := spm.GenerateStoragePricingMap(context.Background())
-			assert.NoError(t, err)
-			if tt.expected != nil {
-				assert.Equal(t, tt.expected, spm.Regions)
-			}
+			assert.ErrorIs(t, err, tt.expectedError)
+
+			assert.Equal(t, tt.expected, spm.Regions)
 		})
 	}
 }

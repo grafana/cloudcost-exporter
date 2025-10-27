@@ -87,8 +87,6 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 	priceTicker := time.NewTicker(config.ScrapeInterval)
 	machineTicker := time.NewTicker(config.ScrapeInterval)
 
-	// #TODO: check that generation is working as it should--when a map needs to get created vs just refreshed.
-	// #TODO figure out how to check errors within the New method.
 	go func(ctx context.Context) {
 		for {
 			select {
