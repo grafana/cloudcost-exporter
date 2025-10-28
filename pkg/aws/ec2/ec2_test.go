@@ -2,7 +2,6 @@ package ec2
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -248,77 +247,6 @@ func TestCollector_Collect(t *testing.T) {
 		}
 		assert.Len(t, metrics, 6)
 	})
-}
-
-func Test_PopulationOfStoragePricingMap(t *testing.T) {
-	tests := map[string]struct {
-		regions       []ec2Types.Region
-		storagePrices []string
-		storageErr    error
-		expectedErr   error
-		expected      map[string]*StoragePricing
-	}{
-		"can populate storage pricing map": {
-			regions: []ec2Types.Region{
-				{
-					RegionName: aws.String("af-south-1"),
-				},
-			},
-			storagePrices: []string{
-				`{"product":{"productFamily":"Storage","attributes":{"maxThroughputvolume":"1000 MiB/s","volumeType":"General Purpose","maxIopsvolume":"16000","usagetype":"AFS1-EBS:VolumeUsage.gp3","locationType":"AWS Region","maxVolumeSize":"16 TiB","storageMedia":"SSD-backed","regionCode":"af-south-1","servicecode":"AmazonEC2","volumeApiName":"gp3","location":"Africa (Cape Town)","servicename":"Amazon Elastic Compute Cloud","operation":""},"sku":"XWCTMRRUJM7TGYST"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"XWCTMRRUJM7TGYST.JRTCKXETXF":{"priceDimensions":{"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7":{"unit":"GB-Mo","endRange":"Inf","description":"$0.1047 per GB-month of General Purpose (gp3) provisioned storage - Africa (Cape Town)","appliesTo":[],"rateCode":"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.1047000000"}}},"sku":"XWCTMRRUJM7TGYST","effectiveDate":"2024-07-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240705013454","publicationDate":"2024-07-05T01:34:54Z"}`,
-			},
-			expected: map[string]*StoragePricing{
-				"af-south-1": {
-					Storage: map[string]float64{
-						"gp3": 0.1047,
-					},
-				},
-			},
-		},
-		"errors listing storage prices propagate": {
-			regions: []ec2Types.Region{{
-				RegionName: aws.String("af-south-1"),
-			}},
-			storageErr:  errors.New("listing error"),
-			expectedErr: ErrListStoragePrices,
-			expected:    map[string]*StoragePricing{},
-		},
-		"errors generating the map from listed prices propagate too": {
-			regions: []ec2Types.Region{
-				{
-					RegionName: aws.String("af-south-1"),
-				},
-			},
-			storagePrices: []string{
-				"invalid json response",
-			},
-			expected:    map[string]*StoragePricing{},
-			expectedErr: ErrGeneratePricingMap,
-		},
-	}
-
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			mock := &mockClient{
-				storagePrices: tt.storagePrices,
-				storageErr:    tt.storageErr,
-			}
-
-			regionName := *tt.regions[0].RegionName
-			config := &Config{
-				Regions: tt.regions,
-				Logger:  logger,
-				RegionMap: map[string]client.Client{
-					regionName: mock,
-				},
-			}
-
-			spm := NewStoragePricingMap(logger, config)
-			generateErr := spm.GenerateStoragePricingMap(context.Background())
-			assert.ErrorIs(t, generateErr, tt.expectedErr)
-			assert.Equal(t, tt.expected, spm.Regions)
-		})
-	}
 }
 
 func Test_FetchVolumesData(t *testing.T) {

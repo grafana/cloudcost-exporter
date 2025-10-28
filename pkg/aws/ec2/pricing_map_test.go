@@ -2,6 +2,7 @@ package ec2
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -269,9 +270,21 @@ func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 					RegionName: aws.String("us-east-1"),
 				},
 			},
-			listStorageError: assert.AnError,
+			listStorageError: errors.New("listing error"),
 			expected:         map[string]*StoragePricing{},
 			expectedError:    ErrListStoragePrices,
+		},
+		"Returns error when parsing invalid JSON": {
+			regions: []ec2Types.Region{
+				{
+					RegionName: aws.String("af-south-1"),
+				},
+			},
+			prices: []string{
+				"invalid json response",
+			},
+			expected:      map[string]*StoragePricing{},
+			expectedError: ErrGeneratePricingMap,
 		},
 	}
 	for name, tt := range tests {
