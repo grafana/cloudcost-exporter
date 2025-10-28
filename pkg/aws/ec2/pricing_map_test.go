@@ -70,9 +70,7 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 		expectedErr    error
 	}{
 		"No ondemand or spot prices input": {
-			regions: []ec2Types.Region{
-				{RegionName: aws.String("us-east-1")},
-			},
+			regions:        []ec2Types.Region{{RegionName: aws.String("us-east-1")}},
 			ondemandPrices: []string{},
 			spotPrices:     []ec2Types.SpotPrice{},
 			want: &ComputePricingMap{
@@ -81,9 +79,7 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 			},
 		},
 		"Just ondemand prices as input": {
-			regions: []ec2Types.Region{
-				{RegionName: aws.String("af-south-1")},
-			},
+			regions: []ec2Types.Region{{RegionName: aws.String("af-south-1")}},
 			ondemandPrices: []string{
 				`{"product":{"productFamily":"Compute Instance","attributes":{"enhancedNetworkingSupported":"Yes","intelTurboAvailable":"No","memory":"16 GiB","dedicatedEbsThroughput":"Up to 3170 Mbps","vcpu":"8","classicnetworkingsupport":"false","capacitystatus":"UnusedCapacityReservation","locationType":"AWS Region","storage":"1 x 300 NVMe SSD","instanceFamily":"Compute optimized","operatingSystem":"Linux","intelAvx2Available":"No","regionCode":"af-south-1","physicalProcessor":"AMD EPYC 7R32","clockSpeed":"3.3 GHz","ecu":"NA","networkPerformance":"Up to 10 Gigabit","servicename":"Amazon Elastic Compute Cloud","instancesku":"Q7GDF95MM7MZ7Y5Q","gpuMemory":"NA","vpcnetworkingsupport":"true","instanceType":"c5ad.2xlarge","tenancy":"Shared","usagetype":"AFS1-UnusedBox:c5ad.2xlarge","normalizationSizeFactor":"16","intelAvxAvailable":"No","processorFeatures":"AMD Turbo; AVX; AVX2","servicecode":"AmazonEC2","licenseModel":"No License required","currentGeneration":"Yes","preInstalledSw":"NA","location":"Africa (Cape Town)","processorArchitecture":"64-bit","marketoption":"OnDemand","operation":"RunInstances","availabilityzone":"NA"},"sku":"2257YY4K7BWZ4F46"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"2257YY4K7BWZ4F46.JRTCKXETXF":{"priceDimensions":{"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","endRange":"Inf","description":"$0.468 per Unused Reservation Linux c5ad.2xlarge Instance Hour","appliesTo":[],"rateCode":"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.4680000000"}}},"sku":"2257YY4K7BWZ4F46","effectiveDate":"2024-04-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240508191027","publicationDate":"2024-05-08T19:10:27Z"}`,
 			},
@@ -118,9 +114,7 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 			},
 		},
 		"Just spot prices as input": {
-			regions: []ec2Types.Region{
-				{RegionName: aws.String("af-south-1")},
-			},
+			regions:        []ec2Types.Region{{RegionName: aws.String("af-south-1")}},
 			ondemandPrices: []string{},
 			spotPrices: []ec2Types.SpotPrice{
 				{
@@ -135,9 +129,7 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 			},
 		},
 		"Ondemand and spot prices": {
-			regions: []ec2Types.Region{
-				{RegionName: aws.String("af-south-1")},
-			},
+			regions: []ec2Types.Region{{RegionName: aws.String("af-south-1")}},
 			ondemandPrices: []string{
 				`{"product":{"productFamily":"Compute Instance","attributes":{"enhancedNetworkingSupported":"Yes","intelTurboAvailable":"No","memory":"16 GiB","dedicatedEbsThroughput":"Up to 3170 Mbps","vcpu":"8","classicnetworkingsupport":"false","capacitystatus":"UnusedCapacityReservation","locationType":"AWS Region","storage":"1 x 300 NVMe SSD","instanceFamily":"Compute optimized","operatingSystem":"Linux","intelAvx2Available":"No","regionCode":"af-south-1","physicalProcessor":"AMD EPYC 7R32","clockSpeed":"3.3 GHz","ecu":"NA","networkPerformance":"Up to 10 Gigabit","servicename":"Amazon Elastic Compute Cloud","instancesku":"Q7GDF95MM7MZ7Y5Q","gpuMemory":"NA","vpcnetworkingsupport":"true","instanceType":"c5ad.2xlarge","tenancy":"Shared","usagetype":"AFS1-UnusedBox:c5ad.2xlarge","normalizationSizeFactor":"16","intelAvxAvailable":"No","processorFeatures":"AMD Turbo; AVX; AVX2","servicecode":"AmazonEC2","licenseModel":"No License required","currentGeneration":"Yes","preInstalledSw":"NA","location":"Africa (Cape Town)","processorArchitecture":"64-bit","marketoption":"OnDemand","operation":"RunInstances","availabilityzone":"NA"},"sku":"2257YY4K7BWZ4F46"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"2257YY4K7BWZ4F46.JRTCKXETXF":{"priceDimensions":{"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","endRange":"Inf","description":"$0.468 per Unused Reservation Linux c5ad.2xlarge Instance Hour","appliesTo":[],"rateCode":"2257YY4K7BWZ4F46.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.4680000000"}}},"sku":"2257YY4K7BWZ4F46","effectiveDate":"2024-04-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240508191027","publicationDate":"2024-05-08T19:10:27Z"}`,
 			},
@@ -190,14 +182,14 @@ func TestComputePricingMap_GenerateComputePricingMap(t *testing.T) {
 			regions: []ec2Types.Region{
 				{RegionName: aws.String("us-east-1")},
 			},
-			ondemandErr: assert.AnError,
+			ondemandErr: errors.New("listing error"),
 			expectedErr: ErrListOnDemandPrices,
 		},
 		"Returns error when ListSpotPrices fails": {
 			regions: []ec2Types.Region{
 				{RegionName: aws.String("us-east-1")},
 			},
-			spotErr:     assert.AnError,
+			spotErr:     errors.New("listing error"),
 			expectedErr: ErrListSpotPrices,
 		},
 	}
@@ -239,20 +231,12 @@ func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 		expectedError    error
 	}{
 		"Empty if AWS returns no volume prices": {
-			regions: []ec2Types.Region{
-				{
-					RegionName: aws.String("us-east-1"),
-				},
-			},
+			regions:  []ec2Types.Region{{RegionName: aws.String("us-east-1")}},
 			prices:   []string{},
 			expected: map[string]*StoragePricing{},
 		},
 		"Parses AWS volume prices response": {
-			regions: []ec2Types.Region{
-				{
-					RegionName: aws.String("af-south-1"),
-				},
-			},
+			regions: []ec2Types.Region{{RegionName: aws.String("af-south-1")}},
 			prices: []string{
 				`{"product":{"productFamily":"Storage","attributes":{"maxThroughputvolume":"1000 MiB/s","volumeType":"General Purpose","maxIopsvolume":"16000","usagetype":"AFS1-EBS:VolumeUsage.gp3","locationType":"AWS Region","maxVolumeSize":"16 TiB","storageMedia":"SSD-backed","regionCode":"af-south-1","servicecode":"AmazonEC2","volumeApiName":"gp3","location":"Africa (Cape Town)","servicename":"Amazon Elastic Compute Cloud","operation":""},"sku":"XWCTMRRUJM7TGYST"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"XWCTMRRUJM7TGYST.JRTCKXETXF":{"priceDimensions":{"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7":{"unit":"GB-Mo","endRange":"Inf","description":"$0.1047 per GB-month of General Purpose (gp3) provisioned storage - Africa (Cape Town)","appliesTo":[],"rateCode":"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.1047000000"}}},"sku":"XWCTMRRUJM7TGYST","effectiveDate":"2024-07-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240705013454","publicationDate":"2024-07-05T01:34:54Z"}`,
 			},
@@ -265,24 +249,14 @@ func TestStoragePricingMap_GenerateStoragePricingMap(t *testing.T) {
 			},
 		},
 		"Returns error when ListStoragePrices fails": {
-			regions: []ec2Types.Region{
-				{
-					RegionName: aws.String("us-east-1"),
-				},
-			},
+			regions:          []ec2Types.Region{{RegionName: aws.String("us-east-1")}},
 			listStorageError: errors.New("listing error"),
 			expected:         map[string]*StoragePricing{},
 			expectedError:    ErrListStoragePrices,
 		},
 		"Returns error when parsing invalid JSON": {
-			regions: []ec2Types.Region{
-				{
-					RegionName: aws.String("af-south-1"),
-				},
-			},
-			prices: []string{
-				"invalid json response",
-			},
+			regions:       []ec2Types.Region{{RegionName: aws.String("af-south-1")}},
+			prices:        []string{"invalid json response"},
 			expected:      map[string]*StoragePricing{},
 			expectedError: ErrGeneratePricingMap,
 		},
