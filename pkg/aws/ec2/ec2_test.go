@@ -252,6 +252,25 @@ func TestCollector_Collect(t *testing.T) {
 	})
 }
 
+// setupPricingExpectations sets up minimal pricing expectations on a mock client
+// that are needed for EC2 collector initialization
+func setupPricingExpectations(mockClient *mock_client.MockClient) {
+	mockClient.EXPECT().
+		ListOnDemandPrices(gomock.Any(), gomock.Any()).
+		Return([]string{}, nil).
+		AnyTimes()
+
+	mockClient.EXPECT().
+		ListSpotPrices(gomock.Any()).
+		Return([]ec2Types.SpotPrice{}, nil).
+		AnyTimes()
+
+	mockClient.EXPECT().
+		ListStoragePrices(gomock.Any(), gomock.Any()).
+		Return([]string{}, nil).
+		AnyTimes()
+}
+
 func Test_FetchVolumesData(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	t.Run("sends EBS volumes data to channel", func(t *testing.T) {
@@ -261,6 +280,8 @@ func Test_FetchVolumesData(t *testing.T) {
 		}
 
 		c := mock_client.NewMockClient(ctrl)
+		setupPricingExpectations(c)
+
 		collector, err := New(context.Background(), &Config{
 			Regions:        []ec2Types.Region{region},
 			Logger:         logger,
@@ -313,6 +334,8 @@ func Test_EmitMetricsFromVolumesChannel(t *testing.T) {
 		volumeType := "gp3"
 
 		c := mock_client.NewMockClient(ctrl)
+		setupPricingExpectations(c)
+
 		collector, err := New(context.Background(), &Config{
 			Regions:        []ec2Types.Region{region},
 			Logger:         logger,
