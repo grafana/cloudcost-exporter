@@ -504,3 +504,92 @@ func Test_weightedPriceForInstance(t *testing.T) {
 		})
 	}
 }
+
+func TestComputePricingMap_GenerateComputePricingMap_Refresh(t *testing.T) {
+	regions := []ec2Types.Region{{RegionName: aws.String("us-east-1")}}
+
+	t.Run("Refresh should update prices when called multiple times", func(t *testing.T) {
+		// Initial price: $0.10 for m5.large
+		initialPrice := `{"product":{"productFamily":"Compute Instance","attributes":{"memory":"8 GiB","vcpu":"2","regionCode":"us-east-1","instanceFamily":"General purpose","operatingSystem":"Linux","instanceType":"m5.large","tenancy":"Shared","usagetype":"BoxUsage:m5.large","marketoption":"OnDemand","physicalProcessor":"Intel Xeon Platinum 8175","clockSpeed":"2.5 GHz"}},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"OFFER.JRTCKXETXF":{"priceDimensions":{"OFFER.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","pricePerUnit":{"USD":"0.1000000000"}}}}}}}`
+
+		// Updated price: $0.20 for m5.large
+		updatedPrice := `{"product":{"productFamily":"Compute Instance","attributes":{"memory":"8 GiB","vcpu":"2","regionCode":"us-east-1","instanceFamily":"General purpose","operatingSystem":"Linux","instanceType":"m5.large","tenancy":"Shared","usagetype":"BoxUsage:m5.large","marketoption":"OnDemand","physicalProcessor":"Intel Xeon Platinum 8175","clockSpeed":"2.5 GHz"}},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"OFFER.JRTCKXETXF":{"priceDimensions":{"OFFER.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","pricePerUnit":{"USD":"0.2000000000"}}}}}}}`
+
+		mock := &mockClient{
+			ondemandPrices: []string{initialPrice},
+			spotPrices:     []ec2Types.SpotPrice{},
+		}
+
+		config := &Config{
+			Regions: regions,
+			RegionMap: map[string]client.Client{
+				"us-east-1": mock,
+			},
+		}
+
+		cpm := NewComputePricingMap(logger, config)
+
+		err := cpm.GenerateComputePricingMap(context.Background())
+		require.NoError(t, err)
+
+		// Verify initial price
+		price1, err := cpm.GetPriceForInstanceType("us-east-1", "m5.large")
+		require.NoError(t, err)
+		assert.Equal(t, 0.1, price1.Total, "Initial price should be $0.10")
+
+		mock.ondemandPrices = []string{updatedPrice}
+
+		// Second call - refresh with new prices
+		err = cpm.GenerateComputePricingMap(context.Background())
+		require.NoError(t, err)
+
+		price2, err := cpm.GetPriceForInstanceType("us-east-1", "m5.large")
+		require.NoError(t, err)
+		assert.Equal(t, 0.2, price2.Total, "After refresh, price should be updated to $0.20")
+	})
+}
+
+func TestStoragePricingMap_GenerateStoragePricingMap_Refresh(t *testing.T) {
+	regions := []ec2Types.Region{{RegionName: aws.String("us-east-1")}}
+
+	t.Run("Refresh should update prices when called multiple times", func(t *testing.T) {
+		// Initial price: $0.08 for gp3
+		initialPrice := `{"product":{"productFamily":"Storage","attributes":{"volumeType":"General Purpose","regionCode":"us-east-1","volumeApiName":"gp3","location":"US East (N. Virginia)"}},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"GP3.JRTCKXETXF":{"priceDimensions":{"GP3.JRTCKXETXF.6YS6EN2CT7":{"unit":"GB-Mo","pricePerUnit":{"USD":"0.0800000000"}}}}}}}`
+
+		// Updated price: $0.10 for gp3
+		updatedPrice := `{"product":{"productFamily":"Storage","attributes":{"volumeType":"General Purpose","regionCode":"us-east-1","volumeApiName":"gp3","location":"US East (N. Virginia)"}},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"GP3.JRTCKXETXF":{"priceDimensions":{"GP3.JRTCKXETXF.6YS6EN2CT7":{"unit":"GB-Mo","pricePerUnit":{"USD":"0.1000000000"}}}}}}}`
+
+		mock := &mockClient{
+			storagePrices: []string{initialPrice},
+		}
+
+		config := &Config{
+			Regions: regions,
+			RegionMap: map[string]client.Client{
+				"us-east-1": mock,
+			},
+		}
+
+		spm := NewStoragePricingMap(logger, config)
+
+		err := spm.GenerateStoragePricingMap(context.Background())
+		require.NoError(t, err)
+
+		// Verify initial price
+		price1, err := spm.GetPriceForVolumeType("us-east-1", "gp3", 100)
+		require.NoError(t, err)
+		expectedPrice1 := 0.08 * 100 / 730
+		assert.InDelta(t, expectedPrice1, price1, 0.001, "Initial price should be based on $0.08/GB-month")
+
+		mock.storagePrices = []string{updatedPrice}
+
+		// Second call - refresh with new prices
+		err = spm.GenerateStoragePricingMap(context.Background())
+		require.NoError(t, err)
+
+		price2, err := spm.GetPriceForVolumeType("us-east-1", "gp3", 100)
+		require.NoError(t, err)
+		expectedPrice2 := 0.10 * 100 / 730 // $0.10 per GB-month * 100GB / 730 hours
+		assert.InDelta(t, expectedPrice2, price2, 0.001, "After refresh, price should be updated to $0.10/GB-month")
+	})
+}

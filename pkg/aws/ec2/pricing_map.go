@@ -113,6 +113,13 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context) err
 	if err != nil {
 		return err
 	}
+
+	// Clear existing data before refresh to ensure we have latest prices
+	cpm.m.Lock()
+	cpm.Regions = make(map[string]*FamilyPricing)
+	cpm.InstanceDetails = make(map[string]InstanceAttributes)
+	cpm.m.Unlock()
+
 	for _, product := range ondemandPrices {
 		var productInfo computeProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
@@ -173,6 +180,9 @@ func (spm *StoragePricingMap) GenerateStoragePricingMap(ctx context.Context) err
 
 	spm.m.Lock()
 	defer spm.m.Unlock()
+
+	// Clear existing data before refresh
+	spm.Regions = make(map[string]*StoragePricing)
 
 	for _, product := range storagePrices {
 		var productInfo storageProduct
