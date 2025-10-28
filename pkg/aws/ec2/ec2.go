@@ -87,6 +87,14 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 	priceTicker := time.NewTicker(config.ScrapeInterval)
 	machineTicker := time.NewTicker(config.ScrapeInterval)
 
+	// Initial population so that Collect can use the maps
+	if err := computeMap.GenerateComputePricingMap(ctx); err != nil {
+		return nil, fmt.Errorf("failed initial compute pricing: %w", err)
+	}
+	if err := storageMap.GenerateStoragePricingMap(ctx); err != nil {
+		return nil, fmt.Errorf("failed initial storage pricing: %w", err)
+	}
+
 	go func(ctx context.Context) {
 		for {
 			select {
