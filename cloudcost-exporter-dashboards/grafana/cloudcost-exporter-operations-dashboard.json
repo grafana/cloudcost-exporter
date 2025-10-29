@@ -6,7 +6,7 @@
   "graphTooltip": 1,
   "fiscalYearStartMonth": 0,
   "refresh": "30s",
-  "schemaVersion": 39,
+  "schemaVersion": 41,
   "panels": [
     {
       "type": "row",
@@ -19,7 +19,7 @@
         "y": 0
       },
       "id": 0,
-      "panels": null
+      "panels": []
     },
     {
       "type": "stat",
@@ -87,7 +87,7 @@
             }
           ]
         },
-        "overrides": null
+        "overrides": []
       }
     },
     {
@@ -157,7 +157,7 @@
             }
           }
         },
-        "overrides": null
+        "overrides": []
       }
     },
     {
@@ -171,7 +171,7 @@
         "y": 9
       },
       "id": 0,
-      "panels": null
+      "panels": []
     },
     {
       "type": "timeseries",
@@ -200,7 +200,7 @@
         "defaults": {
           "unit": "reqps"
         },
-        "overrides": null
+        "overrides": []
       }
     },
     {
@@ -231,7 +231,7 @@
         "defaults": {
           "unit": "s"
         },
-        "overrides": null
+        "overrides": []
       }
     },
     {
@@ -245,7 +245,7 @@
         "y": 16
       },
       "id": 0,
-      "panels": null
+      "panels": []
     },
     {
       "type": "timeseries",
@@ -275,7 +275,7 @@
         "defaults": {
           "unit": "reqps"
         },
-        "overrides": null
+        "overrides": []
       }
     },
     {
@@ -306,7 +306,7 @@
         "defaults": {
           "unit": "s"
         },
-        "overrides": null
+        "overrides": []
       }
     }
   ],
