@@ -2,6 +2,7 @@ package google
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
+	"github.com/grafana/cloudcost-exporter/pkg/google/cloudsql"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -109,6 +111,18 @@ func New(config *Config) (*GCP, error) {
 			logger.LogAttrs(ctx, slog.LevelInfo, "Creating collector",
 				slog.String("service", service),
 				slog.String("projects", config.Projects))
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
+		case "SQL":
+			// TODO: add error handling
+			collector, err = cloudsql.New(&cloudsql.Config{
+				ProjectId:      config.ProjectId,
+				ScrapeInterval: config.ScrapeInterval,
+			}, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
