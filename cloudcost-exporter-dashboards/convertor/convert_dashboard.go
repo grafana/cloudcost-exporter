@@ -1,3 +1,5 @@
+// Command convert_dashboard converts a Grafana dashboard JSON into a Go struct
+// using the grafana-foundation-sdk and prints the converted representation.
 package main
 
 import (

@@ -2,19 +2,24 @@ package azure
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 
+	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
 
 var (
-	parentCtx  context.Context = context.TODO()
-	testLogger *slog.Logger    = slog.New(slog.NewTextHandler(os.Stdout, nil))
+	parentCtx  = context.TODO()
+	testLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
 func Test_New(t *testing.T) {
@@ -23,7 +28,7 @@ func Test_New(t *testing.T) {
 		subId       string
 	}{
 		"no subscription ID": {
-			expectedErr: InvalidSubscriptionId,
+			expectedErr: errInvalidSubscriptionID,
 			subId:       "",
 		},
 
@@ -88,7 +93,6 @@ func Test_RegisterCollectors(t *testing.T) {
 				azProvider.collectors = append(azProvider.collectors, c)
 			}
 
-			mockRegistry.EXPECT().MustRegister(gomock.Any()).Times(1)
 			err := azProvider.RegisterCollectors(mockRegistry)
 			assert.Equal(t, err, tc.expectedErr)
 		})
@@ -96,42 +100,108 @@ func Test_RegisterCollectors(t *testing.T) {
 }
 
 func Test_CollectMetrics(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	ch := make(chan prometheus.Metric)
-	testCases := map[string]struct {
-		mockCollectors []*mock_provider.MockCollector
-		expectedErr    error
+	tests := map[string]struct {
+		numCollectors   int
+		collectorName   string
+		collect         func(chan<- prometheus.Metric) error
+		expectedMetrics []*utils.MetricResult
 	}{
-		"base case": {
-			mockCollectors: []*mock_provider.MockCollector{
-				mock_provider.NewMockCollector(ctrl),
+		"no error if no collectors": {
+			numCollectors:   0,
+			collectorName:   "test1",
+			expectedMetrics: []*utils.MetricResult{},
+		},
+		"bubble-up single collector error": {
+			numCollectors: 1,
+			collectorName: "test2",
+			collect: func(chan<- prometheus.Metric) error {
+				return fmt.Errorf("test collect error")
+			},
+			expectedMetrics: []*utils.MetricResult{
+				{
+					FqName:     "cloudcost_exporter_collector_last_scrape_error",
+					Labels:     utils.LabelMap{"provider": "azure", "collector": "test2"},
+					Value:      1,
+					MetricType: prometheus.CounterValue,
+				},
+			},
+		},
+		"two collectors with no errors": {
+			numCollectors: 2,
+			collectorName: "test3",
+			collect:       func(chan<- prometheus.Metric) error { return nil },
+			expectedMetrics: []*utils.MetricResult{
+				{
+					FqName:     "cloudcost_exporter_collector_last_scrape_error",
+					Labels:     utils.LabelMap{"provider": "azure", "collector": "test3"},
+					Value:      0,
+					MetricType: prometheus.CounterValue,
+				},
+				{
+					FqName:     "cloudcost_exporter_collector_last_scrape_error",
+					Labels:     utils.LabelMap{"provider": "azure", "collector": "test3"},
+					Value:      0,
+					MetricType: prometheus.CounterValue,
+				},
 			},
 		},
 	}
-
-	for name, tc := range testCases {
+	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
+			ch := make(chan prometheus.Metric)
+
+			ctrl := gomock.NewController(t)
+			c := mock_provider.NewMockCollector(ctrl)
+			registry := mock_provider.NewMockRegistry(ctrl)
+			registry.EXPECT().MustRegister(gomock.Any()).AnyTimes()
+			if tt.collect != nil {
+				c.EXPECT().Name().Return(tt.collectorName).AnyTimes()
+				c.EXPECT().Collect(ch).DoAndReturn(tt.collect).AnyTimes()
+				c.EXPECT().Register(registry).Return(nil).AnyTimes()
+			}
+			registry.EXPECT().MustRegister(gomock.Any()).AnyTimes()
+			azure := &Azure{
+				context:    parentCtx,
+				logger:     testLogger,
+				collectors: []provider.Collector{},
+			}
+
+			for range tt.numCollectors {
+				azure.collectors = append(azure.collectors, c)
+			}
+
+			wg := sync.WaitGroup{}
+
+			wg.Add(1)
 			go func() {
-				// no metrics are generated here, so loop through to avoid
-				// process hang waiting on metrics that will never come
-				for range ch {
-				}
+				azure.Collect(ch)
+				close(ch)
 			}()
+			wg.Done()
 
-			azProvider := &Azure{
-				logger:  testLogger,
-				context: parentCtx,
+			wg.Wait()
+			var metrics []*utils.MetricResult
+			var ignoreMetric = func(metricName string) bool {
+				ignoredMetricSuffix := []string{
+					"duration_seconds",
+					"last_scrape_time",
+				}
+				for _, suffix := range ignoredMetricSuffix {
+					if strings.Contains(metricName, suffix) {
+						return true
+					}
+				}
+
+				return false
 			}
-			for _, c := range tc.mockCollectors {
-				c.EXPECT().Collect(gomock.Any()).Times(1)
-				c.EXPECT().Name().AnyTimes()
-
-				azProvider.collectors = append(azProvider.collectors, c)
+			for m := range ch {
+				metric := utils.ReadMetrics(m)
+				if ignoreMetric(metric.FqName) {
+					continue
+				}
+				metrics = append(metrics, metric)
 			}
-
-			azProvider.Collect(ch)
+			assert.ElementsMatch(t, metrics, tt.expectedMetrics)
 		})
 	}
 }

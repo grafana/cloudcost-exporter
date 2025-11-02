@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -16,8 +17,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
-	ec2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
-	pricingClient "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
@@ -28,9 +27,8 @@ const (
 )
 
 var (
-	ErrClientNotFound = errors.New("no client found")
-
 	ErrGeneratePricingMap = errors.New("error generating pricing map")
+	ErrClientNotFound     = errors.New("no client found")
 )
 
 var (
@@ -66,35 +64,34 @@ var (
 
 // Collector is a prometheus collector that collects metrics from AWS EKS clusters.
 type Collector struct {
-	Regions           []ec2Types.Region
-	ScrapeInterval    time.Duration
-	computePricingMap *ComputePricingMap
-	storagePricingMap *StoragePricingMap
-	pricingService    pricingClient.Pricing
-	NextComputeScrape time.Time
-	NextStorageScrape time.Time
-	ec2RegionClients  map[string]ec2client.EC2
-	logger            *slog.Logger
+	Regions            []ec2Types.Region
+	ScrapeInterval     time.Duration
+	computePricingMap  *ComputePricingMap
+	storagePricingMap  *StoragePricingMap
+	awsRegionClientMap map[string]client.Client
+	nextComputeScrape  time.Time
+	nextStorageScrape  time.Time
+	logger             *slog.Logger
 }
 
 type Config struct {
 	ScrapeInterval time.Duration
 	Regions        []ec2Types.Region
-	RegionClients  map[string]ec2client.EC2
 	Logger         *slog.Logger
+	RegionMap      map[string]client.Client
 }
 
 // New creates an ec2 collector
-func New(config *Config, ps pricingClient.Pricing) *Collector {
+func New(config *Config) *Collector {
 	logger := config.Logger.With("logger", "ec2")
+
 	return &Collector{
-		ScrapeInterval:    config.ScrapeInterval,
-		Regions:           config.Regions,
-		ec2RegionClients:  config.RegionClients,
-		logger:            logger,
-		pricingService:    ps,
-		computePricingMap: NewComputePricingMap(logger),
-		storagePricingMap: NewStoragePricingMap(logger),
+		ScrapeInterval:     config.ScrapeInterval,
+		Regions:            config.Regions,
+		logger:             logger,
+		awsRegionClientMap: config.RegionMap,
+		computePricingMap:  NewComputePricingMap(logger),
+		storagePricingMap:  NewStoragePricingMap(logger),
 	}
 }
 
@@ -106,25 +103,24 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 
 // Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	start := time.Now()
 	ctx := context.Background()
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
 
 	// TODO: make both maps scraping run async in the background
-	if c.computePricingMap == nil || time.Now().After(c.NextComputeScrape) {
+	if c.computePricingMap == nil || time.Now().After(c.nextComputeScrape) {
 		err := c.populateComputePricingMap(ctx)
 		if err != nil {
 			return err
 		}
-		c.NextComputeScrape = time.Now().Add(c.ScrapeInterval)
+		c.nextComputeScrape = time.Now().Add(c.ScrapeInterval)
 	}
 
-	if c.storagePricingMap == nil || time.Now().After(c.NextStorageScrape) {
+	if c.storagePricingMap == nil || time.Now().After(c.nextStorageScrape) {
 		err := c.populateStoragePricingMap(ctx)
 		if err != nil {
 			return err
 		}
-		c.NextStorageScrape = time.Now().Add(c.ScrapeInterval)
+		c.nextStorageScrape = time.Now().Add(c.ScrapeInterval)
 	}
 
 	numOfRegions := len(c.Regions)
@@ -139,18 +135,18 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 
 	for _, region := range c.Regions {
 		regionName := *region.RegionName
-		client := c.ec2RegionClients[regionName]
 
-		if client == nil {
+		regionClient, ok := c.awsRegionClientMap[regionName]
+		if !ok {
 			return ErrClientNotFound
 		}
 
 		go func() {
-			c.fetchInstancesData(ctx, client, regionName, instanceCh)
+			c.fetchInstancesData(ctx, regionClient, regionName, instanceCh)
 			wgInstances.Done()
 		}()
 		go func() {
-			c.fetchVolumesData(ctx, client, regionName, volumeCh)
+			c.fetchVolumesData(ctx, regionClient, regionName, volumeCh)
 			wgVolumes.Done()
 		}()
 	}
@@ -164,7 +160,6 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	}()
 	c.emitMetricsFromReservationsChannel(instanceCh, ch)
 	c.emitMetricsFromVolumesChannel(volumeCh, ch)
-	c.logger.LogAttrs(ctx, slog.LevelInfo, "Finished collect", slog.Duration("duration", time.Since(start)))
 	return nil
 }
 
@@ -179,16 +174,17 @@ func (c *Collector) populateComputePricingMap(errGroupCtx context.Context) error
 		eg.Go(func() error {
 			c.logger.LogAttrs(errGroupCtx, slog.LevelDebug, "fetching compute pricing info", slog.String("region", *region.RegionName))
 
-			if c.ec2RegionClients[*region.RegionName] == nil {
+			regionClient, ok := c.awsRegionClientMap[*region.RegionName]
+			if !ok {
 				return ErrClientNotFound
 			}
-			client := c.ec2RegionClients[*region.RegionName]
-			spotPriceList, err := ListSpotPrices(errGroupCtx, client)
+
+			spotPriceList, err := regionClient.ListSpotPrices(errGroupCtx)
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
 			}
 
-			priceList, err := ListOnDemandPrices(errGroupCtx, *region.RegionName, c.pricingService)
+			priceList, err := regionClient.ListOnDemandPrices(errGroupCtx, *region.RegionName)
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
 			}
@@ -220,8 +216,12 @@ func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
 	m := sync.Mutex{}
 	for _, region := range c.Regions {
 		eg.Go(func() error {
+			regionClient, ok := c.awsRegionClientMap[*region.RegionName]
+			if !ok {
+				return ErrClientNotFound
+			}
 			c.logger.LogAttrs(ctx, slog.LevelDebug, "fetching storage pricing info", slog.String("region", *region.RegionName))
-			storagePriceList, err := ListStoragePrices(ctx, *region.RegionName, c.pricingService)
+			storagePriceList, err := regionClient.ListStoragePrices(ctx, *region.RegionName)
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrListStoragePrices, err)
 			}
@@ -244,11 +244,11 @@ func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
 	return nil
 }
 
-func (c *Collector) fetchInstancesData(ctx context.Context, client ec2client.EC2, region string, instanceCh chan []ec2Types.Reservation) {
+func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.Client, region string, instanceCh chan []ec2Types.Reservation) {
 	now := time.Now()
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching instances", slog.String("region", region))
 
-	reservations, err := ListComputeInstances(ctx, client)
+	reservations, err := regionClient.ListComputeInstances(ctx)
 	if err != nil {
 		c.logger.LogAttrs(ctx, slog.LevelError, "Could not list compute instances",
 			slog.String("region", region),
@@ -265,11 +265,11 @@ func (c *Collector) fetchInstancesData(ctx context.Context, client ec2client.EC2
 	instanceCh <- reservations
 }
 
-func (c *Collector) fetchVolumesData(ctx context.Context, client ec2client.EC2, region string, volumeCh chan []ec2Types.Volume) {
+func (c *Collector) fetchVolumesData(ctx context.Context, regionClient client.Client, region string, volumeCh chan []ec2Types.Volume) {
 	now := time.Now()
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching volumes", slog.String("region", region))
 
-	volumes, err := ListEBSVolumes(ctx, client)
+	volumes, err := regionClient.ListEBSVolumes(ctx)
 	if err != nil {
 		c.logger.LogAttrs(ctx, slog.LevelError, "Could not list EBS volumes",
 			slog.String("region", region),
@@ -290,7 +290,7 @@ func (c *Collector) emitMetricsFromReservationsChannel(reservationsCh chan []ec2
 	for reservations := range reservationsCh {
 		for _, reservation := range reservations {
 			for _, instance := range reservation.Instances {
-				clusterName := ClusterNameFromInstance(instance)
+				clusterName := client.ClusterNameFromInstance(instance)
 				if instance.PrivateDnsName == nil || *instance.PrivateDnsName == "" {
 					c.logger.Debug(fmt.Sprintf("no private dns name found for instance %s", *instance.InstanceId))
 					continue
@@ -357,7 +357,7 @@ func (c *Collector) emitMetricsFromVolumesChannel(volumesCh chan []ec2Types.Volu
 			}
 
 			labelValues := []string{
-				NameFromVolume(volume),
+				client.NameFromVolume(volume),
 				region,
 				az,
 				*volume.VolumeId,

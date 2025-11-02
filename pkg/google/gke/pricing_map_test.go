@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/type/money"
 
@@ -20,7 +21,7 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
 		pm               PricingMap
-		ms               *MachineSpec
+		ms               *client.MachineSpec
 		expectedCPUPrice float64
 		expectedRAMPRice float64
 		expectedError    error
@@ -31,25 +32,25 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 		},
 		{
 			name:          "nil machine spec",
-			pm:            PricingMap{Compute: map[string]*FamilyPricing{"": {}}},
+			pm:            PricingMap{compute: map[string]*FamilyPricing{"": {}}},
 			expectedError: ErrRegionNotFound,
 		},
 		{
 			name:          "region not found",
-			pm:            PricingMap{Compute: map[string]*FamilyPricing{"": {}}},
-			ms:            &MachineSpec{Region: "missing region"},
+			pm:            PricingMap{compute: map[string]*FamilyPricing{"": {}}},
+			ms:            &client.MachineSpec{Region: "missing region"},
 			expectedError: ErrRegionNotFound,
 		},
 		{
 			name:          "family type not found",
-			pm:            PricingMap{Compute: map[string]*FamilyPricing{"region": {}}},
-			ms:            &MachineSpec{Region: "region"},
+			pm:            PricingMap{compute: map[string]*FamilyPricing{"region": {}}},
+			ms:            &client.MachineSpec{Region: "region"},
 			expectedError: ErrFamilyTypeNotFound,
 		},
 		{
 			name: "on-demand",
 			pm: PricingMap{
-				Compute: map[string]*FamilyPricing{
+				compute: map[string]*FamilyPricing{
 					"region": {
 						Family: map[string]*PriceTiers{
 							"family": {
@@ -62,7 +63,7 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 					},
 				},
 			},
-			ms: &MachineSpec{
+			ms: &client.MachineSpec{
 				Region: "region",
 				Family: "family",
 			},
@@ -72,7 +73,7 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 		{
 			name: "spot",
 			pm: PricingMap{
-				Compute: map[string]*FamilyPricing{
+				compute: map[string]*FamilyPricing{
 					"region": {
 						Family: map[string]*PriceTiers{
 							"family": {
@@ -87,7 +88,7 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 			},
 			expectedCPUPrice: 3,
 			expectedRAMPRice: 4,
-			ms: &MachineSpec{
+			ms: &client.MachineSpec{
 				Region:       "region",
 				Family:       "family",
 				SpotInstance: true,
@@ -118,8 +119,8 @@ func TestPricingMapParseSkus(t *testing.T) {
 			name: "empty sku, empty pricing map",
 			skus: []*billingpb.Sku{{}},
 			expectedPricingMap: &PricingMap{
-				Compute: map[string]*FamilyPricing{},
-				Storage: map[string]*StoragePricing{},
+				compute: map[string]*FamilyPricing{},
+				storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -142,8 +143,8 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Compute: map[string]*FamilyPricing{},
-				Storage: map[string]*StoragePricing{},
+				compute: map[string]*FamilyPricing{},
+				storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -161,8 +162,8 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Compute: map[string]*FamilyPricing{},
-				Storage: map[string]*StoragePricing{},
+				compute: map[string]*FamilyPricing{},
+				storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -181,7 +182,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Compute: map[string]*FamilyPricing{
+				compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"g2": {
@@ -192,7 +193,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 						},
 					},
 				},
-				Storage: map[string]*StoragePricing{},
+				storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -211,7 +212,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Compute: map[string]*FamilyPricing{
+				compute: map[string]*FamilyPricing{
 					"us-central1": {
 						Family: map[string]*PriceTiers{
 							"g2": {
@@ -231,7 +232,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 						},
 					},
 				},
-				Storage: map[string]*StoragePricing{},
+				storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -250,7 +251,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Compute: map[string]*FamilyPricing{
+				compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"c4a": {
@@ -261,7 +262,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 						},
 					},
 				},
-				Storage: map[string]*StoragePricing{},
+				storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -280,7 +281,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Compute: map[string]*FamilyPricing{
+				compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"c4a": {
@@ -291,7 +292,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 						},
 					},
 				},
-				Storage: map[string]*StoragePricing{},
+				storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -310,7 +311,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Compute: map[string]*FamilyPricing{
+				compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"c4a": {
@@ -321,7 +322,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 						},
 					},
 				},
-				Storage: map[string]*StoragePricing{},
+				storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -340,7 +341,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Compute: map[string]*FamilyPricing{
+				compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"c4a": {
@@ -351,7 +352,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 						},
 					},
 				},
-				Storage: map[string]*StoragePricing{},
+				storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -370,7 +371,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Compute: map[string]*FamilyPricing{
+				compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"g2": {
@@ -381,7 +382,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 						},
 					},
 				},
-				Storage: map[string]*StoragePricing{},
+				storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -400,7 +401,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Compute: map[string]*FamilyPricing{
+				compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"e2": {
@@ -411,7 +412,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 						},
 					},
 				},
-				Storage: map[string]*StoragePricing{},
+				storage: map[string]*StoragePricing{},
 			},
 		},
 		{
@@ -435,7 +436,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Storage: map[string]*StoragePricing{
+				storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]*StoragePrices{
 							"pd-standard": {
@@ -444,7 +445,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 						},
 					},
 				},
-				Compute: map[string]*FamilyPricing{},
+				compute: map[string]*FamilyPricing{},
 			},
 		},
 		{
@@ -464,7 +465,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Storage: map[string]*StoragePricing{
+				storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]*StoragePrices{
 							"pd-ssd": {
@@ -473,7 +474,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 						},
 					},
 				},
-				Compute: map[string]*FamilyPricing{},
+				compute: map[string]*FamilyPricing{},
 			},
 		},
 		{
@@ -506,7 +507,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Storage: map[string]*StoragePricing{
+				storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]*StoragePrices{
 							"pd-balanced": {
@@ -515,7 +516,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 						},
 					},
 				},
-				Compute: map[string]*FamilyPricing{},
+				compute: map[string]*FamilyPricing{},
 			},
 		},
 		{
@@ -535,7 +536,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Storage: map[string]*StoragePricing{
+				storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]*StoragePrices{
 							"pd-extreme": {
@@ -544,7 +545,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 						},
 					},
 				},
-				Compute: map[string]*FamilyPricing{},
+				compute: map[string]*FamilyPricing{},
 			},
 		},
 		{
@@ -564,7 +565,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Storage: map[string]*StoragePricing{
+				storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]*StoragePrices{
 							"hyperdisk-balanced": {
@@ -573,7 +574,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 						},
 					},
 				},
-				Compute: map[string]*FamilyPricing{},
+				compute: map[string]*FamilyPricing{},
 			},
 		},
 		{
@@ -608,7 +609,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 				},
 			},
 			expectedPricingMap: &PricingMap{
-				Storage: map[string]*StoragePricing{
+				storage: map[string]*StoragePricing{
 					"us-east4": {
 						Storage: map[string]*StoragePrices{
 							"pd-ssd": {
@@ -617,7 +618,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 						},
 					},
 				},
-				Compute: map[string]*FamilyPricing{},
+				compute: map[string]*FamilyPricing{},
 			},
 		},
 		{
@@ -636,7 +637,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 				}},
 			}},
 			expectedPricingMap: &PricingMap{
-				Compute: map[string]*FamilyPricing{
+				compute: map[string]*FamilyPricing{
 					"europe-west1": {
 						Family: map[string]*PriceTiers{
 							"c2": {
@@ -647,14 +648,14 @@ func TestPricingMapParseSkus(t *testing.T) {
 						},
 					},
 				},
-				Storage: map[string]*StoragePricing{},
+				storage: map[string]*StoragePricing{},
 			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pricingMap := &PricingMap{
-				Compute: make(map[string]*FamilyPricing),
-				Storage: make(map[string]*StoragePricing),
+				compute: make(map[string]*FamilyPricing),
+				storage: make(map[string]*StoragePricing),
 			}
 			err := pricingMap.ParseSkus(tc.skus)
 			if tc.expectedError != nil {

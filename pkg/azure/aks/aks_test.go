@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	aksTestLogger *slog.Logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+	aksTestLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
 func TestNew(t *testing.T) {
@@ -30,6 +30,7 @@ func TestCollect(t *testing.T) {
 	testTable := map[string]struct {
 		machineStore *MachineStore
 		priceStore   *PriceStore
+		diskStore    *DiskStore
 
 		expectedErr error
 	}{
@@ -69,8 +70,14 @@ func TestCollect(t *testing.T) {
 					},
 				},
 			},
+			diskStore: &DiskStore{
+				logger:      aksTestLogger,
+				mu:          sync.RWMutex{},
+				disks:       make(map[string]*Disk),
+				diskPricing: make(map[string]*DiskPricing),
+			},
 
-			expectedErr: ErrPriceInformationNotFound,
+			expectedErr: nil,
 		},
 
 		"base case": {
@@ -109,6 +116,12 @@ func TestCollect(t *testing.T) {
 					},
 				},
 			},
+			diskStore: &DiskStore{
+				logger:      aksTestLogger,
+				mu:          sync.RWMutex{},
+				disks:       make(map[string]*Disk),
+				diskPricing: make(map[string]*DiskPricing),
+			},
 
 			expectedErr: nil,
 		},
@@ -121,6 +134,7 @@ func TestCollect(t *testing.T) {
 			}
 			fakeAksCollector.MachineStore = tc.machineStore
 			fakeAksCollector.PriceStore = tc.priceStore
+			fakeAksCollector.DiskStore = tc.diskStore
 
 			promCh := make(chan prometheus.Metric)
 

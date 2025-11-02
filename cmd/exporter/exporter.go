@@ -72,6 +72,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	fs.Var(&cfg.Providers.Azure.Services, "azure.services", "Azure service(s).")
 	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s).")
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
+	flag.StringVar(&cfg.Providers.AWS.RoleARN, "aws.roleARN", "", "Optional AWS role ARN to assume for cross-account access.")
 	// TODO - PUT PROJECT-ID UNDER GCP
 	flag.StringVar(&cfg.ProjectID, "project-id", "ops-tools-1203", "Project ID to target.")
 	flag.StringVar(&cfg.Providers.Azure.SubscriptionId, "azure.subscription-id", "", "Azure subscription ID to pull data from.")
@@ -108,7 +109,7 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 	if err != nil {
 		return err
 	}
-	mux.Handle(cfg.Server.Path, registryHandler) // prom metrics handler
+	mux.Handle(cfg.Server.Path, registryHandler) // prom metrics handler (/metrics)
 
 	server := &http.Server{Addr: cfg.Server.Address, Handler: mux}
 	errChan := make(chan error)
@@ -140,6 +141,25 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 }
 
 func createPromRegistryHandler(csp provider.Provider) (http.Handler, error) {
+	var subsystem = "metrics_handler"
+	requestDuration := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:                           prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "request_duration_seconds"),
+			Help:                           "Duration of HTTP requests in seconds for the metrics endpoint",
+			NativeHistogramBucketFactor:    1.1,
+			NativeHistogramMaxBucketNumber: 10,
+			Buckets:                        []float64{1, 2, 5, 7, 10, 20, 40, 80},
+		},
+		[]string{"method"},
+	)
+
+	requestCounter := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "requests_total"),
+			Help: "Total number of HTTP requests for the metrics endpoint",
+		},
+		[]string{"code", "method"},
+	)
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
 		collectors.NewBuildInfoCollector(),
@@ -147,15 +167,25 @@ func createPromRegistryHandler(csp provider.Provider) (http.Handler, error) {
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		version.NewCollector(cloudcost_exporter.ExporterName),
 		csp,
+		requestCounter,
+		requestDuration,
 	)
 	err := csp.RegisterCollectors(registry)
 	if err != nil {
 		return nil, err
 	}
-	// CollectMetrics http server for prometheus
-	return promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+
+	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
-	}), nil
+	})
+
+	return promhttp.InstrumentHandlerDuration(
+		requestDuration,
+		promhttp.InstrumentHandlerCounter(
+			requestCounter,
+			handler,
+		),
+	), nil
 }
 
 func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider, error) {
@@ -172,6 +202,7 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 			Logger:         cfg.Logger,
 			Region:         cfg.Providers.AWS.Region,
 			Profile:        cfg.Providers.AWS.Profile,
+			RoleARN:        cfg.Providers.AWS.RoleARN,
 			ScrapeInterval: cfg.Collector.ScrapeInterval,
 			Services:       strings.Split(cfg.Providers.AWS.Services.String(), ","),
 		})

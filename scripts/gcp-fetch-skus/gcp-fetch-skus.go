@@ -11,9 +11,7 @@ import (
 	"os"
 	"strconv"
 
-	billingv1 "cloud.google.com/go/billing/apiv1"
-
-	"github.com/grafana/cloudcost-exporter/pkg/google/billing"
+	client2 "github.com/grafana/cloudcost-exporter/pkg/google/client"
 )
 
 type Config struct {
@@ -22,11 +20,11 @@ type Config struct {
 }
 
 func main() {
-	var config *Config
+	var config Config
 	flag.StringVar(&config.Service, "service", "Compute Engine", "The service to fetch skus for")
 	flag.StringVar(&config.OutputFile, "output-file", "skus.csv", "The file to write the skus to")
 	flag.Parse()
-	if err := run(config); err != nil {
+	if err := run(&config); err != nil {
 		log.Printf("error: %v", err)
 		os.Exit(1)
 	}
@@ -34,16 +32,19 @@ func main() {
 
 func run(config *Config) error {
 	ctx := context.Background()
-	client, err := billingv1.NewCloudCatalogClient(ctx)
+	gcpClient, err := client2.NewGCPClient(ctx, client2.Config{
+		ProjectId: "",
+		Discount:  0,
+	})
+	if err != nil {
+		return err
+	}
+
+	svcid, err := gcpClient.GetServiceName(ctx, config.Service)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer client.Close()
-	svcid, err := billing.GetServiceName(ctx, client, config.Service)
-	if err != nil {
-		log.Fatal(err)
-	}
-	skus := billing.GetPricing(ctx, client, svcid)
+	skus := gcpClient.GetPricing(ctx, svcid)
 	file, err := os.Create(config.OutputFile)
 	if err != nil {
 		log.Fatal(err)

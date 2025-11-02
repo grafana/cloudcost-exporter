@@ -10,9 +10,8 @@ import (
 	"time"
 
 	"github.com/Azure/go-autorest/autorest/to"
+	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
 	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
-
-	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
 
 	"gopkg.in/matryer/try.v1"
 )
@@ -68,13 +67,13 @@ type PriceStore struct {
 	logger  *slog.Logger
 	context context.Context
 
-	azureClientWrapper azureClientWrapper.AzureClient
+	azureClientWrapper client.AzureClient
 
 	regionMapLock *sync.RWMutex
 	RegionMap     map[string]PriceByPriority
 }
 
-func NewPricingStore(ctx context.Context, parentLogger *slog.Logger, azClientWrapper azureClientWrapper.AzureClient) *PriceStore {
+func NewPricingStore(ctx context.Context, parentLogger *slog.Logger, azClientWrapper client.AzureClient) *PriceStore {
 	logger := parentLogger.With("subsystem", "priceStore")
 
 	p := &PriceStore{
@@ -174,7 +173,7 @@ func (p *PriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, 
 
 	skuName := sku.SkuName
 	if len(skuName) == 0 || strings.Contains(skuName, "Low Priority") {
-		p.logger.LogAttrs(ctx, slog.LevelDebug, "disregarding low priority machines", slog.String("sku", sku.SkuName))
+		p.logger.LogAttrs(ctx, slog.LevelDebug, "disregarding low priority aka Spot machines", slog.String("sku", sku.SkuName))
 		return false
 	}
 
@@ -186,16 +185,19 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
 
 	p.logger.Info("populating price store")
 
+	// Create a context with a longer timeout specifically for pricing API calls
+	pricingCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+
 	opts := &retailPriceSdk.RetailPricesClientListOptions{
-		APIVersion:  to.StringPtr(AZ_API_VERSION),
-		Filter:      to.StringPtr(AzurePriceSearchFilter),
-		MeterRegion: to.StringPtr(AzureMeterRegion),
+		APIVersion: to.StringPtr(AZ_API_VERSION),
+		Filter:     to.StringPtr(AzurePriceSearchFilter),
 	}
 
 	var prices []*retailPriceSdk.ResourceSKU
 	err := try.Do(func(attempt int) (bool, error) {
 		var err error
-		prices, err = p.azureClientWrapper.ListPrices(ctx, opts)
+		prices, err = p.azureClientWrapper.ListPrices(pricingCtx, opts)
 		if attempt == listPricesMaxRetries && err != nil {
 			return false, fmt.Errorf("%w: %w", ErrMaxRetriesReached, err)
 		}
@@ -214,6 +216,8 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
 	defer p.regionMapLock.Unlock()
 	clear(p.RegionMap)
 
+	regionsFound := make(map[string]bool)
+
 	for _, price := range prices {
 		regionName := price.ArmRegionName
 		if regionName == "" {
@@ -221,12 +225,15 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
 			continue
 		}
 
+		// Track all regions we see in the data
+		regionsFound[regionName] = true
+
 		if !p.validateMachinePriceIsRelevantFromSku(ctx, price) {
 			continue
 		}
 
 		if _, ok := p.RegionMap[regionName]; !ok {
-			p.logger.LogAttrs(ctx, slog.LevelDebug, "populating machine prices for region", slog.String("region", regionName))
+			p.logger.LogAttrs(ctx, slog.LevelInfo, "populating machine prices for region", slog.String("region", regionName))
 			p.RegionMap[regionName] = make(PriceByPriority)
 			p.RegionMap[regionName][Spot] = make(PriceByOperatingSystem)
 			p.RegionMap[regionName][OnDemand] = make(PriceByOperatingSystem)
@@ -245,7 +252,24 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
 		p.RegionMap[regionName][machinePriority][machineOperatingSystem][price.ArmSkuName] = machinePrices
 	}
 
-	p.logger.LogAttrs(ctx, slog.LevelInfo, "price store populated", slog.Duration("duration", time.Since(startTime)))
+	// Log all regions found and loaded
+	var foundRegions []string
+	for region := range regionsFound {
+		foundRegions = append(foundRegions, region)
+	}
+
+	var loadedRegions []string
+	for region := range p.RegionMap {
+		loadedRegions = append(loadedRegions, region)
+	}
+
+	p.logger.LogAttrs(ctx, slog.LevelInfo, "price store populated",
+		slog.Duration("duration", time.Since(startTime)),
+		slog.Int("totalPrices", len(prices)),
+		slog.Int("regionsFound", len(regionsFound)),
+		slog.Int("regionsLoaded", len(p.RegionMap)),
+		slog.String("foundRegions", strings.Join(foundRegions, ",")),
+		slog.String("loadedRegions", strings.Join(loadedRegions, ",")))
 }
 
 func getMachineOperatingSystemFromSku(sku *retailPriceSdk.ResourceSKU) MachineOperatingSystem {

@@ -9,11 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
+	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/grafana/cloudcost-exporter/pkg/azure/azureClientWrapper"
 
 	"github.com/Azure/go-autorest/autorest/to"
 )
@@ -67,7 +66,7 @@ type MachineStore struct {
 	context context.Context
 	logger  *slog.Logger
 
-	azClientWrapper azureClientWrapper.AzureClient
+	azClientWrapper client.AzureClient
 
 	MachineSizeMap     map[string]map[string]*armcompute.VirtualMachineSize
 	machineSizeMapLock *sync.RWMutex
@@ -76,7 +75,7 @@ type MachineStore struct {
 	machineMapLock *sync.RWMutex
 }
 
-func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, azClientWrapper azureClientWrapper.AzureClient) (*MachineStore, error) {
+func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, azClientWrapper client.AzureClient) (*MachineStore, error) {
 	logger := parentLogger.With("subsystem", "machineStore")
 
 	ms := &MachineStore{
@@ -274,8 +273,6 @@ func (m *MachineStore) GetListOfVmsForSubscription() []*VirtualMachineInfo {
 }
 
 func (m *MachineStore) PopulateMachineStore(ctx context.Context) {
-	startTime := time.Now()
-
 	m.logger.Info("populating machine store")
 
 	clusterList, err := m.getClustersInSubscription(ctx)
@@ -374,7 +371,6 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) {
 
 	m.MachineMap = vmInfoMap
 	m.logger.LogAttrs(m.context, slog.LevelInfo, "machine store populated",
-		slog.Duration("duration", time.Since(startTime)),
 		slog.Int("numOfMachines", len(m.MachineMap)),
 		slog.Int("numOfClusters", len(clusterList)),
 	)
