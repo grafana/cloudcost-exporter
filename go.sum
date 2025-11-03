@@ -74,8 +74,8 @@ github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4 h1:WKuaxf++XKWlHWu9ECbMlha8WOEG
 github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4/go.mod h1:ZWy7j6v1vWGmPReu0iSGvRiise4YI5SkR3OHKTZ6Wuc=
 github.com/aws/aws-sdk-go-v2/service/costexplorer v1.59.1 h1:uiSbBSphnJwWytKM1Fny17kI/JAm8rEnemKamq7THvA=
 github.com/aws/aws-sdk-go-v2/service/costexplorer v1.59.1/go.mod h1:MZYMNbN3gtij5FsZUpcv+IkPMb8Od+K5Pk71BcsVhk8=
-github.com/aws/aws-sdk-go-v2/service/ec2 v1.260.0 h1:g0ymFY/DEcAKJkVh72fGEMx+Ryr6oO1I3qWMptQS4eo=
-github.com/aws/aws-sdk-go-v2/service/ec2 v1.260.0/go.mod h1:D6ty/4Egk8juqzkWVed8bRzuitHVeKZlGCLs0gjR2lY=
+github.com/aws/aws-sdk-go-v2/service/ec2 v1.261.0 h1:bZ3VSnuMaWPMUnes2QUQOyLNGLDoUBqFfPYCA6KQ1uc=
+github.com/aws/aws-sdk-go-v2/service/ec2 v1.261.0/go.mod h1:D6ty/4Egk8juqzkWVed8bRzuitHVeKZlGCLs0gjR2lY=
 github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.51.4 h1:wjCLH2lmEMxQByzshuigdMIoAz6kY40+Gth7ZN5wTTU=
 github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.51.4/go.mod h1:6ghQF0QFjkY3sdXAFzTKkWVOiCZPQlEY9fZ2OLPYIDI=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.2 h1:xtuxji5CS0JknaXoACOunXOYOQzgfTvGAc9s2QdCJA4=
