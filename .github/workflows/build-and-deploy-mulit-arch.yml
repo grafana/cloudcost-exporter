@@ -1,0 +1,76 @@
+# See https://docs.docker.com/build/ci/github-actions/multi-platform/#distribute-build-across-multiple-runners
+name: Build, Push, and Deploy Image
+
+on: push
+#  push:
+#    branches:
+#      - main
+#    tags:
+#      - v*
+
+permissions:
+  contents: read
+
+env:
+  # Docker image tags. See https://github.com/docker/metadata-action for format
+  TAGS_CONFIG: |
+    type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+    type=sha,prefix={{ branch }}-,format=short,enable=${{ github.ref == 'refs/heads/main' }}
+    type=semver,pattern=v{{ version }}
+
+jobs:
+  build-and-export-digest:
+    permissions:
+      contents: read
+      id-token: write
+
+    outputs:
+      images: ${{ steps.build.outputs.images }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runnerType: ubuntu-24.04-arm
+            platform: linux/arm64
+          - runnerType: ubuntu-24.04
+            platform: linux/amd64
+
+    runs-on: ${{ matrix.runnerType }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Build and Push Image
+        id: build
+        uses: grafana/shared-workflows/actions/docker-build-push-image@c658f0fe8393e31c39d266684ef273c6538ed0e1 # docker-build-push-image/v0.1.0
+        with:
+          registries: dockerhub
+          platforms: ${{ matrix.platform }}
+          outputs: "type=image,push-by-digest=true,name-canonical=true,push=false"
+          push: false
+          tags: ${{ env.TAGS_CONFIG }}
+          include-tags-in-push: false
+
+      - name: Export Docker Digest
+        id: export
+        uses: grafana/shared-workflows/actions/docker-export-digest@9901fa1e9c9cd7e78bb556c0ff4339932837082e # docker-export-digest/v0.1.0
+        with:
+          digest: ${{ steps.build.outputs.digest }}
+          platform: ${{ matrix.platform }}
+
+  push-manifest:
+    runs-on: ubuntu-24.04
+    needs: build-and-export-digest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download Multi-Arch Digests, Construct and Upload Manifest
+        uses: grafana/shared-workflows/actions/docker-import-digests-push-manifest@cd422befbbda65e0612a63627e8c8820d86bc2a6 # docker-import-digests-push-manifest/v0.1.0
+        with:
+          images: ${{ needs.build-and-export-digest.outputs.images }}
+          push: false
+          tags: ${{ env.TAGS_CONFIG }}
