@@ -63,12 +63,14 @@ var (
 	)
 )
 
+// Config holds configuration for the VPC collector
 type Config struct {
 	Projects       string
 	ScrapeInterval time.Duration
 	Logger         *slog.Logger
 }
 
+// Collector implements provider.Collector for GCP VPC metrics
 type Collector struct {
 	gcpClient  client.Client
 	projects   []string
@@ -77,19 +79,17 @@ type Collector struct {
 	ctx        context.Context
 }
 
+// New creates a new VPC collector and starts periodic pricing refresh
 func New(config *Config, gcpClient client.Client) (*Collector, error) {
 	ctx := context.Background()
 	logger := config.Logger.With("collector", "vpc")
 
-	// Initialize pricing map
 	pricingMap := NewVPCPricingMap(logger, gcpClient)
 
-	// Initial pricing data load
 	if err := pricingMap.Refresh(ctx); err != nil {
 		logger.Error("Failed to load initial VPC pricing data", "error", err)
 	}
 
-	// Set up periodic pricing refresh
 	go func() {
 		ticker := time.NewTicker(PriceRefreshInterval)
 		defer ticker.Stop()
@@ -117,15 +117,18 @@ func New(config *Config, gcpClient client.Client) (*Collector, error) {
 	}, nil
 }
 
+// Name returns the name of the collector
 func (c *Collector) Name() string {
 	return collectorName
 }
 
+// Register registers the collector with the provider registry
 func (c *Collector) Register(registry provider.Registry) error {
 	c.logger.LogAttrs(c.ctx, slog.LevelInfo, "Registering VPC metrics")
 	return nil
 }
 
+// Describe sends metric descriptors to the channel
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- CloudNATGatewayHourlyGaugeDesc
 	ch <- CloudNATDataProcessingGaugeDesc
@@ -135,16 +138,17 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	return nil
 }
 
+// Collect implements the Prometheus Collector interface
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	c.CollectMetrics(ch)
 	return nil
 }
 
+// CollectMetrics collects and exports VPC pricing metrics
 func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	c.logger.LogAttrs(c.ctx, slog.LevelInfo, "Collecting VPC metrics")
 	start := time.Now()
 
-	// Get all regions from the first project
 	if len(c.projects) == 0 {
 		c.logger.LogAttrs(c.ctx, slog.LevelWarn, "No projects configured for VPC collection")
 		return 0
@@ -167,79 +171,58 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 
 			regionName := region.Name
 
-			natGatewayRate, err := c.pricingMap.GetCloudNATGatewayHourlyRate(regionName)
-			if err != nil {
-				c.logger.Debug("No Cloud NAT Gateway pricing available", "region", regionName, "project", project, "error", err)
-			} else {
-				ch <- prometheus.MustNewConstMetric(
-					CloudNATGatewayHourlyGaugeDesc,
-					prometheus.GaugeValue,
-					natGatewayRate,
-					regionName,
-					project,
-				)
-			}
+			c.collectSimpleMetric(ch, regionName, project, "Cloud NAT Gateway",
+				c.pricingMap.GetCloudNATGatewayHourlyRate, CloudNATGatewayHourlyGaugeDesc)
 
-			natDataProcessingRate, err := c.pricingMap.GetCloudNATDataProcessingRate(regionName)
-			if err != nil {
-				c.logger.Debug("No Cloud NAT data processing pricing available", "region", regionName, "project", project, "error", err)
-			} else {
-				ch <- prometheus.MustNewConstMetric(
-					CloudNATDataProcessingGaugeDesc,
-					prometheus.GaugeValue,
-					natDataProcessingRate,
-					regionName,
-					project,
-				)
-			}
+			c.collectSimpleMetric(ch, regionName, project, "Cloud NAT data processing",
+				c.pricingMap.GetCloudNATDataProcessingRate, CloudNATDataProcessingGaugeDesc)
 
-			vpnGatewayRate, err := c.pricingMap.GetVPNGatewayHourlyRate(regionName)
-			if err != nil {
-				c.logger.Debug("No VPN Gateway pricing available", "region", regionName, "project", project, "error", err)
-			} else {
-				ch <- prometheus.MustNewConstMetric(
-					VPNGatewayHourlyGaugeDesc,
-					prometheus.GaugeValue,
-					vpnGatewayRate,
-					regionName,
-					project,
-				)
-			}
+			c.collectSimpleMetric(ch, regionName, project, "VPN Gateway",
+				c.pricingMap.GetVPNGatewayHourlyRate, VPNGatewayHourlyGaugeDesc)
 
-			// Private Service Connect - Endpoint rates by type
-			pscEndpointRates, err := c.pricingMap.GetPrivateServiceConnectEndpointRates(regionName)
-			if err != nil {
-				c.logger.Debug("No Private Service Connect endpoint pricing available", "region", regionName, "project", project, "error", err)
-			} else {
-				for endpointType, rate := range pscEndpointRates {
-					ch <- prometheus.MustNewConstMetric(
-						PrivateServiceConnectEndpointHourlyGaugeDesc,
-						prometheus.GaugeValue,
-						rate,
-						regionName,
-						project,
-						endpointType,
-					)
-				}
-			}
+			c.collectPSCEndpointMetrics(ch, regionName, project)
 
-			// Private Service Connect - Data processing
-			pscDataProcessingRate, err := c.pricingMap.GetPrivateServiceConnectDataProcessingRate(regionName)
-			if err != nil {
-				c.logger.Debug("No Private Service Connect data processing pricing available", "region", regionName, "project", project, "error", err)
-			} else {
-				ch <- prometheus.MustNewConstMetric(
-					PrivateServiceConnectDataProcessingGaugeDesc,
-					prometheus.GaugeValue,
-					pscDataProcessingRate,
-					regionName,
-					project,
-				)
-			}
+			c.collectSimpleMetric(ch, regionName, project, "Private Service Connect data processing",
+				c.pricingMap.GetPrivateServiceConnectDataProcessingRate, PrivateServiceConnectDataProcessingGaugeDesc)
 		}
 	}
 
 	c.logger.LogAttrs(c.ctx, slog.LevelInfo, "Finished VPC collection",
 		slog.Duration("duration", time.Since(start)))
-	return 1
+	return time.Since(start).Seconds()
+}
+
+// collectSimpleMetric collects a single metric with standard labels (region, project)
+func (c *Collector) collectSimpleMetric(
+	ch chan<- prometheus.Metric,
+	region, project, metricName string,
+	getRate func(string) (float64, error),
+	desc *prometheus.Desc,
+) {
+	rate, err := getRate(region)
+	if err != nil {
+		c.logger.Debug(fmt.Sprintf("No %s pricing available", metricName), "region", region, "project", project, "error", err)
+		return
+	}
+	ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, rate, region, project)
+}
+
+// collectPSCEndpointMetrics collects Private Service Connect endpoint metrics with endpoint_type label
+func (c *Collector) collectPSCEndpointMetrics(ch chan<- prometheus.Metric, region, project string) {
+	rates, err := c.pricingMap.GetPrivateServiceConnectEndpointRates(region)
+	if err != nil {
+		c.logger.Debug("No Private Service Connect endpoint pricing available", "region", region, "project", project, "error", err)
+		return
+	}
+
+	for endpointType, rate := range rates {
+		ch <- prometheus.MustNewConstMetric(
+			PrivateServiceConnectEndpointHourlyGaugeDesc,
+			prometheus.GaugeValue,
+			rate,
+			region,
+			project,
+			endpointType,
+		)
+	}
 }
