@@ -17,31 +17,39 @@ const (
 
 // VPCRegionPricing holds pricing data for all VPC services in a specific region
 type VPCRegionPricing struct {
-	CloudNATGatewayRates        map[string]float64
-	CloudNATDataProcessingRates map[string]float64
-	VPNGatewayRates             map[string]float64
+	CloudNATGatewayRates                   map[string]float64
+	CloudNATDataProcessingRates            map[string]float64
+	VPNGatewayRates                        map[string]float64
+	PrivateServiceConnectEndpointRates     map[string]map[string]float64 // endpoint_type -> usage_type -> rate
+	PrivateServiceConnectDataProcessingRates map[string]float64
 }
 
 // VPCGlobalPricing holds global pricing that applies to all regions
 type VPCGlobalPricing struct {
-	CloudNATGatewayRates        map[string]float64
-	CloudNATDataProcessingRates map[string]float64
+	CloudNATGatewayRates                   map[string]float64
+	CloudNATDataProcessingRates            map[string]float64
+	PrivateServiceConnectEndpointRates     map[string]map[string]float64 // endpoint_type -> usage_type -> rate
+	PrivateServiceConnectDataProcessingRates map[string]float64
 }
 
 // NewVPCRegionPricing creates a new VPCRegionPricing instance
 func NewVPCRegionPricing() *VPCRegionPricing {
 	return &VPCRegionPricing{
-		CloudNATGatewayRates:        make(map[string]float64),
-		CloudNATDataProcessingRates: make(map[string]float64),
-		VPNGatewayRates:             make(map[string]float64),
+		CloudNATGatewayRates:                     make(map[string]float64),
+		CloudNATDataProcessingRates:              make(map[string]float64),
+		VPNGatewayRates:                          make(map[string]float64),
+		PrivateServiceConnectEndpointRates:       make(map[string]map[string]float64),
+		PrivateServiceConnectDataProcessingRates: make(map[string]float64),
 	}
 }
 
 // NewVPCGlobalPricing creates a new VPCGlobalPricing instance
 func NewVPCGlobalPricing() *VPCGlobalPricing {
 	return &VPCGlobalPricing{
-		CloudNATGatewayRates:        make(map[string]float64),
-		CloudNATDataProcessingRates: make(map[string]float64),
+		CloudNATGatewayRates:                     make(map[string]float64),
+		CloudNATDataProcessingRates:              make(map[string]float64),
+		PrivateServiceConnectEndpointRates:       make(map[string]map[string]float64),
+		PrivateServiceConnectDataProcessingRates: make(map[string]float64),
 	}
 }
 
@@ -138,7 +146,7 @@ func (pm *VPCPricingMap) categorizeAndStoreGlobal(description, usageType string,
 	defer pm.mu.Unlock()
 
 	descLower := strings.ToLower(description)
-
+	
 	if strings.Contains(descLower, "cloud nat") || strings.Contains(descLower, "nat") {
 		if strings.Contains(descLower, "data processing") || strings.Contains(descLower, "data processed") {
 			pm.globalPricing.CloudNATDataProcessingRates[usageType] = price
@@ -146,6 +154,21 @@ func (pm *VPCPricingMap) categorizeAndStoreGlobal(description, usageType string,
 		} else if strings.Contains(descLower, "gateway") || strings.Contains(descLower, "uptime") {
 			pm.globalPricing.CloudNATGatewayRates[usageType] = price
 			pm.logger.Info("Stored global Cloud NAT gateway pricing", "usage_type", usageType, "price", price)
+		}
+	}
+
+	if strings.Contains(descLower, "private service connect") {
+		endpointType := pm.categorizePrivateServiceConnectType(descLower)
+		
+		if strings.Contains(descLower, "data processing") {
+			pm.globalPricing.PrivateServiceConnectDataProcessingRates[usageType] = price
+			pm.logger.Info("Stored global Private Service Connect data processing pricing", "usage_type", usageType, "price", price)
+		} else {
+			if pm.globalPricing.PrivateServiceConnectEndpointRates[endpointType] == nil {
+				pm.globalPricing.PrivateServiceConnectEndpointRates[endpointType] = make(map[string]float64)
+			}
+			pm.globalPricing.PrivateServiceConnectEndpointRates[endpointType][usageType] = price
+			pm.logger.Info("Stored global Private Service Connect endpoint pricing", "endpoint_type", endpointType, "usage_type", usageType, "price", price)
 		}
 	}
 
@@ -163,7 +186,7 @@ func (pm *VPCPricingMap) categorizeAndStore(region, description, usageType strin
 	regionPricing := pm.regionPricing[region]
 
 	descLower := strings.ToLower(description)
-
+	
 	// Cloud NAT (regional overrides of global pricing, if they exist)
 	if strings.Contains(descLower, "cloud nat") || strings.Contains(descLower, "nat") {
 		if strings.Contains(descLower, "data processing") || strings.Contains(descLower, "data processed") {
@@ -172,13 +195,47 @@ func (pm *VPCPricingMap) categorizeAndStore(region, description, usageType strin
 			regionPricing.CloudNATGatewayRates[usageType] = price
 		}
 	}
-
+	
 	// VPN Gateway
 	if strings.Contains(description, VPNGatewayPattern) || strings.Contains(usageType, "VPN") {
 		regionPricing.VPNGatewayRates[usageType] = price
 	}
 
+	// Private Service Connect (regional overrides of global pricing, if they exist)
+	if strings.Contains(descLower, "private service connect") {
+		endpointType := pm.categorizePrivateServiceConnectType(descLower)
+		
+		if strings.Contains(descLower, "data processing") {
+			regionPricing.PrivateServiceConnectDataProcessingRates[usageType] = price
+		} else {
+			if regionPricing.PrivateServiceConnectEndpointRates[endpointType] == nil {
+				regionPricing.PrivateServiceConnectEndpointRates[endpointType] = make(map[string]float64)
+			}
+			regionPricing.PrivateServiceConnectEndpointRates[endpointType][usageType] = price
+		}
+	}
+
 	return nil
+}
+
+// categorizePrivateServiceConnectType determines the endpoint type from the description
+func (pm *VPCPricingMap) categorizePrivateServiceConnectType(descLower string) string {
+	if strings.Contains(descLower, "partner") {
+		return "partner"
+	}
+	if strings.Contains(descLower, "consumer") && !strings.Contains(descLower, "data processing") {
+		return "consumer"
+	}
+	if strings.Contains(descLower, "regional") && strings.Contains(descLower, "api") {
+		return "regional_api"
+	}
+	if strings.Contains(descLower, "interfaces") {
+		return "interfaces"
+	}
+	if strings.Contains(descLower, "gke") || strings.Contains(descLower, "google managed") {
+		return "gke_managed"
+	}
+	return "standard"
 }
 
 // GetRegionPricing returns pricing data for a specific region
@@ -286,6 +343,63 @@ func (pm *VPCPricingMap) GetVPNGatewayHourlyRate(region string) (float64, error)
 func (pm *VPCPricingMap) getGlobalRate(serviceType string, rates map[string]float64, matcher usageTypeMatcher) (float64, error) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
-
+	
 	return pm.findRateInMap("global", rates, matcher, serviceType)
+}
+
+// GetPrivateServiceConnectEndpointRates returns endpoint rates by type for the specified region
+func (pm *VPCPricingMap) GetPrivateServiceConnectEndpointRates(region string) (map[string]float64, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	result := make(map[string]float64)
+
+	// Try regional pricing first
+	if pricing, ok := pm.regionPricing[region]; ok {
+		for endpointType, rates := range pricing.PrivateServiceConnectEndpointRates {
+			if len(rates) > 0 {
+				// Get first rate for each endpoint type
+				for _, rate := range rates {
+					result[endpointType] = rate
+					break
+				}
+			}
+		}
+	}
+
+	// Fall back to global pricing
+	for endpointType, rates := range pm.globalPricing.PrivateServiceConnectEndpointRates {
+		if _, exists := result[endpointType]; !exists && len(rates) > 0 {
+			for _, rate := range rates {
+				result[endpointType] = rate
+				break
+			}
+		}
+	}
+
+	if len(result) == 0 {
+		return nil, fmt.Errorf("no Private Service Connect endpoint pricing found for region %s", region)
+	}
+
+	return result, nil
+}
+
+// GetPrivateServiceConnectDataProcessingRate returns the data processing rate for Private Service Connect
+func (pm *VPCPricingMap) GetPrivateServiceConnectDataProcessingRate(region string) (float64, error) {
+	matcher := usageTypeMatcher{
+		patterns: []string{"OnDemand"},
+	}
+
+	// Try regional pricing first
+	pricing, err := pm.GetRegionPricing(region)
+	if err == nil && len(pricing.PrivateServiceConnectDataProcessingRates) > 0 {
+		return pm.findRateInMap(region, pricing.PrivateServiceConnectDataProcessingRates, matcher, "Private Service Connect Data Processing")
+	}
+
+	// Fallback to global pricing
+	if len(pm.globalPricing.PrivateServiceConnectDataProcessingRates) > 0 {
+		return pm.getGlobalRate("Private Service Connect Data Processing", pm.globalPricing.PrivateServiceConnectDataProcessingRates, matcher)
+	}
+
+	return 0, fmt.Errorf("no Private Service Connect data processing pricing found for region %s", region)
 }

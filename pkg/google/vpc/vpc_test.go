@@ -65,6 +65,7 @@ func TestVPCPricingMapErrors(t *testing.T) {
 		{"CloudNATGatewayHourly", pricingMap.GetCloudNATGatewayHourlyRate, "us-central1"},
 		{"CloudNATDataProcessing", pricingMap.GetCloudNATDataProcessingRate, "us-central1"},
 		{"VPNGateway", pricingMap.GetVPNGatewayHourlyRate, "us-central1"},
+		{"PrivateServiceConnectDataProcessing", pricingMap.GetPrivateServiceConnectDataProcessingRate, "us-central1"},
 	}
 
 	for _, tc := range testCases {
@@ -75,6 +76,14 @@ func TestVPCPricingMapErrors(t *testing.T) {
 			}
 		})
 	}
+
+	// Test Private Service Connect endpoint rates separately (returns map)
+	t.Run("PrivateServiceConnectEndpoints", func(t *testing.T) {
+		_, err := pricingMap.GetPrivateServiceConnectEndpointRates("us-central1")
+		if err == nil {
+			t.Error("Expected error for Private Service Connect endpoints when no pricing data available, got nil")
+		}
+	})
 }
 
 // mockGCPClient implements the client.Client interface for testing

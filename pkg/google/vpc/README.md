@@ -20,6 +20,19 @@ This collector provides pricing metrics for Google Cloud Platform (GCP) VPC netw
 - **Equivalent to**: AWS VPN Gateway
 - **Pricing**: Regional pricing varies ($0.05-$0.08 per hour)
 
+### Private Service Connect (PSC)
+- **Service**: Private endpoints for accessing Google Cloud services and third-party services
+- **Metrics**:
+  - `cloudcost_gcp_vpc_private_service_connect_endpoint_hourly_rate_usd_per_hour{endpoint_type}`
+  - `cloudcost_gcp_vpc_private_service_connect_data_processing_usd_per_gb`
+- **Equivalent to**: AWS VPC Endpoints
+- **Endpoint Types**:
+  - `consumer`: For consuming services via PSC
+  - `partner`: For third-party service integrations
+- **Pricing**: Global pricing applies to all regions
+  - Endpoint: $0.01 per hour per endpoint type
+  - Data Processing: $0.01 per GB
+
 ## Configuration
 
 To enable the GCP VPC collector, add `VPC` to your GCP services configuration:
@@ -84,9 +97,26 @@ cloudcost_gcp_vpc_vpn_gateway_hourly_rate_usd_per_hour
 topk(10, cloudcost_gcp_vpc_vpn_gateway_hourly_rate_usd_per_hour)
 ```
 
+### Private Service Connect Endpoint Costs by Type
+```promql
+cloudcost_gcp_vpc_private_service_connect_endpoint_hourly_rate_usd_per_hour
+```
+
+### Private Service Connect Data Processing Rate
+```promql
+cloudcost_gcp_vpc_private_service_connect_data_processing_usd_per_gb
+```
+
 ### All VPC Costs for a Specific Project
 ```promql
 {__name__=~"cloudcost_gcp_vpc_.*",project="my-project"}
+```
+
+### Total VPC Networking Costs
+```promql
+sum(cloudcost_gcp_vpc_nat_gateway_hourly_rate_usd_per_hour) +
+sum(cloudcost_gcp_vpc_vpn_gateway_hourly_rate_usd_per_hour) +
+sum(cloudcost_gcp_vpc_private_service_connect_endpoint_hourly_rate_usd_per_hour)
 ```
 
 ## Required Permissions
@@ -98,11 +128,10 @@ The GCP service account needs the following IAM roles:
 ## Limitations
 
 The following VPC services do **not** have pricing exposed through the GCP Billing API:
-- Private Service Connect
 - External IP Addresses (Static/Ephemeral with non-zero cost)
-- Cloud Router
+- Cloud Router (free service, charges only apply to NAT/VPN traffic)
 
-These services would require manual configuration or alternative pricing sources.
+These services would require manual configuration or alternative pricing sources. For comprehensive cost data, consider using **GCP Cloud Billing Export to BigQuery**.
 
 **Note**: External IP addresses may have zero cost in certain cases (e.g., attached to running instances), which is different from being unavailable in the API.
 

@@ -46,6 +46,21 @@ var (
 		"Hourly cost of VPN Gateway by region and project. Cost represented in USD/hour",
 		[]string{"region", "project"},
 	)
+
+	PrivateServiceConnectEndpointHourlyGaugeDesc = utils.GenerateDesc(
+		cloudcostexporter.MetricPrefix,
+		subsystem,
+		"private_service_connect_endpoint_hourly_rate_usd_per_hour",
+		"Hourly cost of Private Service Connect endpoints by region, project, and type. Cost represented in USD/hour",
+		[]string{"region", "project", "endpoint_type"},
+	)
+	PrivateServiceConnectDataProcessingGaugeDesc = utils.GenerateDesc(
+		cloudcostexporter.MetricPrefix,
+		subsystem,
+		"private_service_connect_data_processing_usd_per_gb",
+		"Data processing cost of Private Service Connect by region and project. Cost represented in USD/GB",
+		[]string{"region", "project"},
+	)
 )
 
 type Config struct {
@@ -115,6 +130,8 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- CloudNATGatewayHourlyGaugeDesc
 	ch <- CloudNATDataProcessingGaugeDesc
 	ch <- VPNGatewayHourlyGaugeDesc
+	ch <- PrivateServiceConnectEndpointHourlyGaugeDesc
+	ch <- PrivateServiceConnectDataProcessingGaugeDesc
 	return nil
 }
 
@@ -184,6 +201,37 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 					VPNGatewayHourlyGaugeDesc,
 					prometheus.GaugeValue,
 					vpnGatewayRate,
+					regionName,
+					project,
+				)
+			}
+
+			// Private Service Connect - Endpoint rates by type
+			pscEndpointRates, err := c.pricingMap.GetPrivateServiceConnectEndpointRates(regionName)
+			if err != nil {
+				c.logger.Debug("No Private Service Connect endpoint pricing available", "region", regionName, "project", project, "error", err)
+			} else {
+				for endpointType, rate := range pscEndpointRates {
+					ch <- prometheus.MustNewConstMetric(
+						PrivateServiceConnectEndpointHourlyGaugeDesc,
+						prometheus.GaugeValue,
+						rate,
+						regionName,
+						project,
+						endpointType,
+					)
+				}
+			}
+
+			// Private Service Connect - Data processing
+			pscDataProcessingRate, err := c.pricingMap.GetPrivateServiceConnectDataProcessingRate(regionName)
+			if err != nil {
+				c.logger.Debug("No Private Service Connect data processing pricing available", "region", regionName, "project", project, "error", err)
+			} else {
+				ch <- prometheus.MustNewConstMetric(
+					PrivateServiceConnectDataProcessingGaugeDesc,
+					prometheus.GaugeValue,
+					pscDataProcessingRate,
 					regionName,
 					project,
 				)
