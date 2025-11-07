@@ -74,3 +74,34 @@ jobs:
           images: ${{ needs.build-and-export-digest.outputs.images }}
           push: ${{ needs.build-and-export-digest.outputs.should-push == 'true' }}
           tags: ${{ env.TAGS_CONFIG }}
+
+  deploy:
+    name: Trigger Argo Workflow Deployment
+    runs-on: ubuntu-24.04
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+
+    steps:
+      - name: Extract version
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Deploying version: ${VERSION}"
+          echo "Docker image: grafana/cloudcost-exporter:${VERSION}"
+
+      - name: Trigger Argo Workflow
+        id: trigger-argo-workflow
+        uses: grafana/shared-workflows/actions/trigger-argo-workflow@2b6ace8fb54a9a0e4c4a28760b10c4f9ab073537 # trigger-argo-workflow/v1.2.0
+        with:
+          namespace: platform-monitoring-cd
+          workflow_template: cloudcost-exporter
+          parameters: |
+            imageName=grafana/cloudcost-exporter
+            dockertag=${{ steps.version.outputs.version }}
+            prCommentContext= Triggered by release ${{ steps.version.outputs.version }} in grafana/cloudcost-exporter
+            commit_author=grafana-delivery-bot
