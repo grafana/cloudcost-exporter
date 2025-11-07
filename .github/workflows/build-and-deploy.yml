@@ -30,6 +30,11 @@ jobs:
 
     runs-on: ${{ matrix.runnerType }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
       - name: Should we push?
         id: setup
         run: |
@@ -38,10 +43,6 @@ jobs:
           else
             echo "should-push=false" | tee -a "$GITHUB_OUTPUT"
           fi
-
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          persist-credentials: false
 
       - name: Build and Push Image
         id: build
