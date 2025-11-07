@@ -78,7 +78,7 @@ jobs:
   deploy:
     name: Trigger Argo Workflow Deployment
     runs-on: ubuntu-24.04
-    needs: build-and-export-digest
+    needs: push-manifest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: read
