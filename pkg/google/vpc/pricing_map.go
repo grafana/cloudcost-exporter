@@ -12,7 +12,27 @@ import (
 )
 
 const (
-	VPNGatewayPattern = "Cloud VPN"
+	// Main service patterns
+	CloudNATPattern              = "cloud nat"
+	NATPattern                   = "nat"
+	VPNGatewayPattern            = "Cloud VPN"
+	VPNUsageType                 = "VPN"
+	PrivateServiceConnectPattern = "private service connect"
+
+	// Sub-patterns for categorization
+	DataProcessingPattern = "data processing"
+	DataProcessedPattern  = "data processed"
+	GatewayPattern        = "gateway"
+	UptimePattern         = "uptime"
+
+	// PSC endpoint type patterns
+	PartnerPattern       = "partner"
+	ConsumerPattern      = "consumer"
+	RegionalPattern      = "regional"
+	APIPattern           = "api"
+	InterfacesPattern    = "interfaces"
+	GKEPattern           = "gke"
+	GoogleManagedPattern = "google managed"
 )
 
 // VPCRegionPricing holds pricing data for all VPC services in a specific region
@@ -145,20 +165,20 @@ func (pm *VPCPricingMap) categorizeAndStoreGlobal(description, usageType string,
 
 	descLower := strings.ToLower(description)
 
-	if strings.Contains(descLower, "cloud nat") || strings.Contains(descLower, "nat") {
-		if strings.Contains(descLower, "data processing") || strings.Contains(descLower, "data processed") {
+	if strings.Contains(descLower, CloudNATPattern) || strings.Contains(descLower, NATPattern) {
+		if strings.Contains(descLower, DataProcessingPattern) || strings.Contains(descLower, DataProcessedPattern) {
 			pm.globalPricing.CloudNATDataProcessingRates[usageType] = price
 			pm.logger.Info("Stored global Cloud NAT data processing pricing", "usage_type", usageType, "price", price)
-		} else if strings.Contains(descLower, "gateway") || strings.Contains(descLower, "uptime") {
+		} else if strings.Contains(descLower, GatewayPattern) || strings.Contains(descLower, UptimePattern) {
 			pm.globalPricing.CloudNATGatewayRates[usageType] = price
 			pm.logger.Info("Stored global Cloud NAT gateway pricing", "usage_type", usageType, "price", price)
 		}
 	}
 
-	if strings.Contains(descLower, "private service connect") {
+	if strings.Contains(descLower, PrivateServiceConnectPattern) {
 		endpointType := pm.categorizePrivateServiceConnectType(descLower)
 
-		if strings.Contains(descLower, "data processing") {
+		if strings.Contains(descLower, DataProcessingPattern) {
 			pm.globalPricing.PrivateServiceConnectDataProcessingRates[usageType] = price
 			pm.logger.Info("Stored global Private Service Connect data processing pricing", "usage_type", usageType, "price", price)
 		} else {
@@ -185,22 +205,22 @@ func (pm *VPCPricingMap) categorizeAndStore(region, description, usageType strin
 
 	descLower := strings.ToLower(description)
 
-	if strings.Contains(descLower, "cloud nat") || strings.Contains(descLower, "nat") {
-		if strings.Contains(descLower, "data processing") || strings.Contains(descLower, "data processed") {
+	if strings.Contains(descLower, CloudNATPattern) || strings.Contains(descLower, NATPattern) {
+		if strings.Contains(descLower, DataProcessingPattern) || strings.Contains(descLower, DataProcessedPattern) {
 			regionPricing.CloudNATDataProcessingRates[usageType] = price
-		} else if strings.Contains(descLower, "gateway") || strings.Contains(descLower, "uptime") {
+		} else if strings.Contains(descLower, GatewayPattern) || strings.Contains(descLower, UptimePattern) {
 			regionPricing.CloudNATGatewayRates[usageType] = price
 		}
 	}
 
-	if strings.Contains(description, VPNGatewayPattern) || strings.Contains(usageType, "VPN") {
+	if strings.Contains(description, VPNGatewayPattern) || strings.Contains(usageType, VPNUsageType) {
 		regionPricing.VPNGatewayRates[usageType] = price
 	}
 
-	if strings.Contains(descLower, "private service connect") {
+	if strings.Contains(descLower, PrivateServiceConnectPattern) {
 		endpointType := pm.categorizePrivateServiceConnectType(descLower)
 
-		if strings.Contains(descLower, "data processing") {
+		if strings.Contains(descLower, DataProcessingPattern) {
 			regionPricing.PrivateServiceConnectDataProcessingRates[usageType] = price
 		} else {
 			if regionPricing.PrivateServiceConnectEndpointRates[endpointType] == nil {
@@ -216,15 +236,15 @@ func (pm *VPCPricingMap) categorizeAndStore(region, description, usageType strin
 // categorizePrivateServiceConnectType determines the endpoint type from the description
 func (pm *VPCPricingMap) categorizePrivateServiceConnectType(descLower string) string {
 	switch {
-	case strings.Contains(descLower, "partner"):
+	case strings.Contains(descLower, PartnerPattern):
 		return "partner"
-	case strings.Contains(descLower, "consumer") && !strings.Contains(descLower, "data processing"):
+	case strings.Contains(descLower, ConsumerPattern) && !strings.Contains(descLower, DataProcessingPattern):
 		return "consumer"
-	case strings.Contains(descLower, "regional") && strings.Contains(descLower, "api"):
+	case strings.Contains(descLower, RegionalPattern) && strings.Contains(descLower, APIPattern):
 		return "regional_api"
-	case strings.Contains(descLower, "interfaces"):
+	case strings.Contains(descLower, InterfacesPattern):
 		return "interfaces"
-	case strings.Contains(descLower, "gke") || strings.Contains(descLower, "google managed"):
+	case strings.Contains(descLower, GKEPattern) || strings.Contains(descLower, GoogleManagedPattern):
 		return "gke_managed"
 	default:
 		return "standard"
