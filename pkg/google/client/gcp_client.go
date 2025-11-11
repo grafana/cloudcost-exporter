@@ -102,6 +102,6 @@ func (c *GCPClient) ListForwardingRules(ctx context.Context, projectId string, r
 	return c.compute.listForwardingRules(ctx, projectId, region)
 }
 
-func (c *GCPClient) ListSQLInstances(projectId string) ([]*sqladmin.DatabaseInstance, error) {
-	return c.sqlAdmin.listInstances(projectId)
+func (c *GCPClient) ListSQLInstances(ctx context.Context, projectId string) ([]*sqladmin.DatabaseInstance, error) {
+	return c.sqlAdmin.listInstances(ctx, projectId)
 }

@@ -1,7 +1,7 @@
 package client
 
 import (
-	"fmt"
+	"context"
 
 	sqladmin "google.golang.org/api/sqladmin/v1beta4"
 )
@@ -18,14 +18,10 @@ func newSQLAdmin(sqlAdminService *sqladmin.Service, projectId string) *SQLAdmin 
 	}
 }
 
-func (s *SQLAdmin) listInstances(projectId string) ([]*sqladmin.DatabaseInstance, error) {
-	instances, err := s.sqlAdminService.Instances.List(projectId).Do()
+func (s *SQLAdmin) listInstances(ctx context.Context, projectId string) ([]*sqladmin.DatabaseInstance, error) {
+	instances, err := s.sqlAdminService.Instances.List(projectId).Context(ctx).Do()
 	if err != nil {
 		return nil, err
-	}
-
-	for _, instance := range instances.Items {
-		fmt.Println(instance)
 	}
 
 	return instances.Items, nil

@@ -2,18 +2,17 @@ package google
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
+	"github.com/grafana/cloudcost-exporter/pkg/google/cloudsql"
 	"github.com/grafana/cloudcost-exporter/pkg/google/networking"
 	"github.com/prometheus/client_golang/prometheus"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
-	"github.com/grafana/cloudcost-exporter/pkg/google/cloudsql"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
 	"github.com/grafana/cloudcost-exporter/pkg/google/vpc"
@@ -137,6 +136,7 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 			collector, err = cloudsql.New(&cloudsql.Config{
 				ProjectId:      config.ProjectId,
 				ScrapeInterval: config.ScrapeInterval,
+				Logger:         logger,
 			}, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
