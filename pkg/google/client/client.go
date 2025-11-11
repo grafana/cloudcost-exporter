@@ -20,5 +20,5 @@ type Client interface {
 	ListInstancesInZone(projectId, zone string) ([]*MachineSpec, error)
 	ListDisks(ctx context.Context, project string, zone string) ([]*compute.Disk, error)
 	ListForwardingRules(ctx context.Context, project string, region string) ([]*compute.ForwardingRule, error)
-	ListSQLInstances(projectId string) ([]*sqladmin.DatabaseInstance, error)
+	ListSQLInstances(ctx context.Context, projectId string) ([]*sqladmin.DatabaseInstance, error)
 }

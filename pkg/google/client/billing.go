@@ -127,8 +127,8 @@ func getPriceFromSku(sku *billingpb.Sku) (float64, error) {
 		return 0.0, fmt.Errorf("found sku without TieredRates: %+v", sku)
 	}
 	tierRate := priceInfo.PricingExpression.TieredRates[tierRatesLen-1]
-
-	return 1e-9 * float64(tierRate.UnitPrice.Nanos), nil // Convert NanoUSD to USD when return
+	// The cost of the SKU is units + nanos
+	return float64(tierRate.UnitPrice.Units) + 1e-9*float64(tierRate.UnitPrice.Nanos), nil // Convert NanoUSD to USD when return
 }
 
 func parseStorageSku(sku *billingpb.Sku, m *metrics.Metrics) error {
