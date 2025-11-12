@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"log/slog"
+	"os"
+	"strings"
 	"time"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
@@ -11,26 +13,25 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
+	sqladmin "google.golang.org/api/sqladmin/v1beta4"
 )
 
 type Config struct {
-	ProjectId      string
+	Projects       string
 	ScrapeInterval time.Duration
-	Logger         *slog.Logger
 }
 
 type Collector struct {
-	gcpClient     client.Client
-	config        *Config
-	PricingClient *pricingMap
-	usageTicker   *time.Ticker
-	costTicker    *time.Ticker
+	projects   []string
+	gcpClient  client.Client
+	config     *Config
+	pricingMap *pricingMap
+	logger     *slog.Logger
 }
 
 const (
-	subsystem            = "gcp_cloudsql"
-	UsageRefreshInterval = 24 * time.Hour
-	CostRefreshInterval  = 24 * 30 * time.Hour
+	subsystem           = "gcp_cloudsql"
+	CostRefreshInterval = 24 * 30 * time.Hour
 )
 
 var (
@@ -38,52 +39,20 @@ var (
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
 		"cost_usd_per_hour",
-		"Hourly cost of GCP cloudsql instances by id, region and sku. Cost represented in USD/hour",
-		[]string{"id", "region", "sku"},
-	)
-)
-
-var (
-	UsageGaugeDesc = utils.GenerateDesc(
-		cloudcost_exporter.MetricPrefix,
-		subsystem,
-		"usage_usd_per_hour",
-		"Hourly usage of GCP cloudsql networking by id, region and sku. Usage represented in GB/hour",
-		[]string{"id", "region", "sku"},
+		"Hourly cost of GCP cloudsql instances by instance name, region and sku. Cost represented in USD/hour",
+		[]string{"instance", "region", "sku"},
 	)
 )
 
 func New(config *Config, gcpClient client.Client) (*Collector, error) {
-	logger := config.Logger.With("logger", "cloudsql")
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	pm := newPricingMap(logger, gcpClient)
-	// get prices
-	// if err := pm.populate(ctx); err != nil {
-	// 	return nil, err
-	// }
-	usageTicker := time.NewTicker(UsageRefreshInterval)
-	costTicker := time.NewTicker(CostRefreshInterval)
-	// go func(ctx context.Context) {
-	// 	for {
-	// 		select {
-	// 		case <-ctx.Done():
-	// 			return
-	// 		case <-usageTicker.C:
-	// 			if err := pm.populate(ctx); err != nil {
-	// 				logger.Error("failed to refresh pricing map", "error", err)
-	// 			}
-	// 		case <-costTicker.C:
-	// 			if err := pm.populate(ctx); err != nil {
-	// 				logger.Error("failed to refresh pricing map", "error", err)
-	// 			}
-	// 		}
-	// 	}
-	// }(ctx)
 	return &Collector{
-		gcpClient:     gcpClient,
-		config:        config,
-		PricingClient: pm,
-		usageTicker:   usageTicker,
-		costTicker:    costTicker,
+		gcpClient:  gcpClient,
+		config:     config,
+		pricingMap: pm,
+		projects:   strings.Split(config.Projects, ","),
+		logger:     logger,
 	}, nil
 }
 
@@ -93,38 +62,34 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	ctx := context.Background()
-	logger := c.config.Logger.With("logger", "cloudsql")
+	logger := c.logger.With("logger", "cloudsql")
 
-	// Get all SQL instances
-	instances, err := c.gcpClient.ListSQLInstances(ctx, c.config.ProjectId)
+	instances, err := c.getAllCloudSQL(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Match each instance with its price and emit metrics
 	for _, instance := range instances {
-		price, err := c.PricingClient.matchInstancePrice(instance)
+		price, err := c.pricingMap.matchInstancePrice(instance)
 		if err != nil {
 			logger.Warn("failed to match price for instance",
-				"instance", instance.Name,
+				"name", instance.Name,
 				"region", instance.Region,
 				"tier", instance.Settings.Tier,
 				"error", err)
 			continue
 		}
 
-		// Determine SKU label
-		skuLabel := price.SKUID
+		skuLabel := price.skuID
 		if price.isCustom {
 			skuLabel = "custom"
 		}
 
-		// Emit cost metric
 		metric := prometheus.MustNewConstMetric(
 			HourlyGaugeDesc,
 			prometheus.GaugeValue,
-			price.PricePerHour,
-			instance.Name,
+			price.pricePerHour,
+			instance.ConnectionName,
 			instance.Region,
 			skuLabel,
 		)
@@ -147,24 +112,23 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	return 0
 }
 
-// func (c *Collector) getCloudSQLInfo() ([]CloudSQLInfo, error) {
-// 	var allCloudSQLInfo = []CloudSQLInfo{}
-// 	var mu sync.Mutex
+func (c *Collector) getAllCloudSQL(ctx context.Context) ([]*sqladmin.DatabaseInstance, error) {
+	var allCloudSQLInfo = []*sqladmin.DatabaseInstance{}
 
-// 	// Process projects sequentially
-// 	for _, project := range c.config.ProjectId {
-// 		regions, err := c.gcpClient.GetRegions(project)
-// 		if err != nil {
-// 			c.logger.Error("error getting regions for project", "project", project, "error", err)
-// 			continue
-// 		}
-// 		for _, region := range regions {
-// 			cloudSQLInstances, err := c.gcpClient.ListSQLInstances(project, region.Name)
-// 			if err != nil {
-// 				c.logger.Error("error listing sql instances for project", "project", project, "region", region.Name, "error", err)
-// 				continue
-// 			}
-// 		}
-// 	}
-// 	return allCloudSQLInfo, nil
-// }
+	for _, project := range c.projects {
+		regions, err := c.gcpClient.GetRegions(project)
+		if err != nil {
+			c.logger.Error("error getting regions for project", "project", project, "error", err)
+			continue
+		}
+		for _, region := range regions {
+			cloudSQLInstances, err := c.gcpClient.ListSQLInstances(ctx, project)
+			if err != nil {
+				c.logger.Error("error listing sql instances for project", "project", project, "region", region.Name, "error", err)
+				continue
+			}
+			allCloudSQLInfo = append(allCloudSQLInfo, cloudSQLInstances...)
+		}
+	}
+	return allCloudSQLInfo, nil
+}
