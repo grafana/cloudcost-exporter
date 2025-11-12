@@ -130,11 +130,9 @@ func New(config *Config) (*GCP, error) {
 					continue
 				}
 		case "SQL":
-			// TODO: add error handling
 			collector, err = cloudsql.New(&cloudsql.Config{
-				ProjectId:      config.ProjectId,
+				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
-				Logger:         logger,
 			}, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
