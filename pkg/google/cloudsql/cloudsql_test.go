@@ -19,8 +19,6 @@ import (
 	"google.golang.org/genproto/googleapis/type/money"
 )
 
-// newTestGCPClient creates mock compute and SQL admin clients by serving minimal JSON responses
-// for the Google Compute and SQL Admin APIs over httptest servers.
 func newTestGCPClient(t *testing.T, computeHandlers map[string]any, sqlAdminHandlers map[string]any) *client.Mock {
 	t.Helper()
 
@@ -218,4 +216,69 @@ func TestCollector(t *testing.T) {
 		})
 	}
 
+}
+
+func TestGetAllCloudSQL(t *testing.T) {
+	tests := []struct {
+		name             string
+		wantErr          bool
+		regionsHandlers  map[string]any
+		sqlAdminHandlers map[string]any
+		skus             []*billingpb.Sku
+	}{
+		{
+			name: "finds price for instance",
+			regionsHandlers: map[string]any{
+				"/projects/test-project/regions": &computev1.RegionList{
+					Items: []*computev1.Region{
+						{
+							Name: "test-region",
+						},
+					},
+				},
+			},
+			sqlAdminHandlers: map[string]any{
+				"/sql/v1beta4/projects/test-project/instances": &sqladmin.InstancesListResponse{
+					Items: []*sqladmin.DatabaseInstance{
+						{
+							Name:            "test-name",
+							Region:          "test-region",
+							ConnectionName:  "test-project:test-region:test-name",
+							Settings:        &sqladmin.Settings{Tier: "db-f1-micro", AvailabilityType: "ZONAL"},
+							DatabaseVersion: "MYSQL_8_0",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "duplicates instances",
+			sqlAdminHandlers: map[string]any{
+				"/sql/v1beta4/projects/test-project/instances": &sqladmin.InstancesListResponse{
+					Items: []*sqladmin.DatabaseInstance{
+						{
+							Name:            "test-name",
+							Region:          "test-region",
+							ConnectionName:  "test-project:test-region:test-name",
+							Settings:        &sqladmin.Settings{Tier: "db-f1-micro", AvailabilityType: "ZONAL"},
+							DatabaseVersion: "MYSQL_8_0",
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gcpClient := newTestGCPClient(t, tt.regionsHandlers, tt.sqlAdminHandlers)
+			config := &Config{Projects: "test-project"}
+			collector, err := New(config, gcpClient)
+			require.NoError(t, err)
+
+			instances, err := collector.getAllCloudSQL(context.Background())
+			require.NoError(t, err)
+			assert.Equal(t, 1, len(instances))
+			assert.Equal(t, "test-project:test-region:test-name", instances[0].ConnectionName)
+		})
+	}
 }
