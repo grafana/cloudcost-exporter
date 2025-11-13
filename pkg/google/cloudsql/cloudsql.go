@@ -130,20 +130,22 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 
 func (c *Collector) getAllCloudSQL(ctx context.Context) ([]*sqladmin.DatabaseInstance, error) {
 	var allCloudSQLInfo = []*sqladmin.DatabaseInstance{}
+	seenInstances := make(map[string]bool)
 
 	for _, project := range c.projects {
-		regions, err := c.gcpClient.GetRegions(project)
+		cloudSQLInstances, err := c.gcpClient.ListSQLInstances(ctx, project)
 		if err != nil {
-			c.logger.Error("error getting regions for project", "project", project, "error", err)
-			continue
+			c.logger.Error("error listing sql instances for project", "project", project, "error", err)
+			return nil, err
 		}
-		for _, region := range regions {
-			cloudSQLInstances, err := c.gcpClient.ListSQLInstances(ctx, project)
-			if err != nil {
-				c.logger.Error("error listing sql instances for project", "project", project, "region", region.Name, "error", err)
-				continue
+		for _, instance := range cloudSQLInstances {
+			if instance.ConnectionName != "" {
+				if seenInstances[instance.ConnectionName] {
+					continue
+				}
+				seenInstances[instance.ConnectionName] = true
 			}
-			allCloudSQLInfo = append(allCloudSQLInfo, cloudSQLInstances...)
+			allCloudSQLInfo = append(allCloudSQLInfo, instance)
 		}
 	}
 	return allCloudSQLInfo, nil
