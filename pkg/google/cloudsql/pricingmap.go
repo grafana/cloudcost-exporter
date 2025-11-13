@@ -1,6 +1,7 @@
 package cloudsql
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -27,7 +28,6 @@ type instanceSpec struct {
 type priceMatch struct {
 	pricePerHour float64
 	skuID        string
-	description  string
 	isCustom     bool
 	cpuPrice     float64 // per vCPU per hour if custom
 	ramPrice     float64 // per GB per hour if custom
@@ -48,11 +48,11 @@ type instanceTraits struct {
 }
 
 var (
-	ErrInstanceNotFound      = errors.New("instance not found")
-	ErrPriceNotFound         = errors.New("price not found for instance")
-	ErrInvalidTier           = errors.New("invalid tier format")
-	ErrRegionNotFound        = errors.New("region not found in pricing")
-	ErrComponentPriceMissing = errors.New("component pricing (CPU/RAM) not available")
+	ErrInstanceNotFound   = errors.New("instance not found")
+	ErrPriceNotFound      = errors.New("price not found for instance")
+	ErrInvalidTier        = errors.New("invalid tier format")
+	ErrRegionNotFound     = errors.New("region not found in pricing")
+	ErrCustomPriceMissing = errors.New("custom pricing (CPU/RAM) not available")
 
 	serviceName = "Cloud SQL"
 
@@ -65,7 +65,7 @@ var (
 )
 
 // Price calculation logic:
-// 1. If the instance is a custom instance, use the custom pricing logic. This depends on vCPU and RAM.
+// 1. If the instance is a custom instance (vCPU > 0 and RAM > 0) and has a custom pricing SKU, use the custom pricing logic. This depends on vCPU and RAM.
 //  - Calculate the total price by multiplying the price of the CPU by the number of vCPUs and the price of the RAM by the amount of RAM.
 // 2. If the instance is a standard instance, use the standard pricing logic:
 //  - Find the SKU that is relevant to the standard instance. The sku is not part of the instance payload, so we need to find it
@@ -78,10 +78,34 @@ func newPricingMap(logger *slog.Logger, gcpClient client.Client) *pricingMap {
 	return &pricingMap{
 		logger:    logger,
 		gcpClient: gcpClient,
+		skus:      []*billingpb.Sku{},
 	}
 }
 
+func (pm *pricingMap) getSKus(ctx context.Context) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	serviceFullName, err := pm.gcpClient.GetServiceName(ctx, serviceName)
+	if err != nil {
+		return fmt.Errorf("failed to get service name for Cloud SQL: %w", err)
+	}
+
+	skus := pm.gcpClient.GetPricing(ctx, serviceFullName)
+	if len(skus) == 0 {
+		pm.logger.Warn("no SKUs found for Cloud SQL service", "serviceName", serviceFullName)
+		return nil
+	}
+
+	pm.skus = skus
+	pm.logger.Info("loaded Cloud SQL pricing SKUs", "count", len(skus), "serviceName", serviceFullName)
+	return nil
+}
+
 func priceForSKU(sku *billingpb.Sku) (float64, bool) {
+	if sku == nil {
+		return 0, false
+	}
 	if len(sku.PricingInfo) == 0 {
 		return 0, false
 	}
@@ -108,11 +132,12 @@ func getInstanceSpecFromTier(tier string) (*instanceSpec, error) {
 	}
 
 	if matches := tierMicroSmallRegex.FindStringSubmatch(tier); matches != nil {
+		tierType := matches[1] + "-" + matches[2]
 		return &instanceSpec{
 			cpu:      0,
 			ram:      0,
 			tier:     tier,
-			tierType: matches[2],
+			tierType: tierType,
 			isCustom: false,
 		}, nil
 	}
@@ -145,7 +170,6 @@ func parseInt(s string) int {
 	return n
 }
 
-// extractSpecsFromDescription extracts vCPU and RAM from price description
 func extractSpecsFromDescription(description string) (cpu int, ramMB int, ok bool) {
 	descLower := strings.ToLower(description)
 
@@ -204,16 +228,11 @@ func (pm *pricingMap) matchInstancePrice(instance *sqladmin.DatabaseInstance) (*
 		return nil, err
 	}
 
-	// For standard instances, search through SKUs to find matching price
-	if !it.spec.isCustom {
-		priceMatch, err := pm.findStandardInstancePrice(it)
-		if err == nil {
-			return priceMatch, nil
-		}
+	if it.spec.isCustom {
+		return pm.calculateCustomPrice(it.region, it.spec)
 	}
 
-	// For custom configurations, use custom pricing
-	return pm.calculateCustomPrice(it.region, it.spec)
+	return pm.findStandardInstancePrice(it)
 }
 
 func (pm *pricingMap) extractInstanceInfo(instance *sqladmin.DatabaseInstance) (instanceTraits, error) {
@@ -255,77 +274,74 @@ func (pm *pricingMap) extractInstanceInfo(instance *sqladmin.DatabaseInstance) (
 }
 
 func isCustomPricingSku(sku *billingpb.Sku) bool {
+	if sku == nil {
+		return false
+	}
 	if len(sku.PricingInfo) == 0 {
 		return false
 	}
 	usageUnit := sku.PricingInfo[0].PricingExpression.UsageUnit
 	descLower := strings.ToLower(sku.Description)
 
-	// Custom pricing SKUs have usage units like "h" (CPU) or "GiBy" (RAM)
-	// and descriptions that mention CPU or RAM as components
+	// If a SKU has both vCPU and RAM specs, it's a standard instance SKU
+	hasVCPU := strings.Contains(descLower, "vcpu")
+	hasRAM := strings.Contains(descLower, "ram") || strings.Contains(descLower, "gb ram")
+	if hasVCPU && hasRAM {
+		return false
+	}
+
 	return (usageUnit == "h" && strings.Contains(descLower, "cpu")) ||
 		(strings.Contains(usageUnit, "GiBy") && strings.Contains(descLower, "ram"))
 }
 
+func matchByTierType(sku *billingpb.Sku, it instanceTraits) bool {
+	descLower := strings.ToLower(sku.Description)
+	return it.spec.tierType != "" && strings.Contains(descLower, strings.ToLower(it.spec.tierType))
+}
+
+func isStandardSKU(sku *billingpb.Sku, it instanceTraits) bool {
+	if sku == nil {
+		return false
+	}
+	if sku.Category == nil || sku.Category.ServiceDisplayName != serviceName {
+		return false
+	}
+
+	if isCustomPricingSku(sku) {
+		return false
+	}
+
+	if sku.GeoTaxonomy == nil || len(sku.GeoTaxonomy.Regions) == 0 {
+		return false
+	}
+
+	if !isSkuInRegion(sku, it.region) {
+		return false
+	}
+
+	if it.spec.cpu == 0 {
+		if !matchByTierType(sku, it) {
+			return false
+		}
+	}
+	return true
+}
+
 func (pm *pricingMap) findStandardInstancePrice(it instanceTraits) (*priceMatch, error) {
 	for _, sku := range pm.skus {
-		if sku.Category == nil || sku.Category.ServiceDisplayName != serviceName {
+		if !isStandardSKU(sku, it) {
 			continue
 		}
 
-		// Skip component pricing SKUs (these are for custom instances)
-		if isCustomPricingSku(sku) {
-			continue
-		}
-
-		// Check region
-		if len(sku.GeoTaxonomy.Regions) == 0 || !isSkuInRegion(sku, it.region) {
-			continue
-		}
-
-		// Check database type
-		skuDbType := dbTypeFromDescription(sku.Description)
-		if skuDbType != it.dbType {
-			continue
-		}
-
-		// Check availability
-		skuAvailability := availabilityFromDescription(sku.Description)
-		if skuAvailability != it.availability {
-			continue
-		}
-
-		// For micro/small tiers, match by tier name in description
-		if it.spec.cpu == 0 {
-			descLower := strings.ToLower(sku.Description)
-			tierLower := strings.ToLower(it.spec.tier)
-			if !strings.Contains(descLower, tierLower) {
-				continue
-			}
-		} else {
-			// Extract and match vCPU for standard tiers
-			vcpu, _, ok := extractSpecsFromDescription(sku.Description)
-			if !ok || vcpu != it.spec.cpu {
-				continue
-			}
-		}
-
-		// Extract price
-		price, ok := priceForSKU(sku)
-		if !ok {
-			continue
-		}
-
+		price, _ := priceForSKU(sku)
 		return &priceMatch{
 			pricePerHour: price,
 			skuID:        sku.SkuId,
-			description:  sku.Description,
 			isCustom:     false,
 			cpuPrice:     0,
 			ramPrice:     0,
 		}, nil
 	}
-
 	return nil, ErrPriceNotFound
 }
 
@@ -333,7 +349,6 @@ func (pm *pricingMap) findStandardInstancePrice(it instanceTraits) (*priceMatch,
 func (pm *pricingMap) calculateCustomPrice(region string, spec *instanceSpec) (*priceMatch, error) {
 	var cpuPrice, ramPrice float64
 	var cpuSkuID, ramSkuID string
-
 	for _, sku := range pm.skus {
 		if sku.Category == nil || sku.Category.ServiceDisplayName != serviceName {
 			continue
@@ -353,36 +368,27 @@ func (pm *pricingMap) calculateCustomPrice(region string, spec *instanceSpec) (*
 		}
 
 		usageUnit := sku.PricingInfo[0].PricingExpression.UsageUnit
-		descLower := strings.ToLower(sku.Description)
-
-		// Extract CPU price (per vCPU per hour)
-		// CPU component SKUs have usage unit "h" and mention "cpu" in description
-		if usageUnit == "h" && strings.Contains(descLower, "cpu") {
+		if usageUnit == "h" {
 			cpuPrice = price
 			cpuSkuID = sku.SkuId
 		}
 
-		// Extract RAM price (per GB per hour)
-		// RAM component SKUs have usage unit containing "GiBy" and mention "ram" in description
-		if strings.Contains(usageUnit, "GiBy") && strings.Contains(descLower, "ram") {
+		if strings.Contains(usageUnit, "GiBy") {
 			ramPrice = price
 			ramSkuID = sku.SkuId
 		}
 	}
 
 	if cpuPrice == 0 || ramPrice == 0 {
-		return nil, fmt.Errorf("%w: region=%s (cpuPrice=%f, ramPrice=%f)", ErrComponentPriceMissing, region, cpuPrice, ramPrice)
+		return nil, fmt.Errorf("%w: region=%s (cpuPrice=%f, ramPrice=%f)", ErrCustomPriceMissing, region, cpuPrice, ramPrice)
 	}
 
 	ramGB := float64(spec.ram) / 1024.0
 	totalPrice := float64(spec.cpu)*cpuPrice + ramGB*ramPrice
 
-	skuID := fmt.Sprintf("component-based:%s+%s", cpuSkuID, ramSkuID)
-
 	return &priceMatch{
 		pricePerHour: totalPrice,
-		skuID:        skuID,
-		description:  fmt.Sprintf("Component pricing: %d vCPU + %.2fGB RAM", spec.cpu, ramGB),
+		skuID:        fmt.Sprintf("custom-pricing:%s+%s", cpuSkuID, ramSkuID),
 		isCustom:     true,
 		cpuPrice:     cpuPrice,
 		ramPrice:     ramPrice,
@@ -390,6 +396,12 @@ func (pm *pricingMap) calculateCustomPrice(region string, spec *instanceSpec) (*
 }
 
 func isSkuInRegion(sku *billingpb.Sku, region string) bool {
+	if sku == nil {
+		return false
+	}
+	if sku.GeoTaxonomy == nil || len(sku.GeoTaxonomy.Regions) == 0 {
+		return false
+	}
 	for _, skuRegion := range sku.GeoTaxonomy.Regions {
 		if strings.EqualFold(skuRegion, region) {
 			return true
