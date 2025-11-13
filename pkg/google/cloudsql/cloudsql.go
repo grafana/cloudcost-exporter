@@ -47,6 +47,10 @@ var (
 func New(config *Config, gcpClient client.Client) (*Collector, error) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	pm := newPricingMap(logger, gcpClient)
+	if err := pm.getSKus(context.Background()); err != nil {
+		logger.Error("failed to load pricing SKUs", "error", err)
+		return nil, err
+	}
 	return &Collector{
 		gcpClient:  gcpClient,
 		config:     config,
@@ -63,6 +67,18 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	ctx := context.Background()
 	logger := c.logger.With("logger", "cloudsql")
+
+	// Load SKUs if pricing map is empty
+	c.pricingMap.mu.RLock()
+	skusLoaded := len(c.pricingMap.skus) > 0
+	c.pricingMap.mu.RUnlock()
+
+	if !skusLoaded {
+		if err := c.pricingMap.getSKus(ctx); err != nil {
+			logger.Error("failed to load pricing SKUs", "error", err)
+			return err
+		}
+	}
 
 	instances, err := c.getAllCloudSQL(ctx)
 	if err != nil {
