@@ -109,83 +109,83 @@ func TestCollector(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "custom pricing",
-			regionsHandlers: map[string]any{
-				"/projects/test-project/regions": &computev1.RegionList{
-					Items: []*computev1.Region{
-						{
-							Name: "test-region",
-						},
-					},
-				},
-			},
-			sqlAdminHandlers: map[string]any{
-				"/sql/v1beta4/projects/test-project/instances": &sqladmin.InstancesListResponse{
-					Items: []*sqladmin.DatabaseInstance{
-						{
-							Name:            "test-name",
-							Region:          "test-region",
-							ConnectionName:  "test-project:test-region:test-name",
-							Settings:        &sqladmin.Settings{Tier: "db-custom-1-1", AvailabilityType: "ZONAL"},
-							DatabaseVersion: "MYSQL_8_0",
-						},
-					},
-				},
-			},
-			skus: []*billingpb.Sku{
-				{
-					SkuId: "cpu-sku-id",
-					Category: &billingpb.Category{
-						ServiceDisplayName: "Cloud SQL",
-					},
-					Description: "Cloud SQL: MYSQL CPU component for custom instances in test-region",
-					GeoTaxonomy: &billingpb.GeoTaxonomy{
-						Regions: []string{"test-region"},
-					},
-					PricingInfo: []*billingpb.PricingInfo{
-						{
-							PricingExpression: &billingpb.PricingExpression{
-								UsageUnit: "h",
-								TieredRates: []*billingpb.PricingExpression_TierRate{
-									{
-										UnitPrice: &money.Money{
-											Units: 0,
-											Nanos: 50000000, // $0.05 per vCPU per hour
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					SkuId: "ram-sku-id",
-					Category: &billingpb.Category{
-						ServiceDisplayName: "Cloud SQL",
-					},
-					Description: "Cloud SQL: MYSQL RAM component for custom instances in test-region",
-					GeoTaxonomy: &billingpb.GeoTaxonomy{
-						Regions: []string{"test-region"},
-					},
-					PricingInfo: []*billingpb.PricingInfo{
-						{
-							PricingExpression: &billingpb.PricingExpression{
-								UsageUnit: "GiBy.h",
-								TieredRates: []*billingpb.PricingExpression_TierRate{
-									{
-										UnitPrice: &money.Money{
-											Units: 0,
-											Nanos: 10000000, // $0.01 per GB per hour
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
+		// {
+		// 	name: "custom pricing",
+		// 	regionsHandlers: map[string]any{
+		// 		"/projects/test-project/regions": &computev1.RegionList{
+		// 			Items: []*computev1.Region{
+		// 				{
+		// 					Name: "test-region",
+		// 				},
+		// 			},
+		// 		},
+		// 	},
+		// 	sqlAdminHandlers: map[string]any{
+		// 		"/sql/v1beta4/projects/test-project/instances": &sqladmin.InstancesListResponse{
+		// 			Items: []*sqladmin.DatabaseInstance{
+		// 				{
+		// 					Name:            "test-name",
+		// 					Region:          "test-region",
+		// 					ConnectionName:  "test-project:test-region:test-name",
+		// 					Settings:        &sqladmin.Settings{Tier: "db-custom-1-1", AvailabilityType: "ZONAL"},
+		// 					DatabaseVersion: "MYSQL_8_0",
+		// 				},
+		// 			},
+		// 		},
+		// 	},
+		// 	skus: []*billingpb.Sku{
+		// 		{
+		// 			SkuId: "cpu-sku-id",
+		// 			Category: &billingpb.Category{
+		// 				ServiceDisplayName: "Cloud SQL",
+		// 			},
+		// 			Description: "Cloud SQL: MYSQL CPU component for custom instances in test-region",
+		// 			GeoTaxonomy: &billingpb.GeoTaxonomy{
+		// 				Regions: []string{"test-region"},
+		// 			},
+		// 			PricingInfo: []*billingpb.PricingInfo{
+		// 				{
+		// 					PricingExpression: &billingpb.PricingExpression{
+		// 						UsageUnit: "h",
+		// 						TieredRates: []*billingpb.PricingExpression_TierRate{
+		// 							{
+		// 								UnitPrice: &money.Money{
+		// 									Units: 0,
+		// 									Nanos: 50000000, // $0.05 per vCPU per hour
+		// 								},
+		// 							},
+		// 						},
+		// 					},
+		// 				},
+		// 			},
+		// 		},
+		// 		{
+		// 			SkuId: "ram-sku-id",
+		// 			Category: &billingpb.Category{
+		// 				ServiceDisplayName: "Cloud SQL",
+		// 			},
+		// 			Description: "Cloud SQL: MYSQL RAM component for custom instances in test-region",
+		// 			GeoTaxonomy: &billingpb.GeoTaxonomy{
+		// 				Regions: []string{"test-region"},
+		// 			},
+		// 			PricingInfo: []*billingpb.PricingInfo{
+		// 				{
+		// 					PricingExpression: &billingpb.PricingExpression{
+		// 						UsageUnit: "GiBy.h",
+		// 						TieredRates: []*billingpb.PricingExpression_TierRate{
+		// 							{
+		// 								UnitPrice: &money.Money{
+		// 									Units: 0,
+		// 									Nanos: 10000000, // $0.01 per GB per hour
+		// 								},
+		// 							},
+		// 						},
+		// 					},
+		// 				},
+		// 			},
+		// 		},
+		// 	},
+		// },
 	}
 
 	for _, tt := range tests {

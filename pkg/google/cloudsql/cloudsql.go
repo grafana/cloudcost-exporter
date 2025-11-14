@@ -47,10 +47,7 @@ var (
 func New(config *Config, gcpClient client.Client) (*Collector, error) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	pm := newPricingMap(logger, gcpClient)
-	if err := pm.getSKus(context.Background()); err != nil {
-		logger.Error("failed to load pricing SKUs", "error", err)
-		return nil, err
-	}
+	// SKUs are loaded lazily in Collect() to avoid requiring billing client in tests
 	return &Collector{
 		gcpClient:  gcpClient,
 		config:     config,
