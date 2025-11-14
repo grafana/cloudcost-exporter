@@ -65,14 +65,14 @@ var (
 )
 
 // Price calculation logic:
-// 1. If the instance is a custom instance (vCPU > 0 and RAM > 0) and has a custom pricing SKU, use the custom pricing logic. This depends on vCPU and RAM.
-//  - Calculate the total price by multiplying the price of the CPU by the number of vCPUs and the price of the RAM by the amount of RAM.
-// 2. If the instance is a standard instance, use the standard pricing logic:
-//  - Find the SKU that is relevant to the standard instance. The sku is not part of the instance payload, so we need to find it
-//  by matching the region, database type, and availability type.
-//  - Micro/small tiers are matched by the tier name in the description, since they have no vCPU or RAM.
-//  - Find the price for the SKU.
-//  - Return the price.
+// 1. If the instance tier matches the custom format (db-custom-{vCPU}-{RAM}), use custom pricing logic:
+//  - Find CPU and RAM component SKUs in the region (usage_unit "h" for CPU, "GiBy" for RAM)
+//  - Calculate total price: (vCPU count × CPU price per hour) + (RAM in GB × RAM price per GB per hour)
+// 2. If the instance is a standard instance (any other tier format), use standard pricing logic:
+//  - Find a SKU matching the region and tier type:
+//    * For micro/small tiers (db-f1-micro, db-g1-small): match by tier name in SKU description
+//    * For standard tiers (db-n1-standard-*, etc.): match by region only (first matching SKU)
+//  - Return the price from the matched SKU
 
 func newPricingMap(logger *slog.Logger, gcpClient client.Client) *pricingMap {
 	return &pricingMap{
