@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
 	"google.golang.org/api/compute/v1"
+	sqladmin "google.golang.org/api/sqladmin/v1beta4"
 )
 
 func TestNew(t *testing.T) {
@@ -131,5 +132,9 @@ func (m *mockGCPClient) ListDisks(ctx context.Context, projectId string, zone st
 }
 
 func (m *mockGCPClient) ListForwardingRules(ctx context.Context, projectId string, region string) ([]*compute.ForwardingRule, error) {
+	return nil, nil
+}
+
+func (m *mockGCPClient) ListSQLInstances(ctx context.Context, projectId string) ([]*sqladmin.DatabaseInstance, error) {
 	return nil, nil
 }

@@ -124,13 +124,13 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 				Projects:       config.Projects,
 				Logger:         config.Logger,
 				ScrapeInterval: config.ScrapeInterval,
-				}, gcpClient)
-				if err != nil {
-					logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-						slog.String("service", service),
-						slog.String("message", err.Error()))
-					continue
-				}
+			}, gcpClient)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
 		case "SQL":
 			collector, err = cloudsql.New(&cloudsql.Config{
 				Projects:       config.Projects,
