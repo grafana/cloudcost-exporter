@@ -58,8 +58,7 @@ type Collector struct {
 	config     *Config
 	projects   []string
 	pricingMap *PricingMap
-	// nextScrape time.Time
-	logger *slog.Logger
+	logger     *slog.Logger
 }
 
 func (c *Collector) Register(_ provider.Registry) error {
