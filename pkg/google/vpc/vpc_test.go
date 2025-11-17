@@ -25,7 +25,7 @@ func TestNew(t *testing.T) {
 		Logger:         logger,
 	}
 
-	collector, err := New(config, mockClient)
+	collector, err := New(context.Background(), config, mockClient)
 	if err != nil {
 		t.Fatalf("Failed to create VPC collector: %v", err)
 	}

@@ -91,7 +91,7 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 				continue
 			}
 		case "GKE":
-			collector, err = gke.New(&gke.Config{
+			collector, err = gke.New(ctx, &gke.Config{
 				Projects:       config.Projects,
 				Logger:         config.Logger,
 				ScrapeInterval: config.ScrapeInterval,
@@ -104,7 +104,7 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 			}
 		case "CLB":
 			// CLB = Cloud Load Balancer, but we use forwarding rules to calculate price
-			collector, err = networking.New(&networking.Config{
+			collector, err = networking.New(ctx, &networking.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         config.Logger,
 				Projects:       config.Projects,
@@ -119,7 +119,7 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 				continue
 			}
 		case "VPC":
-			collector, err = vpc.New(&vpc.Config{
+			collector, err = vpc.New(ctx, &vpc.Config{
 				Projects:       config.Projects,
 				Logger:         config.Logger,
 				ScrapeInterval: config.ScrapeInterval,

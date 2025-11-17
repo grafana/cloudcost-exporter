@@ -50,7 +50,7 @@ const (
 )
 
 // New creates an rds collector
-func New(ctx context.Context, config *Config) *Collector {
+func New(config *Config) *Collector {
 	return &Collector{
 		pricingMap:     newPricingMap(),
 		regions:        config.Regions,

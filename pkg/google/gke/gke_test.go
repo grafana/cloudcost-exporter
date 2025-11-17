@@ -483,7 +483,7 @@ func TestCollector_Collect(t *testing.T) {
 			require.NoError(t, err)
 
 			gcpClient := client.NewMock("testing", 0, nil, nil, cloudCatalogClient, computeService)
-			collector, _ := New(test.config, gcpClient)
+			collector, _ := New(context.Background(), test.config, gcpClient)
 			require.NotNil(t, collector)
 			ch := make(chan prometheus.Metric)
 			go func() {

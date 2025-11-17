@@ -233,9 +233,8 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	return nil
 }
 
-func New(config *Config, gcpClient client.Client) (*Collector, error) {
+func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
 	logger := config.Logger.With("collector", "gke")
-	ctx := context.TODO()
 
 	pm, err := NewPricingMap(ctx, gcpClient)
 	if err != nil {
@@ -244,7 +243,7 @@ func New(config *Config, gcpClient client.Client) (*Collector, error) {
 
 	priceTicker := time.NewTicker(PriceRefreshInterval)
 
-	go func(ctx context.Context) {
+	go func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -256,7 +255,7 @@ func New(config *Config, gcpClient client.Client) (*Collector, error) {
 				}
 			}
 		}
-	}(ctx)
+	}()
 
 	return &Collector{
 		config:     config,

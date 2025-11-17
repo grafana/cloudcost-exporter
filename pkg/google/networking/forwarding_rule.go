@@ -83,8 +83,7 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 	return 0
 }
 
-func New(config *Config, gcpClient client.Client) (*Collector, error) {
-	ctx := context.Background()
+func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
 	logger := config.Logger.With("collector", "forwarding_rule")
 
 	priceTicker := time.NewTicker(PriceRefreshInterval)
@@ -93,7 +92,7 @@ func New(config *Config, gcpClient client.Client) (*Collector, error) {
 		return nil, err
 	}
 
-	go func(ctx context.Context) {
+	go func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -104,7 +103,7 @@ func New(config *Config, gcpClient client.Client) (*Collector, error) {
 				}
 			}
 		}
-	}(ctx)
+	}()
 
 	return &Collector{
 		projects:   strings.Split(config.Projects, ","),

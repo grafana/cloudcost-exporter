@@ -149,7 +149,7 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				PricingService: awsPricing.NewFromConfig(pricingConfig),
 				RDSService:     rds.NewFromConfig(awsConfig),
 			})
-			collector := rdsCollector.New(ctx, &rdsCollector.Config{
+			collector := rdsCollector.New(&rdsCollector.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Regions:        regions,
 				RegionMap:      regionClients,
