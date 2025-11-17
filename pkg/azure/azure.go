@@ -139,8 +139,8 @@ func (a *Azure) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (a *Azure) Collect(ch chan<- prometheus.Metric) {
-	// TODO - implement collector context
-	_, cancel := context.WithTimeout(a.context, a.collectorTimeout)
+	// Create a context with timeout for this collection cycle
+	collectCtx, cancel := context.WithTimeout(a.context, a.collectorTimeout)
 	defer cancel()
 
 	wg := &sync.WaitGroup{}
@@ -151,7 +151,7 @@ func (a *Azure) Collect(ch chan<- prometheus.Metric) {
 			collectorStart := time.Now()
 			defer wg.Done()
 			collectorErrors := 0.0
-			if err := c.Collect(ch); err != nil {
+			if err := c.Collect(collectCtx, ch); err != nil {
 				collectorErrors++
 				a.logger.LogAttrs(a.context, slog.LevelInfo, "error collecting metrics from collector", slog.String("collector", c.Name()), slog.String("error", err.Error()))
 			}
