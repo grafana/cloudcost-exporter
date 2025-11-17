@@ -139,7 +139,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 }
 
 // Collect implements the Prometheus Collector interface
-func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	c.CollectMetrics(ch)
 	return nil
 }

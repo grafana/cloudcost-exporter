@@ -100,7 +100,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	return nil
 }
 
-func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	c.logger.Info("Starting ELB collection")
 
 	if c.shouldScrape() {
@@ -111,7 +111,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		c.NextScrape = time.Now().Add(c.ScrapeInterval)
 	}
 
-	loadBalancers, err := c.collectLoadBalancers()
+	loadBalancers, err := c.collectLoadBalancers(ctx)
 	if err != nil {
 		c.logger.Error("Failed to collect load balancers", "error", err)
 		return err
@@ -150,7 +150,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 }
 
 func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
-	err := c.Collect(ch)
+	err := c.Collect(context.Background(), ch)
 	if err != nil {
 		c.logger.Error("Failed to collect metrics", "error", err)
 		return 0
@@ -166,14 +166,14 @@ func (c *Collector) shouldScrape() bool {
 	return time.Now().After(c.NextScrape)
 }
 
-func (c *Collector) collectLoadBalancers() ([]LoadBalancerInfo, error) {
+func (c *Collector) collectLoadBalancers(ctx context.Context) ([]LoadBalancerInfo, error) {
 	var allLoadBalancers []LoadBalancerInfo
 	var mu sync.Mutex
 
 	eg := errgroup.Group{}
 	for regionName := range c.awsRegionClientMap {
 		eg.Go(func() error {
-			loadBalancers, err := c.collectRegionLoadBalancers(regionName)
+			loadBalancers, err := c.collectRegionLoadBalancers(ctx, regionName)
 			if err != nil {
 				return fmt.Errorf("failed to collect load balancers for region %s: %w", regionName, err)
 			}
@@ -193,8 +193,7 @@ func (c *Collector) collectLoadBalancers() ([]LoadBalancerInfo, error) {
 	return allLoadBalancers, nil
 }
 
-func (c *Collector) collectRegionLoadBalancers(region string) ([]LoadBalancerInfo, error) {
-	ctx := context.Background()
+func (c *Collector) collectRegionLoadBalancers(ctx context.Context, region string) ([]LoadBalancerInfo, error) {
 	var loadBalancers []LoadBalancerInfo
 
 	lbList, err := c.awsRegionClientMap[region].DescribeLoadBalancers(ctx)

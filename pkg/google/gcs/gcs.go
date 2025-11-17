@@ -93,7 +93,7 @@ func (c *Collector) Describe(_ chan<- *prometheus.Desc) error {
 	return nil
 }
 
-func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	c.CollectMetrics(ch)
 	return nil
 }

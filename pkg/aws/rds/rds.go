@@ -67,9 +67,8 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 }
 
 // Collect satisfies the provider.Collector interface.
-func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	logger := slog.With("logger", serviceName)
-	ctx := context.Background()
 	var instances = []rdsTypes.DBInstance{}
 	for _, region := range c.regions {
 		regionName := *region.RegionName

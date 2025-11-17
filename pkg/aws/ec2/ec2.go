@@ -102,8 +102,7 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 }
 
 // Collect satisfies the provider.Collector interface.
-func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	ctx := context.Background()
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
 
 	// TODO: make both maps scraping run async in the background
