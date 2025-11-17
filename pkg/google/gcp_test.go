@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -51,9 +52,11 @@ func Test_RegisterCollectors(t *testing.T) {
 				c.EXPECT().Register(r).DoAndReturn(tt.register).Times(tt.numCollectors)
 			}
 			gcp := &GCP{
-				config:     &Config{},
-				collectors: []provider.Collector{},
-				logger:     logger,
+				config:           &Config{},
+				collectors:       []provider.Collector{},
+				logger:           logger,
+				ctx:              context.Background(),
+				collectorTimeout: 1 * time.Minute,
 			}
 			for range tt.numCollectors {
 				gcp.collectors = append(gcp.collectors, c)
@@ -130,9 +133,11 @@ func TestGCP_CollectMetrics(t *testing.T) {
 				c.EXPECT().Register(registry).Return(nil).AnyTimes()
 			}
 			gcp := &GCP{
-				config:     &Config{},
-				collectors: []provider.Collector{},
-				logger:     logger,
+				config:           &Config{},
+				collectors:       []provider.Collector{},
+				logger:           logger,
+				ctx:              context.Background(),
+				collectorTimeout: 1 * time.Minute,
 			}
 
 			for range tt.numCollectors {

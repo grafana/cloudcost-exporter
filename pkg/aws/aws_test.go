@@ -222,9 +222,11 @@ func Test_RegisterCollectors(t *testing.T) {
 			}
 
 			a := AWS{
-				Config:     nil,
-				collectors: []provider.Collector{},
-				logger:     logger,
+				Config:           nil,
+				collectors:       []provider.Collector{},
+				logger:           logger,
+				ctx:              context.Background(),
+				collectorTimeout: 1 * time.Minute,
 			}
 			for i := 0; i < tc.numCollectors; i++ {
 				a.collectors = append(a.collectors, c)
@@ -300,9 +302,11 @@ func Test_CollectMetrics(t *testing.T) {
 				c.EXPECT().Register(registry).Return(nil).AnyTimes()
 			}
 			aws := &AWS{
-				Config:     nil,
-				collectors: []provider.Collector{},
-				logger:     logger,
+				Config:           nil,
+				collectors:       []provider.Collector{},
+				logger:           logger,
+				ctx:              context.Background(),
+				collectorTimeout: 1 * time.Minute,
 			}
 
 			for range tt.numCollectors {
