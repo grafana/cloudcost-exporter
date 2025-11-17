@@ -208,7 +208,7 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 		})
 
 	case "gcp":
-		return google.New(&google.Config{
+		return google.New(ctx, &google.Config{
 			Logger:          cfg.Logger,
 			ProjectId:       cfg.ProjectID,
 			Region:          cfg.Providers.GCP.Region,
