@@ -1,6 +1,7 @@
 package rds
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -200,7 +201,7 @@ func TestCollector_Collect(t *testing.T) {
 			}
 
 			ch := make(chan prometheus.Metric, 1)
-			err := c.Collect(ch)
+			err := c.Collect(context.Background(), ch)
 			assert.NoError(t, err)
 
 			select {

@@ -1,6 +1,7 @@
 package elb
 
 import (
+	"context"
 	"log/slog"
 	"testing"
 	"time"
@@ -109,7 +110,7 @@ func TestCollectRegionLoadBalancers(t *testing.T) {
 		NLBHourlyRate: map[string]float64{LCUUsage: 0.008, LoadBalancerUsage: 0.0225},
 	})
 
-	loadBalancers, err := collector.collectRegionLoadBalancers("us-east-1")
+	loadBalancers, err := collector.collectRegionLoadBalancers(context.Background(), "us-east-1")
 
 	assert.NoError(t, err)
 	assert.Len(t, loadBalancers, 2)

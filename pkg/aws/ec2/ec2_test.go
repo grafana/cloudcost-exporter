@@ -45,7 +45,7 @@ func TestCollector_Collect(t *testing.T) {
 		})
 		ch := make(chan prometheus.Metric)
 		go func() {
-			err := collector.Collect(ch)
+			err := collector.Collect(context.Background(), ch)
 			close(ch)
 			assert.NoError(t, err)
 		}()
@@ -72,7 +72,7 @@ func TestCollector_Collect(t *testing.T) {
 			},
 		})
 		ch := make(chan prometheus.Metric)
-		err := collector.Collect(ch)
+		err := collector.Collect(context.Background(), ch)
 		close(ch)
 		assert.Error(t, err)
 	})
@@ -83,7 +83,7 @@ func TestCollector_Collect(t *testing.T) {
 			RegionMap: map[string]client.Client{},
 		})
 		ch := make(chan prometheus.Metric)
-		err := collector.Collect(ch)
+		err := collector.Collect(context.Background(), ch)
 		close(ch)
 		assert.ErrorIs(t, err, ErrClientNotFound)
 	})
@@ -102,7 +102,7 @@ func TestCollector_Collect(t *testing.T) {
 			},
 		})
 		ch := make(chan prometheus.Metric)
-		err := collector.Collect(ch)
+		err := collector.Collect(context.Background(), ch)
 		close(ch)
 		assert.ErrorIs(t, err, ErrListSpotPrices)
 	})
@@ -137,7 +137,7 @@ func TestCollector_Collect(t *testing.T) {
 		})
 		ch := make(chan prometheus.Metric)
 		defer close(ch)
-		assert.ErrorIs(t, collector.Collect(ch), ErrGeneratePricingMap)
+		assert.ErrorIs(t, collector.Collect(context.Background(), ch), ErrGeneratePricingMap)
 	})
 	t.Run("Test cpu, memory and total cost metrics emitted for each valid instance", func(t *testing.T) {
 		c := mock_client.NewMockClient(ctrl)
@@ -236,7 +236,7 @@ func TestCollector_Collect(t *testing.T) {
 
 		ch := make(chan prometheus.Metric)
 		go func() {
-			if err := collector.Collect(ch); err != nil {
+			if err := collector.Collect(context.Background(), ch); err != nil {
 				assert.NoError(t, err)
 			}
 			close(ch)

@@ -171,7 +171,7 @@ func TestCollector_Collect(t *testing.T) {
 			})
 
 			ch := make(chan prometheus.Metric, len(tt.expectedMetrics))
-			err := collector.Collect(ch)
+			err := collector.Collect(context.Background(), ch)
 			close(ch)
 
 			assert.NoError(t, err)

@@ -107,7 +107,7 @@ func TestCollector_getForwardingRuleInfo(t *testing.T) {
 		ctx:        context.Background(),
 	}
 
-	infos, err := c.getForwardingRuleInfo()
+	infos, err := c.getForwardingRuleInfo(context.Background())
 	require.NoError(t, err)
 	require.Len(t, infos, 3)
 	assert.Contains(t, []string{infos[0].Region, infos[1].Region, infos[2].Region}, "us-central1")
@@ -137,7 +137,7 @@ func TestCollector_Collect_EmitsMetrics(t *testing.T) {
 	}
 
 	ch := make(chan prometheus.Metric, 10)
-	require.NoError(t, c.Collect(ch))
+	require.NoError(t, c.Collect(context.Background(), ch))
 	close(ch)
 
 	var got []*utils.MetricResult

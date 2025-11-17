@@ -1,6 +1,7 @@
 package aks
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -139,7 +140,7 @@ func TestCollect(t *testing.T) {
 			promCh := make(chan prometheus.Metric)
 
 			go func() {
-				err := fakeAksCollector.Collect(promCh)
+				err := fakeAksCollector.Collect(context.Background(), promCh)
 				if tc.expectedErr != nil {
 					assert.ErrorIs(t, err, tc.expectedErr)
 				}
