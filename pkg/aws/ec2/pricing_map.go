@@ -149,11 +149,15 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context) err
 	for _, spotPrice := range spotPrices {
 		region := *spotPrice.AvailabilityZone
 		instanceType := string(spotPrice.InstanceType)
-		if _, ok := cpm.InstanceDetails[instanceType]; !ok {
+
+		cpm.m.RLock()
+		spotProductTerm, ok := cpm.InstanceDetails[instanceType]
+		cpm.m.RUnlock()
+
+		if !ok {
 			cpm.logger.Error(fmt.Sprintf("no instance details found for instance type %s", instanceType))
 			continue
 		}
-		spotProductTerm := cpm.InstanceDetails[instanceType]
 		// Override the region with the availability zone
 		spotProductTerm.Region = region
 		price, err := strconv.ParseFloat(*spotPrice.SpotPrice, 64)
