@@ -95,7 +95,7 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 		return nil, fmt.Errorf("failed initial storage pricing: %w", err)
 	}
 
-	go func(ctx context.Context) {
+	go func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -106,8 +106,8 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 				}
 			}
 		}
-	}(ctx)
-	go func(ctx context.Context) {
+	}()
+	go func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -118,7 +118,7 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 				}
 			}
 		}
-	}(ctx)
+	}()
 
 	return &Collector{
 		ScrapeInterval:     config.ScrapeInterval,
