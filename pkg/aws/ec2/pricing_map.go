@@ -111,6 +111,7 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context) err
 	cpm.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing compute pricing map")
 	ondemandPrices, spotPrices, err := cpm.fetchPricing(ctx)
 	if err != nil {
+		cpm.logger.Error(fmt.Sprintf("error fetching compute pricing: %s", err))
 		return err
 	}
 
@@ -175,6 +176,7 @@ func (spm *StoragePricingMap) GenerateStoragePricingMap(ctx context.Context) err
 	spm.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing storage pricing map")
 	storagePrices, err := spm.fetchPricing(ctx)
 	if err != nil {
+		spm.logger.Error(fmt.Sprintf("error fetching storage pricing: %s", err))
 		return err
 	}
 
