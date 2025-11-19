@@ -84,8 +84,8 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 	computeMap := NewComputePricingMap(logger, config)
 	storageMap := NewStoragePricingMap(logger, config)
 
-	priceTicker := time.NewTicker(config.ScrapeInterval)
-	machineTicker := time.NewTicker(config.ScrapeInterval)
+	computeTicker := time.NewTicker(config.ScrapeInterval)
+	storageTicker := time.NewTicker(config.ScrapeInterval)
 
 	// Initial population so that Collect can use the maps
 	if err := computeMap.GenerateComputePricingMap(ctx); err != nil {
@@ -100,7 +100,7 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-priceTicker.C:
+			case <-computeTicker.C:
 				if err := computeMap.GenerateComputePricingMap(ctx); err != nil {
 					logger.Error("failed to refresh compute pricing map", "error", err)
 				}
@@ -112,7 +112,7 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-machineTicker.C:
+			case <-storageTicker.C:
 				if err := storageMap.GenerateStoragePricingMap(ctx); err != nil {
 					logger.Error("failed to refresh storage pricing map", "error", err)
 				}
