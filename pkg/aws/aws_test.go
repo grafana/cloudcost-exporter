@@ -155,7 +155,7 @@ func Test_NewWithDependencies(t *testing.T) {
 			// Call function
 			awsConfig := aws.Config{}
 			aws, err := newWithDependencies(
-				context.Background(),
+				t.Context(),
 				config,
 				mockClient,
 				regionClients,
@@ -225,7 +225,7 @@ func Test_RegisterCollectors(t *testing.T) {
 				Config:           nil,
 				collectors:       []provider.Collector{},
 				logger:           logger,
-				ctx:              context.Background(),
+				ctx:              t.Context(),
 				collectorTimeout: 1 * time.Minute,
 			}
 			for i := 0; i < tc.numCollectors; i++ {
@@ -305,7 +305,7 @@ func Test_CollectMetrics(t *testing.T) {
 				Config:           nil,
 				collectors:       []provider.Collector{},
 				logger:           logger,
-				ctx:              context.Background(),
+				ctx:              t.Context(),
 				collectorTimeout: 1 * time.Minute,
 			}
 

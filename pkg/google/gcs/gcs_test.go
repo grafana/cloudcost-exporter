@@ -203,7 +203,7 @@ func TestGetServiceNameByReadableName(t *testing.T) {
 			}()
 
 			billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudBillingServer{})
-			catalogClient, err := billingv1.NewCloudCatalogClient(context.Background(),
+			catalogClient, err := billingv1.NewCloudCatalogClient(t.Context(),
 				option.WithEndpoint(l.Addr().String()),
 				option.WithoutAuthentication(),
 				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
@@ -211,7 +211,7 @@ func TestGetServiceNameByReadableName(t *testing.T) {
 			gcpClient := client.NewMock("", 0, nil, nil, catalogClient, nil)
 
 			assert.NoError(t, err)
-			ctx := context.Background()
+			ctx := t.Context()
 			got, err := gcpClient.GetServiceName(ctx, tt.service)
 			if !tt.wantErr(t, err, fmt.Sprintf("GetServiceNameByReadableName(%v, %v, %v)", ctx, catalogClient, tt.service)) {
 				return
@@ -227,7 +227,7 @@ func TestCollector_Collect(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"items": [{"name": "us-east1", "description": "us-east1", "resourceGroup": "Storage"}]}`))
 	}))
-	regionsClient, err := computeapiv1.NewRegionsRESTClient(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(regionsHttptestServer.URL))
+	regionsClient, err := computeapiv1.NewRegionsRESTClient(t.Context(), option.WithoutAuthentication(), option.WithEndpoint(regionsHttptestServer.URL))
 	assert.NoError(t, err)
 	assert.NotNil(t, regionsClient)
 
@@ -239,7 +239,7 @@ func TestCollector_Collect(t *testing.T) {
 ]}`))
 	}))
 
-	storageClient, err := storage.NewClient(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(storageHttptestServer.URL))
+	storageClient, err := storage.NewClient(t.Context(), option.WithoutAuthentication(), option.WithEndpoint(storageHttptestServer.URL))
 	assert.NoError(t, err)
 	assert.NotNil(t, storageClient)
 
@@ -254,7 +254,7 @@ func TestCollector_Collect(t *testing.T) {
 		}
 	}()
 	billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudBillingServer{})
-	cloudCatalogClient, err := billingv1.NewCloudCatalogClient(context.Background(),
+	cloudCatalogClient, err := billingv1.NewCloudCatalogClient(t.Context(),
 		option.WithEndpoint(l.Addr().String()),
 		option.WithoutAuthentication(),
 		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))

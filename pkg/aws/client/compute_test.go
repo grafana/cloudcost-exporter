@@ -21,7 +21,7 @@ func TestListComputeInstances(t *testing.T) {
 		expectedCalls     int
 	}{
 		"No instance should return nothing": {
-			ctx: context.Background(),
+			ctx: t.Context(),
 			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
 				return &ec2.DescribeInstancesOutput{}, nil
 			},
@@ -30,7 +30,7 @@ func TestListComputeInstances(t *testing.T) {
 			expectedCalls: 1,
 		},
 		"Single instance should return a single instance": {
-			ctx: context.Background(),
+			ctx: t.Context(),
 			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
 				return &ec2.DescribeInstancesOutput{
 					Reservations: []types.Reservation{
@@ -59,7 +59,7 @@ func TestListComputeInstances(t *testing.T) {
 			expectedCalls: 1,
 		},
 		"Ensure errors propagate": {
-			ctx: context.Background(),
+			ctx: t.Context(),
 			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
 				return nil, assert.AnError
 			},
@@ -68,7 +68,7 @@ func TestListComputeInstances(t *testing.T) {
 			expectedCalls: 1,
 		},
 		"NextToken should return multiple instances": {
-			ctx: context.Background(),
+			ctx: t.Context(),
 			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
 				if e.NextToken == nil {
 					return &ec2.DescribeInstancesOutput{
@@ -265,7 +265,7 @@ func TestListEBSVolumes(t *testing.T) {
 				DescribeVolumes(gomock.Any(), gomock.Any(), gomock.Any()).
 				DoAndReturn(tt.DescribeVolumes).
 				Times(tt.expectedCalls)
-			ctx := context.Background()
+			ctx := t.Context()
 
 			c := newCompute(client)
 			resp, err := c.listEBSVolumes(ctx)

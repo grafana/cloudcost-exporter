@@ -55,7 +55,7 @@ func Test_RegisterCollectors(t *testing.T) {
 				config:           &Config{},
 				collectors:       []provider.Collector{},
 				logger:           logger,
-				ctx:              context.Background(),
+				ctx:              t.Context(),
 				collectorTimeout: 1 * time.Minute,
 			}
 			for range tt.numCollectors {
@@ -136,7 +136,7 @@ func TestGCP_CollectMetrics(t *testing.T) {
 				config:           &Config{},
 				collectors:       []provider.Collector{},
 				logger:           logger,
-				ctx:              context.Background(),
+				ctx:              t.Context(),
 				collectorTimeout: 1 * time.Minute,
 			}
 

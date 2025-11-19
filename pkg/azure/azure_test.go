@@ -18,7 +18,6 @@ import (
 )
 
 var (
-	parentCtx  = context.TODO()
 	testLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
@@ -40,7 +39,7 @@ func Test_New(t *testing.T) {
 
 	for name, tc := range testTable {
 		t.Run(name, func(t *testing.T) {
-			a, err := New(parentCtx, &Config{
+			a, err := New(t.Context(), &Config{
 				Logger:         testLogger,
 				SubscriptionId: tc.subId,
 			})
@@ -84,7 +83,7 @@ func Test_RegisterCollectors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			azProvider := &Azure{
 				logger:  testLogger,
-				context: parentCtx,
+				context: t.Context(),
 			}
 			for _, c := range tc.mockCollectors {
 				call := c.EXPECT().Register(gomock.Any()).AnyTimes()
@@ -161,7 +160,7 @@ func Test_CollectMetrics(t *testing.T) {
 			}
 			registry.EXPECT().MustRegister(gomock.Any()).AnyTimes()
 			azure := &Azure{
-				context:    parentCtx,
+				context:    t.Context(),
 				logger:     testLogger,
 				collectors: []provider.Collector{},
 			}

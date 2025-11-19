@@ -1,7 +1,6 @@
 package rds
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -10,7 +9,7 @@ import (
 )
 
 func TestValidateRDSPriceData(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name      string

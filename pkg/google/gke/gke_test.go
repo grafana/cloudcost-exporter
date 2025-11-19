@@ -1,7 +1,6 @@
 package gke
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -462,7 +461,7 @@ func TestCollector_Collect(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(test.testServer.URL))
+			computeService, err := computev1.NewService(t.Context(), option.WithoutAuthentication(), option.WithEndpoint(test.testServer.URL))
 			require.NoError(t, err)
 			l, err := net.Listen("tcp", "localhost:0")
 			require.NoError(t, err)
@@ -475,7 +474,7 @@ func TestCollector_Collect(t *testing.T) {
 				}
 			}()
 
-			cloudCatalogClient, err := billingv1.NewCloudCatalogClient(context.Background(),
+			cloudCatalogClient, err := billingv1.NewCloudCatalogClient(t.Context(),
 				option.WithEndpoint(l.Addr().String()),
 				option.WithoutAuthentication(),
 				option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
@@ -483,7 +482,7 @@ func TestCollector_Collect(t *testing.T) {
 			require.NoError(t, err)
 
 			gcpClient := client.NewMock("testing", 0, nil, nil, cloudCatalogClient, computeService)
-			collector, _ := New(context.Background(), test.config, gcpClient)
+			collector, _ := New(t.Context(), test.config, gcpClient)
 			require.NotNil(t, collector)
 			ch := make(chan prometheus.Metric)
 			go func() {

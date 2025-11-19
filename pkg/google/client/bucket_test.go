@@ -1,7 +1,6 @@
 package client
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -76,10 +75,10 @@ func TestBucketClient_List(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			for _, project := range test.projects {
-				sc, err := storage.NewClient(context.Background(), option.WithEndpoint(test.server.URL), option.WithAPIKey("hunter2"))
+				sc, err := storage.NewClient(t.Context(), option.WithEndpoint(test.server.URL), option.WithAPIKey("hunter2"))
 				require.NoError(t, err)
 				bc := newBucket(sc, cache.NewNoopCache[[]*storage.BucketAttrs]())
-				got, err := bc.List(context.Background(), project)
+				got, err := bc.List(t.Context(), project)
 				assert.Equal(t, test.wantErr, err != nil)
 				assert.NotNil(t, got)
 				assert.Equal(t, test.want, len(got))

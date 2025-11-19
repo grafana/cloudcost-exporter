@@ -1,7 +1,6 @@
 package networking
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -33,7 +32,7 @@ func newTestCollector(pm *pricingMap, t *testing.T) *Collector {
 		projects:   []string{"test-project"},
 		pricingMap: pm,
 		logger:     logger,
-		ctx:        context.Background(),
+		ctx:        t.Context(),
 	}
 }
 
@@ -55,7 +54,7 @@ func newGCPClient(t *testing.T, handlers map[string]any) *client.Mock {
 	}))
 	t.Cleanup(srv.Close)
 
-	computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(srv.URL))
+	computeService, err := computev1.NewService(t.Context(), option.WithoutAuthentication(), option.WithEndpoint(srv.URL))
 	require.NoError(t, err)
 
 	return client.NewMock("testing", 0, nil, nil, nil, computeService)
@@ -67,7 +66,7 @@ func TestCollector_DescribeAndName(t *testing.T) {
 		projects:   []string{"testing"},
 		pricingMap: newemptyPricingMap(),
 		logger:     logger,
-		ctx:        context.Background(),
+		ctx:        t.Context(),
 	}
 
 	descCh := make(chan *prometheus.Desc, 3)
@@ -104,10 +103,10 @@ func TestCollector_getForwardingRuleInfo(t *testing.T) {
 		projects:   []string{"testing"},
 		pricingMap: pm,
 		logger:     logger,
-		ctx:        context.Background(),
+		ctx:        t.Context(),
 	}
 
-	infos, err := c.getForwardingRuleInfo(context.Background())
+	infos, err := c.getForwardingRuleInfo(t.Context())
 	require.NoError(t, err)
 	require.Len(t, infos, 3)
 	assert.Contains(t, []string{infos[0].Region, infos[1].Region, infos[2].Region}, "us-central1")
@@ -133,11 +132,11 @@ func TestCollector_Collect_EmitsMetrics(t *testing.T) {
 		projects:   []string{"testing"},
 		pricingMap: pm,
 		logger:     logger,
-		ctx:        context.Background(),
+		ctx:        t.Context(),
 	}
 
 	ch := make(chan prometheus.Metric, 10)
-	require.NoError(t, c.Collect(context.Background(), ch))
+	require.NoError(t, c.Collect(t.Context(), ch))
 	close(ch)
 
 	var got []*utils.MetricResult
