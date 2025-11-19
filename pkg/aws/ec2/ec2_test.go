@@ -45,7 +45,7 @@ func TestCollector_Collect(t *testing.T) {
 		})
 		ch := make(chan prometheus.Metric)
 		go func() {
-			err := collector.Collect(ch)
+			err := collector.Collect(t.Context(), ch)
 			close(ch)
 			assert.NoError(t, err)
 		}()
@@ -72,7 +72,7 @@ func TestCollector_Collect(t *testing.T) {
 			},
 		})
 		ch := make(chan prometheus.Metric)
-		err := collector.Collect(ch)
+		err := collector.Collect(t.Context(), ch)
 		close(ch)
 		assert.Error(t, err)
 	})
@@ -83,7 +83,7 @@ func TestCollector_Collect(t *testing.T) {
 			RegionMap: map[string]client.Client{},
 		})
 		ch := make(chan prometheus.Metric)
-		err := collector.Collect(ch)
+		err := collector.Collect(t.Context(), ch)
 		close(ch)
 		assert.ErrorIs(t, err, ErrClientNotFound)
 	})
@@ -102,7 +102,7 @@ func TestCollector_Collect(t *testing.T) {
 			},
 		})
 		ch := make(chan prometheus.Metric)
-		err := collector.Collect(ch)
+		err := collector.Collect(t.Context(), ch)
 		close(ch)
 		assert.ErrorIs(t, err, ErrListSpotPrices)
 	})
@@ -137,7 +137,7 @@ func TestCollector_Collect(t *testing.T) {
 		})
 		ch := make(chan prometheus.Metric)
 		defer close(ch)
-		assert.ErrorIs(t, collector.Collect(ch), ErrGeneratePricingMap)
+		assert.ErrorIs(t, collector.Collect(t.Context(), ch), ErrGeneratePricingMap)
 	})
 	t.Run("Test cpu, memory and total cost metrics emitted for each valid instance", func(t *testing.T) {
 		c := mock_client.NewMockClient(ctrl)
@@ -236,7 +236,7 @@ func TestCollector_Collect(t *testing.T) {
 
 		ch := make(chan prometheus.Metric)
 		go func() {
-			if err := collector.Collect(ch); err != nil {
+			if err := collector.Collect(t.Context(), ch); err != nil {
 				assert.NoError(t, err)
 			}
 			close(ch)
@@ -262,7 +262,7 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 		expected            map[string]*StoragePricing
 	}{
 		"can populate storage pricing map": {
-			ctx: context.Background(),
+			ctx: t.Context(),
 			regions: []ec2Types.Region{
 				{
 					RegionName: aws.String("af-south-1"),
@@ -283,7 +283,7 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 			},
 		},
 		"errors listing storage prices propagate": {
-			ctx: context.Background(),
+			ctx: t.Context(),
 			regions: []ec2Types.Region{{
 				RegionName: aws.String("af-south-1"),
 			}},
@@ -295,7 +295,7 @@ func Test_PopulateStoragePricingMap(t *testing.T) {
 			expected:      map[string]*StoragePricing{},
 		},
 		"errors generating the map from listed prices propagate too": {
-			ctx: context.Background(),
+			ctx: t.Context(),
 			regions: []ec2Types.Region{
 				{
 					RegionName: aws.String("af-south-1"),
@@ -370,7 +370,7 @@ func Test_FetchVolumesData(t *testing.T) {
 		wg := sync.WaitGroup{}
 		wg.Add(len(collector.Regions))
 		ch := make(chan []ec2Types.Volume)
-		go collector.fetchVolumesData(context.Background(), c, regionName, ch)
+		go collector.fetchVolumesData(t.Context(), c, regionName, ch)
 		go func() {
 			wg.Wait()
 			close(ch)

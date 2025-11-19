@@ -126,16 +126,16 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 }
 
 // Collect satisfies the provider.Collector interface.
-func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	c.logger.LogAttrs(c.ctx, slog.LevelInfo, "calling collect")
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
+	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
 
 	// Collect VPC Endpoint pricing for all regions
 	for _, region := range c.regions {
 		// Check if context is cancelled (e.g., during shutdown)
 		select {
-		case <-c.ctx.Done():
+		case <-ctx.Done():
 			c.logger.Info("Collect cancelled, stopping region iteration", "processed_regions", "partial")
-			return c.ctx.Err()
+			return ctx.Err()
 		default:
 			// Continue with collection
 		}

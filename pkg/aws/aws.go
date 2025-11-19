@@ -33,18 +33,21 @@ import (
 )
 
 type Config struct {
-	Services       []string
-	Region         string
-	Profile        string
-	RoleARN        string
-	ScrapeInterval time.Duration
-	Logger         *slog.Logger
+	Services         []string
+	Region           string
+	Profile          string
+	RoleARN          string
+	ScrapeInterval   time.Duration
+	CollectorTimeout time.Duration
+	Logger           *slog.Logger
 }
 
 type AWS struct {
-	Config     *Config
-	collectors []provider.Collector
-	logger     *slog.Logger
+	Config           *Config
+	collectors       []provider.Collector
+	logger           *slog.Logger
+	ctx              context.Context
+	collectorTimeout time.Duration
 }
 
 var (
@@ -146,7 +149,7 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				PricingService: awsPricing.NewFromConfig(pricingConfig),
 				RDSService:     rds.NewFromConfig(awsConfig),
 			})
-			collector := rdsCollector.New(ctx, &rdsCollector.Config{
+			collector := rdsCollector.New(&rdsCollector.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Regions:        regions,
 				RegionMap:      regionClients,
@@ -195,9 +198,11 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 		}
 	}
 	return &AWS{
-		Config:     config,
-		collectors: collectors,
-		logger:     logger,
+		Config:           config,
+		collectors:       collectors,
+		logger:           logger,
+		ctx:              ctx,
+		collectorTimeout: config.CollectorTimeout,
 	}, nil
 }
 
@@ -228,6 +233,10 @@ func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (a *AWS) Collect(ch chan<- prometheus.Metric) {
+	// Create a context with timeout for this collection cycle
+	collectCtx, cancel := context.WithTimeout(a.ctx, a.collectorTimeout)
+	defer cancel()
+
 	wg := &sync.WaitGroup{}
 	wg.Add(len(a.collectors))
 	for _, c := range a.collectors {
@@ -235,7 +244,7 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 			now := time.Now()
 			defer wg.Done()
 			collectorErrors := 0.0
-			if err := c.Collect(ch); err != nil {
+			if err := c.Collect(collectCtx, ch); err != nil {
 				collectorErrors++
 				a.logger.LogAttrs(context.Background(), slog.LevelError, "could not collect metrics",
 					slog.String("collector", c.Name()),

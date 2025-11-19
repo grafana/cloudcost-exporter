@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"context"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -15,7 +17,7 @@ type Registry interface {
 type Collector interface {
 	Register(r Registry) error
 	CollectMetrics(chan<- prometheus.Metric) float64
-	Collect(chan<- prometheus.Metric) error
+	Collect(ctx context.Context, ch chan<- prometheus.Metric) error
 	Describe(chan<- *prometheus.Desc) error
 	Name() string
 }

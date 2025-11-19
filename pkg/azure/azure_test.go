@@ -18,7 +18,6 @@ import (
 )
 
 var (
-	parentCtx  = context.TODO()
 	testLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
@@ -40,7 +39,7 @@ func Test_New(t *testing.T) {
 
 	for name, tc := range testTable {
 		t.Run(name, func(t *testing.T) {
-			a, err := New(parentCtx, &Config{
+			a, err := New(t.Context(), &Config{
 				Logger:         testLogger,
 				SubscriptionId: tc.subId,
 			})
@@ -84,7 +83,7 @@ func Test_RegisterCollectors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			azProvider := &Azure{
 				logger:  testLogger,
-				context: parentCtx,
+				context: t.Context(),
 			}
 			for _, c := range tc.mockCollectors {
 				call := c.EXPECT().Register(gomock.Any()).AnyTimes()
@@ -103,7 +102,7 @@ func Test_CollectMetrics(t *testing.T) {
 	tests := map[string]struct {
 		numCollectors   int
 		collectorName   string
-		collect         func(chan<- prometheus.Metric) error
+		collect         func(context.Context, chan<- prometheus.Metric) error
 		expectedMetrics []*utils.MetricResult
 	}{
 		"no error if no collectors": {
@@ -114,7 +113,7 @@ func Test_CollectMetrics(t *testing.T) {
 		"bubble-up single collector error": {
 			numCollectors: 1,
 			collectorName: "test2",
-			collect: func(chan<- prometheus.Metric) error {
+			collect: func(context.Context, chan<- prometheus.Metric) error {
 				return fmt.Errorf("test collect error")
 			},
 			expectedMetrics: []*utils.MetricResult{
@@ -129,7 +128,7 @@ func Test_CollectMetrics(t *testing.T) {
 		"two collectors with no errors": {
 			numCollectors: 2,
 			collectorName: "test3",
-			collect:       func(chan<- prometheus.Metric) error { return nil },
+			collect:       func(context.Context, chan<- prometheus.Metric) error { return nil },
 			expectedMetrics: []*utils.MetricResult{
 				{
 					FqName:     "cloudcost_exporter_collector_last_scrape_error",
@@ -156,12 +155,12 @@ func Test_CollectMetrics(t *testing.T) {
 			registry.EXPECT().MustRegister(gomock.Any()).AnyTimes()
 			if tt.collect != nil {
 				c.EXPECT().Name().Return(tt.collectorName).AnyTimes()
-				c.EXPECT().Collect(ch).DoAndReturn(tt.collect).AnyTimes()
+				c.EXPECT().Collect(gomock.Any(), ch).DoAndReturn(tt.collect).AnyTimes()
 				c.EXPECT().Register(registry).Return(nil).AnyTimes()
 			}
 			registry.EXPECT().MustRegister(gomock.Any()).AnyTimes()
 			azure := &Azure{
-				context:    parentCtx,
+				context:    t.Context(),
 				logger:     testLogger,
 				collectors: []provider.Collector{},
 			}

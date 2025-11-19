@@ -80,8 +80,7 @@ type Collector struct {
 }
 
 // New creates a new VPC collector and starts periodic pricing refresh
-func New(config *Config, gcpClient client.Client) (*Collector, error) {
-	ctx := context.Background()
+func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
 	logger := config.Logger.With("collector", "vpc")
 
 	pricingMap := NewVPCPricingMap(logger, gcpClient)
@@ -139,33 +138,41 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 }
 
 // Collect implements the Prometheus Collector interface
-func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	c.CollectMetrics(ch)
-	return nil
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
+	return c.collectMetrics(ctx, ch)
 }
 
 // CollectMetrics collects and exports VPC pricing metrics
+// Deprecated: CollectMetrics is deprecated and will be removed in a future release.
 func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
-	c.logger.LogAttrs(c.ctx, slog.LevelInfo, "Collecting VPC metrics")
+	if err := c.collectMetrics(context.Background(), ch); err != nil {
+		return 0
+	}
+	return 1
+}
+
+// collectMetrics collects and exports VPC pricing metrics
+func (c *Collector) collectMetrics(ctx context.Context, ch chan<- prometheus.Metric) error {
+	c.logger.LogAttrs(ctx, slog.LevelInfo, "Collecting VPC metrics")
 	start := time.Now()
 
 	if len(c.projects) == 0 {
-		c.logger.LogAttrs(c.ctx, slog.LevelWarn, "No projects configured for VPC collection")
-		return 0
+		c.logger.LogAttrs(ctx, slog.LevelWarn, "No projects configured for VPC collection")
+		return nil
 	}
 
 	regions, err := c.gcpClient.GetRegions(c.projects[0])
 	if err != nil {
-		c.logger.LogAttrs(c.ctx, slog.LevelError, "Failed to get regions", slog.String("error", err.Error()))
-		return 0
+		c.logger.LogAttrs(ctx, slog.LevelError, "Failed to get regions", slog.String("error", err.Error()))
+		return err
 	}
 
 	for _, project := range c.projects {
 		for _, region := range regions {
 			select {
-			case <-c.ctx.Done():
-				c.logger.LogAttrs(c.ctx, slog.LevelInfo, "VPC collection cancelled", slog.String("processed_regions", "partial"))
-				return 0
+			case <-ctx.Done():
+				c.logger.LogAttrs(ctx, slog.LevelInfo, "VPC collection cancelled", slog.String("processed_regions", "partial"))
+				return ctx.Err()
 			default:
 			}
 
@@ -187,9 +194,9 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 		}
 	}
 
-	c.logger.LogAttrs(c.ctx, slog.LevelInfo, "Finished VPC collection",
+	c.logger.LogAttrs(ctx, slog.LevelInfo, "Finished VPC collection",
 		slog.Duration("duration", time.Since(start)))
-	return time.Since(start).Seconds()
+	return nil
 }
 
 // collectSimpleMetric collects a single metric with standard labels (region, project)

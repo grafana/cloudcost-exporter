@@ -24,7 +24,7 @@ func Test_ListOnDemandPrices(t *testing.T) {
 		expectedCalls int
 	}{
 		"No products should return nothing": {
-			ctx:    context.Background(),
+			ctx:    t.Context(),
 			region: "us-east-1",
 			err:    nil,
 			want:   nil,
@@ -36,7 +36,7 @@ func Test_ListOnDemandPrices(t *testing.T) {
 			expectedCalls: 1,
 		},
 		"Single product should return a single product": {
-			ctx:    context.Background(),
+			ctx:    t.Context(),
 			region: "us-east-1",
 			err:    nil,
 			want: []string{
@@ -52,7 +52,7 @@ func Test_ListOnDemandPrices(t *testing.T) {
 			expectedCalls: 1,
 		},
 		"Ensure errors propagate": {
-			ctx:    context.Background(),
+			ctx:    t.Context(),
 			region: "us-east-1",
 			err:    assert.AnError,
 			want:   nil,
@@ -62,7 +62,7 @@ func Test_ListOnDemandPrices(t *testing.T) {
 			expectedCalls: 1,
 		},
 		"NextToken should return multiple products": {
-			ctx:    context.Background(),
+			ctx:    t.Context(),
 			region: "us-east-1",
 			err:    nil,
 			want: []string{
@@ -114,7 +114,7 @@ func TestListSpotPrices(t *testing.T) {
 		expectedCalls            int
 	}{
 		"No instance should return nothing": {
-			ctx: context.Background(),
+			ctx: t.Context(),
 			DescribeSpotPriceHistory: func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
 				return &ec2.DescribeSpotPriceHistoryOutput{}, nil
 			},
@@ -123,7 +123,7 @@ func TestListSpotPrices(t *testing.T) {
 			expectedCalls: 1,
 		},
 		"Single instance should return a single instance": {
-			ctx: context.Background(),
+			ctx: t.Context(),
 			DescribeSpotPriceHistory: func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
 				return &ec2.DescribeSpotPriceHistoryOutput{
 					SpotPriceHistory: []ec2Types.SpotPrice{
@@ -146,7 +146,7 @@ func TestListSpotPrices(t *testing.T) {
 			expectedCalls: 1,
 		},
 		"Ensure errors propagate": {
-			ctx: context.Background(),
+			ctx: t.Context(),
 			DescribeSpotPriceHistory: func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
 				return nil, assert.AnError
 			},
@@ -155,7 +155,7 @@ func TestListSpotPrices(t *testing.T) {
 			expectedCalls: 1,
 		},
 		"NextToken should return multiple instances": {
-			ctx: context.Background(),
+			ctx: t.Context(),
 			DescribeSpotPriceHistory: func(ctx context.Context, input *ec2.DescribeSpotPriceHistoryInput, optFns ...func(options *ec2.Options)) (*ec2.DescribeSpotPriceHistoryOutput, error) {
 				if input.NextToken == nil {
 					return &ec2.DescribeSpotPriceHistoryOutput{
@@ -224,7 +224,7 @@ func TestListStoragePrices(t *testing.T) {
 		err           error
 	}{
 		"Ensure errors propagate": {
-			ctx:      context.Background(),
+			ctx:      t.Context(),
 			region:   "us-east-1",
 			err:      assert.AnError,
 			expected: nil,
@@ -234,7 +234,7 @@ func TestListStoragePrices(t *testing.T) {
 			expectedCalls: 1,
 		},
 		"No volume prices for that region should return empty": {
-			ctx:    context.Background(),
+			ctx:    t.Context(),
 			region: "us-east-1",
 			GetProducts: func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error) {
 				return &awsPricing.GetProductsOutput{
@@ -244,7 +244,7 @@ func TestListStoragePrices(t *testing.T) {
 			expectedCalls: 1,
 		},
 		"Single product should return a single product": {
-			ctx:    context.Background(),
+			ctx:    t.Context(),
 			region: "us-east-1",
 			expected: []string{
 				"product 1 json response",
@@ -259,7 +259,7 @@ func TestListStoragePrices(t *testing.T) {
 			expectedCalls: 1,
 		},
 		"multiple products should return same length array": {
-			ctx:    context.Background(),
+			ctx:    t.Context(),
 			region: "us-east-1",
 			err:    nil,
 			expected: []string{
@@ -379,7 +379,7 @@ func Test_GetRDSUnitData(t *testing.T) {
 				DoAndReturn(tt.GetProducts).
 				Times(1)
 			c := newPricing(client, nil)
-			result, err := c.getRDSUnitData(context.Background(), "input1", "input2", "input3", "input4", "input5")
+			result, err := c.getRDSUnitData(t.Context(), "input1", "input2", "input3", "input4", "input5")
 
 			t.Logf("Test: %s, Result: %s, Error: %v, WantErr: %v", tt.name, result, err, tt.wantErr)
 			if tt.wantErr {

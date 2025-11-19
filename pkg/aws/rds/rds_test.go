@@ -200,7 +200,7 @@ func TestCollector_Collect(t *testing.T) {
 			}
 
 			ch := make(chan prometheus.Metric, 1)
-			err := c.Collect(ch)
+			err := c.Collect(t.Context(), ch)
 			assert.NoError(t, err)
 
 			select {

@@ -10,6 +10,7 @@
 package mock_provider
 
 import (
+	context "context"
 	reflect "reflect"
 
 	provider "github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -150,17 +151,17 @@ func (m *MockCollector) EXPECT() *MockCollectorMockRecorder {
 }
 
 // Collect mocks base method.
-func (m *MockCollector) Collect(arg0 chan<- prometheus.Metric) error {
+func (m *MockCollector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Collect", arg0)
+	ret := m.ctrl.Call(m, "Collect", ctx, ch)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Collect indicates an expected call of Collect.
-func (mr *MockCollectorMockRecorder) Collect(arg0 any) *gomock.Call {
+func (mr *MockCollectorMockRecorder) Collect(ctx, ch any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Collect", reflect.TypeOf((*MockCollector)(nil).Collect), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Collect", reflect.TypeOf((*MockCollector)(nil).Collect), ctx, ch)
 }
 
 // CollectMetrics mocks base method.

@@ -76,7 +76,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 }
 
 // Collect is the function that will be called by the Prometheus client anytime a scrape is performed.
-func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	up := c.CollectMetrics(ch)
 	if up == 0 {
 		return fmt.Errorf("error collecting metrics")

@@ -530,7 +530,7 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 1
 			r := prometheus.NewPedanticRegistry()
 			r.MustRegister(m.RequestCount, m.RequestErrorsCount)
 			b := newBilling(costExplorer, m)
-			_, _ = b.getBillingData(context.TODO(), time.Now(), time.Now())
+			_, _ = b.getBillingData(t.Context(), time.Now(), time.Now())
 
 			err := testutil.CollectAndCompare(r, strings.NewReader(tc.expectedExposition), tc.metricNames...)
 			assert.NoError(t, err)

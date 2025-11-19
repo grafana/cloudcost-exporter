@@ -189,33 +189,41 @@ func createPromRegistryHandler(csp provider.Provider) (http.Handler, error) {
 }
 
 func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider, error) {
+	// Set collector timeout with 1 minute default
+	collectorTimeout := cfg.Collector.Timeout
+	if collectorTimeout == 0 {
+		collectorTimeout = 1 * time.Minute
+	}
+
 	switch cfg.Provider {
 	case "azure":
 		return azure.New(ctx, &azure.Config{
 			Logger:           cfg.Logger,
 			SubscriptionId:   cfg.Providers.Azure.SubscriptionId,
 			Services:         cfg.Providers.Azure.Services,
-			CollectorTimeout: cfg.Collector.Timeout,
+			CollectorTimeout: collectorTimeout,
 		})
 	case "aws":
 		return aws.New(ctx, &aws.Config{
-			Logger:         cfg.Logger,
-			Region:         cfg.Providers.AWS.Region,
-			Profile:        cfg.Providers.AWS.Profile,
-			RoleARN:        cfg.Providers.AWS.RoleARN,
-			ScrapeInterval: cfg.Collector.ScrapeInterval,
-			Services:       strings.Split(cfg.Providers.AWS.Services.String(), ","),
+			Logger:           cfg.Logger,
+			Region:           cfg.Providers.AWS.Region,
+			Profile:          cfg.Providers.AWS.Profile,
+			RoleARN:          cfg.Providers.AWS.RoleARN,
+			ScrapeInterval:   cfg.Collector.ScrapeInterval,
+			Services:         strings.Split(cfg.Providers.AWS.Services.String(), ","),
+			CollectorTimeout: collectorTimeout,
 		})
 
 	case "gcp":
-		return google.New(&google.Config{
-			Logger:          cfg.Logger,
-			ProjectId:       cfg.ProjectID,
-			Region:          cfg.Providers.GCP.Region,
-			Projects:        cfg.Providers.GCP.Projects.String(),
-			DefaultDiscount: cfg.Providers.GCP.DefaultGCSDiscount,
-			ScrapeInterval:  cfg.Collector.ScrapeInterval,
-			Services:        strings.Split(cfg.Providers.GCP.Services.String(), ","),
+		return google.New(ctx, &google.Config{
+			Logger:           cfg.Logger,
+			ProjectId:        cfg.ProjectID,
+			Region:           cfg.Providers.GCP.Region,
+			Projects:         cfg.Providers.GCP.Projects.String(),
+			DefaultDiscount:  cfg.Providers.GCP.DefaultGCSDiscount,
+			ScrapeInterval:   cfg.Collector.ScrapeInterval,
+			Services:         strings.Split(cfg.Providers.GCP.Services.String(), ","),
+			CollectorTimeout: collectorTimeout,
 		})
 
 	default:
