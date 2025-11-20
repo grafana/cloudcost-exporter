@@ -26,6 +26,23 @@ import (
 
 var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
+// mockRegionClient is a minimal client mock for testing AWS collector creation
+type mockRegionClient struct {
+	client.Client
+}
+
+func (m *mockRegionClient) ListOnDemandPrices(ctx context.Context, region string) ([]string, error) {
+	return []string{}, nil
+}
+
+func (m *mockRegionClient) ListSpotPrices(ctx context.Context) ([]types.SpotPrice, error) {
+	return []types.SpotPrice{}, nil
+}
+
+func (m *mockRegionClient) ListStoragePrices(ctx context.Context, region string) ([]string, error) {
+	return []string{}, nil
+}
+
 // Test_NewWithDependencies tests the newWithDependencies function with mock clients.
 // This tests the core logic of New() without requiring AWS credentials or network access.
 func Test_NewWithDependencies(t *testing.T) {
@@ -76,8 +93,8 @@ func Test_NewWithDependencies(t *testing.T) {
 				{RegionName: stringPtr("us-west-2")},
 			},
 			setupRegionClients: map[string]client.Client{
-				"us-east-1": nil, // EC2 collector needs region map
-				"us-west-2": nil,
+				"us-east-1": &mockRegionClient{}, // EC2 collector needs region map
+				"us-west-2": &mockRegionClient{},
 			},
 			expectedCollectors: 2,
 			validateAWS: func(t *testing.T, aws *AWS) {

@@ -14,7 +14,6 @@ import (
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/sync/errgroup"
 
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -69,8 +68,6 @@ type Collector struct {
 	computePricingMap  *ComputePricingMap
 	storagePricingMap  *StoragePricingMap
 	awsRegionClientMap map[string]client.Client
-	nextComputeScrape  time.Time
-	nextStorageScrape  time.Time
 	logger             *slog.Logger
 }
 
@@ -82,17 +79,55 @@ type Config struct {
 }
 
 // New creates an ec2 collector
-func New(config *Config) *Collector {
+func New(ctx context.Context, config *Config) (*Collector, error) {
 	logger := config.Logger.With("logger", "ec2")
+	computeMap := NewComputePricingMap(logger, config)
+	storageMap := NewStoragePricingMap(logger, config)
+
+	computeTicker := time.NewTicker(config.ScrapeInterval)
+	storageTicker := time.NewTicker(config.ScrapeInterval)
+
+	// Initial population so that Collect can use the maps
+	if err := computeMap.GenerateComputePricingMap(ctx); err != nil {
+		return nil, fmt.Errorf("failed initial compute pricing: %w", err)
+	}
+	if err := storageMap.GenerateStoragePricingMap(ctx); err != nil {
+		return nil, fmt.Errorf("failed initial storage pricing: %w", err)
+	}
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-computeTicker.C:
+				if err := computeMap.GenerateComputePricingMap(ctx); err != nil {
+					logger.Error("failed to refresh compute pricing map", "error", err)
+				}
+			}
+		}
+	}()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-storageTicker.C:
+				if err := storageMap.GenerateStoragePricingMap(ctx); err != nil {
+					logger.Error("failed to refresh storage pricing map", "error", err)
+				}
+			}
+		}
+	}()
 
 	return &Collector{
 		ScrapeInterval:     config.ScrapeInterval,
 		Regions:            config.Regions,
 		logger:             logger,
 		awsRegionClientMap: config.RegionMap,
-		computePricingMap:  NewComputePricingMap(logger),
-		storagePricingMap:  NewStoragePricingMap(logger),
-	}
+		computePricingMap:  computeMap,
+		storagePricingMap:  storageMap,
+	}, nil
 }
 
 // CollectMetrics is a no-op function that satisfies the provider.Collector interface.
@@ -104,23 +139,6 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 // Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
-
-	// TODO: make both maps scraping run async in the background
-	if c.computePricingMap == nil || time.Now().After(c.nextComputeScrape) {
-		err := c.populateComputePricingMap(ctx)
-		if err != nil {
-			return err
-		}
-		c.nextComputeScrape = time.Now().Add(c.ScrapeInterval)
-	}
-
-	if c.storagePricingMap == nil || time.Now().After(c.nextStorageScrape) {
-		err := c.populateStoragePricingMap(ctx)
-		if err != nil {
-			return err
-		}
-		c.nextStorageScrape = time.Now().Add(c.ScrapeInterval)
-	}
 
 	numOfRegions := len(c.Regions)
 
@@ -159,87 +177,6 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	}()
 	c.emitMetricsFromReservationsChannel(instanceCh, ch)
 	c.emitMetricsFromVolumesChannel(volumeCh, ch)
-	return nil
-}
-
-func (c *Collector) populateComputePricingMap(errGroupCtx context.Context) error {
-	c.logger.LogAttrs(errGroupCtx, slog.LevelInfo, "Refreshing compute pricing map")
-	var prices []string
-	var spotPrices []ec2Types.SpotPrice
-	eg, errGroupCtx := errgroup.WithContext(errGroupCtx)
-	eg.SetLimit(errGroupLimit)
-	m := sync.Mutex{}
-	for _, region := range c.Regions {
-		eg.Go(func() error {
-			c.logger.LogAttrs(errGroupCtx, slog.LevelDebug, "fetching compute pricing info", slog.String("region", *region.RegionName))
-
-			regionClient, ok := c.awsRegionClientMap[*region.RegionName]
-			if !ok {
-				return ErrClientNotFound
-			}
-
-			spotPriceList, err := regionClient.ListSpotPrices(errGroupCtx)
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
-			}
-
-			priceList, err := regionClient.ListOnDemandPrices(errGroupCtx, *region.RegionName)
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
-			}
-
-			m.Lock()
-			spotPrices = append(spotPrices, spotPriceList...)
-			prices = append(prices, priceList...)
-			m.Unlock()
-			return nil
-		})
-	}
-	err := eg.Wait()
-	if err != nil {
-		return err
-	}
-	c.computePricingMap = NewComputePricingMap(c.logger)
-	if err := c.computePricingMap.GenerateComputePricingMap(prices, spotPrices); err != nil {
-		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
-	}
-
-	return nil
-}
-
-func (c *Collector) populateStoragePricingMap(ctx context.Context) error {
-	c.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing storage pricing map")
-	var storagePrices []string
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(errGroupLimit)
-	m := sync.Mutex{}
-	for _, region := range c.Regions {
-		eg.Go(func() error {
-			regionClient, ok := c.awsRegionClientMap[*region.RegionName]
-			if !ok {
-				return ErrClientNotFound
-			}
-			c.logger.LogAttrs(ctx, slog.LevelDebug, "fetching storage pricing info", slog.String("region", *region.RegionName))
-			storagePriceList, err := regionClient.ListStoragePrices(ctx, *region.RegionName)
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrListStoragePrices, err)
-			}
-
-			m.Lock()
-			storagePrices = append(storagePrices, storagePriceList...)
-			m.Unlock()
-			return nil
-		})
-	}
-	err := eg.Wait()
-	if err != nil {
-		return err
-	}
-	c.storagePricingMap = NewStoragePricingMap(c.logger)
-	if err := c.storagePricingMap.GenerateStoragePricingMap(storagePrices); err != nil {
-		return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
-	}
-
 	return nil
 }
 
