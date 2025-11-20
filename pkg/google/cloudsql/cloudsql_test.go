@@ -206,7 +206,7 @@ func TestCollector(t *testing.T) {
 			require.NoError(t, err)
 
 			ch := make(chan prometheus.Metric, 1)
-			err = collector.Collect(ch)
+			err = collector.Collect(context.Background(), ch)
 			if tt.wantErr {
 				assert.Error(t, err)
 				return

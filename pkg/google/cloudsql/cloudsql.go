@@ -59,8 +59,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	return nil
 }
 
-func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	ctx := context.Background()
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	logger := c.logger.With("logger", "cloudsql")
 
 	if err := c.pricingMap.getSKus(ctx); err != nil {
