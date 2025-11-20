@@ -94,28 +94,13 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
 
 	for region, pricePerUnit := range c.PricingStore.GetPricePerUnitPerRegion() {
-		var (
-			hourlyPrice         float64
-			dataProcessingPrice float64
-		)
-
 		for usageType, price := range *pricePerUnit {
-			if strings.Contains(usageType, NATGatewayHours) {
-				// Aggregate all hourly NAT Gateway prices for this region into a single value
-				hourlyPrice += price
+			switch {
+			case strings.Contains(usageType, NATGatewayHours):
+				ch <- prometheus.MustNewConstMetric(HourlyGaugeDesc, prometheus.GaugeValue, price, region)
+			case strings.Contains(usageType, NATGatewayBytes):
+				ch <- prometheus.MustNewConstMetric(DataProcessingGaugeDesc, prometheus.GaugeValue, price, region)
 			}
-			if strings.Contains(usageType, NATGatewayBytes) {
-				// Aggregate all data processing NAT Gateway prices for this region into a single value
-				dataProcessingPrice += price
-			}
-		}
-
-		// Emit at most one sample per metric/region to satisfy Prometheus uniqueness constraints
-		if hourlyPrice > 0 {
-			ch <- prometheus.MustNewConstMetric(HourlyGaugeDesc, prometheus.GaugeValue, hourlyPrice, region)
-		}
-		if dataProcessingPrice > 0 {
-			ch <- prometheus.MustNewConstMetric(DataProcessingGaugeDesc, prometheus.GaugeValue, dataProcessingPrice, region)
 		}
 	}
 
