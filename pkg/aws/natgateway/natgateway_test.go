@@ -3,9 +3,9 @@ package natgateway_test
 import (
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
-	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -236,7 +236,7 @@ func TestCollector_CollectAggregatesMultipleUsageTypesPerRegion(t *testing.T) {
 	assert.Len(t, results, 2)
 
 	var (
-		hourlyMetric        *utils.MetricResult
+		hourlyMetric         *utils.MetricResult
 		dataProcessingMetric *utils.MetricResult
 	)
 
