@@ -3,6 +3,7 @@ package natgateway_test
 import (
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -182,5 +183,80 @@ func TestCollector_Collect(t *testing.T) {
 			}
 			assert.Len(t, metrics, len(tt.expectedMetrics))
 		})
+	}
+}
+
+func TestCollector_CollectAggregatesMultipleUsageTypesPerRegion(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	region := "us-east-1"
+
+	// Mock client returns multiple usage types for the same region that should be aggregated
+	regionClient := func() *mock_client.MockClient {
+		m := mock_client.NewMockClient(ctrl)
+		m.EXPECT().
+			ListEC2ServicePrices(gomock.Any(), region, testNATGatewayFilters).
+			Return([]string{
+				// Two hourly usage types that both map to NATGatewayHours
+				`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test1":{"priceDimensions":{"dim1":{"pricePerUnit":{"USD":"0.040"}}}}}}}`,
+				`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Hours-Additional","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test2":{"priceDimensions":{"dim2":{"pricePerUnit":{"USD":"0.010"}}}}}}}`,
+				// Two data processing usage types that both map to NATGatewayBytes
+				`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Bytes","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test3":{"priceDimensions":{"dim3":{"pricePerUnit":{"USD":"0.050"}}}}}}}`,
+				`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Bytes-Additional","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test4":{"priceDimensions":{"dim4":{"pricePerUnit":{"USD":"0.005"}}}}}}}`,
+			}, nil).
+			Times(1)
+		return m
+	}()
+
+	collector := natgateway.New(t.Context(), &natgateway.Config{
+		ScrapeInterval: 1 * time.Hour,
+		Regions:        []ec2Types.Region{{RegionName: aws.String(region)}},
+		Logger:         testLogger,
+		RegionMap: map[string]awsclient.Client{
+			region: regionClient,
+		},
+	})
+
+	ch := make(chan prometheus.Metric, 10)
+	err := collector.Collect(t.Context(), ch)
+	close(ch)
+
+	assert.NoError(t, err)
+
+	var results []*utils.MetricResult
+	for metric := range ch {
+		mr := utils.ReadMetrics(metric)
+		if mr != nil {
+			results = append(results, mr)
+		}
+	}
+
+	// We expect exactly one hourly and one data-processing metric for the region
+	assert.Len(t, results, 2)
+
+	var (
+		hourlyMetric         *utils.MetricResult
+		dataProcessingMetric *utils.MetricResult
+	)
+
+	for _, mr := range results {
+		if strings.Contains(mr.FqName, "hourly_rate_usd_per_hour") {
+			hourlyMetric = mr
+		} else if strings.Contains(mr.FqName, "data_processing_usd_per_gb") {
+			dataProcessingMetric = mr
+		}
+	}
+
+	if assert.NotNil(t, hourlyMetric, "expected hourly metric to be present") {
+		assert.Equal(t, region, hourlyMetric.Labels["region"])
+		// 0.040 + 0.010 = 0.050
+		assert.InDelta(t, 0.050, hourlyMetric.Value, 1e-9)
+	}
+
+	if assert.NotNil(t, dataProcessingMetric, "expected data processing metric to be present") {
+		assert.Equal(t, region, dataProcessingMetric.Labels["region"])
+		// 0.050 + 0.005 = 0.055
+		assert.InDelta(t, 0.055, dataProcessingMetric.Value, 1e-9)
 	}
 }
