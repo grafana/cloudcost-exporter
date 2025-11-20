@@ -3,8 +3,10 @@ package cloudsql
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
@@ -19,7 +21,7 @@ import (
 	"google.golang.org/genproto/googleapis/type/money"
 )
 
-func newTestGCPClient(t *testing.T, computeHandlers map[string]any, sqlAdminHandlers map[string]any) *client.Mock {
+func newTestGCPClient(t *testing.T, computeHandlers map[string]any, sqlAdminHandlers map[string]any, skus []*billingpb.Sku) *client.Mock {
 	t.Helper()
 
 	computeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -40,13 +42,21 @@ func newTestGCPClient(t *testing.T, computeHandlers map[string]any, sqlAdminHand
 	}))
 	t.Cleanup(sqlAdminSrv.Close)
 
+	// Set up gRPC server for billing API
+	fakeBillingServer := &client.FakeCloudCatalogServerWithSKUs{
+		ServiceName: "Cloud SQL",
+		ServiceID:   "services/cloud-sql",
+		Skus:        skus,
+	}
+	catalogClient := client.NewTestBillingClient(t, fakeBillingServer)
+
 	computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(computeSrv.URL))
 	require.NoError(t, err)
 
 	sqlAdminService, err := sqladmin.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(sqlAdminSrv.URL))
 	require.NoError(t, err)
 
-	return client.NewMock("test-project", 0, nil, nil, nil, computeService, sqlAdminService)
+	return client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService)
 }
 
 func TestCollector(t *testing.T) {
@@ -109,93 +119,92 @@ func TestCollector(t *testing.T) {
 				},
 			},
 		},
-		// {
-		// 	name: "custom pricing",
-		// 	regionsHandlers: map[string]any{
-		// 		"/projects/test-project/regions": &computev1.RegionList{
-		// 			Items: []*computev1.Region{
-		// 				{
-		// 					Name: "test-region",
-		// 				},
-		// 			},
-		// 		},
-		// 	},
-		// 	sqlAdminHandlers: map[string]any{
-		// 		"/sql/v1beta4/projects/test-project/instances": &sqladmin.InstancesListResponse{
-		// 			Items: []*sqladmin.DatabaseInstance{
-		// 				{
-		// 					Name:            "test-name",
-		// 					Region:          "test-region",
-		// 					ConnectionName:  "test-project:test-region:test-name",
-		// 					Settings:        &sqladmin.Settings{Tier: "db-custom-1-1", AvailabilityType: "ZONAL"},
-		// 					DatabaseVersion: "MYSQL_8_0",
-		// 				},
-		// 			},
-		// 		},
-		// 	},
-		// 	skus: []*billingpb.Sku{
-		// 		{
-		// 			SkuId: "cpu-sku-id",
-		// 			Category: &billingpb.Category{
-		// 				ServiceDisplayName: "Cloud SQL",
-		// 			},
-		// 			Description: "Cloud SQL: MYSQL CPU component for custom instances in test-region",
-		// 			GeoTaxonomy: &billingpb.GeoTaxonomy{
-		// 				Regions: []string{"test-region"},
-		// 			},
-		// 			PricingInfo: []*billingpb.PricingInfo{
-		// 				{
-		// 					PricingExpression: &billingpb.PricingExpression{
-		// 						UsageUnit: "h",
-		// 						TieredRates: []*billingpb.PricingExpression_TierRate{
-		// 							{
-		// 								UnitPrice: &money.Money{
-		// 									Units: 0,
-		// 									Nanos: 50000000, // $0.05 per vCPU per hour
-		// 								},
-		// 							},
-		// 						},
-		// 					},
-		// 				},
-		// 			},
-		// 		},
-		// 		{
-		// 			SkuId: "ram-sku-id",
-		// 			Category: &billingpb.Category{
-		// 				ServiceDisplayName: "Cloud SQL",
-		// 			},
-		// 			Description: "Cloud SQL: MYSQL RAM component for custom instances in test-region",
-		// 			GeoTaxonomy: &billingpb.GeoTaxonomy{
-		// 				Regions: []string{"test-region"},
-		// 			},
-		// 			PricingInfo: []*billingpb.PricingInfo{
-		// 				{
-		// 					PricingExpression: &billingpb.PricingExpression{
-		// 						UsageUnit: "GiBy.h",
-		// 						TieredRates: []*billingpb.PricingExpression_TierRate{
-		// 							{
-		// 								UnitPrice: &money.Money{
-		// 									Units: 0,
-		// 									Nanos: 10000000, // $0.01 per GB per hour
-		// 								},
-		// 							},
-		// 						},
-		// 					},
-		// 				},
-		// 			},
-		// 		},
-		// 	},
-		// },
+		{
+			name: "custom pricing",
+			regionsHandlers: map[string]any{
+				"/projects/test-project/regions": &computev1.RegionList{
+					Items: []*computev1.Region{
+						{
+							Name: "test-region",
+						},
+					},
+				},
+			},
+			sqlAdminHandlers: map[string]any{
+				"/sql/v1beta4/projects/test-project/instances": &sqladmin.InstancesListResponse{
+					Items: []*sqladmin.DatabaseInstance{
+						{
+							Name:            "test-name",
+							Region:          "test-region",
+							ConnectionName:  "test-project:test-region:test-name",
+							Settings:        &sqladmin.Settings{Tier: "db-custom-1-1", AvailabilityType: "ZONAL"},
+							DatabaseVersion: "MYSQL_8_0",
+						},
+					},
+				},
+			},
+			skus: []*billingpb.Sku{
+				{
+					SkuId: "cpu-sku-id",
+					Category: &billingpb.Category{
+						ServiceDisplayName: "Cloud SQL",
+					},
+					Description: "Cloud SQL: MYSQL CPU component for custom instances in test-region",
+					GeoTaxonomy: &billingpb.GeoTaxonomy{
+						Regions: []string{"test-region"},
+					},
+					PricingInfo: []*billingpb.PricingInfo{
+						{
+							PricingExpression: &billingpb.PricingExpression{
+								UsageUnit: "h",
+								TieredRates: []*billingpb.PricingExpression_TierRate{
+									{
+										UnitPrice: &money.Money{
+											Units: 0,
+											Nanos: 50000000, // $0.05 per vCPU per hour
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					SkuId: "ram-sku-id",
+					Category: &billingpb.Category{
+						ServiceDisplayName: "Cloud SQL",
+					},
+					Description: "Cloud SQL: MYSQL RAM component for custom instances in test-region",
+					GeoTaxonomy: &billingpb.GeoTaxonomy{
+						Regions: []string{"test-region"},
+					},
+					PricingInfo: []*billingpb.PricingInfo{
+						{
+							PricingExpression: &billingpb.PricingExpression{
+								UsageUnit: "GiBy.h",
+								TieredRates: []*billingpb.PricingExpression_TierRate{
+									{
+										UnitPrice: &money.Money{
+											Units: 0,
+											Nanos: 10000000, // $0.01 per GB per hour
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gcpClient := newTestGCPClient(t, tt.regionsHandlers, tt.sqlAdminHandlers)
-			config := &Config{Projects: "test-project"}
+			gcpClient := newTestGCPClient(t, tt.regionsHandlers, tt.sqlAdminHandlers, tt.skus)
+			config := &Config{Projects: "test-project", Logger: slog.New(slog.NewTextHandler(os.Stdout, nil))}
 			collector, err := New(config, gcpClient)
 			require.NoError(t, err)
 
-			collector.pricingMap.skus = tt.skus
 			ch := make(chan prometheus.Metric, 1)
 			err = collector.Collect(ch)
 			if tt.wantErr {
@@ -270,7 +279,7 @@ func TestGetAllCloudSQL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gcpClient := newTestGCPClient(t, tt.regionsHandlers, tt.sqlAdminHandlers)
+			gcpClient := newTestGCPClient(t, tt.regionsHandlers, tt.sqlAdminHandlers, nil)
 			config := &Config{Projects: "test-project"}
 			collector, err := New(config, gcpClient)
 			require.NoError(t, err)

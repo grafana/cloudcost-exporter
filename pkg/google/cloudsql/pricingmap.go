@@ -60,12 +60,14 @@ var (
 	tierCustomRegex = regexp.MustCompile(`^db-custom-(\d+)-(\d+)$`)
 	// Micro/small tier regex (e.g., db-f1-micro, db-g1-small). It has a different format than the generic regex.
 	tierMicroSmallRegex = regexp.MustCompile(`^db-([a-z0-9]+)-([a-z]+)$`)
+	// Special tier regex for tiers with non-numeric vCPU (e.g., db-perf-optimized-N-8)
+	tierSpecialRegex = regexp.MustCompile(`^db-([a-z0-9]+)-([a-z0-9]+)-([a-zA-Z]+)-(\d+)$`)
 	// Generic regex that matches various db types and tier categories (e.g., standard, highmem, custom, etc.)
 	tierGenericRegex = regexp.MustCompile(`^db-([a-z0-9]+)-([a-z0-9]+)-(?:([a-z0-9]+)-)?(\d+)(?:-(\d+))?$`)
 )
 
 // Price calculation logic:
-// 1. If the instance tier matches the custom format (db-custom-{vCPU}-{RAM}), use custom pricing logic:
+// 1. If the instance tier matches the custom format (db-{machine_family}-{tier}-{vCPU}-{RAM}), use custom pricing logic:
 //  - Find CPU and RAM component SKUs in the region (usage_unit "h" for CPU, "GiBy" for RAM)
 //  - Calculate total price: (vCPU count × CPU price per hour) + (RAM in GB × RAM price per GB per hour)
 // 2. If the instance is a standard instance (any other tier format), use standard pricing logic:
@@ -132,6 +134,20 @@ func getInstanceSpecFromTier(tier string) (*instanceSpec, error) {
 	}
 
 	if matches := tierMicroSmallRegex.FindStringSubmatch(tier); matches != nil {
+		tierType := matches[1] + "-" + matches[2]
+		return &instanceSpec{
+			cpu:      0,
+			ram:      0,
+			tier:     tier,
+			tierType: tierType,
+			isCustom: false,
+		}, nil
+	}
+
+	// Special tiers with non-numeric vCPU (e.g., db-perf-optimized-N-8)
+	// For these tiers, we extract the base tier name (e.g., "perf-optimized") without the letter suffix
+	// since SKU descriptions typically don't include the letter part
+	if matches := tierSpecialRegex.FindStringSubmatch(tier); matches != nil {
 		tierType := matches[1] + "-" + matches[2]
 		return &instanceSpec{
 			cpu:      0,
@@ -284,19 +300,39 @@ func isCustomPricingSku(sku *billingpb.Sku) bool {
 	descLower := strings.ToLower(sku.Description)
 
 	// If a SKU has both vCPU and RAM specs, it's a standard instance SKU
-	hasVCPU := strings.Contains(descLower, "vcpu")
-	hasRAM := strings.Contains(descLower, "ram") || strings.Contains(descLower, "gb ram")
+	hasVCPU := strings.Contains(descLower, "vcpu") || strings.Contains(descLower, "cpu")
+	hasRAM := strings.Contains(descLower, "ram") || strings.Contains(descLower, "gb ram") || strings.Contains(descLower, "memory")
 	if hasVCPU && hasRAM {
 		return false
 	}
 
-	return (usageUnit == "h" && strings.Contains(descLower, "cpu")) ||
-		(strings.Contains(usageUnit, "GiBy") && strings.Contains(descLower, "ram"))
+	// CPU component SKU: usage unit is "h" (hour) and description contains CPU-related terms
+	isCPU := (usageUnit == "h" || usageUnit == "1/h") &&
+		(strings.Contains(descLower, "cpu") || strings.Contains(descLower, "vcpu") || strings.Contains(descLower, "processor"))
+
+	// RAM component SKU: usage unit contains "GiBy" and description contains RAM-related terms
+	isRAM := strings.Contains(usageUnit, "GiBy") &&
+		(strings.Contains(descLower, "ram") || strings.Contains(descLower, "memory"))
+
+	return isCPU || isRAM
 }
 
 func matchByTierType(sku *billingpb.Sku, it instanceTraits) bool {
 	descLower := strings.ToLower(sku.Description)
 	return it.spec.tierType != "" && strings.Contains(descLower, strings.ToLower(it.spec.tierType))
+}
+
+func isSpecialTier(tier string) bool {
+	return tierSpecialRegex.MatchString(tier)
+}
+
+func matchByTierName(sku *billingpb.Sku, tier string) bool {
+	descLower := strings.ToLower(sku.Description)
+	tierLower := strings.ToLower(tier)
+	// Try matching the tier name (e.g., "db-perf-optimized-n-8")
+	// Also try without the "db-" prefix
+	tierWithoutPrefix := strings.TrimPrefix(tierLower, "db-")
+	return strings.Contains(descLower, tierLower) || strings.Contains(descLower, tierWithoutPrefix)
 }
 
 func isStandardSKU(sku *billingpb.Sku, it instanceTraits) bool {
@@ -319,6 +355,18 @@ func isStandardSKU(sku *billingpb.Sku, it instanceTraits) bool {
 		return false
 	}
 
+	// For special tiers (e.g., db-perf-optimized-N-8), try matching by tier name first
+	// If that fails, allow region-only matching (like generic tiers with CPU > 0)
+	if isSpecialTier(it.spec.tier) {
+		// Try matching by tier name first
+		if matchByTierName(sku, it.spec.tier) {
+			return true
+		}
+		// Fall back to region-only matching for special tiers
+		return true
+	}
+
+	// For other tiers with cpu == 0 (micro/small), require tier type matching
 	if it.spec.cpu == 0 {
 		if !matchByTierType(sku, it) {
 			return false
@@ -368,12 +416,19 @@ func (pm *pricingMap) calculateCustomPrice(region string, spec *instanceSpec) (*
 		}
 
 		usageUnit := sku.PricingInfo[0].PricingExpression.UsageUnit
-		if usageUnit == "h" {
+		descLower := strings.ToLower(sku.Description)
+
+		// custom pricing can be CPU or RAM based. We need to check both.
+		isCPU := (usageUnit == "h" || usageUnit == "1/h") &&
+			(strings.Contains(descLower, "cpu") || strings.Contains(descLower, "vcpu") || strings.Contains(descLower, "processor"))
+		if isCPU && cpuPrice == 0 {
 			cpuPrice = price
 			cpuSkuID = sku.SkuId
 		}
 
-		if strings.Contains(usageUnit, "GiBy") {
+		isRAM := strings.Contains(usageUnit, "GiBy") &&
+			(strings.Contains(descLower, "ram") || strings.Contains(descLower, "memory"))
+		if isRAM && ramPrice == 0 {
 			ramPrice = price
 			ramSkuID = sku.SkuId
 		}

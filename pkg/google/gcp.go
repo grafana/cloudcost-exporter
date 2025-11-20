@@ -135,6 +135,7 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 			collector, err = cloudsql.New(&cloudsql.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
+				Logger:         config.Logger,
 			}, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",

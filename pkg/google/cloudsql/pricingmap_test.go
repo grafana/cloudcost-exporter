@@ -172,6 +172,18 @@ func TestGetInstanceSpecFromTier(t *testing.T) {
 			wantError: false,
 		},
 		{
+			name: "perf-optimized tier with non-numeric vCPU",
+			tier: "db-perf-optimized-N-8",
+			wantSpec: &instanceSpec{
+				cpu:      0,
+				ram:      0,
+				tier:     "db-perf-optimized-N-8",
+				tierType: "perf-optimized",
+				isCustom: false,
+			},
+			wantError: false,
+		},
+		{
 			name:      "invalid tier",
 			tier:      "invalid-tier",
 			wantSpec:  nil,

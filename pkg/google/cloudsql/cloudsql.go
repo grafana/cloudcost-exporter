@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"log/slog"
-	"os"
 	"strings"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 type Config struct {
 	Projects       string
 	ScrapeInterval time.Duration
+	Logger         *slog.Logger
 }
 
 type Collector struct {
@@ -31,7 +31,7 @@ type Collector struct {
 
 const (
 	subsystem           = "gcp_cloudsql"
-	CostRefreshInterval = 24 * 30 * time.Hour
+	CostRefreshInterval = 24 * time.Hour
 )
 
 var (
@@ -45,15 +45,13 @@ var (
 )
 
 func New(config *Config, gcpClient client.Client) (*Collector, error) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	pm := newPricingMap(logger, gcpClient)
-	// SKUs are loaded lazily in Collect() to avoid requiring billing client in tests
+	pm := newPricingMap(config.Logger, gcpClient)
 	return &Collector{
 		gcpClient:  gcpClient,
 		config:     config,
 		pricingMap: pm,
 		projects:   strings.Split(config.Projects, ","),
-		logger:     logger,
+		logger:     config.Logger,
 	}, nil
 }
 
@@ -65,16 +63,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	ctx := context.Background()
 	logger := c.logger.With("logger", "cloudsql")
 
-	// Load SKUs if pricing map is empty
-	c.pricingMap.mu.RLock()
-	skusLoaded := len(c.pricingMap.skus) > 0
-	c.pricingMap.mu.RUnlock()
-
-	if !skusLoaded {
-		if err := c.pricingMap.getSKus(ctx); err != nil {
-			logger.Error("failed to load pricing SKUs", "error", err)
-			return err
-		}
+	if err := c.pricingMap.getSKus(ctx); err != nil {
+		logger.Error("failed to load pricing SKUs", "error", err)
+		return err
 	}
 
 	instances, err := c.getAllCloudSQL(ctx)
@@ -128,7 +119,6 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 func (c *Collector) getAllCloudSQL(ctx context.Context) ([]*sqladmin.DatabaseInstance, error) {
 	var allCloudSQLInfo = []*sqladmin.DatabaseInstance{}
 	seenInstances := make(map[string]bool)
-
 	for _, project := range c.projects {
 		cloudSQLInstances, err := c.gcpClient.ListSQLInstances(ctx, project)
 		if err != nil {
