@@ -102,10 +102,12 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		for usageType, price := range *pricePerUnit {
 			if strings.Contains(usageType, NATGatewayHours) {
 				// Aggregate all hourly NAT Gateway prices for this region into a single value
+				// E.g `USE1-NatGateway-Hours` and `USE1-NatGateway-Hours-Additional`
 				hourlyPrice += price
 			}
 			if strings.Contains(usageType, NATGatewayBytes) {
 				// Aggregate all data processing NAT Gateway prices for this region into a single value
+				// E.g `USE1-NatGateway-Bytes` and `USE1-NatGateway-Bytes-Additional`
 				dataProcessingPrice += price
 			}
 		}
