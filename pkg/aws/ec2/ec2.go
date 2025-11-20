@@ -137,9 +137,7 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 }
 
 // Collect satisfies the provider.Collector interface.
-func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	start := time.Now()
-	ctx := context.Background()
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
 
 	numOfRegions := len(c.Regions)
@@ -179,7 +177,6 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	}()
 	c.emitMetricsFromReservationsChannel(instanceCh, ch)
 	c.emitMetricsFromVolumesChannel(volumeCh, ch)
-	c.logger.LogAttrs(ctx, slog.LevelInfo, "Finished collect", slog.Duration("duration", time.Since(start)))
 	return nil
 }
 

@@ -1,7 +1,6 @@
 package aks
 
 import (
-	"context"
 	"errors"
 	"log/slog"
 	"os"
@@ -19,17 +18,16 @@ import (
 )
 
 var (
-	machineStoreCtx        context.Context = context.TODO()
-	machineStoreTestLogger *slog.Logger    = slog.New(slog.NewTextHandler(os.Stdout, nil))
+	machineStoreTestLogger *slog.Logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
 func TestPopulateMachineStore(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	newFakeMachineStore := func(cli client.AzureClient) *MachineStore {
+	newFakeMachineStore := func(t *testing.T, cli client.AzureClient) *MachineStore {
 		return &MachineStore{
-			context: machineStoreCtx,
+			context: t.Context(),
 			logger:  machineStoreTestLogger,
 
 			azClientWrapper: cli,
@@ -295,14 +293,14 @@ func TestPopulateMachineStore(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			azClientWrapper := mock_client.NewMockAzureClient(ctrl)
 
-			ms := newFakeMachineStore(azClientWrapper)
+			ms := newFakeMachineStore(t, azClientWrapper)
 
 			azClientWrapper.EXPECT().ListClustersInSubscription(gomock.Any()).AnyTimes().Return(tc.listClustersReturn, tc.listClustersExpectedError)
 			azClientWrapper.EXPECT().ListMachineTypesByLocation(gomock.Any(), gomock.Any()).AnyTimes().Return(tc.listMachineTypesReturn, tc.listMachineTypesExpectedError)
 			azClientWrapper.EXPECT().ListVirtualMachineScaleSetsFromResourceGroup(gomock.Any(), gomock.Any()).AnyTimes().Return(tc.listVMSSFromRgExpectedReturn, tc.listVMSSFromRgExpectedErr)
 			azClientWrapper.EXPECT().ListVirtualMachineScaleSetsOwnedVms(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(tc.ListVirtualMachineScaleSetsOwnedVmsExpectedReturn, tc.ListVirtualMachineScaleSetsOwnedVmsExpectedErr)
 
-			ms.PopulateMachineStore(context.TODO())
+			ms.PopulateMachineStore(t.Context())
 
 			machineMapEq := reflect.DeepEqual(tc.expectedMachineMap, ms.MachineMap)
 			machineSizeMapEq := reflect.DeepEqual(tc.expectedMachineSizesMap, ms.MachineSizeMap)

@@ -33,6 +33,7 @@ func TestIsOutpostsInstance(t *testing.T) {
 						},
 					},
 				},
+				DBInstanceArn: aws.String("some-arn"),
 			},
 			want: "AWS Outposts",
 		},
@@ -46,6 +47,7 @@ func TestIsOutpostsInstance(t *testing.T) {
 						},
 					},
 				},
+				DBInstanceArn: aws.String("some-arn"),
 			},
 			want: "AWS Region",
 		},
@@ -53,6 +55,7 @@ func TestIsOutpostsInstance(t *testing.T) {
 			name: "non-outposts instance type: DBSubnetGroup empty",
 			inst: rdsTypes.DBInstance{
 				DBSubnetGroup: &rdsTypes.DBSubnetGroup{},
+				DBInstanceArn: aws.String("some-arn"),
 			},
 			want: "AWS Region",
 		},
@@ -66,6 +69,7 @@ func TestIsOutpostsInstance(t *testing.T) {
 						},
 					},
 				},
+				DBInstanceArn: aws.String("some-other-arn"),
 			},
 			want: "AWS Region",
 		},
@@ -130,6 +134,7 @@ func TestCollector_Collect(t *testing.T) {
 				DBInstanceIdentifier: aws.String("test-db"),
 				MultiAZ:              aws.Bool(false),
 				DbiResourceId:        aws.String("test-db"),
+				DBInstanceArn:        aws.String("some-arn"),
 			}},
 			pricingKey: createPricingKey("us-east-1", "db.t3.medium", "postgres", "Single-AZ", "AWS Region"),
 		},
@@ -151,6 +156,7 @@ func TestCollector_Collect(t *testing.T) {
 				DBInstanceIdentifier: aws.String("test-db-2"),
 				MultiAZ:              aws.Bool(false),
 				DbiResourceId:        aws.String("test-db-2"),
+				DBInstanceArn:        aws.String("some-arn"),
 			}},
 			pricingKey: cacheKey,
 		},
@@ -194,7 +200,7 @@ func TestCollector_Collect(t *testing.T) {
 			}
 
 			ch := make(chan prometheus.Metric, 1)
-			err := c.Collect(ch)
+			err := c.Collect(t.Context(), ch)
 			assert.NoError(t, err)
 
 			select {

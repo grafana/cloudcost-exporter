@@ -1,7 +1,6 @@
 package pricingstore_test
 
 import (
-	"context"
 	"log/slog"
 	"os"
 	"testing"
@@ -90,7 +89,7 @@ func TestNewPricingStore(t *testing.T) {
 				awsRegionClientMap[regionName] = tt.regionClient
 			}
 
-			store := pricingstore.NewPricingStore(context.Background(), tt.logger, tt.regions, awsRegionClientMap, []pricingTypes.Filter{})
+			store := pricingstore.NewPricingStore(t.Context(), tt.logger, tt.regions, awsRegionClientMap, []pricingTypes.Filter{})
 
 			assert.NotNil(t, store)
 			assert.NotNil(t, store.GetPricePerUnitPerRegion())

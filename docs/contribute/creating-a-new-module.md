@@ -21,6 +21,36 @@ Implement the Prometheus `Collector` [interface](https://github.com/grafana/clou
 
 Define the Prometheus metric descriptors for the service.
 
+**Important: Context Handling**
+
+The `Collect` method must accept `context.Context` as the first parameter:
+```go
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
+    // Use ctx for all operations (API calls, data fetching, etc.)
+    // This context has a timeout set by the provider and should be respected
+    return nil
+}
+```
+
+**Context Usage Pattern:**
+
+1. **Collectors with background goroutines** (periodic pricing refresh, data population):
+   - Must receive `ctx context.Context` as the first parameter in `New()`
+   - Store the context in the struct for background operations
+   - Use struct `ctx` for background goroutines (lifecycle management)
+   - Use `Collect()` `ctx` parameter for collection work (timeout enforcement)
+   - Example: `pkg/aws/vpc/vpc.go`, `pkg/google/vpc/vpc.go`, `pkg/azure/aks/aks.go`
+
+2. **Collectors without background goroutines**:
+   - Do NOT receive `ctx` in `New()` (not needed)
+   - Only use the `ctx` parameter passed to `Collect()` method
+   - Example: `pkg/aws/ec2/ec2.go`, `pkg/aws/s3/s3.go`, `pkg/aws/rds/rds.go`
+
+**Why this matters:**
+- Background goroutines need a lifecycle context to be cancelled when the provider shuts down
+- Collection work needs a timeout context to prevent runaway external requests
+- This ensures proper resource cleanup and prevents leaks
+
 ### 3. Implement the Pricing Integration
 
 #### AWS

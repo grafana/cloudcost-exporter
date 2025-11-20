@@ -14,6 +14,7 @@ import (
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
+	"github.com/grafana/cloudcost-exporter/pkg/google/vpc"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
@@ -41,26 +42,28 @@ var (
 )
 
 type GCP struct {
-	config     *Config
-	collectors []provider.Collector
-	logger     *slog.Logger
+	config           *Config
+	collectors       []provider.Collector
+	logger           *slog.Logger
+	ctx              context.Context
+	collectorTimeout time.Duration
 }
 
 type Config struct {
-	ProjectId       string // ProjectID is where the project is running. Used for authentication.
-	Region          string
-	Projects        string // Projects is a comma-separated list of projects to scrape metadata from
-	Services        []string
-	ScrapeInterval  time.Duration
-	DefaultDiscount int
-	Logger          *slog.Logger
+	ProjectId        string // ProjectID is where the project is running. Used for authentication.
+	Region           string
+	Projects         string // Projects is a comma-separated list of projects to scrape metadata from
+	Services         []string
+	ScrapeInterval   time.Duration
+	DefaultDiscount  int
+	CollectorTimeout time.Duration
+	Logger           *slog.Logger
 }
 
 // New is responsible for parsing out a configuration file and setting up the associated services that could be required.
 // We instantiate services to avoid repeating common services that may be shared across many collectors. In the future we can push
 // collector specific services further down.
-func New(config *Config) (*GCP, error) {
-	ctx := context.Background()
+func New(ctx context.Context, config *Config) (*GCP, error) {
 	logger := config.Logger.With("provider", subsystem)
 
 	gcpClient, err := client.NewGCPClient(ctx, client.Config{ProjectId: config.ProjectId, Discount: config.DefaultDiscount})
@@ -88,7 +91,7 @@ func New(config *Config) (*GCP, error) {
 				continue
 			}
 		case "GKE":
-			collector, err = gke.New(&gke.Config{
+			collector, err = gke.New(ctx, &gke.Config{
 				Projects:       config.Projects,
 				Logger:         config.Logger,
 				ScrapeInterval: config.ScrapeInterval,
@@ -101,7 +104,7 @@ func New(config *Config) (*GCP, error) {
 			}
 		case "CLB":
 			// CLB = Cloud Load Balancer, but we use forwarding rules to calculate price
-			collector, err = networking.New(&networking.Config{
+			collector, err = networking.New(ctx, &networking.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         config.Logger,
 				Projects:       config.Projects,
@@ -109,6 +112,18 @@ func New(config *Config) (*GCP, error) {
 			logger.LogAttrs(ctx, slog.LevelInfo, "Creating collector",
 				slog.String("service", service),
 				slog.String("projects", config.Projects))
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
+		case "VPC":
+			collector, err = vpc.New(ctx, &vpc.Config{
+				Projects:       config.Projects,
+				Logger:         config.Logger,
+				ScrapeInterval: config.ScrapeInterval,
+			}, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -123,9 +138,11 @@ func New(config *Config) (*GCP, error) {
 		collectors = append(collectors, collector)
 	}
 	return &GCP{
-		config:     config,
-		collectors: collectors,
-		logger:     logger,
+		config:           config,
+		collectors:       collectors,
+		logger:           logger,
+		ctx:              ctx,
+		collectorTimeout: config.CollectorTimeout,
 	}, nil
 }
 
@@ -155,6 +172,10 @@ func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect implements the prometheus.Collector interface and will iterate over all the collectors instantiated during New and collect their metrics.
 func (g *GCP) Collect(ch chan<- prometheus.Metric) {
+	// Create a context with timeout for this collection cycle
+	collectCtx, cancel := context.WithTimeout(g.ctx, g.collectorTimeout)
+	defer cancel()
+
 	wg := sync.WaitGroup{}
 	wg.Add(len(g.collectors))
 	for _, c := range g.collectors {
@@ -162,7 +183,7 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 			now := time.Now()
 			defer wg.Done()
 			collectorErrors := 0.0
-			if err := c.Collect(ch); err != nil {
+			if err := c.Collect(collectCtx, ch); err != nil {
 				g.logger.LogAttrs(context.Background(), slog.LevelError, "Error collecting metrics",
 					slog.String("collector", c.Name()),
 					slog.String("message", err.Error()),

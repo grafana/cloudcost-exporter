@@ -90,9 +90,8 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 }
 
 // Collect satisfies the provider.Collector interface.
-func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	c.logger.LogAttrs(context.Background(), slog.LevelInfo, "calling collect")
-	start := time.Now()
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
+	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
 
 	for region, pricePerUnit := range c.PricingStore.GetPricePerUnitPerRegion() {
 		for usageType, price := range *pricePerUnit {
@@ -105,7 +104,6 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 		}
 	}
 
-	c.logger.Info("Finished collect", "subsystem", subsystem, "duration", time.Since(start))
 	return nil
 }
 

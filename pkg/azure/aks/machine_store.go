@@ -273,8 +273,6 @@ func (m *MachineStore) GetListOfVmsForSubscription() []*VirtualMachineInfo {
 }
 
 func (m *MachineStore) PopulateMachineStore(ctx context.Context) {
-	startTime := time.Now()
-
 	m.logger.Info("populating machine store")
 
 	clusterList, err := m.getClustersInSubscription(ctx)
@@ -373,7 +371,6 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) {
 
 	m.MachineMap = vmInfoMap
 	m.logger.LogAttrs(m.context, slog.LevelInfo, "machine store populated",
-		slog.Duration("duration", time.Since(startTime)),
 		slog.Int("numOfMachines", len(m.MachineMap)),
 		slog.Int("numOfClusters", len(clusterList)),
 	)

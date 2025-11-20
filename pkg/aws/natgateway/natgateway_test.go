@@ -1,7 +1,6 @@
 package natgateway_test
 
 import (
-	"context"
 	"log/slog"
 	"os"
 	"testing"
@@ -62,7 +61,7 @@ func TestNew(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			collector := natgateway.New(context.Background(), &natgateway.Config{
+			collector := natgateway.New(t.Context(), &natgateway.Config{
 				ScrapeInterval: tt.ScrapeInterval,
 				Regions:        []ec2Types.Region{{RegionName: aws.String(tt.regionName)}},
 				Logger:         tt.Logger,
@@ -161,7 +160,7 @@ func TestCollector_Collect(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			region := "us-east-1"
-			collector := natgateway.New(context.Background(), &natgateway.Config{
+			collector := natgateway.New(t.Context(), &natgateway.Config{
 				ScrapeInterval: 1 * time.Hour,
 				Regions:        []ec2Types.Region{{RegionName: aws.String(region)}},
 				Logger:         testLogger,
@@ -171,7 +170,7 @@ func TestCollector_Collect(t *testing.T) {
 			})
 
 			ch := make(chan prometheus.Metric, len(tt.expectedMetrics))
-			err := collector.Collect(ch)
+			err := collector.Collect(t.Context(), ch)
 			close(ch)
 
 			assert.NoError(t, err)

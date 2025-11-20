@@ -58,8 +58,7 @@ type Collector struct {
 	config     *Config
 	projects   []string
 	pricingMap *PricingMap
-	// nextScrape time.Time
-	logger *slog.Logger
+	logger     *slog.Logger
 }
 
 func (c *Collector) Register(_ provider.Registry) error {
@@ -67,7 +66,7 @@ func (c *Collector) Register(_ provider.Registry) error {
 }
 
 func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
-	err := c.Collect(ch)
+	err := c.Collect(context.Background(), ch)
 	if err != nil {
 		c.logger.Error("failed to collect metrics", slog.String("msg", err.Error()))
 		return 0
@@ -75,8 +74,7 @@ func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
 	return 1
 }
 
-func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	ctx := context.Background()
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	for _, project := range c.projects {
 		zones, err := c.gcpClient.GetZones(project)
 		if err != nil {
@@ -234,9 +232,8 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func New(config *Config, gcpClient client.Client) (*Collector, error) {
+func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
 	logger := config.Logger.With("collector", "gke")
-	ctx := context.TODO()
 
 	pm, err := NewPricingMap(ctx, gcpClient)
 	if err != nil {
@@ -245,7 +242,7 @@ func New(config *Config, gcpClient client.Client) (*Collector, error) {
 
 	priceTicker := time.NewTicker(PriceRefreshInterval)
 
-	go func(ctx context.Context) {
+	go func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -257,7 +254,7 @@ func New(config *Config, gcpClient client.Client) (*Collector, error) {
 				}
 			}
 		}
-	}(ctx)
+	}()
 
 	return &Collector{
 		config:     config,

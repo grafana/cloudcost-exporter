@@ -129,11 +129,12 @@ func TestCollector_Collect(t *testing.T) {
 		require.NoError(t, err)
 		ch := make(chan prometheus.Metric)
 		go func() {
-			err := collector.Collect(ch)
+			err := collector.Collect(t.Context(), ch)
 			close(ch)
 			assert.NoError(t, err)
 		}()
 	})
+
 	t.Run("Test cpu, memory and total cost metrics emitted for each valid instance", func(t *testing.T) {
 		c := mock_client.NewMockClient(ctrl)
 		c.EXPECT().ListSpotPrices(gomock.Any()).
@@ -237,7 +238,7 @@ func TestCollector_Collect(t *testing.T) {
 
 		ch := make(chan prometheus.Metric)
 		go func() {
-			if err := collector.Collect(ch); err != nil {
+			if err := collector.Collect(t.Context(), ch); err != nil {
 				assert.NoError(t, err)
 			}
 			close(ch)
@@ -250,6 +251,93 @@ func TestCollector_Collect(t *testing.T) {
 		}
 		assert.Len(t, metrics, 6)
 	})
+}
+
+func Test_PopulateStoragePricingMap(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	tests := map[string]struct {
+		ctx                 context.Context
+		regions             []ec2Types.Region
+		ListStoragePricesFn func(ctx context.Context, region string) ([]string, error)
+		expectedCalls       int
+		err                 error
+		expected            map[string]*StoragePricing
+	}{
+		"can populate storage pricing map": {
+			ctx: t.Context(),
+			regions: []ec2Types.Region{
+				{
+					RegionName: aws.String("af-south-1"),
+				},
+			},
+			ListStoragePricesFn: func(ctx context.Context, region string) ([]string, error) {
+				return []string{
+					`{"product":{"productFamily":"Storage","attributes":{"maxThroughputvolume":"1000 MiB/s","volumeType":"General Purpose","maxIopsvolume":"16000","usagetype":"AFS1-EBS:VolumeUsage.gp3","locationType":"AWS Region","maxVolumeSize":"16 TiB","storageMedia":"SSD-backed","regionCode":"af-south-1","servicecode":"AmazonEC2","volumeApiName":"gp3","location":"Africa (Cape Town)","servicename":"Amazon Elastic Compute Cloud","operation":""},"sku":"XWCTMRRUJM7TGYST"},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"XWCTMRRUJM7TGYST.JRTCKXETXF":{"priceDimensions":{"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7":{"unit":"GB-Mo","endRange":"Inf","description":"$0.1047 per GB-month of General Purpose (gp3) provisioned storage - Africa (Cape Town)","appliesTo":[],"rateCode":"XWCTMRRUJM7TGYST.JRTCKXETXF.6YS6EN2CT7","beginRange":"0","pricePerUnit":{"USD":"0.1047000000"}}},"sku":"XWCTMRRUJM7TGYST","effectiveDate":"2024-07-01T00:00:00Z","offerTermCode":"JRTCKXETXF","termAttributes":{}}}},"version":"20240705013454","publicationDate":"2024-07-05T01:34:54Z"}`,
+				}, nil
+			},
+			expectedCalls: 1,
+			expected: map[string]*StoragePricing{
+				"af-south-1": {
+					Storage: map[string]float64{
+						"gp3": 0.1047,
+					},
+				},
+			},
+		},
+		"errors listing storage prices propagate": {
+			ctx: t.Context(),
+			regions: []ec2Types.Region{{
+				RegionName: aws.String("af-south-1"),
+			}},
+			ListStoragePricesFn: func(ctx context.Context, region string) ([]string, error) {
+				return nil, assert.AnError
+			},
+			expectedCalls: 1,
+			err:           ErrListStoragePrices,
+			expected:      map[string]*StoragePricing{},
+		},
+		"errors generating the map from listed prices propagate too": {
+			ctx: t.Context(),
+			regions: []ec2Types.Region{
+				{
+					RegionName: aws.String("af-south-1"),
+				},
+			},
+			ListStoragePricesFn: func(ctx context.Context, region string) ([]string, error) {
+				return []string{
+					"invalid json response",
+				}, nil
+			},
+			expectedCalls: 1,
+			expected:      map[string]*StoragePricing{},
+			err:           ErrGeneratePricingMap,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			c := mock_client.NewMockClient(ctrl)
+			c.EXPECT().
+				ListStoragePrices(gomock.Any(), gomock.Any()).
+				DoAndReturn(test.ListStoragePricesFn).
+				Times(test.expectedCalls)
+
+			spm := NewStoragePricingMap(logger, &Config{
+				Regions: test.regions,
+				RegionMap: map[string]client.Client{
+					*test.regions[0].RegionName: c,
+				},
+			})
+
+			err := spm.GenerateStoragePricingMap(test.ctx)
+			if test.err != nil {
+				assert.ErrorIs(t, err, test.err)
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.Equal(t, test.expected, spm.Regions)
+		})
+	}
 }
 
 // setupPricingExpectations sets up minimal pricing expectations on a mock client
@@ -308,7 +396,7 @@ func Test_FetchVolumesData(t *testing.T) {
 		wg := sync.WaitGroup{}
 		wg.Add(len(collector.Regions))
 		ch := make(chan []ec2Types.Volume)
-		go collector.fetchVolumesData(context.Background(), c, regionName, ch)
+		go collector.fetchVolumesData(t.Context(), c, regionName, ch)
 		go func() {
 			wg.Wait()
 			close(ch)

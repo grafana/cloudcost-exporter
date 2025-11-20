@@ -1,7 +1,6 @@
 package aks
 
 import (
-	"context"
 	"errors"
 	"log/slog"
 	"os"
@@ -17,7 +16,6 @@ import (
 )
 
 var (
-	priceStoreCtx        = context.TODO()
 	priceStoreTestLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
@@ -97,14 +95,14 @@ func TestPopulatePriceStore(t *testing.T) {
 
 			p := &PriceStore{
 				logger:             priceStoreTestLogger,
-				context:            priceStoreCtx,
+				context:            t.Context(),
 				azureClientWrapper: mockAzureClient,
 
 				regionMapLock: &sync.RWMutex{},
 				RegionMap:     make(map[string]PriceByPriority),
 			}
 
-			p.PopulatePriceStore(priceStoreCtx)
+			p.PopulatePriceStore(t.Context())
 
 			mapEq := reflect.DeepEqual(tc.expectedPriceMap, p.RegionMap)
 			assert.True(t, mapEq)

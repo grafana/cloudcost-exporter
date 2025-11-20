@@ -172,7 +172,7 @@ func Test_NewWithDependencies(t *testing.T) {
 			// Call function
 			awsConfig := aws.Config{}
 			aws, err := newWithDependencies(
-				context.Background(),
+				t.Context(),
 				config,
 				mockClient,
 				regionClients,
@@ -239,9 +239,11 @@ func Test_RegisterCollectors(t *testing.T) {
 			}
 
 			a := AWS{
-				Config:     nil,
-				collectors: []provider.Collector{},
-				logger:     logger,
+				Config:           nil,
+				collectors:       []provider.Collector{},
+				logger:           logger,
+				ctx:              t.Context(),
+				collectorTimeout: 1 * time.Minute,
 			}
 			for i := 0; i < tc.numCollectors; i++ {
 				a.collectors = append(a.collectors, c)
@@ -261,7 +263,7 @@ func Test_CollectMetrics(t *testing.T) {
 	tests := map[string]struct {
 		numCollectors   int
 		collectorName   string
-		collect         func(chan<- prometheus.Metric) error
+		collect         func(context.Context, chan<- prometheus.Metric) error
 		expectedMetrics []*utils.MetricResult
 	}{
 		"no error if no collectors": {
@@ -272,7 +274,7 @@ func Test_CollectMetrics(t *testing.T) {
 		"bubble-up single collector error": {
 			numCollectors: 1,
 			collectorName: "test2",
-			collect: func(chan<- prometheus.Metric) error {
+			collect: func(context.Context, chan<- prometheus.Metric) error {
 				return fmt.Errorf("test collect error")
 			},
 			expectedMetrics: []*utils.MetricResult{
@@ -287,7 +289,7 @@ func Test_CollectMetrics(t *testing.T) {
 		"two collectors with no errors": {
 			numCollectors: 2,
 			collectorName: "test3",
-			collect:       func(chan<- prometheus.Metric) error { return nil },
+			collect:       func(context.Context, chan<- prometheus.Metric) error { return nil },
 			expectedMetrics: []*utils.MetricResult{
 				{
 					FqName:     "cloudcost_exporter_collector_last_scrape_error",
@@ -313,13 +315,15 @@ func Test_CollectMetrics(t *testing.T) {
 			registry := mock_provider.NewMockRegistry(ctrl)
 			if tt.collect != nil {
 				c.EXPECT().Name().Return(tt.collectorName).AnyTimes()
-				c.EXPECT().Collect(ch).DoAndReturn(tt.collect).AnyTimes()
+				c.EXPECT().Collect(gomock.Any(), ch).DoAndReturn(tt.collect).AnyTimes()
 				c.EXPECT().Register(registry).Return(nil).AnyTimes()
 			}
 			aws := &AWS{
-				Config:     nil,
-				collectors: []provider.Collector{},
-				logger:     logger,
+				Config:           nil,
+				collectors:       []provider.Collector{},
+				logger:           logger,
+				ctx:              t.Context(),
+				collectorTimeout: 1 * time.Minute,
 			}
 
 			for range tt.numCollectors {

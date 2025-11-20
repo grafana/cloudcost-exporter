@@ -115,7 +115,7 @@ func TestNew(t *testing.T) {
 		{RegionName: stringPtr("us-west-2")},
 	}
 
-	collector := New(context.Background(), &Config{
+	collector := New(t.Context(), &Config{
 		ScrapeInterval: 1 * time.Hour,
 		Regions:        regions,
 		Logger:         logger,

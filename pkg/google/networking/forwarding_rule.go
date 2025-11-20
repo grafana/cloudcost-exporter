@@ -83,8 +83,7 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 	return 0
 }
 
-func New(config *Config, gcpClient client.Client) (*Collector, error) {
-	ctx := context.Background()
+func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
 	logger := config.Logger.With("collector", "forwarding_rule")
 
 	priceTicker := time.NewTicker(PriceRefreshInterval)
@@ -93,7 +92,7 @@ func New(config *Config, gcpClient client.Client) (*Collector, error) {
 		return nil, err
 	}
 
-	go func(ctx context.Context) {
+	go func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -104,7 +103,7 @@ func New(config *Config, gcpClient client.Client) (*Collector, error) {
 				}
 			}
 		}
-	}(ctx)
+	}()
 
 	return &Collector{
 		projects:   strings.Split(config.Projects, ","),
@@ -124,10 +123,10 @@ func (c *Collector) Register(registry provider.Registry) error {
 	return nil
 }
 
-func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
-	c.logger.LogAttrs(c.ctx, slog.LevelInfo, "Collecting Forwarding Rule metrics")
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
+	c.logger.LogAttrs(ctx, slog.LevelInfo, "Collecting Forwarding Rule metrics")
 
-	forwardingRuleInfo, err := c.getForwardingRuleInfo()
+	forwardingRuleInfo, err := c.getForwardingRuleInfo(ctx)
 	if err != nil {
 		c.logger.Error("error getting forwarding rule info", "error", err)
 		return err
@@ -163,7 +162,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func (c *Collector) getForwardingRuleInfo() ([]ForwardingRuleInfo, error) {
+func (c *Collector) getForwardingRuleInfo(ctx context.Context) ([]ForwardingRuleInfo, error) {
 	var allForwardingRuleInfo = []ForwardingRuleInfo{}
 	var mu sync.Mutex
 
@@ -194,7 +193,7 @@ func (c *Collector) getForwardingRuleInfo() ([]ForwardingRuleInfo, error) {
 			go func() {
 				defer regionWaitGroup.Done()
 				for region := range regionChan {
-					c.processRegion(project, region, &allForwardingRuleInfo, &mu)
+					c.processRegion(ctx, project, region, &allForwardingRuleInfo, &mu)
 				}
 			}()
 		}
@@ -205,9 +204,9 @@ func (c *Collector) getForwardingRuleInfo() ([]ForwardingRuleInfo, error) {
 }
 
 // processRegion processes a single region
-func (c *Collector) processRegion(project string, region *compute.Region, allForwardingRuleInfo *[]ForwardingRuleInfo, mu *sync.Mutex) {
+func (c *Collector) processRegion(ctx context.Context, project string, region *compute.Region, allForwardingRuleInfo *[]ForwardingRuleInfo, mu *sync.Mutex) {
 	// Always fetch fresh forwarding rules (no caching)
-	forwardingRules, err := c.gcpClient.ListForwardingRules(c.ctx, project, region.Name)
+	forwardingRules, err := c.gcpClient.ListForwardingRules(ctx, project, region.Name)
 	if err != nil {
 		c.logger.Error("error listing forwarding rules for project", "project", project, "region", region.Name, "error", err)
 		return
