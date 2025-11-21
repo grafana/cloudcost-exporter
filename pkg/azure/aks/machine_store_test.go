@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
 	mock_client "github.com/grafana/cloudcost-exporter/pkg/azure/client/mocks"
