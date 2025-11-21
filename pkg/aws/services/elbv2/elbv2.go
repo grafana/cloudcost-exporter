@@ -1,4 +1,4 @@
-//go:generate mockgen -source=elbv2.go -destination=../../../../mocks/pkg/aws/services/elbv2/ELBv2.go
+//go:generate mockgen -source=elbv2.go -destination=mocks/client.go
 
 package elbv2
 
