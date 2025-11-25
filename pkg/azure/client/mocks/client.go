@@ -14,7 +14,7 @@ import (
 	reflect "reflect"
 
 	armcompute "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	armcontainerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
+	armcontainerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	gomock "go.uber.org/mock/gomock"
 	sdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
