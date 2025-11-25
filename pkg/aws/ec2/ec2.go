@@ -223,87 +223,155 @@ func (c *Collector) fetchVolumesData(ctx context.Context, regionClient client.Cl
 }
 
 func (c *Collector) emitMetricsFromReservationsChannel(reservationsCh chan []ec2Types.Reservation, ch chan<- prometheus.Metric) {
+	var allInstances []ec2Types.Instance
 	for reservations := range reservationsCh {
 		for _, reservation := range reservations {
-			for _, instance := range reservation.Instances {
-				clusterName := client.ClusterNameFromInstance(instance)
-				if instance.PrivateDnsName == nil || *instance.PrivateDnsName == "" {
-					c.logger.Debug(fmt.Sprintf("no private dns name found for instance %s", *instance.InstanceId))
-					continue
-				}
-				if instance.Placement == nil || instance.Placement.AvailabilityZone == nil {
-					c.logger.Debug(fmt.Sprintf("no availability zone found for instance %s", *instance.InstanceId))
-					continue
-				}
-
-				region := *instance.Placement.AvailabilityZone
-
-				pricetier := "spot"
-				if instance.InstanceLifecycle != ec2Types.InstanceLifecycleTypeSpot {
-					pricetier = "ondemand"
-					// Ondemand instances are keyed based upon their Region, so we need to remove the availability zone
-					region = region[:len(region)-1]
-				}
-
-				price, err := c.computePricingMap.GetPriceForInstanceType(region, string(instance.InstanceType))
-				if err != nil {
-					c.logger.Error(fmt.Sprintf("error getting price for instance type %s: %s", instance.InstanceType, err))
-					continue
-				}
-
-				labelValues := []string{
-					*instance.PrivateDnsName,
-					*instance.InstanceId,
-					region,
-					c.computePricingMap.InstanceDetails[string(instance.InstanceType)].InstanceFamily,
-					string(instance.InstanceType),
-					clusterName,
-					pricetier,
-					string(instance.Architecture),
-				}
-				ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.Cpu, labelValues...)
-				ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.Ram, labelValues...)
-				ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.Total, labelValues...)
-			}
+			allInstances = append(allInstances, reservation.Instances...)
 		}
 	}
+
+	// Process instances in parallel with limited concurrency (similar to GCP region processing)
+	instanceChan := make(chan ec2Types.Instance, len(allInstances))
+	for _, instance := range allInstances {
+		instanceChan <- instance
+	}
+	close(instanceChan)
+
+	// Limit concurrent instance processing to avoid overwhelming the system
+	maxConcurrentWorkers := 5
+	if len(allInstances) < maxConcurrentWorkers {
+		maxConcurrentWorkers = len(allInstances)
+	}
+
+	var mu sync.Mutex
+	instanceWaitGroup := sync.WaitGroup{}
+	for i := 0; i < maxConcurrentWorkers; i++ {
+		instanceWaitGroup.Add(1)
+		go func() {
+			defer instanceWaitGroup.Done()
+			for instance := range instanceChan {
+				c.processInstance(instance, ch, &mu)
+			}
+		}()
+	}
+	instanceWaitGroup.Wait()
+}
+
+// processInstance processes a single instance and emits its metrics
+func (c *Collector) processInstance(instance ec2Types.Instance, ch chan<- prometheus.Metric, mu *sync.Mutex) {
+	clusterName := client.ClusterNameFromInstance(instance)
+	if instance.PrivateDnsName == nil || *instance.PrivateDnsName == "" {
+		c.logger.Debug(fmt.Sprintf("no private dns name found for instance %s", *instance.InstanceId))
+		return
+	}
+	if instance.Placement == nil || instance.Placement.AvailabilityZone == nil {
+		c.logger.Debug(fmt.Sprintf("no availability zone found for instance %s", *instance.InstanceId))
+		return
+	}
+
+	region := *instance.Placement.AvailabilityZone
+
+	pricetier := "spot"
+	if instance.InstanceLifecycle != ec2Types.InstanceLifecycleTypeSpot {
+		pricetier = "ondemand"
+		// Ondemand instances are keyed based upon their Region, so we need to remove the availability zone
+		region = region[:len(region)-1]
+	}
+
+	price, err := c.computePricingMap.GetPriceForInstanceType(region, string(instance.InstanceType))
+	if err != nil {
+		c.logger.Error(fmt.Sprintf("error getting price for instance type %s: %s", instance.InstanceType, err))
+		return
+	}
+
+	labelValues := []string{
+		*instance.PrivateDnsName,
+		*instance.InstanceId,
+		region,
+		c.computePricingMap.InstanceDetails[string(instance.InstanceType)].InstanceFamily,
+		string(instance.InstanceType),
+		clusterName,
+		pricetier,
+		string(instance.Architecture),
+	}
+
+	// Use mutex to safely send to channel from multiple goroutines
+	mu.Lock()
+	ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.Cpu, labelValues...)
+	ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.Ram, labelValues...)
+	ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.Total, labelValues...)
+	mu.Unlock()
 }
 
 func (c *Collector) emitMetricsFromVolumesChannel(volumesCh chan []ec2Types.Volume, ch chan<- prometheus.Metric) {
+	var allVolumes []ec2Types.Volume
 	for volumes := range volumesCh {
-		for _, volume := range volumes {
-			if volume.AvailabilityZone == nil {
-				c.logger.Error("Volume's Availability Zone unknown: skipping")
-				continue
-			}
-
-			az := *volume.AvailabilityZone
-			// Might not be accurate every case, but it's not worth another API call to get the exact region of an AZ
-			region := az[0 : len(az)-1]
-
-			if volume.Size == nil {
-				c.logger.Error("Volume's size unknown: skipping")
-				continue
-			}
-
-			price, err := c.storagePricingMap.GetPriceForVolumeType(region, string(volume.VolumeType), *volume.Size)
-			if err != nil {
-				c.logger.Error(fmt.Sprintf("error getting price for volume type %s in region %s: %s", volume.VolumeType, region, err))
-				continue
-			}
-
-			labelValues := []string{
-				client.NameFromVolume(volume),
-				region,
-				az,
-				*volume.VolumeId,
-				string(volume.VolumeType),
-				strconv.FormatInt(int64(*volume.Size), 10),
-				string(volume.State),
-			}
-			ch <- prometheus.MustNewConstMetric(PersistentVolumeHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
-		}
+		allVolumes = append(allVolumes, volumes...)
 	}
+
+	// Process volumes in parallel with limited concurrency (similar to GCP region processing)
+	volumeChan := make(chan ec2Types.Volume, len(allVolumes))
+	for _, volume := range allVolumes {
+		volumeChan <- volume
+	}
+	close(volumeChan)
+
+	// Limit concurrent volume processing to avoid overwhelming the system
+	maxConcurrentWorkers := 5
+	if len(allVolumes) < maxConcurrentWorkers {
+		maxConcurrentWorkers = len(allVolumes)
+	}
+
+	var mu sync.Mutex
+	volumeWaitGroup := sync.WaitGroup{}
+	for i := 0; i < maxConcurrentWorkers; i++ {
+		volumeWaitGroup.Add(1)
+		go func() {
+			defer volumeWaitGroup.Done()
+			for volume := range volumeChan {
+				c.processVolume(volume, ch, &mu)
+			}
+		}()
+	}
+	volumeWaitGroup.Wait()
+}
+
+// processVolume processes a single volume and emits its metrics
+func (c *Collector) processVolume(volume ec2Types.Volume, ch chan<- prometheus.Metric, mu *sync.Mutex) {
+	if volume.AvailabilityZone == nil {
+		c.logger.Error("Volume's Availability Zone unknown: skipping")
+		return
+	}
+
+	az := *volume.AvailabilityZone
+	// Might not be accurate every case, but it's not worth another API call to get the exact region of an AZ
+	region := az[0 : len(az)-1]
+
+	if volume.Size == nil {
+		c.logger.Error("Volume's size unknown: skipping")
+		return
+	}
+
+	price, err := c.storagePricingMap.GetPriceForVolumeType(region, string(volume.VolumeType), *volume.Size)
+	if err != nil {
+		c.logger.Error(fmt.Sprintf("error getting price for volume type %s in region %s: %s", volume.VolumeType, region, err))
+		return
+	}
+
+	labelValues := []string{
+		client.NameFromVolume(volume),
+		region,
+		az,
+		*volume.VolumeId,
+		string(volume.VolumeType),
+		strconv.FormatInt(int64(*volume.Size), 10),
+		string(volume.State),
+	}
+
+	// Use mutex to safely send to channel from multiple goroutines
+	mu.Lock()
+	ch <- prometheus.MustNewConstMetric(PersistentVolumeHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
+	mu.Unlock()
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
