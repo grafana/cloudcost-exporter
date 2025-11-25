@@ -5,7 +5,7 @@ go 1.24.0
 require (
 	cloud.google.com/go/billing v1.21.0
 	cloud.google.com/go/compute v1.49.1
-	cloud.google.com/go/storage v1.57.0
+	cloud.google.com/go/storage v1.57.2
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7 v7.1.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8 v8.1.0
