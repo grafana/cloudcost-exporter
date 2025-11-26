@@ -398,7 +398,7 @@ func (spm *StoragePricingMap) GenerateStoragePricingMap(ctx context.Context) err
 	for _, product := range storagePrices {
 		var productInfo storageProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
-			return err
+			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 		}
 
 		region := productInfo.Product.Attributes.Region
