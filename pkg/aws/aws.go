@@ -138,7 +138,10 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				RegionMap:      regionClients,
 			})
 			if err != nil {
-				return nil, err
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
 			}
 			collectors = append(collectors, collector)
 		case serviceRDS:
