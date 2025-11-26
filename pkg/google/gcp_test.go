@@ -128,9 +128,9 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			registry.EXPECT().MustRegister(gomock.Any()).AnyTimes()
 			if tt.collect != nil {
 				c.EXPECT().Name().Return(tt.collectorName).AnyTimes()
-				// TODO: @pokom need to figure out why _sometimes_ this fails if we set it to *.Times(tt.numCollectors)
 				c.EXPECT().Collect(gomock.Any(), ch).DoAndReturn(tt.collect).AnyTimes()
-				c.EXPECT().Register(registry).Return(nil).AnyTimes()
+				c.EXPECT().Register(gomock.Any()).Return(nil).AnyTimes()
+				c.EXPECT().Describe(gomock.Any()).Return(nil).AnyTimes()
 			}
 			gcp := &GCP{
 				config:           &Config{},
@@ -170,6 +170,9 @@ func TestGCP_CollectMetrics(t *testing.T) {
 			}
 			for m := range ch {
 				metric := utils.ReadMetrics(m)
+				if metric == nil { // ReadMetrics can't parse histograms
+					continue
+				}
 				if ignoreMetric(metric.FqName) {
 					continue
 				}
