@@ -10,23 +10,26 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
 	"github.com/stretchr/testify/mock"
 	"google.golang.org/api/compute/v1"
+	sqladmin "google.golang.org/api/sqladmin/v1beta4"
 )
 
 type Mock struct {
 	mock.Mock
 
-	region  *Region
-	billing *Billing
-	bucket  *Bucket
-	compute *Compute
+	region   *Region
+	billing  *Billing
+	bucket   *Bucket
+	compute  *Compute
+	sqladmin *SQLAdmin
 }
 
-func NewMock(projectId string, discount int, regionsClient RegionsClient, bucketClient StorageClientInterface, billingClient *billingv1.CloudCatalogClient, computeService *compute.Service) *Mock {
+func NewMock(projectId string, discount int, regionsClient RegionsClient, bucketClient StorageClientInterface, billingClient *billingv1.CloudCatalogClient, computeService *compute.Service, sqladminService *sqladmin.Service) *Mock {
 	return &Mock{
-		region:  newRegion(projectId, discount, regionsClient),
-		billing: newBilling(billingClient),
-		bucket:  newBucket(bucketClient, cache.NewNoopCache[[]*storage.BucketAttrs]()),
-		compute: newCompute(computeService),
+		region:   newRegion(projectId, discount, regionsClient),
+		billing:  newBilling(billingClient),
+		bucket:   newBucket(bucketClient, cache.NewNoopCache[[]*storage.BucketAttrs]()),
+		compute:  newCompute(computeService),
+		sqladmin: newSQLAdmin(sqladminService, projectId),
 	}
 }
 
@@ -68,4 +71,8 @@ func (c *Mock) GetRegions(project string) ([]*compute.Region, error) {
 
 func (c *Mock) ListForwardingRules(ctx context.Context, project string, region string) ([]*compute.ForwardingRule, error) {
 	return c.compute.listForwardingRules(ctx, project, region)
+}
+
+func (c *Mock) ListSQLInstances(ctx context.Context, projectId string) ([]*sqladmin.DatabaseInstance, error) {
+	return c.sqladmin.listInstances(ctx, projectId)
 }

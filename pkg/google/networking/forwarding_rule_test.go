@@ -28,7 +28,7 @@ func newemptyPricingMap() *pricingMap {
 
 func newTestCollector(pm *pricingMap, t *testing.T) *Collector {
 	return &Collector{
-		gcpClient:  client.NewMock("project-1", 0, nil, nil, nil, nil),
+		gcpClient:  client.NewMock("project-1", 0, nil, nil, nil, nil, nil),
 		projects:   []string{"test-project"},
 		pricingMap: pm,
 		logger:     logger,
@@ -57,7 +57,7 @@ func newGCPClient(t *testing.T, handlers map[string]any) *client.Mock {
 	computeService, err := computev1.NewService(t.Context(), option.WithoutAuthentication(), option.WithEndpoint(srv.URL))
 	require.NoError(t, err)
 
-	return client.NewMock("testing", 0, nil, nil, nil, computeService)
+	return client.NewMock("testing", 0, nil, nil, nil, computeService, nil)
 }
 
 func TestCollector_DescribeAndName(t *testing.T) {
