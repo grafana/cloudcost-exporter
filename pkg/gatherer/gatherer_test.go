@@ -201,12 +201,8 @@ func TestCollectWithGatherer_MultipleCollectors(t *testing.T) {
 				collectors = append(collectors, c)
 			}
 
-			var durations []float64
-			var hasErrors []bool
 			for i, c := range collectors {
 				duration, hasError := CollectWithGatherer(context.Background(), c, ch, slog.Default())
-				durations = append(durations, duration)
-				hasErrors = append(hasErrors, hasError)
 				assert.GreaterOrEqual(t, duration, 0.0, "collector %d duration should be >= 0", i)
 				assert.Equal(t, tt.expectedErrors[i], hasError, "collector %d error status mismatch", i)
 			}
