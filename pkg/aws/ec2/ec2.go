@@ -22,7 +22,8 @@ import (
 const (
 	subsystem = "aws_ec2"
 
-	errGroupLimit = 5
+	errGroupLimit        = 5
+	maxConcurrentWorkers = 5
 )
 
 var (
@@ -230,22 +231,22 @@ func (c *Collector) emitMetricsFromReservationsChannel(reservationsCh chan []ec2
 		}
 	}
 
-	// Process instances in parallel with limited concurrency (similar to GCP region processing)
+	// Process instances in parallel with limited concurrency
 	instanceChan := make(chan ec2Types.Instance, len(allInstances))
 	for _, instance := range allInstances {
 		instanceChan <- instance
 	}
 	close(instanceChan)
 
-	// Limit concurrent instance processing to avoid overwhelming the system
-	maxConcurrentWorkers := 5
-	if len(allInstances) < maxConcurrentWorkers {
-		maxConcurrentWorkers = len(allInstances)
+	// Limit concurrent instance processing
+	workers := maxConcurrentWorkers
+	if len(allInstances) < workers {
+		workers = len(allInstances)
 	}
 
 	var mu sync.Mutex
 	instanceWaitGroup := sync.WaitGroup{}
-	for i := 0; i < maxConcurrentWorkers; i++ {
+	for i := 0; i < workers; i++ {
 		instanceWaitGroup.Add(1)
 		go func() {
 			defer instanceWaitGroup.Done()
@@ -309,22 +310,22 @@ func (c *Collector) emitMetricsFromVolumesChannel(volumesCh chan []ec2Types.Volu
 		allVolumes = append(allVolumes, volumes...)
 	}
 
-	// Process volumes in parallel with limited concurrency (similar to GCP region processing)
+	// Process volumes in parallel with limited concurrency
 	volumeChan := make(chan ec2Types.Volume, len(allVolumes))
 	for _, volume := range allVolumes {
 		volumeChan <- volume
 	}
 	close(volumeChan)
 
-	// Limit concurrent volume processing to avoid overwhelming the system
-	maxConcurrentWorkers := 5
-	if len(allVolumes) < maxConcurrentWorkers {
-		maxConcurrentWorkers = len(allVolumes)
+	// Limit concurrent volume processing
+	workers := maxConcurrentWorkers
+	if len(allVolumes) < workers {
+		workers = len(allVolumes)
 	}
 
 	var mu sync.Mutex
 	volumeWaitGroup := sync.WaitGroup{}
-	for i := 0; i < maxConcurrentWorkers; i++ {
+	for i := 0; i < workers; i++ {
 		volumeWaitGroup.Add(1)
 		go func() {
 			defer volumeWaitGroup.Done()
