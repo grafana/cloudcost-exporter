@@ -1,6 +1,7 @@
 package ec2
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 	"sync"
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -46,6 +49,8 @@ type ComputePricingMap struct {
 	InstanceDetails map[string]InstanceAttributes
 	m               sync.RWMutex
 	logger          *slog.Logger
+	cfgRegions      []ec2Types.Region
+	regionMap       map[string]client.Client
 }
 
 // FamilyPricing is a map of instance type to a list of PriceTiers where the key is the ec2 compute instance type
@@ -65,9 +70,11 @@ type StoragePricingMap struct {
 	// Regions is a map of region code to StoragePricing
 	// key is the region
 	// value is a map of storage classes to prices
-	Regions map[string]*StoragePricing
-	m       sync.RWMutex
-	logger  *slog.Logger
+	Regions    map[string]*StoragePricing
+	m          sync.RWMutex
+	logger     *slog.Logger
+	cfgRegions []ec2Types.Region
+	regionMap  map[string]client.Client
 }
 
 // StoragePricing is a map where the key is the storage type and the value is the price
@@ -75,32 +82,49 @@ type StoragePricing struct {
 	Storage map[string]float64
 }
 
-func NewComputePricingMap(l *slog.Logger) *ComputePricingMap {
+func NewComputePricingMap(l *slog.Logger, config *Config) *ComputePricingMap {
 	return &ComputePricingMap{
 		Regions:         make(map[string]*FamilyPricing),
 		InstanceDetails: make(map[string]InstanceAttributes),
 		m:               sync.RWMutex{},
 		logger:          l.With("subsystem", "computePricing"),
+		cfgRegions:      config.Regions,
+		regionMap:       config.RegionMap,
 	}
 }
 
-func NewStoragePricingMap(l *slog.Logger) *StoragePricingMap {
+func NewStoragePricingMap(l *slog.Logger, config *Config) *StoragePricingMap {
 	return &StoragePricingMap{
-		Regions: make(map[string]*StoragePricing),
-		m:       sync.RWMutex{},
-		logger:  l.With("subsystem", "storagePricing"),
+		Regions:    make(map[string]*StoragePricing),
+		m:          sync.RWMutex{},
+		logger:     l.With("subsystem", "storagePricing"),
+		cfgRegions: config.Regions,
+		regionMap:  config.RegionMap,
 	}
 }
 
-// GenerateComputePricingMap accepts a list of ondemand prices and a list of spot prices.
-// The method needs to
+// GenerateComputePricingMap fetches spot and ondemand prices from AWS using the
+// configured region clients. It then needs to:
 // 1. Parse out the ondemand prices and generate a productTerm map for each instance type
 // 2. Parse out spot prices and use the productTerm map to generate a spot price map
-func (cpm *ComputePricingMap) GenerateComputePricingMap(ondemandPrices []string, spotPrices []ec2Types.SpotPrice) error {
+func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context) error {
+	cpm.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing compute pricing map")
+	ondemandPrices, spotPrices, err := cpm.fetchPricing(ctx)
+	if err != nil {
+		cpm.logger.Error(fmt.Sprintf("error fetching compute pricing: %s", err))
+		return err
+	}
+
+	// Clear existing data before refresh to ensure we have latest prices
+	cpm.m.Lock()
+	cpm.Regions = make(map[string]*FamilyPricing)
+	cpm.InstanceDetails = make(map[string]InstanceAttributes)
+	cpm.m.Unlock()
+
 	for _, product := range ondemandPrices {
 		var productInfo computeProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
-			return err
+			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 		}
 		if productInfo.Product.Attributes.InstanceType == "" {
 			// If there are no instance types, let's just continue on. This is the most important key
@@ -132,11 +156,15 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ondemandPrices []string,
 	for _, spotPrice := range spotPrices {
 		region := *spotPrice.AvailabilityZone
 		instanceType := string(spotPrice.InstanceType)
-		if _, ok := cpm.InstanceDetails[instanceType]; !ok {
+
+		cpm.m.RLock()
+		spotProductTerm, ok := cpm.InstanceDetails[instanceType]
+		cpm.m.RUnlock()
+
+		if !ok {
 			cpm.logger.Error(fmt.Sprintf("no instance details found for instance type %s", instanceType))
 			continue
 		}
-		spotProductTerm := cpm.InstanceDetails[instanceType]
 		// Override the region with the availability zone
 		spotProductTerm.Region = region
 		price, err := strconv.ParseFloat(*spotPrice.SpotPrice, 64)
@@ -153,16 +181,26 @@ func (cpm *ComputePricingMap) GenerateComputePricingMap(ondemandPrices []string,
 	return nil
 }
 
-// GenerateStoragePricingMap receives a json with all the prices of the available storage options
-// It iterates over the storage classes and parses the price for each one.
-func (spm *StoragePricingMap) GenerateStoragePricingMap(storagePrices []string) error {
+// GenerateStoragePricingMap fetches storage pricing data from AWS for each region. It
+// then iterates over the storage classes and parses the price for each one.
+func (spm *StoragePricingMap) GenerateStoragePricingMap(ctx context.Context) error {
+	spm.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing storage pricing map")
+	storagePrices, err := spm.fetchPricing(ctx)
+	if err != nil {
+		spm.logger.Error(fmt.Sprintf("error fetching storage pricing: %s", err))
+		return err
+	}
+
 	spm.m.Lock()
 	defer spm.m.Unlock()
+
+	// Clear existing data before refresh
+	spm.Regions = make(map[string]*StoragePricing)
 
 	for _, product := range storagePrices {
 		var productInfo storageProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
-			return err
+			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 		}
 
 		region := productInfo.Product.Attributes.Region
@@ -185,6 +223,79 @@ func (spm *StoragePricingMap) GenerateStoragePricingMap(storagePrices []string) 
 	}
 
 	return nil
+}
+
+func (cpm *ComputePricingMap) fetchPricing(ctx context.Context) ([]string, []ec2Types.SpotPrice, error) {
+	var ondemandPrices []string
+	var spotPrices []ec2Types.SpotPrice
+	eg, errGroupCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(errGroupLimit)
+	m := sync.Mutex{}
+	for _, region := range cpm.cfgRegions {
+		region := region
+		eg.Go(func() error {
+			cpm.logger.LogAttrs(errGroupCtx, slog.LevelDebug, "fetching compute pricing info", slog.String("region", *region.RegionName))
+
+			regionClient, ok := cpm.regionMap[*region.RegionName]
+			if !ok {
+				return ErrClientNotFound
+			}
+
+			spotPriceList, err := regionClient.ListSpotPrices(errGroupCtx)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrListSpotPrices, err)
+			}
+
+			priceList, err := regionClient.ListOnDemandPrices(errGroupCtx, *region.RegionName)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrListOnDemandPrices, err)
+			}
+
+			m.Lock()
+			spotPrices = append(spotPrices, spotPriceList...)
+			ondemandPrices = append(ondemandPrices, priceList...)
+			m.Unlock()
+			return nil
+		})
+	}
+	err := eg.Wait()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return ondemandPrices, spotPrices, nil
+}
+
+func (spm *StoragePricingMap) fetchPricing(ctx context.Context) ([]string, error) {
+	var storagePrices []string
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.SetLimit(errGroupLimit)
+	m := sync.Mutex{}
+	for _, region := range spm.cfgRegions {
+		region := region
+		eg.Go(func() error {
+			regionClient, ok := spm.regionMap[*region.RegionName]
+			if !ok {
+				return ErrClientNotFound
+			}
+			spm.logger.LogAttrs(ctx, slog.LevelDebug, "fetching storage pricing info", slog.String("region", *region.RegionName))
+			storagePriceList, err := regionClient.ListStoragePrices(ctx, *region.RegionName)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrListStoragePrices, err)
+			}
+
+			m.Lock()
+			storagePrices = append(storagePrices, storagePriceList...)
+			m.Unlock()
+			return nil
+		})
+	}
+	err := eg.Wait()
+	if err != nil {
+		return nil, err
+	}
+
+	return storagePrices, nil
 }
 
 // AddToComputePricingMap adds a price to the compute pricing map. The price is weighted based upon the instance type's CPU and RAM.
