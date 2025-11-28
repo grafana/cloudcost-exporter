@@ -45,6 +45,12 @@ type Config struct {
 	ScrapeInterval time.Duration
 }
 
+type listError struct {
+	region string
+	error  error
+	reason string
+}
+
 const (
 	serviceName = "rds"
 )
@@ -70,21 +76,36 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	logger := slog.With("logger", serviceName)
 	var instances = []rdsTypes.DBInstance{}
+	var regionErrors []listError
 	for _, region := range c.regions {
 		regionName := *region.RegionName
 		regionClient, ok := c.regionMap[regionName]
 		if !ok {
-			logger.Error("no client found for region", "region", regionName)
+			regionErrors = append(regionErrors, listError{
+				region: regionName,
+				error:  fmt.Errorf("no client found for region"),
+				reason: "no client found",
+			})
 			continue
 		}
 
 		is, err := regionClient.ListRDSInstances(ctx)
 		if err != nil {
-			logger.Error("error listing RDS instances", "region", regionName, "error", err)
+			regionErrors = append(regionErrors, listError{
+				region: regionName,
+				error:  err,
+				reason: "error listing RDS instances",
+			})
 			continue
 		}
 
 		instances = append(instances, is...)
+	}
+
+	if len(regionErrors) > 0 {
+		for _, re := range regionErrors {
+			logger.Error(re.reason, "region", re.region, "error", re.error)
+		}
 	}
 
 	for _, instance := range instances {
