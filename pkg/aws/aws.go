@@ -19,6 +19,7 @@ import (
 	rds "github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	rdsCollector "github.com/grafana/cloudcost-exporter/pkg/aws/rds"
+	"github.com/grafana/cloudcost-exporter/pkg/gatherer"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
@@ -247,18 +248,17 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	wg.Add(len(a.collectors))
 	for _, c := range a.collectors {
 		go func(c provider.Collector) {
-			now := time.Now()
 			defer wg.Done()
+
+			duration, hasError := gatherer.CollectWithGatherer(collectCtx, c, ch, a.logger)
+
+			//TODO: remove collectorErrors once we have the new metrics
 			collectorErrors := 0.0
-			if err := c.Collect(collectCtx, ch); err != nil {
-				collectorErrors++
-				a.logger.LogAttrs(context.Background(), slog.LevelError, "could not collect metrics",
-					slog.String("collector", c.Name()),
-					slog.String("message", err.Error()),
-				)
+			if hasError {
+				collectorErrors = 1.0
 			}
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.CounterValue, collectorErrors, subsystem, c.Name())
-			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), subsystem, c.Name())
+			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, duration, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
 		}(c)
 	}
