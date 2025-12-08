@@ -70,7 +70,7 @@ jobs:
       id-token: write
     steps:
       - name: Download Multi-Arch Digests, Construct and Upload Manifest
-        uses: grafana/shared-workflows/actions/docker-import-digests-push-manifest@cd422befbbda65e0612a63627e8c8820d86bc2a6 # docker-import-digests-push-manifest/v0.1.0
+        uses: grafana/shared-workflows/actions/docker-import-digests-push-manifest@c7c3322b5815fd007586605e0ea286969f6aeae2 # docker-import-digests-push-manifest/v0.1.1
         with:
           images: ${{ needs.build-and-export-digest.outputs.images }}
           push: ${{ needs.build-and-export-digest.outputs.should-push == 'true' }}
