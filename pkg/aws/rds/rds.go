@@ -110,6 +110,11 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 
 	for _, instance := range instances {
 		// we need to get the region from the availability zone as there is no field for region
+		if instance.AvailabilityZone == nil {
+			// sometimes the availability zone is empty, possibly when an RDS instance is introduced or being removed, skipping them for the time being
+			logger.Warn("no availability zone found for RDS instance")
+			continue
+		}
 		var az = *instance.AvailabilityZone
 		var region = az[:len(az)-1]
 		depOption := multiOrSingleAZ(*instance.MultiAZ)
