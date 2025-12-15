@@ -493,6 +493,17 @@ func (cpm *ComputePricingMap) GetPriceForInstanceType(region string, instanceTyp
 	return cpm.Regions[region].Family[instanceType], nil
 }
 
+// GetInstanceFamily returns the instance family for a given instance type.
+// Returns empty string if the instance type is not found.
+func (cpm *ComputePricingMap) GetInstanceFamily(instanceType string) string {
+	cpm.m.RLock()
+	defer cpm.m.RUnlock()
+	if details, ok := cpm.InstanceDetails[instanceType]; ok {
+		return details.InstanceFamily
+	}
+	return ""
+}
+
 func (spm *StoragePricingMap) GetPriceForVolumeType(region string, volumeType string, size int32) (float64, error) {
 	spm.m.RLock()
 	defer spm.m.RUnlock()

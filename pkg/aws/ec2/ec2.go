@@ -288,7 +288,7 @@ func (c *Collector) processInstance(instance ec2Types.Instance, ch chan<- promet
 		*instance.PrivateDnsName,
 		*instance.InstanceId,
 		region,
-		c.computePricingMap.InstanceDetails[string(instance.InstanceType)].InstanceFamily,
+		c.computePricingMap.GetInstanceFamily(string(instance.InstanceType)),
 		string(instance.InstanceType),
 		clusterName,
 		pricetier,
