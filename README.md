@@ -59,16 +59,35 @@ Additional Helm chart configuration for AWS can be found [here](./docs/deploying
 
 ## Metrics
 
-Check out the follow docs for metrics:
-- [provider level](docs/metrics/providers.md)
-- gcp
-  - [gke](docs/metrics/gcp/gke.md)
-  - [gcs](docs/metrics/gcp/gcs.md)
-- aws
-  - [s3](docs/metrics/aws/s3.md)
-  - [ec2](docs/metrics/aws/ec2.md)
-- azure
-  - [aks](docs/metrics/azure/aks.md)
+Check out the following docs for metrics:
+- [Provider level metrics](docs/metrics/providers.md)
+
+### AWS Services
+
+The following AWS services are supported:
+
+- **[EC2](docs/metrics/aws/ec2.md)** - Elastic Compute Cloud instances (including spot and on-demand pricing)
+- **[S3](docs/metrics/aws/s3.md)** - Simple Storage Service buckets
+- **RDS** - Relational Database Service instances
+- **[ELB](docs/metrics/aws/elb.md)** - Elastic Load Balancer (Application and Network Load Balancers)
+- **[NAT Gateway](docs/metrics/aws/natgateway.md)** - Network Address Translation Gateway
+- **VPC** - Virtual Private Cloud endpoints and services
+
+### GCP Services
+
+The following GCP services are supported:
+
+- **[GKE](docs/metrics/gcp/gke.md)** - Google Kubernetes Engine clusters
+- **[GCS](docs/metrics/gcp/gcs.md)** - Google Cloud Storage buckets
+- **[Cloud SQL](docs/metrics/gcp/cloudsql.md)** - Cloud SQL database instances
+- **CLB** - Cloud Load Balancer (via forwarding rules)
+- **VPC** - Virtual Private Cloud networking
+
+### Azure Services
+
+The following Azure services are supported:
+
+- **[AKS](docs/metrics/azure/aks.md)** - Azure Kubernetes Service clusters
 
 ## Maturity
 
