@@ -244,14 +244,13 @@ func (c *Collector) emitMetricsFromReservationsChannel(reservationsCh chan []ec2
 		workers = len(allInstances)
 	}
 
-	var mu sync.Mutex
 	instanceWaitGroup := sync.WaitGroup{}
 	for i := 0; i < workers; i++ {
 		instanceWaitGroup.Add(1)
 		go func() {
 			defer instanceWaitGroup.Done()
 			for instance := range instanceChan {
-				c.processInstance(instance, ch, &mu)
+				c.processInstance(instance, ch)
 			}
 		}()
 	}
@@ -259,7 +258,7 @@ func (c *Collector) emitMetricsFromReservationsChannel(reservationsCh chan []ec2
 }
 
 // processInstance processes a single instance and emits its metrics
-func (c *Collector) processInstance(instance ec2Types.Instance, ch chan<- prometheus.Metric, mu *sync.Mutex) {
+func (c *Collector) processInstance(instance ec2Types.Instance, ch chan<- prometheus.Metric) {
 	clusterName := client.ClusterNameFromInstance(instance)
 	if instance.PrivateDnsName == nil || *instance.PrivateDnsName == "" {
 		c.logger.Debug(fmt.Sprintf("no private dns name found for instance %s", *instance.InstanceId))
@@ -296,12 +295,9 @@ func (c *Collector) processInstance(instance ec2Types.Instance, ch chan<- promet
 		string(instance.Architecture),
 	}
 
-	// Use mutex to safely send to channel from multiple goroutines
-	mu.Lock()
 	ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.Cpu, labelValues...)
 	ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.Ram, labelValues...)
 	ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.Total, labelValues...)
-	mu.Unlock()
 }
 
 func (c *Collector) emitMetricsFromVolumesChannel(volumesCh chan []ec2Types.Volume, ch chan<- prometheus.Metric) {
@@ -323,14 +319,13 @@ func (c *Collector) emitMetricsFromVolumesChannel(volumesCh chan []ec2Types.Volu
 		workers = len(allVolumes)
 	}
 
-	var mu sync.Mutex
 	volumeWaitGroup := sync.WaitGroup{}
 	for i := 0; i < workers; i++ {
 		volumeWaitGroup.Add(1)
 		go func() {
 			defer volumeWaitGroup.Done()
 			for volume := range volumeChan {
-				c.processVolume(volume, ch, &mu)
+				c.processVolume(volume, ch)
 			}
 		}()
 	}
@@ -338,7 +333,7 @@ func (c *Collector) emitMetricsFromVolumesChannel(volumesCh chan []ec2Types.Volu
 }
 
 // processVolume processes a single volume and emits its metrics
-func (c *Collector) processVolume(volume ec2Types.Volume, ch chan<- prometheus.Metric, mu *sync.Mutex) {
+func (c *Collector) processVolume(volume ec2Types.Volume, ch chan<- prometheus.Metric) {
 	if volume.AvailabilityZone == nil {
 		c.logger.Error("Volume's Availability Zone unknown: skipping")
 		return
@@ -369,10 +364,7 @@ func (c *Collector) processVolume(volume ec2Types.Volume, ch chan<- prometheus.M
 		string(volume.State),
 	}
 
-	// Use mutex to safely send to channel from multiple goroutines
-	mu.Lock()
 	ch <- prometheus.MustNewConstMetric(PersistentVolumeHourlyCostDesc, prometheus.GaugeValue, price, labelValues...)
-	mu.Unlock()
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
