@@ -234,7 +234,7 @@ func (cpm *ComputePricingMap) processOnDemandBatch(batch []string) error {
 	for _, product := range batch {
 		var productInfo computeProduct
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
-			return err
+			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
 		}
 		if productInfo.Product.Attributes.InstanceType == "" {
 			// If there are no instance types, let's just continue on. This is the most important key
