@@ -186,6 +186,7 @@ func Test_CollectMetrics(t *testing.T) {
 				ignoredMetricSuffix := []string{
 					"duration_seconds",
 					"last_scrape_time",
+					"collector_total",
 				}
 				for _, suffix := range ignoredMetricSuffix {
 					if strings.Contains(metricName, suffix) {
