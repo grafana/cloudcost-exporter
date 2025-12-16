@@ -103,135 +103,6 @@ func NewStoragePricingMap(l *slog.Logger, config *Config) *StoragePricingMap {
 	}
 }
 
-// GenerateComputePricingMap fetches spot and ondemand prices from AWS using the
-// configured region clients. It then needs to:
-// 1. Parse out the ondemand prices and generate a productTerm map for each instance type
-// 2. Parse out spot prices and use the productTerm map to generate a spot price map
-func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context) error {
-	cpm.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing compute pricing map")
-	ondemandPrices, spotPrices, err := cpm.fetchPricing(ctx)
-	if err != nil {
-		cpm.logger.Error(fmt.Sprintf("error fetching compute pricing: %s", err))
-		return err
-	}
-
-	// Clear existing data before refresh to ensure we have latest prices
-	cpm.m.Lock()
-	cpm.Regions = make(map[string]*FamilyPricing)
-	cpm.InstanceDetails = make(map[string]InstanceAttributes)
-	cpm.m.Unlock()
-
-	for _, product := range ondemandPrices {
-		var productInfo computeProduct
-		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
-			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
-		}
-		if productInfo.Product.Attributes.InstanceType == "" {
-			// If there are no instance types, let's just continue on. This is the most important key
-			continue
-		}
-		for _, term := range productInfo.Terms.OnDemand {
-			for _, priceDimension := range term.PriceDimensions {
-				price, err := strconv.ParseFloat(priceDimension.PricePerUnit["USD"], 64)
-				if err != nil {
-					cpm.logger.Error(fmt.Sprintf("error parsing price: %s, skipping", err))
-					continue
-				}
-				err = cpm.AddToComputePricingMap(price, productInfo.Product.Attributes)
-				if err != nil {
-					switch {
-					case errors.Is(err, ErrInstanceTypeAlreadyExists):
-						// Only warn in debug mode about this error, since we only want one price per instance type
-						cpm.logger.Debug(fmt.Sprintf("skipping addition to pricing map: %s", err))
-						continue
-					default:
-						cpm.logger.Error(fmt.Sprintf("error adding to pricing map: %s", err))
-						continue
-					}
-				}
-				cpm.AddInstanceDetails(productInfo.Product.Attributes)
-			}
-		}
-	}
-	for _, spotPrice := range spotPrices {
-		region := *spotPrice.AvailabilityZone
-		instanceType := string(spotPrice.InstanceType)
-
-		cpm.m.RLock()
-		spotProductTerm, ok := cpm.InstanceDetails[instanceType]
-		cpm.m.RUnlock()
-
-		if !ok {
-			cpm.logger.Error(fmt.Sprintf("no instance details found for instance type %s", instanceType))
-			continue
-		}
-		// Override the region with the availability zone
-		spotProductTerm.Region = region
-		price, err := strconv.ParseFloat(*spotPrice.SpotPrice, 64)
-		if err != nil {
-			cpm.logger.Error(fmt.Sprintf("error parsing spot price: %s, skipping", err))
-			continue
-		}
-		err = cpm.AddToComputePricingMap(price, spotProductTerm)
-		if err != nil {
-			switch {
-			case errors.Is(err, ErrInstanceTypeAlreadyExists):
-				// Only warn in debug mode about this error, since we only want one price per instance type
-				cpm.logger.Debug(fmt.Sprintf("skipping addition to pricing map: %s", err))
-				continue
-			default:
-				cpm.logger.Error(fmt.Sprintf("error adding to pricing map: %s", err))
-				continue
-			}
-		}
-	}
-	return nil
-}
-
-// GenerateStoragePricingMap fetches storage pricing data from AWS for each region. It
-// then iterates over the storage classes and parses the price for each one.
-func (spm *StoragePricingMap) GenerateStoragePricingMap(ctx context.Context) error {
-	spm.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing storage pricing map")
-	storagePrices, err := spm.fetchPricing(ctx)
-	if err != nil {
-		spm.logger.Error(fmt.Sprintf("error fetching storage pricing: %s", err))
-		return err
-	}
-
-	spm.m.Lock()
-	defer spm.m.Unlock()
-
-	// Clear existing data before refresh
-	spm.Regions = make(map[string]*StoragePricing)
-
-	for _, product := range storagePrices {
-		var productInfo storageProduct
-		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
-			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
-		}
-
-		region := productInfo.Product.Attributes.Region
-		storageClass := productInfo.Product.Attributes.VolumeApiName
-		if spm.Regions[region] == nil {
-			spm.Regions[region] = &StoragePricing{}
-			spm.Regions[region].Storage = make(map[string]float64)
-		}
-
-		for _, term := range productInfo.Terms.OnDemand {
-			for _, priceDimension := range term.PriceDimensions {
-				price, err := strconv.ParseFloat(priceDimension.PricePerUnit["USD"], 64)
-				if err != nil {
-					spm.logger.Error(fmt.Sprintf("error parsing price: %s, skipping", err))
-					continue
-				}
-				spm.Regions[region].Storage[storageClass] = price
-			}
-		}
-	}
-
-	return nil
-}
-
 func (cpm *ComputePricingMap) fetchPricing(ctx context.Context) ([]string, []ec2Types.SpotPrice, error) {
 	var ondemandPrices []string
 	var spotPrices []ec2Types.SpotPrice
@@ -273,6 +144,211 @@ func (cpm *ComputePricingMap) fetchPricing(ctx context.Context) ([]string, []ec2
 	return ondemandPrices, spotPrices, nil
 }
 
+// GenerateComputePricingMap fetches spot and ondemand prices from AWS using the
+// configured region clients. It then needs to:
+// 1. Parse out the ondemand prices and generate a productTerm map for each instance type
+// 2. Parse out spot prices and use the productTerm map to generate a spot price map
+func (cpm *ComputePricingMap) GenerateComputePricingMap(ctx context.Context) error {
+	cpm.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing compute pricing map")
+	ondemandPrices, spotPrices, err := cpm.fetchPricing(ctx)
+	if err != nil {
+		cpm.logger.Error(fmt.Sprintf("error fetching compute pricing: %s", err))
+		return err
+	}
+
+	// Clear existing data before refresh to ensure we have latest prices
+	cpm.m.Lock()
+	cpm.Regions = make(map[string]*FamilyPricing)
+	cpm.InstanceDetails = make(map[string]InstanceAttributes)
+	cpm.m.Unlock()
+
+	// Process ondemand prices in batches with concurrent workers
+	if err := cpm.processOnDemandPricesInBatches(ondemandPrices); err != nil {
+		return err
+	}
+
+	// Process spot prices in batches with concurrent workers
+	cpm.processSpotPricesInBatches(spotPrices)
+
+	return nil
+}
+
+// processOnDemandPricesInBatches processes ondemand prices concurrently in batches
+func (cpm *ComputePricingMap) processOnDemandPricesInBatches(ondemandPrices []string) error {
+	const batchSize = 50
+	const maxWorkers = 10
+
+	// Create a channel for batches
+	batchChan := make(chan []string, (len(ondemandPrices)/batchSize)+1)
+
+	// Split prices into batches and send to channel
+	for i := 0; i < len(ondemandPrices); i += batchSize {
+		end := i + batchSize
+		if end > len(ondemandPrices) {
+			end = len(ondemandPrices)
+		}
+		batchChan <- ondemandPrices[i:end]
+	}
+	close(batchChan)
+
+	// Limit concurrent workers
+	numWorkers := maxWorkers
+	if len(ondemandPrices)/batchSize+1 < numWorkers {
+		numWorkers = len(ondemandPrices)/batchSize + 1
+	}
+	if numWorkers == 0 {
+		numWorkers = 1
+	}
+
+	// Error channel to collect errors from workers
+	errChan := make(chan error, numWorkers)
+
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for batch := range batchChan {
+				if err := cpm.processOnDemandBatch(batch); err != nil {
+					errChan <- err
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errChan)
+
+	// Return the first error encountered
+	for err := range errChan {
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// processOnDemandBatch processes a batch of ondemand prices
+func (cpm *ComputePricingMap) processOnDemandBatch(batch []string) error {
+	for _, product := range batch {
+		var productInfo computeProduct
+		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
+			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
+		}
+		if productInfo.Product.Attributes.InstanceType == "" {
+			// If there are no instance types, let's just continue on. This is the most important key
+			continue
+		}
+		for _, term := range productInfo.Terms.OnDemand {
+			for _, priceDimension := range term.PriceDimensions {
+				price, err := strconv.ParseFloat(priceDimension.PricePerUnit["USD"], 64)
+				if err != nil {
+					cpm.logger.Error(fmt.Sprintf("error parsing price: %s, skipping", err))
+					continue
+				}
+				err = cpm.AddToComputePricingMap(price, productInfo.Product.Attributes)
+				if err != nil {
+					if errors.Is(err, ErrInstanceTypeAlreadyExists) {
+						// Only log at debug level since duplicates are expected in AWS pricing data
+						cpm.logger.Debug(fmt.Sprintf("instance type %s already in pricing map, skipping duplicate", productInfo.Product.Attributes.InstanceType))
+					} else {
+						// Log other errors (e.g., parsing failures) at error level
+						cpm.logger.Error(fmt.Sprintf("error adding %s to pricing map: %s", productInfo.Product.Attributes.InstanceType, err))
+					}
+					continue
+				}
+				cpm.AddInstanceDetails(productInfo.Product.Attributes)
+			}
+		}
+	}
+	return nil
+}
+
+// processSpotPricesInBatches processes spot prices concurrently in batches
+func (cpm *ComputePricingMap) processSpotPricesInBatches(spotPrices []ec2Types.SpotPrice) {
+	const batchSize = 50
+	const maxWorkers = 10
+
+	// Create a channel for batches
+	batchChan := make(chan []ec2Types.SpotPrice, (len(spotPrices)/batchSize)+1)
+
+	// Split prices into batches and send to channel
+	for i := 0; i < len(spotPrices); i += batchSize {
+		end := i + batchSize
+		if end > len(spotPrices) {
+			end = len(spotPrices)
+		}
+		batchChan <- spotPrices[i:end]
+	}
+	close(batchChan)
+
+	// Limit concurrent workers
+	numWorkers := maxWorkers
+	if len(spotPrices)/batchSize+1 < numWorkers {
+		numWorkers = len(spotPrices)/batchSize + 1
+	}
+	if numWorkers == 0 {
+		numWorkers = 1
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for batch := range batchChan {
+				cpm.processSpotBatch(batch)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// processSpotBatch processes a batch of spot prices
+func (cpm *ComputePricingMap) processSpotBatch(batch []ec2Types.SpotPrice) {
+	for _, spotPrice := range batch {
+		region := *spotPrice.AvailabilityZone
+		instanceType := string(spotPrice.InstanceType)
+
+		// Use RLock for reading instance details
+		cpm.m.RLock()
+		instanceDetails, ok := cpm.InstanceDetails[instanceType]
+		cpm.m.RUnlock()
+
+		if !ok {
+			// Log at debug level since some instance types (e.g., bare metal instances like i3.metal)
+			// may not have ondemand pricing but do have spot pricing
+			cpm.logger.Debug(fmt.Sprintf("no instance details found for instance type %s, skipping spot price", instanceType))
+			continue
+		}
+
+		spotProductTerm := instanceDetails
+		// Override the region with the availability zone
+		spotProductTerm.Region = region
+		price, err := strconv.ParseFloat(*spotPrice.SpotPrice, 64)
+		if err != nil {
+			cpm.logger.Error(fmt.Sprintf("error parsing spot price: %s, skipping", err))
+			continue
+		}
+		err = cpm.AddToComputePricingMap(price, spotProductTerm)
+		if err != nil {
+			switch {
+			case errors.Is(err, ErrInstanceTypeAlreadyExists):
+				// Multiple spot prices can exist for the same instance type (one per AZ)
+				// Only log at debug level to reduce noise
+				cpm.logger.Debug(fmt.Sprintf("spot price already exists for instance type %s in region %s, skipping", instanceType, region))
+				continue
+			default:
+				cpm.logger.Error(fmt.Sprintf("error adding spot price to pricing map: %s", err))
+				continue
+			}
+		}
+	}
+}
+
+// GenerateStoragePricingMap receives a json with all the prices of the available storage options
+// It iterates over the storage classes and parses the price for each one.
 func (spm *StoragePricingMap) fetchPricing(ctx context.Context) ([]string, error) {
 	var storagePrices []string
 	eg, ctx := errgroup.WithContext(ctx)
@@ -303,6 +379,48 @@ func (spm *StoragePricingMap) fetchPricing(ctx context.Context) ([]string, error
 	}
 
 	return storagePrices, nil
+}
+
+func (spm *StoragePricingMap) GenerateStoragePricingMap(ctx context.Context) error {
+	spm.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing storage pricing map")
+	storagePrices, err := spm.fetchPricing(ctx)
+	if err != nil {
+		spm.logger.Error(fmt.Sprintf("error fetching storage pricing: %s", err))
+		return err
+	}
+
+	spm.m.Lock()
+	defer spm.m.Unlock()
+
+	// Clear existing data before refresh
+	spm.Regions = make(map[string]*StoragePricing)
+
+	for _, product := range storagePrices {
+		var productInfo storageProduct
+		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
+			return fmt.Errorf("%w: %w", ErrGeneratePricingMap, err)
+		}
+
+		region := productInfo.Product.Attributes.Region
+		storageClass := productInfo.Product.Attributes.VolumeApiName
+		if spm.Regions[region] == nil {
+			spm.Regions[region] = &StoragePricing{}
+			spm.Regions[region].Storage = make(map[string]float64)
+		}
+
+		for _, term := range productInfo.Terms.OnDemand {
+			for _, priceDimension := range term.PriceDimensions {
+				price, err := strconv.ParseFloat(priceDimension.PricePerUnit["USD"], 64)
+				if err != nil {
+					spm.logger.Error(fmt.Sprintf("error parsing price: %s, skipping", err))
+					continue
+				}
+				spm.Regions[region].Storage[storageClass] = price
+			}
+		}
+	}
+
+	return nil
 }
 
 // AddToComputePricingMap adds a price to the compute pricing map. The price is weighted based upon the instance type's CPU and RAM.
@@ -373,6 +491,17 @@ func (cpm *ComputePricingMap) GetPriceForInstanceType(region string, instanceTyp
 		return nil, ErrInstanceTypeNotFound
 	}
 	return cpm.Regions[region].Family[instanceType], nil
+}
+
+// GetInstanceFamily returns the instance family for a given instance type.
+// Returns empty string if the instance type is not found.
+func (cpm *ComputePricingMap) GetInstanceFamily(instanceType string) string {
+	cpm.m.RLock()
+	defer cpm.m.RUnlock()
+	if details, ok := cpm.InstanceDetails[instanceType]; ok {
+		return details.InstanceFamily
+	}
+	return ""
 }
 
 func (spm *StoragePricingMap) GetPriceForVolumeType(region string, volumeType string, size int32) (float64, error) {
