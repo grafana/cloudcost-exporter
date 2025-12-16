@@ -49,13 +49,19 @@ Cloud Cost Exporter has an opinionated way of authenticating against each cloud 
 
 When running in a Kubernetes cluster, it is recommended to create an IAM role for a Service Account (IRSA) with the necessary permissions for the cloud provider.
 
-Documentation about the necessary permission for AWS can be found [here](./docs/deploying/aws/README.md#1-setup-the-iam-role). Documentation for GCP and Azure are under development.
+Documentation about the necessary permissions can be found here:
+- [AWS](./docs/deploying/aws/README.md#1-setup-the-primary-iam-role)
+- [GCP](./docs/deploying/gcp/README.md#1-create-a-custom-iam-role)
+
+Documentation for Azure is under development.
 
 #### Use the Helm chart
 
 When deploying to Kubernetes, it is recommended to use the Helm chart, which can be found here: https://github.com/grafana/helm-charts/tree/main/charts/cloudcost-exporter
 
-Additional Helm chart configuration for AWS can be found [here](./docs/deploying/aws/README.md#2-configure-the-helm-chart)
+Additional Helm chart configuration can be found here:
+- [AWS](./docs/deploying/aws/README.md#2-configure-the-helm-chart)
+- [GCP](./docs/deploying/gcp/README.md#5-configure-the-helm-chart)
 
 ## Metrics
 
