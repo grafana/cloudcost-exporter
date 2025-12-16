@@ -3,7 +3,6 @@ package gatherer
 import (
 	"context"
 	"log/slog"
-	"strconv"
 	"time"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
@@ -14,22 +13,39 @@ import (
 var gathererDurationHistogramVec = prometheus.NewHistogramVec(
 	prometheus.HistogramOpts{
 		Name:                           prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "duration_seconds"),
-		Help:                           "Duration of a collector scrape in seconds with error status.",
+		Help:                           "Duration of a collector scrape in seconds",
 		NativeHistogramBucketFactor:    1.1,
 		NativeHistogramMaxBucketNumber: 100,
 	},
-	[]string{"collector", "is_error"},
+	[]string{"collector"},
 )
 
-func emitHistogramMetric(ch chan<- prometheus.Metric, collectorName string, isError bool, duration float64) {
+var gathererErrorCounterVec = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "error_total"),
+		Help: "Total number of errors that occurred during the last scrape.",
+	},
+	[]string{"collector"},
+)
+
+var gathererTotalCounterVec = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "total"),
+		Help: "Total number of scrapes.",
+	},
+	[]string{"collector"},
+)
+
+func emitHistogramMetric(ch chan<- prometheus.Metric, collectorName string, duration float64) {
 	ch <- prometheus.MustNewConstHistogram(
-		gathererDurationHistogramVec.WithLabelValues(collectorName, strconv.FormatBool(isError)).(prometheus.Histogram).Desc(),
+		gathererDurationHistogramVec.WithLabelValues(collectorName).(prometheus.Histogram).Desc(),
 		1,
 		duration,
 		nil,
 		collectorName,
-		strconv.FormatBool(isError),
 	)
+
+	gathererTotalCounterVec.WithLabelValues(collectorName).Inc()
 }
 
 // CollectWithGatherer collects metrics from a collector and uses the Gatherer interface to detect errors.
@@ -64,9 +80,10 @@ func CollectWithGatherer(ctx context.Context, c provider.Collector, ch chan<- pr
 			slog.String("collector", c.Name()),
 			slog.String("message", err.Error()),
 		)
+		gathererErrorCounterVec.WithLabelValues(c.Name()).Inc()
 	}
 
-	emitHistogramMetric(ch, c.Name(), hasError, duration)
+	emitHistogramMetric(ch, c.Name(), duration)
 
 	return duration, hasError
 }
