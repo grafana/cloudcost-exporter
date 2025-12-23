@@ -39,8 +39,8 @@ var (
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
 		"cost_usd_per_hour",
-		"Hourly cost of GCP cloudsql instances by instance name, region and sku. Cost represented in USD/hour",
-		[]string{"instance", "region", "sku"},
+		"Hourly cost of GCP cloudsql instances by instance name and region. Cost represented in USD/hour",
+		[]string{"instance", "region"},
 	)
 )
 
@@ -83,18 +83,12 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 			continue
 		}
 
-		skuLabel := price.skuID
-		if price.isCustom {
-			skuLabel = "custom"
-		}
-
 		metric := prometheus.MustNewConstMetric(
 			HourlyGaugeDesc,
 			prometheus.GaugeValue,
 			price.pricePerHour,
 			instance.ConnectionName,
 			instance.Region,
-			skuLabel,
 		)
 		ch <- metric
 	}
