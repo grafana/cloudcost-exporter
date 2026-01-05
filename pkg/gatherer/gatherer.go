@@ -67,7 +67,7 @@ func CollectWithGatherer(ctx context.Context, c provider.Collector, ch chan<- pr
 	var duration float64
 
 	tempRegistry := prometheus.NewRegistry()
-	// also register errors if the remporary registry to detect errors via Gatherer interface fails
+	// also register errors if the temporary registry to detect errors via Gatherer interface fails
 	if err := c.Register(tempRegistry); err != nil {
 		hasError = true
 		logger.LogAttrs(ctx, slog.LevelError, "could not register collector with gatherer",
