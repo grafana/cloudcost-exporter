@@ -76,8 +76,8 @@ func CollectWithGatherer(ctx context.Context, c provider.Collector, ch chan<- pr
 		)
 	}
 
-	duration = time.Since(start).Seconds()
 	collectErr := c.Collect(ctx, ch)
+	duration = time.Since(start).Seconds()
 	if collectErr != nil {
 		hasError = true
 		logger.LogAttrs(ctx, slog.LevelError, "could not collect metrics",
