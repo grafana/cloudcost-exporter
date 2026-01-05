@@ -175,6 +175,13 @@ func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collectorLastScrapeErrorDesc
 	ch <- collectorDurationDesc
 	ch <- collectorLastScrapeTime
+	for _, c := range g.collectors {
+		if err := c.Describe(ch); err != nil {
+			g.logger.LogAttrs(context.Background(), slog.LevelError, "Error calling describe",
+				slog.String("message", err.Error()),
+			)
+		}
+	}
 }
 
 // Collect implements the prometheus.Collector interface and will iterate over all the collectors instantiated during New and collect their metrics.
