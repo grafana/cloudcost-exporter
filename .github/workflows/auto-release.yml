@@ -42,6 +42,24 @@ jobs:
           echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
           echo "PR Labels: $LABELS"
           
+          # Extract release labels and count them
+          RELEASE_LABELS=$(echo "$LABELS" | grep -oE 'release:(major|minor|patch)' || true)
+          # Count release labels (handle empty string case)
+          if [ -z "$RELEASE_LABELS" ]; then
+            LABEL_COUNT=0
+          else
+            LABEL_COUNT=$(echo "$RELEASE_LABELS" | wc -l | tr -d ' ')
+          fi
+          
+          # Safeguard: Fail if multiple release labels are present
+          if [ "$LABEL_COUNT" -gt 1 ]; then
+            echo "ERROR: Multiple release labels found:"
+            echo "$RELEASE_LABELS" | sed 's/^/  - /'
+            echo "Please use only ONE release label per PR: release:major, release:minor, or release:patch"
+            exit 1
+          fi
+          
+          # Determine version bump based on single label (priority: major > minor > patch)
           if echo "$LABELS" | grep -q "release:major"; then
             echo "bump=major" >> $GITHUB_OUTPUT
             echo "should-release=true" >> $GITHUB_OUTPUT
