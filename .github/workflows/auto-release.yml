@@ -24,10 +24,22 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Check for release labels
-        id: check-labels
+      - name: Get PR information
+        id: pr-info
         run: |
-          LABELS="${{ join(github.event.pull_request.labels.*.name, ' ') }}"
+          # Use GITHUB_EVENT_PATH to safely read PR number (avoids zizmor security warnings)
+          PR_NUMBER=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
+          
+          # Fetch PR info using GitHub API
+          PR_DATA=$(gh pr view "$PR_NUMBER" --json number,title,url,labels)
+          
+          PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
+          PR_URL=$(echo "$PR_DATA" | jq -r '.url')
+          LABELS=$(echo "$PR_DATA" | jq -r '.labels[].name' | tr '\n' ' ')
+          
+          echo "pr-number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "pr-title=$PR_TITLE" >> $GITHUB_OUTPUT
+          echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
           echo "PR Labels: $LABELS"
           
           if echo "$LABELS" | grep -q "release:major"; then
@@ -43,10 +55,12 @@ jobs:
             echo "should-release=false" >> $GITHUB_OUTPUT
             echo "No release label found. Skipping release."
           fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get latest version
         id: version
-        if: steps.check-labels.outputs.should-release == 'true'
+        if: steps.pr-info.outputs.should-release == 'true'
         run: |
           # Get the latest tag
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
@@ -57,7 +71,7 @@ jobs:
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
           
           # Bump version based on label
-          BUMP="${{ steps.check-labels.outputs.bump }}"
+          BUMP="${{ steps.pr-info.outputs.bump }}"
           case "$BUMP" in
             major)
               MAJOR=$((MAJOR + 1))
@@ -78,20 +92,21 @@ jobs:
           echo "New version: $NEW_VERSION"
 
       - name: Create and push tag
-        if: steps.check-labels.outputs.should-release == 'true'
+        if: steps.pr-info.outputs.should-release == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
           TAG="${{ steps.version.outputs.new-version }}"
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_NUMBER="${{ steps.pr-info.outputs.pr-number }}"
+          PR_TITLE="${{ steps.pr-info.outputs.pr-title }}"
+          PR_URL="${{ steps.pr-info.outputs.pr-url }}"
           
           # Create annotated tag with PR info
           git tag -a "$TAG" -m "Release $TAG
 
           Merged from PR #$PR_NUMBER: $PR_TITLE
           
-          See: ${{ github.event.pull_request.html_url }}"
+          See: $PR_URL"
           
           git push origin "$TAG"
