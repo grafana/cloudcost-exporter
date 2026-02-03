@@ -45,6 +45,7 @@
         "x": 0,
         "y": 1
       },
+      "repeatDirection": "h",
       "options": {
         "graphMode": "area",
         "colorMode": "value",
@@ -114,6 +115,7 @@
         "x": 12,
         "y": 1
       },
+      "repeatDirection": "h",
       "options": {
         "legend": {
           "displayMode": "table",
@@ -196,6 +198,7 @@
         "x": 0,
         "y": 10
       },
+      "repeatDirection": "h",
       "fieldConfig": {
         "defaults": {
           "unit": "reqps"
@@ -227,6 +230,7 @@
         "x": 12,
         "y": 10
       },
+      "repeatDirection": "h",
       "fieldConfig": {
         "defaults": {
           "unit": "s"
@@ -271,6 +275,7 @@
         "x": 0,
         "y": 17
       },
+      "repeatDirection": "h",
       "fieldConfig": {
         "defaults": {
           "unit": "reqps"
@@ -302,6 +307,7 @@
         "x": 12,
         "y": 17
       },
+      "repeatDirection": "h",
       "fieldConfig": {
         "defaults": {
           "unit": "s"
