@@ -3,6 +3,13 @@ on:
   push:
     tags:
       - v*
+  # Also trigger when auto-release workflow completes successfully
+  workflow_run:
+    workflows: ["Auto Release"]
+    types:
+      - completed
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -11,6 +18,8 @@ jobs:
   goreleaser:
     name: Release
     runs-on: ubuntu-latest
+    # Only run if the triggering workflow succeeded (meaning a tag was created)
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'push'
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
