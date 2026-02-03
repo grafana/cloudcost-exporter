@@ -6,34 +6,65 @@ There is a [github workflow](../../.github/workflows/build-and-deploy.yml) that 
 
 ## Versioning
 
-We follow [semver](https://semver.org/) and generate new tags manually.
+We follow [semver](https://semver.org/) and use **automated releases** based on PR labels.
 
-To cut a release, clone `cloudcost-exporter` locally and pull latest from main.
-Determine if the next release is a major, minor, or hotfix.
-Then increment the relevant version label.
+## Automated Releases (Recommended)
 
-For instance, let's say we're on `v0.2.2` and determined the next release is a minor change.
-The next version would then be `v0.3.0`.
-Execute the following command to generate the tag and push it:
+Releases are now automated! When you merge a PR with a release label, the workflow will:
+
+1. Calculate the next version based on the label
+2. Create and push the tag automatically
+3. Create a GitHub release with binaries via GoReleaser
+
+### How to Create a Release
+
+1. Create your PR with your changes targeting `main`
+2. Add a release label to the PR:
+   - `release:major` - For breaking changes (e.g., `v1.2.3` → `v2.0.0`)
+   - `release:minor` - For new features (e.g., `v1.2.3` → `v1.3.0`)
+   - `release:patch` - For bug fixes and dependency updates (e.g., `v1.2.3` → `v1.2.4`)
+3. Merge the PR - The release workflow will run automatically
+
+### Release Label Guidelines
+
+| Change Type | Label | Example |
+|------------|-------|---------|
+| Breaking changes, API removals | `release:major` | `v1.2.3` → `v2.0.0` |
+| New features, backwards-compatible additions | `release:minor` | `v1.2.3` → `v1.3.0` |
+| Bug fixes, dependency updates, documentation | `release:patch` | `v1.2.3` → `v1.2.4` |
+
+**Important**: Only use **ONE** release label per PR. If multiple labels are present, the workflow will fail with an error.
+
+## Manual Releases (Fallback)
+
+If you need to create a release manually (e.g., for hotfixes or special cases):
+
+1. Clone `cloudcost-exporter` locally and pull latest from main
+2. Determine if the next release is a major, minor, or patch
+3. Create and push the tag:
 
 ```sh
 git tag v0.3.0
-# Optionally, add a message on why the specific version label was updated: git tag v0.3.0 -m "Adds liveness probes with backwards compatibility"
+# Optionally, add a message: git tag v0.3.0 -m "Adds liveness probes with backwards compatibility"
 git push origin tag v0.3.0
 ```
 
+Pushing a tag manually will also trigger the release workflow.
+
 ## Releases
 
-Creating and pushing a new tag will trigger the `goreleaser` workflow in [./.github/workflows/release.yml](https://github.com/grafana/cloudcost-exporter/tree/main/.github/workflows/release.yml).
+The [release workflow](../../.github/workflows/auto-release.yml) handles both automated (PR-based) and manual (tag push) releases through `goreleaser`.
 
-The configuration for `goreleaser` itself can be found in [./.goreleaser.yaml](https://github.com/grafana/cloudcost-exporter/blob/main/.goreleaser.yaml).
-
-See https://github.com/grafana/cloudcost-exporter/issues/18 for progress on our path to automating releases.
+The configuration for `goreleaser` itself can be found in [./.goreleaser.yaml](../../.goreleaser.yaml).
 
 ### Automated Deployment
 
-When a new release is published (by pushing a tag), the workflows automatically:
-1. **[release.yml](../../.github/workflows/release.yml)**: Creates the GitHub release with binaries (via GoReleaser)
+When a new release is published (by merging a PR with a release label or pushing a tag manually), the workflows automatically:
+
+1. **[auto-release.yml](../../.github/workflows/auto-release.yml)**: 
+   - Creates the tag (if triggered by PR)
+   - Creates the GitHub release with binaries (via GoReleaser)
+   - Generates changelog from git commits
 2. **[build-and-deploy.yml](../../.github/workflows/build-and-deploy.yml)**: Builds and pushes the Docker image to Docker Hub
 3. **build-and-deploy.yml deploy job**: Immediately after the image is pushed, triggers an Argo Workflow deployment to platform-monitoring-cd
 4. **Argo Workflow**: Creates deployment PRs for each rollout wave
