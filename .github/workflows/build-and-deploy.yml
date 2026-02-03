@@ -46,7 +46,7 @@ jobs:
 
       - name: Build and Push Image
         id: build
-        uses: grafana/shared-workflows/actions/docker-build-push-image@7a256e98018aba3d01643479808a7690179a1f1c # docker-build-push-image/v0.1.1
+        uses: grafana/shared-workflows/actions/docker-build-push-image@ef27c620a88acc9f3007f30be5e9407324e8975b # docker-build-push-image/v0.3.0
         with:
           registries: dockerhub
           platforms: ${{ matrix.platform }}
