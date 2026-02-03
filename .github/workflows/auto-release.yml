@@ -7,6 +7,10 @@ on:
     types: [closed]
     branches:
       - main
+  # Also support manual tag pushes (for backwards compatibility)
+  push:
+    tags:
+      - v*
 
 permissions:
   contents: write
@@ -14,9 +18,10 @@ permissions:
 
 jobs:
   release:
-    # Only run when PR is actually merged (not just closed)
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    # For PR events: only run when PR is actually merged (not just closed)
+    # For tag push events: always run
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -26,6 +31,7 @@ jobs:
 
       - name: Get PR information
         id: pr-info
+        if: github.event_name == 'pull_request'
         run: |
           # Use GITHUB_EVENT_PATH to safely read PR number (avoids zizmor security warnings)
           PR_NUMBER=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
@@ -76,41 +82,51 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get latest version
+      - name: Get latest version and calculate new version
         id: version
-        if: steps.pr-info.outputs.should-release == 'true'
+        if: |
+          (github.event_name == 'pull_request' && steps.pr-info.outputs.should-release == 'true') ||
+          github.event_name == 'push'
         run: |
-          # Get the latest tag
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          echo "latest-tag=$LATEST_TAG" >> $GITHUB_OUTPUT
-          
-          # Extract version numbers (remove 'v' prefix)
-          VERSION="${LATEST_TAG#v}"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-          
-          # Bump version based on label
-          BUMP="${{ steps.pr-info.outputs.bump }}"
-          case "$BUMP" in
-            major)
-              MAJOR=$((MAJOR + 1))
-              MINOR=0
-              PATCH=0
-              ;;
-            minor)
-              MINOR=$((MINOR + 1))
-              PATCH=0
-              ;;
-            patch)
-              PATCH=$((PATCH + 1))
-              ;;
-          esac
-          
-          NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
-          echo "new-version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "New version: $NEW_VERSION"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # For tag push events, use the tag that was pushed
+            NEW_VERSION="${GITHUB_REF#refs/tags/}"
+            echo "new-version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "Using pushed tag: $NEW_VERSION"
+          else
+            # For PR events, calculate next version based on label
+            # Get the latest tag
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            echo "latest-tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+            
+            # Extract version numbers (remove 'v' prefix)
+            VERSION="${LATEST_TAG#v}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+            
+            # Bump version based on label
+            BUMP="${{ steps.pr-info.outputs.bump }}"
+            case "$BUMP" in
+              major)
+                MAJOR=$((MAJOR + 1))
+                MINOR=0
+                PATCH=0
+                ;;
+              minor)
+                MINOR=$((MINOR + 1))
+                PATCH=0
+                ;;
+              patch)
+                PATCH=$((PATCH + 1))
+                ;;
+            esac
+            
+            NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+            echo "new-version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "New version: $NEW_VERSION"
+          fi
 
       - name: Create and push tag
-        if: steps.pr-info.outputs.should-release == 'true'
+        if: github.event_name == 'pull_request' && steps.pr-info.outputs.should-release == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -128,3 +144,23 @@ jobs:
           See: $PR_URL"
           
           git push origin "$TAG"
+
+      - name: Set up Go
+        if: |
+          (github.event_name == 'pull_request' && steps.pr-info.outputs.should-release == 'true') ||
+          github.event_name == 'push'
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+        with:
+          cache: false
+
+      - name: Run GoReleaser
+        if: |
+          (github.event_name == 'pull_request' && steps.pr-info.outputs.should-release == 'true') ||
+          github.event_name == 'push'
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        with:
+          distribution: goreleaser
+          version: 2
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
