@@ -24,7 +24,7 @@ require (
 	github.com/grafana/grafana-foundation-sdk/go v0.0.0-20260129154346-aba721fdefde
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
-	github.com/prometheus/common v0.67.3
+	github.com/prometheus/common v0.67.5
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/mock v0.6.0
 	golang.org/x/sync v0.19.0
