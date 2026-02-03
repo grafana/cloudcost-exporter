@@ -9,6 +9,7 @@ The cost data can then be combined with usage data from tools such as stackdrive
 
 The goal of this project is to provide a consistent interface for collecting the rate of cost data from multiple cloud providers and exporting the data in Prometheus format.
 There was a need to track the costs of both kubernetes and non-kubernetes resources across multiple cloud providers at a per minute interval.
+
 Billing data for each cloud provider takes hours to days for it to be fully accurate, and we needed a way of having a more real-time view of costs.
 
 Primary goals:
