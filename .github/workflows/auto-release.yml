@@ -1,0 +1,97 @@
+name: Auto Release
+
+on:
+  pull_request:
+    # Note: 'closed' triggers on both merged and closed PRs.
+    # We filter to only merged PRs using the condition below.
+    types: [closed]
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  release:
+    # Only run when PR is actually merged (not just closed)
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check for release labels
+        id: check-labels
+        run: |
+          LABELS="${{ join(github.event.pull_request.labels.*.name, ' ') }}"
+          echo "PR Labels: $LABELS"
+          
+          if echo "$LABELS" | grep -q "release:major"; then
+            echo "bump=major" >> $GITHUB_OUTPUT
+            echo "should-release=true" >> $GITHUB_OUTPUT
+          elif echo "$LABELS" | grep -q "release:minor"; then
+            echo "bump=minor" >> $GITHUB_OUTPUT
+            echo "should-release=true" >> $GITHUB_OUTPUT
+          elif echo "$LABELS" | grep -q "release:patch"; then
+            echo "bump=patch" >> $GITHUB_OUTPUT
+            echo "should-release=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-release=false" >> $GITHUB_OUTPUT
+            echo "No release label found. Skipping release."
+          fi
+
+      - name: Get latest version
+        id: version
+        if: steps.check-labels.outputs.should-release == 'true'
+        run: |
+          # Get the latest tag
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "latest-tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          
+          # Extract version numbers (remove 'v' prefix)
+          VERSION="${LATEST_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          
+          # Bump version based on label
+          BUMP="${{ steps.check-labels.outputs.bump }}"
+          case "$BUMP" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+          
+          NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "new-version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      - name: Create and push tag
+        if: steps.check-labels.outputs.should-release == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          TAG="${{ steps.version.outputs.new-version }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          
+          # Create annotated tag with PR info
+          git tag -a "$TAG" -m "Release $TAG
+
+          Merged from PR #$PR_NUMBER: $PR_TITLE
+          
+          See: ${{ github.event.pull_request.html_url }}"
+          
+          git push origin "$TAG"
