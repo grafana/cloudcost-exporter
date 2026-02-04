@@ -86,6 +86,10 @@ jobs:
         id: final-outputs
         run: |
           if [ "${{ needs.check-release-label.outputs.should-release }}" = "true" ]; then
+            # Ensure we're on main and have all tags
+            git fetch --tags origin main || true
+            git checkout main || true
+            
             # Calculate version for release
             LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
             VERSION="${LATEST_TAG#v}"
@@ -108,8 +112,10 @@ jobs:
             esac
             
             NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
-            echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            VERSION_ONLY="${MAJOR}.${MINOR}.${PATCH}"  # Version without 'v' prefix for semver pattern
+            echo "version=$VERSION_ONLY" >> $GITHUB_OUTPUT
             echo "New version: $NEW_VERSION"
+            echo "Version for semver pattern: $VERSION_ONLY"
           else
             # No release, use default version
             echo "version=v0.0.0" >> $GITHUB_OUTPUT
@@ -121,7 +127,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          TAG="${{ steps.final-outputs.outputs.version }}"
+          TAG="v${{ steps.final-outputs.outputs.version }}"
           PR_NUMBER=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
           PR_DATA=$(gh pr view "$PR_NUMBER" --json title,url)
           PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
@@ -172,13 +178,21 @@ jobs:
             platform: linux/amd64
     runs-on: ${{ matrix.runnerType }}
     steps:
+      - name: Prepare checkout ref
+        id: checkout-ref
+        run: |
+          if [ "${{ needs.tag-and-goreleaser.outputs.should-release }}" = "true" ]; then
+            echo "ref=v${{ needs.tag-and-goreleaser.outputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "ref=main" >> $GITHUB_OUTPUT
+          fi
+
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
-          # For releases, checkout the tag. For non-releases, checkout main
-          ref: ${{ needs.tag-and-goreleaser.outputs.should-release == 'true' && needs.tag-and-goreleaser.outputs.version || 'main' }}
+          ref: ${{ steps.checkout-ref.outputs.ref }}
 
       - name: Build and Push Image
         id: build
@@ -211,6 +225,16 @@ jobs:
       contents: read
       id-token: write
     steps:
+      - name: Debug - Check version value
+        if: needs.tag-and-goreleaser.outputs.should-release == 'true'
+        run: |
+          echo "should-release: ${{ needs.tag-and-goreleaser.outputs.should-release }}"
+          echo "version output: '${{ needs.tag-and-goreleaser.outputs.version }}'"
+          if [ -z "${{ needs.tag-and-goreleaser.outputs.version }}" ]; then
+            echo "ERROR: Version is empty!"
+            exit 1
+          fi
+
       - name: Download Multi-Arch Digests, Construct and Upload Manifest (Release)
         if: needs.tag-and-goreleaser.outputs.should-release == 'true'
         uses: grafana/shared-workflows/actions/docker-import-digests-push-manifest@c7c3322b5815fd007586605e0ea286969f6aeae2 # docker-import-digests-push-manifest/v0.1.1
@@ -248,6 +272,6 @@ jobs:
           workflow_template: cloudcost-exporter
           parameters: |
             imageName=grafana/cloudcost-exporter
-            dockertag=${{ needs.tag-and-goreleaser.outputs.version }}
-            prCommentContext= Triggered by release ${{ needs.tag-and-goreleaser.outputs.version }} in grafana/cloudcost-exporter
+            dockertag=v${{ needs.tag-and-goreleaser.outputs.version }}
+            prCommentContext= Triggered by release v${{ needs.tag-and-goreleaser.outputs.version }} in grafana/cloudcost-exporter
             commit_author=grafana-delivery-bot
