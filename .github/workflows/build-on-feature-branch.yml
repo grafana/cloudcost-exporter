@@ -1,0 +1,48 @@
+name: Build on Feature Branch
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-export-digest:
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runnerType: ubuntu-24.04-arm
+            platform: linux/arm64
+          - runnerType: ubuntu-24.04
+            platform: linux/amd64
+    runs-on: ${{ matrix.runnerType }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build Image (no push)
+        id: build
+        uses: grafana/shared-workflows/actions/docker-build-push-image@ef27c620a88acc9f3007f30be5e9407324e8975b # docker-build-push-image/v0.3.0
+        with:
+          registries: dockerhub
+          platforms: ${{ matrix.platform }}
+          outputs: "type=image,push-by-digest=true,name-canonical=true,push=false"
+          push: false
+          tags: |
+            type=raw,value=test
+          include-tags-in-push: false
+
+      - name: Export Docker Digest
+        id: export
+        uses: grafana/shared-workflows/actions/docker-export-digest@1d3e79a89e5fe2e14e27c7d083484f16abc1438b # docker-export-digest/v0.1.1
+        with:
+          digest: ${{ steps.build.outputs.digest }}
+          platform: ${{ matrix.platform }}
