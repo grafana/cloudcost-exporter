@@ -104,3 +104,7 @@ In the future, we intend to opensource recording rules we use internally to meas
 
 Grafana Labs is always looking to support new contributors!
 Please take a look at our [contributing guide](CONTRIBUTING.md) for more information on how to get started.
+
+### Releases
+
+Releases are automated! When merging a PR, add a release label (`release:major`, `release:minor`, or `release:patch`) to automatically create a new release. See the [release process documentation](docs/contribute/releases.md) for details.
