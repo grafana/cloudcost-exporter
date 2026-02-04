@@ -86,6 +86,10 @@ jobs:
         id: final-outputs
         run: |
           if [ "${{ needs.check-release-label.outputs.should-release }}" = "true" ]; then
+            # Ensure we're on main and have all tags
+            git fetch --tags origin main || true
+            git checkout main || true
+            
             # Calculate version for release
             LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
             VERSION="${LATEST_TAG#v}"
@@ -177,8 +181,6 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-          # For releases, checkout the tag. For non-releases, checkout main
-          ref: ${{ needs.tag-and-goreleaser.outputs.should-release == 'true' && needs.tag-and-goreleaser.outputs.version || 'main' }}
 
       - name: Build and Push Image
         id: build
@@ -189,12 +191,10 @@ jobs:
           outputs: "type=image,push-by-digest=true,name-canonical=true,push=true"
           push: true
           tags: |
-            type=semver,pattern=v{{ version }},enable=${{ needs.tag-and-goreleaser.outputs.should-release == 'true' }}
-            type=raw,value=latest,enable=${{ needs.tag-and-goreleaser.outputs.should-release == 'false' }}
-            type=sha,prefix=main-,format=short,enable=${{ needs.tag-and-goreleaser.outputs.should-release == 'false' }}
+            type=raw,value=${{ needs.tag-and-goreleaser.outputs.version }},enable=${{ needs.tag-and-goreleaser.outputs.should-release == 'true' }}
+            type=raw,value=latest
+            type=sha,prefix=main-,format=short
           include-tags-in-push: false
-        env:
-          version: ${{ needs.tag-and-goreleaser.outputs.should-release == 'true' && needs.tag-and-goreleaser.outputs.version || '0.0.0' }}
 
       - name: Export Docker Digest
         id: export
@@ -211,19 +211,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Download Multi-Arch Digests, Construct and Upload Manifest (Release)
-        if: needs.tag-and-goreleaser.outputs.should-release == 'true'
-        uses: grafana/shared-workflows/actions/docker-import-digests-push-manifest@c7c3322b5815fd007586605e0ea286969f6aeae2 # docker-import-digests-push-manifest/v0.1.1
-        with:
-          images: ${{ needs.build-and-export-digest.outputs.images }}
-          push: true
-          tags: |
-            type=semver,pattern=v{{ version }}
-        env:
-          version: ${{ needs.tag-and-goreleaser.outputs.version }}
-
-      - name: Download Multi-Arch Digests, Construct and Upload Manifest (Non-Release)
-        if: needs.tag-and-goreleaser.outputs.should-release != 'true'
+      - name: Download Multi-Arch Digests, Construct and Upload Manifest (latest and main-{sha})
         uses: grafana/shared-workflows/actions/docker-import-digests-push-manifest@c7c3322b5815fd007586605e0ea286969f6aeae2 # docker-import-digests-push-manifest/v0.1.1
         with:
           images: ${{ needs.build-and-export-digest.outputs.images }}
@@ -231,6 +219,15 @@ jobs:
           tags: |
             type=raw,value=latest
             type=sha,prefix=main-,format=short
+
+      - name: Download Multi-Arch Digests, Construct and Upload Manifest (release v{version})
+        if: needs.tag-and-goreleaser.outputs.should-release == 'true'
+        uses: grafana/shared-workflows/actions/docker-import-digests-push-manifest@c7c3322b5815fd007586605e0ea286969f6aeae2 # docker-import-digests-push-manifest/v0.1.1
+        with:
+          images: ${{ needs.build-and-export-digest.outputs.images }}
+          push: true
+          tags: |
+            type=raw,value=${{ needs.tag-and-goreleaser.outputs.version }}
 
   deploy:
     if: needs.tag-and-goreleaser.outputs.should-release == 'true'
