@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   build-and-export-digest:
+    if: false  # Disabled for testing - remove this line to re-enable
     permissions:
       contents: read
       id-token: write

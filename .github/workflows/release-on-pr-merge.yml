@@ -2,12 +2,12 @@ name: PR Merge to Main
 
 on:
   pull_request:
-    types: [closed]
+    types: [opened]
     branches:
       - main
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: read
 
 jobs:
@@ -123,7 +123,7 @@ jobs:
           
           git tag -a "$TAG" -m "Release $TAG
 
-          Merged from PR #$PR_NUMBER: $PR_TITLE
+          From PR #$PR_NUMBER: $PR_TITLE
           
           See: $PR_URL"
           
