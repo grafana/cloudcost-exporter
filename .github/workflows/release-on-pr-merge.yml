@@ -2,12 +2,12 @@ name: PR Merge to Main
 
 on:
   pull_request:
-    types: [closed]
+    types: [opened]
     branches:
       - main
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: read
 
 jobs:
@@ -17,6 +17,12 @@ jobs:
       should-release: ${{ steps.check.outputs.should-release }}
       bump: ${{ steps.check.outputs.bump }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
       - name: Get PR information
         id: check
         run: |
@@ -123,7 +129,7 @@ jobs:
           
           git tag -a "$TAG" -m "Release $TAG
 
-          Merged from PR #$PR_NUMBER: $PR_TITLE
+          From PR #$PR_NUMBER: $PR_TITLE
           
           See: $PR_URL"
           
