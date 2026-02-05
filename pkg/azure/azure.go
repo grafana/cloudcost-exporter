@@ -13,6 +13,7 @@ import (
 
 	"github.com/grafana/cloudcost-exporter/pkg/azure/aks"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
+	"github.com/grafana/cloudcost-exporter/pkg/gatherer"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
@@ -148,15 +149,17 @@ func (a *Azure) Collect(ch chan<- prometheus.Metric) {
 
 	for _, c := range a.collectors {
 		go func(c provider.Collector) {
-			collectorStart := time.Now()
 			defer wg.Done()
+
+			duration, hasError := gatherer.CollectWithGatherer(collectCtx, c, ch, a.logger)
+
+			//TODO: remove collectorErrors once we have the new metrics
 			collectorErrors := 0.0
-			if err := c.Collect(collectCtx, ch); err != nil {
-				collectorErrors++
-				a.logger.LogAttrs(a.context, slog.LevelInfo, "error collecting metrics from collector", slog.String("collector", c.Name()), slog.String("error", err.Error()))
+			if hasError {
+				collectorErrors = 1.0
 			}
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.CounterValue, collectorErrors, subsystem, c.Name())
-			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(collectorStart).Seconds(), subsystem, c.Name())
+			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, duration, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
 		}(c)
 	}
