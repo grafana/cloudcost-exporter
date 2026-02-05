@@ -27,6 +27,9 @@ If you believe you've found a security vulnerability, please read our [security 
 
 If you have an idea of how to improve Grafana's CloudCost Exporter, submit an [enhancement request](https://github.com/grafana/cloudcost-exporter/issues/new?labels=enhancement&template=2-enhancement_request.md).
 
-## Where do I go from here?
+## Development Resources
 
-- Set up your [development environment](docs/contribute/developer-guide.md).
+- [Developer Guide](./docs/contribute/developer-guide.md) - Setup and development workflow
+- [Creating a New Module](./docs/contribute/creating-a-new-module.md) - Add support for new cloud services
+- [Logging Guidelines](./docs/contribute/logging.md) - Best practices for logging
+- [Release Process](./docs/contribute/releases.md) - How releases are created
