@@ -62,3 +62,33 @@ If pricing data cannot be fetched from the AWS Pricing API, the following defaul
 - All pricing API calls use the `us-east-1` region (AWS Pricing API requirement)
 - Metrics are automatically refreshed every 24 hours
 - All costs are represented in USD per hour
+
+## IAM Permissions
+
+Required permissions for VPC metrics collection:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeVpcEndpoints",
+                "ec2:DescribeTransitGateways",
+                "ec2:DescribeAddresses"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "pricing:GetProducts"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+**Note:** These permissions allow the exporter to discover VPC endpoints, Transit Gateway attachments, and Elastic IP addresses in your AWS account and correlate them with pricing data.

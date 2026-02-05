@@ -35,3 +35,29 @@ Or via command line:
 - Pricing data is fetched from the AWS Pricing API (us-east-1 region)
 - Metrics are refreshed periodically based on the configured scrape interval
 - All costs are represented in USD per hour
+
+## IAM Permissions
+
+Required permissions for RDS metrics collection:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "rds:DescribeDBInstances"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "pricing:GetProducts"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
