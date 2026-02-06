@@ -42,10 +42,15 @@ push-dev: build test
 push: build test push-dev
 	docker push $(IMAGE_NAME_LATEST)
 
-grizzly-serve:
-	grr serve -p 8088 -w -S "go run ./cloudcost-exporter-dashboards/main.go"
+grafanactl-serve: check-cli-grafanactl build-dashboards
+	grafanactl dashboards serve --port 8080 ./cloudcost-exporter-dashboards/grafana
 
 build-dashboards:
 	go get github.com/grafana/grafana-foundation-sdk/go@$(GRAFANA_FOUNDATION_SDK_VERSION)+cog-v0.0.x
 	go mod tidy
 	go run ./cmd/dashboards/main.go  --output=file
+
+# Check for required CLI tools
+check-cli-grafanactl: ERR_MSG := "grafanactl is required. Install it from https://grafana.github.io/grafanactl/"
+check-cli-%:
+	@command -v $(*) > /dev/null || { echo $(ERR_MSG); exit 1; }
