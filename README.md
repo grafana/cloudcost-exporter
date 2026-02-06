@@ -1,110 +1,102 @@
 # Cloud Cost Exporter
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/grafana/cloudcost-exporter.svg)](https://pkg.go.dev/github.com/grafana/cloudcost-exporter)
+[![License](https://img.shields.io/github/license/grafana/cloudcost-exporter)](https://github.com/grafana/cloudcost-exporter/blob/main/LICENSE)
+[![Docker Pulls](https://img.shields.io/docker/pulls/grafana/cloudcost-exporter)](https://hub.docker.com/r/grafana/cloudcost-exporter)
 
-Cloud Cost exporter is a tool designed to collect cost data from cloud providers and export the data in Prometheus format.
-The cost data can then be combined with usage data from tools such as stackdriver, YACE, and promitor to measure the spend of resources at a granular level.
+Cloud Cost Exporter is a Prometheus exporter that collects cost and pricing data from cloud providers (AWS, GCP, Azure) in real-time.
 
-## Goals
+**Quick Links:**
+- [Docker Hub](https://hub.docker.com/r/grafana/cloudcost-exporter) - Official Docker images
+- [Helm Chart](https://github.com/grafana/helm-charts/tree/main/charts/cloudcost-exporter) - Helm Chart for Kubernetes deployment
+- [Documentation](./docs/README.md) - Detailed guides and references
+- [KubeCon Talk](https://youtu.be/8eiLXtL3oLk?si=wm-43ZQ9Fr51wS4a&t=1) on monitoring cloud costs at scale
 
-The goal of this project is to provide a consistent interface for collecting the rate of cost data from multiple cloud providers and exporting the data in Prometheus format.
-There was a need to track the costs of both kubernetes and non-kubernetes resources across multiple cloud providers at a per minute interval.
+## Overview
 
-Billing data for each cloud provider takes hours to days for it to be fully accurate, and we needed a way of having a more real-time view of costs.
+Cloud Cost Exporter provides near real-time cost visibility by exporting resource pricing rates as Prometheus metrics.
 
-Primary goals:
-- Track the rate(IE, $/cpu/hr) for resources across
-- Export the rate in Prometheus format
-- Support the major cloud providers(AWS, GCP, Azure)
+The cost data can be combined with usage metrics from tools like [Stackdriver](https://cloud.google.com/stackdriver), [YACE](https://github.com/nerdswords/yet-another-cloudwatch-exporter), [Grafana AWS CloudWatch Metric Streams](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/monitor-cloud-provider/aws/cloudwatch-metrics/metric-streams/config-cw-metric-streams-cloudformation/), and [Promitor](https://promitor.io/) to calculate granular spending.
 
-Non Goals:
-- Billing level accuracy
-- Measure the spend of resources
-- Take into account CUDs/Discounts/Reservations pricing information
+Cloud provider billing data takes hours to days to become fully accurate. This exporter bridges that gap by providing per-minute cost rate visibility for both Kubernetes and non-Kubernetes resources across multiple cloud providers.
+
+### Primary Goals
+
+- **Multi-cloud support** - Collect cost rates from AWS, GCP, and Azure through a consistent interface
+- **Real-time rates** - Export per-minute pricing rates (e.g., $/cpu/hr) for cloud resources
+- **Prometheus native** - Export metrics in Prometheus format for easy integration with monitoring stacks
+
+### Non-Goals
+
+- **Billing accuracy** - This is not a replacement for official cloud billing reports
+- **Spend calculation** - Exports rates, not total spend (use Prometheus queries & recording rules to calculate spend)
+
+## Project Maturity
+
+This project is in active development and is subject to change. Grafana Labs builds and maintains this project as part of our commitment to the open source community but we do not provide support for it. The exporter exports rates for resources and not the total spend.
 
 ## Supported Cloud Providers
 
-- AWS
-- GCP
-- Azure
+- **AWS** - Amazon Web Services
+- **GCP** - Google Cloud Platform
+- **Azure** - Microsoft Azure
 
 ## Installation
 
-Each tagged version of the Cloud Cost Exporter will publish a Docker image to https://hub.docker.com/r/grafana/cloudcost-exporter and a Helm chart.
+Cloud Cost Exporter can be used locally using its [image](#1-local-usage-via-image) or deployed via a [Helm Chart](#2-kubernetes-deployment-via-helm-chart).
 
-### Local usage
+### 1. Local Usage via Image
 
-The image can be used to deploy Cloud Cost Exporter to a Kubernetes cluster or to run it locally.
+To deploy locally using its [image](https://hub.docker.com/r/grafana/cloudcost-exporter), Cloud Cost Exporter uses each provider's default authentication mechanisms:
 
-#### Use the image
+| Provider | Authentication Method | Documentation |
+|----------|----------------------|---------------|
+| **AWS** | AWS credentials file, environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`), or IAM role | [AWS credentials](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) |
+| **GCP** | Application Default Credentials (ADC) | [GCP ADC](https://cloud.google.com/docs/authentication/application-default-credentials) |
+| **Azure** | DefaultAzureCredential chain (environment variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_SECRET`) | [Azure authentication](https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication?tabs=bash) |
 
-Cloud Cost Exporter has an opinionated way of authenticating against each cloud provider:
+After authenticating with a cloud provider, follow these steps to do a quick start using Docker:
 
-| Provider | Notes |
-|-|-|
-| GCP | Depends on [default credentials](https://cloud.google.com/docs/authentication/application-default-credentials) |
-| AWS | Uses profile names from your [credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) or `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` env variables |
-| Azure | Uses the [default azure credential chain](https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication?tabs=bash), e.g. enviornment variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_CLIENT_SECRET` |
+```bash
+# Run with Docker (example for AWS)
+docker run -d \
+  -p 8080:8080 \
+  -e AWS_ACCESS_KEY_ID=your-key \
+  -e AWS_SECRET_ACCESS_KEY=your-secret \
+  -e AWS_REGION=us-east-1 \
+  grafana/cloudcost-exporter:latest
+```
 
-### Deployment to Kubernetes
+Metrics will be available to be scraped at `http://localhost:8080/metrics`
 
-When running in a Kubernetes cluster, it is recommended to create an IAM role for a Service Account (IRSA) with the necessary permissions for the cloud provider.
+### 2. Kubernetes Deployment via Helm chart
 
-Documentation about the necessary permission for AWS can be found [here](./docs/deploying/aws/README.md#1-setup-the-iam-role). Documentation for GCP and Azure are under development.
+For Kubernetes deployments, use the official [Helm chart](https://github.com/grafana/helm-charts/tree/main/charts/cloudcost-exporter). See the chart repository for configuration options, values, and examples.
 
-#### Use the Helm chart
+First, setup an IAM Role for Service Accounts (IRSA) for secure credential management:
+- **AWS:** [IRSA Setup Guide](./docs/deploying/aws/README.md#1-setup-the-iam-role) and [Helm Configuration](./docs/deploying/aws/README.md#2-configure-the-helm-chart)
+- **GCP:** Workload Identity (documentation in development - [contribute here](https://github.com/grafana/cloudcost-exporter/issues/456))
+- **Azure:** Workload Identity (documentation in development - [contribute here](https://github.com/grafana/cloudcost-exporter/issues/458))
 
-When deploying to Kubernetes, it is recommended to use the Helm chart, which can be found here: https://github.com/grafana/helm-charts/tree/main/charts/cloudcost-exporter
+Then, install Cloud Cost Exporter via its Helm chart:
 
-Additional Helm chart configuration for AWS can be found [here](./docs/deploying/aws/README.md#2-configure-the-helm-chart)
+```bash
+# Add Grafana Helm repository
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
 
-## Metrics
+# Install cloudcost-exporter
+helm install cloudcost-exporter grafana/cloudcost-exporter
+```
 
-Check out the following docs for metrics:
-- [Provider level metrics](docs/metrics/providers.md)
+## Supported Services
 
-### AWS Services
-
-The following AWS services are supported:
-
-- **[EC2](docs/metrics/aws/ec2.md)** - Elastic Compute Cloud instances (including spot and on-demand pricing)
-- **[S3](docs/metrics/aws/s3.md)** - Simple Storage Service buckets
-- **RDS** - Relational Database Service instances
-- **[ELB](docs/metrics/aws/elb.md)** - Elastic Load Balancer (Application and Network Load Balancers)
-- **[NAT Gateway](docs/metrics/aws/natgateway.md)** - Network Address Translation Gateway
-- **VPC** - Virtual Private Cloud endpoints and services
-
-### GCP Services
-
-The following GCP services are supported:
-
-- **[GKE](docs/metrics/gcp/gke.md)** - Google Kubernetes Engine clusters
-- **[GCS](docs/metrics/gcp/gcs.md)** - Google Cloud Storage buckets
-- **[Cloud SQL](docs/metrics/gcp/cloudsql.md)** - Cloud SQL database instances
-- **CLB** - Cloud Load Balancer (via forwarding rules)
-- **VPC** - Virtual Private Cloud networking
-
-### Azure Services
-
-The following Azure services are supported:
-
-- **[AKS](docs/metrics/azure/aks.md)** - Azure Kubernetes Service clusters
-
-## Maturity
-
-This project is in the early stages of development and is subject to change.
-Grafana Labs builds and maintains this project as part of our commitment to the open-source community, but we do not provide support for it.
-In its current state, the exporter exports rates for resources and not the total spend.
-
-For a better understanding of how we view measuring costs, view a talk given at [KubeCon NA 2023](https://youtu.be/8eiLXtL3oLk?si=wm-43ZQ9Fr51wS4a&t=1)
-
-In the future, we intend to opensource recording rules we use internally to measure the spend of resources.
+Cloud Cost Exporter exposes Prometheus metrics for cost rates of cloud resources. Each service exports metrics specific to that resource type - see the [metrics documentation](./docs/metrics/README.md) for details on supported services.
 
 ## Contributing
 
-Grafana Labs is always looking to support new contributors!
-Please take a look at our [contributing guide](CONTRIBUTING.md) for more information on how to get started.
+We welcome contributions. See the [contributing guide](docs/contribute/README.md).
 
-### Releases
+## License
 
-Releases are automated! When merging a PR, add a release label (`release:major`, `release:minor`, or `release:patch`) to automatically create a new release. See the [release process documentation](docs/contribute/releases.md) for details.
+Cloud Cost Exporter is licensed under the [Apache License 2.0](LICENSE).

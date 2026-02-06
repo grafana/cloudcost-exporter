@@ -1,6 +1,7 @@
 # Creating a New Module
 
 This document outlines the process for creating a new module for the Cloud Cost Exporter.
+
 The current architecture of the exporter is designed to be modular and extensible.
 
 This guide is based on the NAT Gateway implementation (`pkg/aws/natgateway/`) which serves as a reference implementation.

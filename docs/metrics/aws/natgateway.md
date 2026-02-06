@@ -39,3 +39,24 @@ The pricing filters used are:
 - **Usage Types**:
   - `NatGateway-Hours` - for hourly rates
   - `NatGateway-Bytes` - for data processing costs
+
+## IAM Permissions
+
+Required permissions for NAT Gateway metrics collection:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "pricing:GetProducts"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+**Note:** NAT Gateway metrics are collected via the AWS Pricing API only. No NAT Gateway-specific API calls are required, as the exporter provides pricing rates rather than tracking individual NAT Gateway resources.

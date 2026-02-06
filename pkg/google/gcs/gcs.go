@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// This data was pulled from https://console.cloud.google.com/billing/01330B-0FCEED-DEADF1/pricing?organizationId=803894190427&project=grafanalabs-global on 2023-07-28
 // @pokom purposefully left out three discounts that don't fit:
 // 1. Region Standard Tagging Class A Operations
 // 2. Region Standard Tagging Class B Operations

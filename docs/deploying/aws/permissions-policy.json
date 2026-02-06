@@ -5,10 +5,14 @@
             "Effect": "Allow",
             "Action": [
                 "ce:*",
-                "ec2:DescribeRegions",
+                "ec2:DescribeAddresses",
                 "ec2:DescribeInstances",
+                "ec2:DescribeRegions",
                 "ec2:DescribeSpotPriceHistory",
+                "ec2:DescribeTransitGateways",
                 "ec2:DescribeVolumes",
+                "ec2:DescribeVpcEndpoints",
+                "elasticloadbalancing:DescribeLoadBalancers",
                 "pricing:GetProducts",
                 "rds:DescribeDBInstances"
             ],

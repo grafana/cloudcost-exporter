@@ -20,3 +20,32 @@ There are a few assumptions that we're making specific to Grafana Labs:
 1. All costs are in USD
 2. Only consider Linux based instances
 3. `cloudcost-exporter` emits the list price and does not take into account any discounts or savings plans
+
+## IAM Permissions
+
+Required permissions for EC2 and EBS metrics collection:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeRegions",
+                "ec2:DescribeInstances",
+                "ec2:DescribeSpotPriceHistory",
+                "ec2:DescribeVolumes"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "pricing:GetProducts"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
