@@ -17,8 +17,6 @@ GIT_BRANCH   ?= $(shell git rev-parse --abbrev-ref HEAD)
 GIT_REVISION ?= $(shell git rev-parse --short HEAD)
 GO_LDFLAGS = -X $(PROM_VERSION_PKG).Branch=$(GIT_BRANCH) -X $(PROM_VERSION_PKG).Version=$(VERSION) -X $(PROM_VERSION_PKG).Revision=$(GIT_REVISION) -X ${PROM_VERSION_PKG}.BuildUser=${BUILD_USER} -X ${PROM_VERSION_PKG}.BuildDate=${BUILD_DATE}
 
-GRAFANA_FOUNDATION_SDK_VERSION = v11.6.x
-
 build-image:
 	docker build --build-arg GO_LDFLAGS="$(GO_LDFLAGS)" -t $(IMAGE_PREFIX)/$(IMAGE_NAME) -t $(IMAGE_NAME_VERSION) .
 
@@ -46,7 +44,7 @@ grafanactl-serve: check-cli-grafanactl build-dashboards
 	grafanactl dashboards serve --port 8080 ./cloudcost-exporter-dashboards/grafana
 
 build-dashboards:
-	go get github.com/grafana/grafana-foundation-sdk/go@$(GRAFANA_FOUNDATION_SDK_VERSION)+cog-v0.0.x
+	go get github.com/grafana/grafana-foundation-sdk/go@latest
 	go mod tidy
 	go run ./cmd/dashboards/main.go  --output=file
 
