@@ -28,8 +28,7 @@
           "expr": "max by (provider, collector) (cloudcost_exporter_collector_last_scrape_error == 0)",
           "instant": true,
           "range": false,
-          "legendFormat": "{{provider}}:{{collector}}",
-          "refId": ""
+          "legendFormat": "{{provider}}:{{collector}}"
         }
       ],
       "title": "Collector Status",
@@ -98,8 +97,7 @@
           "expr": "cloudcost_exporter_collector_last_scrape_duration_seconds",
           "instant": false,
           "range": true,
-          "legendFormat": "{{provider}}:{{collector}}",
-          "refId": ""
+          "legendFormat": "{{provider}}:{{collector}}"
         }
       ],
       "title": "Collector Scrape Duration",
@@ -182,8 +180,7 @@
           "expr": "sum by (cluster) (increase(cloudcost_exporter_aws_s3_cost_api_requests_total{cluster=~\"$cluster\"}[5m]))",
           "instant": false,
           "range": true,
-          "legendFormat": "__auto",
-          "refId": ""
+          "legendFormat": "__auto"
         }
       ],
       "title": "CostExplorer API Requests",
@@ -213,8 +210,7 @@
           "expr": "max by (cluster) (cloudcost_exporter_aws_s3_next_scrape{cluster=~\"$cluster\"}) - time() ",
           "instant": false,
           "range": true,
-          "legendFormat": "__auto",
-          "refId": ""
+          "legendFormat": "__auto"
         }
       ],
       "title": "Next pricing map refresh",
@@ -258,8 +254,7 @@
           "expr": "sum by (cluster, status) (increase(cloudcost_exporter_gcp_gcs_bucket_list_status_total[5m]))",
           "instant": false,
           "range": true,
-          "legendFormat": "{{cluster}}:{{status}}",
-          "refId": ""
+          "legendFormat": "{{cluster}}:{{status}}"
         }
       ],
       "title": "GCS List Buckets Requests Per Second",
@@ -290,8 +285,7 @@
           "expr": "max by (cluster) (cloudcost_exporter_gcp_gcs_next_scrape{cluster=~\"$cluster\"}) - time() ",
           "instant": false,
           "range": true,
-          "legendFormat": "__auto",
-          "refId": ""
+          "legendFormat": "__auto"
         }
       ],
       "title": "GCS Pricing Map Refresh Time",
