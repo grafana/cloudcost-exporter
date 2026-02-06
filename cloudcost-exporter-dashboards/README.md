@@ -1,25 +1,24 @@
 # Grafana Dashboards
 
-> [!WARNING]
-> This is still highly experimental as engineers at Grafana Labs are learning how to generate dashboards as code.
-> The main goal is for us to be able to generate and use the same internal dashboards as we recommend OSS users to use.
-
-This container a set of Grafana Dashboards that are generated using the [Grafana Foundation SDK](https://github.com/grafana/grafana-foundation-sdk).
+This contains a set of Grafana Dashboards that are generated using the [Grafana Foundation SDK](https://github.com/grafana/grafana-foundation-sdk).
 
 ## Getting Started
 
-> [!INFO]
-> If you want to develop these dashboards and view them against a live Grafana instance,
-> install and configure [grizzly](https://grafana.github.io/grizzly/installation/)
+### Prerequisites
 
-To generate the dashboards:
+- Go 1.21+ installed
+- `grafanactl` CLI tool for local preview ([install guide](https://grafana.github.io/grafanactl/))
+
+### Generate & Preview Dashboards
 
 ```shell
+# Generate dashboard files
 make build-dashboards
+
+# Peview dashboards locally:
+make grafanactl-serve
 ```
 
-To iteratively develop dashboards with live reload:
+Access dashboards at http://localhost:8080
 
-```shell
-make grizzly-serve
-```
+The dashboard files are served from `cloudcost-exporter-dashboards/grafana/`.
