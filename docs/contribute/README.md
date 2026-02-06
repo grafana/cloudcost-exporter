@@ -14,12 +14,15 @@ For more ways to contribute, check out the [Open Source Guides](https://opensour
 
 ## Development Resources
 
-We have the following development guides available:
+We have the following development guides available.
 
-- [Developer Guide](developer-guide.md) - Setup and development workflow
-- [Creating a New Module](creating-a-new-module.md) - Add support for new cloud services
+**Core**
+1. [Developer Guide](developer-guide.md) - Setup and development workflow
+2. [Creating a New Module](creating-a-new-module.md) - Add support for a new cloud service
+3. [Release Process](releases.md) - How releases are created
+
+**Additional**
 - [Logging Guidelines](logging.md) - Best practices for logging
-- [Release Process](releases.md) - How releases are created
 
 ## Report bugs
 
