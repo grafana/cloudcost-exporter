@@ -6,6 +6,7 @@ import (
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
 	"github.com/grafana/grafana-foundation-sdk/go/prometheus"
 	"github.com/grafana/grafana-foundation-sdk/go/stat"
+	"github.com/grafana/grafana-foundation-sdk/go/table"
 	"github.com/grafana/grafana-foundation-sdk/go/timeseries"
 )
 
@@ -44,6 +45,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 		).
 		WithRow(dashboard.NewRowBuilder("Overview")).
 		WithPanel(collectorStatusCurrent().Height(6).Span(12)).
+		WithPanel(imageVersionsByCluster().Height(6).Span(12)).
 		WithPanel(collectorScrapeDurationOverTime().Height(8).Span(24)).
 		WithRow(dashboard.NewRowBuilder("AWS")).
 		WithPanel(costExplorerAPIRequestsOverTime().Height(6).Span(12)).
@@ -185,4 +187,70 @@ func collectorStatusCurrent() *stat.PanelBuilder {
 				}),
 			},
 		})
+}
+
+func imageVersionsByCluster() *table.PanelBuilder {
+	return table.NewPanelBuilder().
+		Title("Image Versions by Cluster").
+		Description("Shows which cloudcost-exporter image version is deployed on each cluster").
+		Datasource(prometheusDatasourceRef()).
+		WithTarget(
+			prometheus.NewDataqueryBuilder().
+				Expr("count by (cluster, image_version) (label_replace(kube_pod_container_info{container=\"cloudcost-exporter\"}, \"image_version\", \"$2\", \"image\", \"(.*:)(.*)\"))").
+				Instant().
+				RefId("A"),
+		).
+		Transformations([]dashboard.DataTransformerConfig{
+			{Id: "seriesToRows", Options: map[string]interface{}{}},
+			{
+				Id: "organize",
+				Options: map[string]interface{}{
+					"excludeByName": map[string]interface{}{"Time": true},
+					"indexByName":   map[string]interface{}{"Metric": 0, "Value": 1},
+					"renameByName":  map[string]interface{}{"Value": "Pod Count"},
+				},
+			},
+			{
+				Id: "extractFields",
+				Options: map[string]interface{}{
+					"format":   "kvp",
+					"keepTime": false,
+					"replace":  false,
+					"source":   "Metric",
+				},
+			},
+			{
+				Id: "organize",
+				Options: map[string]interface{}{
+					"excludeByName": map[string]interface{}{"Metric": true},
+					"indexByName":   map[string]interface{}{"Pod Count": 2, "cluster": 0, "image_version": 1},
+					"renameByName": map[string]interface{}{
+						"Pod Count":     "Pod Count",
+						"cluster":       "Cluster",
+						"image_version": "Image Version",
+					},
+				},
+			},
+		}).
+		WithOverride(
+			dashboard.MatcherConfig{Id: "byName", Options: "Pod Count"},
+			[]dashboard.DynamicConfigValue{
+				{Id: "custom.align", Value: "center"},
+				{Id: "custom.width", Value: 120},
+			},
+		).
+		WithOverride(
+			dashboard.MatcherConfig{Id: "byName", Options: "Cluster"},
+			[]dashboard.DynamicConfigValue{
+				{Id: "custom.width", Value: 300},
+			},
+		).
+		WithOverride(
+			dashboard.MatcherConfig{Id: "byName", Options: "Image Version"},
+			[]dashboard.DynamicConfigValue{
+				{Id: "custom.width", Value: 150},
+			},
+		).
+		CellHeight(common.TableCellHeightSm).
+		ShowHeader(true)
 }
