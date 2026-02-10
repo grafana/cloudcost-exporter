@@ -89,6 +89,9 @@ helm repo update
 helm install cloudcost-exporter grafana/cloudcost-exporter
 ```
 
+**Chart source**: [charts/cloudcost-exporter](./charts/cloudcost-exporter/)
+**Chart documentation**: [charts/cloudcost-exporter/README.md](./charts/cloudcost-exporter/README.md)
+
 ## Supported Services
 
 Cloud Cost Exporter exposes Prometheus metrics for cost rates of cloud resources. Each service exports metrics specific to that resource type - see the [metrics documentation](./docs/metrics/README.md) for details on supported services.

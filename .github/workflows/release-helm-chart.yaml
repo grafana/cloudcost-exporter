@@ -1,0 +1,24 @@
+name: Release Helm Chart
+on:
+  workflow_dispatch:
+
+env:
+  CR_INDEX_PATH: "${{ github.workspace }}/.cr-index"
+  CR_PACKAGE_PATH: "${{ github.workspace }}/.cr-release-packages"
+  CR_TOOL_PATH: "${{ github.workspace }}/.cr-tool"
+
+permissions: {}
+
+jobs:
+  release-chart:
+    uses: grafana/helm-charts/.github/workflows/update-helm-repo.yaml@e5ee6963cce3ab19519dc6dbd5f250aa14dc6f12
+    permissions:
+      contents: write
+      id-token: write
+      packages: write
+    with:
+      charts_dir: charts
+      cr_configfile: cr.yaml
+      ct_configfile: charts/cloudcost-exporter/ct.yaml
+    secrets:
+      vault_repo_secret_name: github-app

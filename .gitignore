@@ -30,6 +30,7 @@ go.work
 .idea
 .vscode
 
-cloudcost-exporter
+# Ignore the compiled binary at root, but not charts/cloudcost-exporter
+/cloudcost-exporter
 
 dist/
