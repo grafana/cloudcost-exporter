@@ -8,7 +8,7 @@ cloudcost-exporter uses [AWS SDK for Go V2](https://docs.aws.amazon.com/sdk-for-
 and supports providing authentication via the [AWS SDK's default credential provider chain](https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html).
 This means that the CloudCost Exporter can be deployed on an EC2 instance, ECS, EKS, or any other AWS service that supports IAM roles for service accounts.
 
-First, create an IAM Policy the minimum required permissions for cloudcost-exporter to work on AWS, an example of which can be found in [./permissions-policy.json](./permissions-policy.json).
+First, create an IAM Policy with the minimum required permissions for cloudcost-exporter to work on AWS. The complete policy can be found in [./permissions-policy.json](./permissions-policy.json).
 
 Next, [create and associate an IAM role for the cloudcost-exporter Service Account](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html).
 
