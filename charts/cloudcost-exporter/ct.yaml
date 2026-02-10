@@ -1,0 +1,7 @@
+---
+chart-dirs:
+  - charts
+chart-repos:
+  - grafana=https://grafana.github.io/helm-charts
+remote: origin
+target-branch: main
