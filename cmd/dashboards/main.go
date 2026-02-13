@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
+	"github.com/grafana/grafana-foundation-sdk/go/resource"
 
 	"github.com/grafana/cloudcost-exporter/cloudcost-exporter-dashboards/dashboards"
 )
@@ -31,17 +33,33 @@ func run(dashes []*dashboard.DashboardBuilder, output *string, outputDir *string
 		if err != nil {
 			return err
 		}
-		data, err := json.MarshalIndent(build, "", "  ")
-		if err != nil {
-			return err
-		}
+
 		if *output == "console" {
+			data, err := json.MarshalIndent(build, "", "  ")
+			if err != nil {
+				return err
+			}
 			fmt.Println(string(data))
 			continue
 		}
 
-		err = os.WriteFile(fmt.Sprintf("%s/%s.json", *outputDir, sluggify(*build.Title)), data, 0644)
+		// Write Grafana App Platform manifest (required by grafanactl resources serve)
+		manifest, err := resource.NewManifestBuilder().
+			ApiVersion("dashboard.grafana.app/v1beta1").
+			Kind("Dashboard").
+			Metadata(resource.NewMetadataBuilder().Name(*build.Title)).
+			Spec(build).
+			Build()
 		if err != nil {
+			return fmt.Errorf("build manifest for %s: %w", *build.Title, err)
+		}
+		data, err := json.MarshalIndent(manifest, "", "  ")
+		if err != nil {
+			return err
+		}
+		slug := sluggify(*build.Title)
+		path := filepath.Join(*outputDir, slug+".json")
+		if err := os.WriteFile(path, data, 0644); err != nil {
 			return err
 		}
 	}
