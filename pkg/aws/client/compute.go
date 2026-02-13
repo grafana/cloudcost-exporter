@@ -56,17 +56,7 @@ func (e *compute) listComputeInstances(ctx context.Context) ([]types.Reservation
 // DISK
 
 func (e *compute) listEBSVolumes(ctx context.Context) ([]types.Volume, error) {
-	params := &awsEc2.DescribeVolumesInput{
-		Filters: []types.Filter{
-			// excludes volumes created from snapshots
-			{
-				Name:   aws.String("snapshot-id"),
-				Values: []string{""},
-			},
-		},
-	}
-
-	pager := awsEc2.NewDescribeVolumesPaginator(e.client, params)
+	pager := awsEc2.NewDescribeVolumesPaginator(e.client, &awsEc2.DescribeVolumesInput{})
 	var volumes []types.Volume
 
 	for pager.HasMorePages() {
