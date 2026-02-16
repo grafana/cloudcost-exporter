@@ -16,10 +16,11 @@ type Config struct {
 			RoleARN  string
 		}
 		GCP struct {
-			DefaultGCSDiscount int
-			Projects           StringSliceFlag
-			Region             string
-			Services           StringSliceFlag
+			DefaultGCSDiscount        int
+			Projects                  StringSliceFlag
+			BucketProjectsDeprecated  bool 
+			Region                    string
+			Services                  StringSliceFlag
 		}
 		Azure struct {
 			Services       StringSliceFlag
