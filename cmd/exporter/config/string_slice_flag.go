@@ -14,8 +14,8 @@ func (f *StringSliceFlag) Set(value string) error {
 }
 
 type DeprecatedStringSliceFlag struct {
-	values   *StringSliceFlag
-	wasUsed  *bool
+	values  *StringSliceFlag
+	wasUsed *bool
 }
 
 func NewDeprecatedStringSliceFlag(values *StringSliceFlag, wasUsed *bool) *DeprecatedStringSliceFlag {
