@@ -255,6 +255,38 @@ func TestListEBSVolumes(t *testing.T) {
 			},
 			expectedCalls: 2,
 		},
+		"includes volumes created from snapshots": {
+			DescribeVolumes: func(ctx context.Context, e *ec2.DescribeVolumesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVolumesOutput, error) {
+				for _, filter := range e.Filters {
+					if filter.Name != nil && *filter.Name == "snapshot-id" {
+						t.Errorf("snapshot-id filter should not be applied, as it excludes volumes created from snapshots")
+					}
+				}
+				return &ec2.DescribeVolumesOutput{
+					Volumes: []types.Volume{
+						{
+							VolumeId:   aws.String("vol-no-snapshot"),
+							SnapshotId: aws.String(""),
+						},
+						{
+							VolumeId:   aws.String("vol-from-snapshot"),
+							SnapshotId: aws.String("snap-1234567890abcdef0"),
+						},
+					},
+				}, nil
+			},
+			expected: []types.Volume{
+				{
+					VolumeId:   aws.String("vol-no-snapshot"),
+					SnapshotId: aws.String(""),
+				},
+				{
+					VolumeId:   aws.String("vol-from-snapshot"),
+					SnapshotId: aws.String("snap-1234567890abcdef0"),
+				},
+			},
+			expectedCalls: 1,
+		},
 	}
 
 	for name, tt := range tests {
