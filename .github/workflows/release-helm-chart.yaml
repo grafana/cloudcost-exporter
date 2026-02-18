@@ -1,5 +1,10 @@
 name: Release Helm Chart
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'charts/cloudcost-exporter/Chart.yaml'
   workflow_dispatch:
 
 env:
