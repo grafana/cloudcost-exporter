@@ -91,8 +91,10 @@ jobs:
             git fetch --tags origin main || true
             git checkout main || true
             
-            # Calculate version for release
-            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            # Calculate version for release - only consider semver tags (vMAJOR.MINOR.PATCH)
+            # to avoid picking up helm chart tags like vcloudcost-exporter-1.1.0
+            LATEST_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+            LATEST_TAG="${LATEST_TAG:-v0.0.0}"
             VERSION="${LATEST_TAG#v}"
             IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
             
