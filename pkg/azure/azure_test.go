@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
@@ -156,13 +157,14 @@ func Test_CollectMetrics(t *testing.T) {
 			if tt.collect != nil {
 				c.EXPECT().Name().Return(tt.collectorName).AnyTimes()
 				c.EXPECT().Collect(gomock.Any(), ch).DoAndReturn(tt.collect).AnyTimes()
-				c.EXPECT().Register(registry).Return(nil).AnyTimes()
+				c.EXPECT().Register(gomock.Any()).Return(nil).AnyTimes()
+				c.EXPECT().Describe(gomock.Any()).Return(nil).AnyTimes()
 			}
-			registry.EXPECT().MustRegister(gomock.Any()).AnyTimes()
 			azure := &Azure{
-				context:    t.Context(),
-				logger:     testLogger,
-				collectors: []provider.Collector{},
+				context:          t.Context(),
+				logger:           testLogger,
+				collectors:       []provider.Collector{},
+				collectorTimeout: 1 * time.Minute,
 			}
 
 			for range tt.numCollectors {
@@ -184,6 +186,7 @@ func Test_CollectMetrics(t *testing.T) {
 				ignoredMetricSuffix := []string{
 					"duration_seconds",
 					"last_scrape_time",
+					"collector_total",
 				}
 				for _, suffix := range ignoredMetricSuffix {
 					if strings.Contains(metricName, suffix) {
@@ -195,6 +198,9 @@ func Test_CollectMetrics(t *testing.T) {
 			}
 			for m := range ch {
 				metric := utils.ReadMetrics(m)
+				if metric == nil { // ReadMetrics can't parse histograms
+					continue
+				}
 				if ignoreMetric(metric.FqName) {
 					continue
 				}

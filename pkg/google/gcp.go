@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/cloudcost-exporter/pkg/gatherer"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/google/cloudsql"
 	"github.com/grafana/cloudcost-exporter/pkg/google/networking"
@@ -193,22 +194,24 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 	wg.Add(len(g.collectors))
 	for _, c := range g.collectors {
 		go func(c provider.Collector) {
-			now := time.Now()
 			defer wg.Done()
-			collectorErrors := 0.0
-			if err := c.Collect(collectCtx, ch); err != nil {
-				g.logger.LogAttrs(context.Background(), slog.LevelError, "Error collecting metrics",
+
+			duration, hasError := gatherer.CollectWithGatherer(collectCtx, c, ch, g.logger)
+
+			if !hasError {
+				g.logger.LogAttrs(context.Background(), slog.LevelInfo, "Collect successful",
 					slog.String("collector", c.Name()),
-					slog.String("message", err.Error()),
+					slog.Duration("duration", time.Duration(duration*float64(time.Second))),
 				)
-				collectorErrors++
 			}
-			g.logger.LogAttrs(context.Background(), slog.LevelInfo, "Collect successful",
-				slog.String("collector", c.Name()),
-				slog.Duration("duration", time.Since(now)),
-			)
+
+			//TODO: remove collectorErrors once we have the new metrics
+			collectorErrors := 0.0
+			if hasError {
+				collectorErrors = 1.0
+			}
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.CounterValue, collectorErrors, subsystem, c.Name())
-			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, time.Since(now).Seconds(), subsystem, c.Name())
+			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, duration, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
 		}(c)
 	}
