@@ -22,6 +22,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Validate tag is semver
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '$TAG' is not a valid semver tag. This workflow only processes image release tags (e.g. v0.21.0). Helm chart tags (e.g. vcloudcost-exporter-1.2.0) are ignored."
+            exit 1
+          fi
+          echo "Tag '$TAG' is valid semver"
+
       - name: Extract version
         id: version
         run: |
