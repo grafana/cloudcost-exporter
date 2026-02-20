@@ -41,7 +41,7 @@ push: build test push-dev
 	docker push $(IMAGE_NAME_LATEST)
 
 grafanactl-serve: check-cli-grafanactl build-dashboards
-	grafanactl dashboards serve --port 8080 ./cloudcost-exporter-dashboards/grafana
+	grafanactl resources serve --port 8080 ./cloudcost-exporter-dashboards/grafana
 
 build-dashboards:
 	go get github.com/grafana/grafana-foundation-sdk/go@latest
