@@ -52,10 +52,11 @@ type Collector struct {
 func New(ctx context.Context, config *Config) *Collector {
 	logger := config.Logger.With("logger", serviceName)
 
-	priceTicker := time.NewTicker(pricingstore.PriceRefreshInterval)
 	pricingStore := pricingstore.NewPricingStore(ctx, logger, config.Regions, config.RegionMap, NATGatewayFilters)
 
 	go func(ctx context.Context) {
+		priceTicker := time.NewTicker(pricingstore.PriceRefreshInterval)
+		defer priceTicker.Stop()
 		for {
 			select {
 			case <-ctx.Done():

@@ -120,11 +120,9 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 	}
 	diskStore := NewDiskStore(ctx, logger, azClientWrapper)
 
-	priceTicker := time.NewTicker(priceRefreshInterval)
-	machineTicker := time.NewTicker(machineRefreshInterval)
-	diskTicker := time.NewTicker(diskRefreshInterval)
-
 	go func(ctx context.Context) {
+		priceTicker := time.NewTicker(priceRefreshInterval)
+		defer priceTicker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
@@ -135,6 +133,8 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 		}
 	}(ctx)
 	go func(ctx context.Context) {
+		machineTicker := time.NewTicker(machineRefreshInterval)
+		defer machineTicker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
@@ -145,6 +145,8 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 		}
 	}(ctx)
 	go func(ctx context.Context) {
+		diskTicker := time.NewTicker(diskRefreshInterval)
+		defer diskTicker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
