@@ -12,7 +12,7 @@
     "graphTooltip": 1,
     "fiscalYearStartMonth": 0,
     "refresh": "30s",
-    "schemaVersion": 41,
+    "schemaVersion": 42,
     "panels": [
       {
         "type": "row",
@@ -492,7 +492,8 @@
           "hide": true,
           "iconColor": "rgba(0, 211, 255, 1)",
           "type": "dashboard",
-          "builtIn": 1
+          "builtIn": 1,
+          "placement": "inControlsMenu"
         }
       ]
     }
