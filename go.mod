@@ -1,6 +1,6 @@
 module github.com/grafana/cloudcost-exporter
 
-go 1.24.0
+go 1.25.0
 
 require (
 	cloud.google.com/go/billing v1.21.0
@@ -31,7 +31,7 @@ require (
 	golang.org/x/sync v0.19.0
 	gomodules.xyz/azure-retail-prices-sdk-for-go v0.0.3
 	google.golang.org/api v0.266.0
-	google.golang.org/genproto v0.0.0-20260203192932-546029d2fa20
+	google.golang.org/genproto v0.0.0-20260217215200-42d3e9bedb6d
 	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/matryer/try.v1 v1.0.0-20150601225556-312d2599e12e
@@ -101,7 +101,7 @@ require (
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260128011058-8636f8732409 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260203192932-546029d2fa20 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260209200024-4cfbd4190f57 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260209200024-4cfbd4190f57 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
