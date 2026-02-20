@@ -15,7 +15,7 @@ This contains a set of Grafana Dashboards that are generated using the [Grafana 
 # Generate dashboard files
 make build-dashboards
 
-# Peview dashboards locally:
+# Preview dashboards locally:
 make grafanactl-serve
 ```
 

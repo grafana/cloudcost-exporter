@@ -86,13 +86,14 @@ func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
 func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
 	logger := config.Logger.With("collector", "forwarding_rule")
 
-	priceTicker := time.NewTicker(PriceRefreshInterval)
 	pm, err := newPricingMap(logger, gcpClient)
 	if err != nil {
 		return nil, err
 	}
 
 	go func() {
+		priceTicker := time.NewTicker(PriceRefreshInterval)
+		defer priceTicker.Stop()
 		for {
 			select {
 			case <-ctx.Done():

@@ -240,9 +240,9 @@ func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collect
 		return nil, err
 	}
 
-	priceTicker := time.NewTicker(PriceRefreshInterval)
-
 	go func() {
+		priceTicker := time.NewTicker(PriceRefreshInterval)
+		defer priceTicker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
