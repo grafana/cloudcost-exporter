@@ -128,10 +128,10 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 	select {
 	case <-ctx.Done():
 		log.LogAttrs(ctx, slog.LevelInfo, "Shutting down server")
-		ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.Timeout)
-		defer cancel()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.Server.Timeout)
+		defer shutdownCancel()
 
-		err := server.Shutdown(ctx)
+		err := server.Shutdown(shutdownCtx)
 		if err != nil {
 			return fmt.Errorf("error shutting down server: %w", err)
 		}
