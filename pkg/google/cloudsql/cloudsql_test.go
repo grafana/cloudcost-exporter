@@ -56,7 +56,7 @@ func newTestGCPClient(t *testing.T, computeHandlers map[string]any, sqlAdminHand
 	sqlAdminService, err := sqladmin.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(sqlAdminSrv.URL))
 	require.NoError(t, err)
 
-	return client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService)
+	return client.NewMock("test-project", nil, catalogClient, computeService, sqlAdminService)
 }
 
 func TestCollector(t *testing.T) {

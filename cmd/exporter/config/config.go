@@ -16,7 +16,6 @@ type Config struct {
 			RoleARN  string
 		}
 		GCP struct {
-			DefaultGCSDiscount       int
 			Projects                 StringSliceFlag
 			BucketProjectsDeprecated bool
 			Region                   string

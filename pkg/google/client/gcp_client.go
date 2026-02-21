@@ -6,7 +6,6 @@ import (
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
-	computeapiv1 "cloud.google.com/go/compute/apiv1"
 	"cloud.google.com/go/storage"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client/cache"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
@@ -17,14 +16,12 @@ import (
 type GCPClient struct {
 	compute  *Compute
 	billing  *Billing
-	regions  *Region
 	bucket   *Bucket
 	sqlAdmin *SQLAdmin
 }
 
 type Config struct {
 	ProjectId string
-	Discount  int
 }
 
 func NewGCPClient(ctx context.Context, cfg Config) (*GCPClient, error) {
@@ -36,11 +33,6 @@ func NewGCPClient(ctx context.Context, cfg Config) (*GCPClient, error) {
 	cloudCatalogClient, err := billingv1.NewCloudCatalogClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error creating cloudCatalogClient: %w", err)
-	}
-
-	regionsClient, err := computeapiv1.NewRegionsRESTClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not create regions client: %w", err)
 	}
 
 	storageClient, err := storage.NewClient(ctx)
@@ -56,7 +48,6 @@ func NewGCPClient(ctx context.Context, cfg Config) (*GCPClient, error) {
 	return &GCPClient{
 		compute:  newCompute(computeService),
 		billing:  newBilling(cloudCatalogClient),
-		regions:  newRegion(cfg.ProjectId, cfg.Discount, regionsClient),
 		bucket:   newBucket(storageClient, cache.NewBucketCache()),
 		sqlAdmin: newSQLAdmin(sqlAdminClient, cfg.ProjectId),
 	}, nil
@@ -64,10 +55,6 @@ func NewGCPClient(ctx context.Context, cfg Config) (*GCPClient, error) {
 
 func (c *GCPClient) GetServiceName(ctx context.Context, serviceName string) (string, error) {
 	return c.billing.getServiceName(ctx, serviceName)
-}
-
-func (c *GCPClient) ExportRegionalDiscounts(ctx context.Context, m *metrics.Metrics) error {
-	return c.regions.exportRegionalDiscounts(ctx, m)
 }
 
 func (c *GCPClient) ExportGCPCostData(ctx context.Context, serviceName string, m *metrics.Metrics) float64 {

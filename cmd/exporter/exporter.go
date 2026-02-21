@@ -80,7 +80,6 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	// TODO - PUT PROJECT-ID UNDER GCP
 	flag.StringVar(&cfg.ProjectID, "project-id", "ops-tools-1203", "Project ID to target.")
 	flag.StringVar(&cfg.Providers.Azure.SubscriptionId, "azure.subscription-id", "", "Azure subscription ID to pull data from.")
-	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
 }
 
 // operationalFlags is a helper method that is responsible for setting up the flags that are used to configure the operational aspects of the application.
@@ -224,7 +223,6 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 			ProjectId:        cfg.ProjectID,
 			Region:           cfg.Providers.GCP.Region,
 			Projects:         cfg.Providers.GCP.Projects.String(),
-			DefaultDiscount:  cfg.Providers.GCP.DefaultGCSDiscount,
 			ScrapeInterval:   cfg.Collector.ScrapeInterval,
 			Services:         strings.Split(cfg.Providers.GCP.Services.String(), ","),
 			CollectorTimeout: collectorTimeout,
