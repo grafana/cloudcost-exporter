@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	cloud.google.com/go/billing v1.21.0
 	cloud.google.com/go/compute v1.54.0
-	cloud.google.com/go/monitoring v1.24.3 // indirect
+	cloud.google.com/go/monitoring v1.24.3
 	cloud.google.com/go/storage v1.59.2
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7 v7.3.0
@@ -33,7 +33,7 @@ require (
 	google.golang.org/api v0.266.0
 	google.golang.org/genproto v0.0.0-20260217215200-42d3e9bedb6d
 	google.golang.org/grpc v1.78.0
-	google.golang.org/protobuf v1.36.11 // indirect
+	google.golang.org/protobuf v1.36.11
 	gopkg.in/matryer/try.v1 v1.0.0-20150601225556-312d2599e12e
 )
 
