@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"regexp"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -33,7 +34,10 @@ func ReadMetrics(metric prometheus.Metric) *MetricResult {
 	for _, l := range m.Label {
 		labels[l.GetName()] = l.GetValue()
 	}
-	fqName := parseFqNameFromMetric(metric.Desc().String())
+	fqName, err := parseFqNameFromMetric(metric.Desc().String())
+	if err != nil {
+		return nil
+	}
 	if m.Gauge != nil {
 		return &MetricResult{
 			FqName:     fqName,
@@ -61,9 +65,13 @@ func ReadMetrics(metric prometheus.Metric) *MetricResult {
 	return nil
 }
 
-func parseFqNameFromMetric(desc string) string {
+func parseFqNameFromMetric(desc string) (string, error) {
 	if desc == "" {
-		return ""
+		return "", nil
 	}
-	return re.FindStringSubmatch(desc)[1]
+	matches := re.FindStringSubmatch(desc)
+	if len(matches) < 2 {
+		return "", fmt.Errorf("no fqName found in metric description: %s", desc)
+	}
+	return matches[1], nil
 }

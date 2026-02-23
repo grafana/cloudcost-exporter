@@ -6,8 +6,9 @@ import (
 
 func Test_parseFqNameFromMetric(t *testing.T) {
 	tests := map[string]struct {
-		arg  string
-		want string
+		arg     string
+		want    string
+		wantErr bool
 	}{
 		"empty metric": {
 			arg:  "",
@@ -21,10 +22,19 @@ func Test_parseFqNameFromMetric(t *testing.T) {
 			arg:  "FqName:\"Desc{fqName: \"cloudcost_exporter_gcp_collector_success\", help: \"Was the last scrape of the GCP metrics successful.\", constLabels: {}, variableLabels: {collector}}\"",
 			want: "cloudcost_exporter_gcp_collector_success",
 		},
+		"no fqName match": {
+			arg:     "some description without an fqName field",
+			want:    "",
+			wantErr: true,
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			if got := parseFqNameFromMetric(tt.arg); got != tt.want {
+			got, err := parseFqNameFromMetric(tt.arg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseFqNameFromMetric() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
 				t.Errorf("parseFqNameFromMetric() = %v, want %v", got, tt.want)
 			}
 		})
