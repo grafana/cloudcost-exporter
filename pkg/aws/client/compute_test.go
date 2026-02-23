@@ -14,34 +14,56 @@ import (
 
 func TestListComputeInstances(t *testing.T) {
 	tests := map[string]struct {
-		ctx               context.Context
-		DescribeInstances func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
-		err               error
-		want              []types.Reservation
-		expectedCalls     int
+		ctx                       context.Context
+		DescribeInstances         func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+		DescribeAvailabilityZones func(ctx context.Context, input *ec2.DescribeAvailabilityZonesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error)
+		err                       error
+		want                      []types.Reservation
+		expectedCalls             int
 	}{
 		"No instance should return nothing": {
 			ctx: t.Context(),
 			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
 				return &ec2.DescribeInstancesOutput{}, nil
 			},
+			DescribeAvailabilityZones: func(ctx context.Context, input *ec2.DescribeAvailabilityZonesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error) {
+				return &ec2.DescribeAvailabilityZonesOutput{
+					AvailabilityZones: []types.AvailabilityZone{
+						{ZoneName: aws.String("us-east-1a")},
+						{ZoneName: aws.String("us-east-1b")},
+					},
+				}, nil
+			},
 			err:           nil,
 			want:          nil,
-			expectedCalls: 1,
+			expectedCalls: 2,
 		},
 		"Single instance should return a single instance": {
 			ctx: t.Context(),
 			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
-				return &ec2.DescribeInstancesOutput{
-					Reservations: []types.Reservation{
-						{
-							Instances: []types.Instance{
-								{
-									InstanceId:   aws.String("i-1234567890abcdef0"),
-									InstanceType: types.InstanceTypeA1Xlarge,
+				// Check which AZ filter is applied and return appropriate instances
+				if len(e.Filters) > 0 && e.Filters[0].Values[0] == "us-east-1a" {
+					return &ec2.DescribeInstancesOutput{
+						Reservations: []types.Reservation{
+							{
+								Instances: []types.Instance{
+									{
+										InstanceId:   aws.String("i-1234567890abcdef0"),
+										InstanceType: types.InstanceTypeA1Xlarge,
+									},
 								},
 							},
 						},
+					}, nil
+				}
+				// Return empty for us-east-1b
+				return &ec2.DescribeInstancesOutput{}, nil
+			},
+			DescribeAvailabilityZones: func(ctx context.Context, input *ec2.DescribeAvailabilityZonesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error) {
+				return &ec2.DescribeAvailabilityZonesOutput{
+					AvailabilityZones: []types.AvailabilityZone{
+						{ZoneName: aws.String("us-east-1a")},
+						{ZoneName: aws.String("us-east-1b")},
 					},
 				}, nil
 			},
@@ -56,12 +78,20 @@ func TestListComputeInstances(t *testing.T) {
 					},
 				},
 			},
-			expectedCalls: 1,
+			expectedCalls: 2,
 		},
 		"Ensure errors propagate": {
 			ctx: t.Context(),
 			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+				// Return error for any AZ
 				return nil, assert.AnError
+			},
+			DescribeAvailabilityZones: func(ctx context.Context, input *ec2.DescribeAvailabilityZonesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error) {
+				return &ec2.DescribeAvailabilityZonesOutput{
+					AvailabilityZones: []types.AvailabilityZone{
+						{ZoneName: aws.String("us-east-1a")},
+					},
+				}, nil
 			},
 			err:           assert.AnError,
 			want:          nil,
@@ -70,14 +100,30 @@ func TestListComputeInstances(t *testing.T) {
 		"NextToken should return multiple instances": {
 			ctx: t.Context(),
 			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
-				if e.NextToken == nil {
+				// Check which AZ filter is applied
+				if len(e.Filters) > 0 && e.Filters[0].Values[0] == "us-east-1a" {
+					// For us-east-1a, return instances with pagination
+					if e.NextToken == nil {
+						return &ec2.DescribeInstancesOutput{
+							NextToken: aws.String("token"),
+							Reservations: []types.Reservation{
+								{
+									Instances: []types.Instance{
+										{
+											InstanceId:   aws.String("i-1234567890abcdef0"),
+											InstanceType: types.InstanceTypeA1Xlarge,
+										},
+									},
+								},
+							},
+						}, nil
+					}
 					return &ec2.DescribeInstancesOutput{
-						NextToken: aws.String("token"),
 						Reservations: []types.Reservation{
 							{
 								Instances: []types.Instance{
 									{
-										InstanceId:   aws.String("i-1234567890abcdef0"),
+										InstanceId:   aws.String("i-1234567890abcdef1"),
 										InstanceType: types.InstanceTypeA1Xlarge,
 									},
 								},
@@ -85,16 +131,14 @@ func TestListComputeInstances(t *testing.T) {
 						},
 					}, nil
 				}
-				return &ec2.DescribeInstancesOutput{
-					Reservations: []types.Reservation{
-						{
-							Instances: []types.Instance{
-								{
-									InstanceId:   aws.String("i-1234567890abcdef0"),
-									InstanceType: types.InstanceTypeA1Xlarge,
-								},
-							},
-						},
+				// Return empty for us-east-1b
+				return &ec2.DescribeInstancesOutput{}, nil
+			},
+			DescribeAvailabilityZones: func(ctx context.Context, input *ec2.DescribeAvailabilityZonesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error) {
+				return &ec2.DescribeAvailabilityZonesOutput{
+					AvailabilityZones: []types.AvailabilityZone{
+						{ZoneName: aws.String("us-east-1a")},
+						{ZoneName: aws.String("us-east-1b")},
 					},
 				}, nil
 			},
@@ -112,19 +156,29 @@ func TestListComputeInstances(t *testing.T) {
 				{
 					Instances: []types.Instance{
 						{
-							InstanceId:   aws.String("i-1234567890abcdef0"),
+							InstanceId:   aws.String("i-1234567890abcdef1"),
 							InstanceType: types.InstanceTypeA1Xlarge,
 						},
 					},
 				},
 			},
-			expectedCalls: 2,
+			expectedCalls: 3,
 		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			client := mocks.NewMockEC2(ctrl)
+
+			// Mock DescribeAvailabilityZones call
+			if tt.DescribeAvailabilityZones != nil {
+				client.EXPECT().
+					DescribeAvailabilityZones(gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(tt.DescribeAvailabilityZones).
+					Times(1)
+			}
+
+			// Mock DescribeInstances calls
 			client.EXPECT().
 				DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).
 				DoAndReturn(tt.DescribeInstances).
