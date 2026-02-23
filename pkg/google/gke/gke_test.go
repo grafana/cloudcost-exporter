@@ -486,8 +486,9 @@ func TestCollector_Collect(t *testing.T) {
 			require.NotNil(t, collector)
 			ch := make(chan prometheus.Metric)
 			go func() {
-				if up := collector.CollectMetrics(ch); up != test.collectResponse {
-					t.Errorf("expected 1, got %v", up)
+				err := collector.Collect(t.Context(), ch)
+				if (err != nil) == (test.collectResponse == 1) {
+					t.Errorf("expected collectResponse=%v, got err=%v", test.collectResponse, err)
 				}
 				close(ch)
 			}()

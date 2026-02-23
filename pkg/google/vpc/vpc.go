@@ -142,15 +142,6 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	return c.collectMetrics(ctx, ch)
 }
 
-// CollectMetrics collects and exports VPC pricing metrics
-// Deprecated: CollectMetrics is deprecated and will be removed in a future release.
-func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
-	if err := c.collectMetrics(context.Background(), ch); err != nil {
-		return 0
-	}
-	return 1
-}
-
 // collectMetrics collects and exports VPC pricing metrics
 func (c *Collector) collectMetrics(ctx context.Context, ch chan<- prometheus.Metric) error {
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Collecting VPC metrics")

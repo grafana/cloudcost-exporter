@@ -168,12 +168,6 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 	}, nil
 }
 
-// CollectMetrics is a no-op function that satisfies the provider.Collector interface.
-// Deprecated: CollectMetrics is deprecated and will be removed in a future release.
-func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
-	return 0
-}
-
 func (c *Collector) getMachinePrices(vmId string) (*MachineSku, error) {
 	vmInfo, err := c.MachineStore.getVmInfoByVmId(vmId)
 	if err != nil {

@@ -140,15 +140,6 @@ func (c *Collector) Register(registry provider.Registry) error {
 	return nil
 }
 
-// CollectMetrics is by `c.Collect` and can likely be refactored directly into `c.Collect`
-// Deprecated: CollectMetrics is deprecated and will be removed in a future release.
-func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
-	if err := c.collectMetrics(context.Background(), ch); err != nil {
-		return 0
-	}
-	return 1
-}
-
 // collectMetrics performs the actual collection work
 func (c *Collector) collectMetrics(ctx context.Context, ch chan<- prometheus.Metric) error {
 	log.Printf("Collecting GCS metrics")

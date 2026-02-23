@@ -282,14 +282,15 @@ cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage"
 				nextScrape: tc.nextScrape,
 				metrics:    NewMetrics(),
 			}
-			up := c.CollectMetrics(nil)
-			require.Equal(t, tc.expectedResponse, up)
+			err := c.Collect(context.Background(), nil)
 			if tc.expectedResponse == 0 {
+				require.Error(t, err)
 				return
 			}
+			require.NoError(t, err)
 
 			r := prometheus.NewPedanticRegistry()
-			err := c.Register(r)
+			err = c.Register(r)
 			assert.NoError(t, err)
 
 			err = testutil.CollectAndCompare(r, strings.NewReader(tc.expectedExposition), tc.metricNames...)
@@ -311,11 +312,11 @@ func TestCollector_MultipleCalls(t *testing.T) {
 			metrics:  NewMetrics(),
 			interval: 1 * time.Hour,
 		}
-		up := c.CollectMetrics(nil)
-		require.Equal(t, 1.0, up)
+		err := c.Collect(context.Background(), nil)
+		require.NoError(t, err)
 
-		up = c.CollectMetrics(nil)
-		require.Equal(t, 1.0, up)
+		err = c.Collect(context.Background(), nil)
+		require.NoError(t, err)
 	})
 	// This tests if the collect method is thread safe. If it fails, then we need to implement a mutex.`
 	t.Run("Test multiple calls to collect method in parallel", func(t *testing.T) {
@@ -362,8 +363,8 @@ func TestCollector_MultipleCalls(t *testing.T) {
 			t.Run(fmt.Sprintf("Test %d", i), func(t *testing.T) {
 				t.Parallel()
 				for j := 0; j < collectCalls; j++ {
-					up := c.CollectMetrics(nil)
-					require.Equal(t, 1.0, up)
+					err := c.Collect(context.Background(), nil)
+					require.NoError(t, err)
 				}
 			})
 		}

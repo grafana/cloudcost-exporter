@@ -79,10 +79,6 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	return nil
 }
 
-func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
-	return 0
-}
-
 func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
 	logger := config.Logger.With("collector", "forwarding_rule")
 

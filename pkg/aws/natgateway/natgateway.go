@@ -125,10 +125,4 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	return nil
 }
 
-// CollectMetrics is a no-op function that satisfies the provider.Collector interface.
-// Deprecated: CollectMetrics is deprecated and will be removed in a future release.
-func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
-	return 0
-}
-
 func (c *Collector) Register(registry provider.Registry) error { return nil }

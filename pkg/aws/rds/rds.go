@@ -66,12 +66,6 @@ func New(config *Config) *Collector {
 	}
 }
 
-// CollectMetrics is a no-op function that satisfies the provider.Collector interface.
-// Deprecated: CollectMetrics is deprecated and will be removed in a future release
-func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
-	return 0
-}
-
 // Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	logger := slog.With("logger", serviceName)
