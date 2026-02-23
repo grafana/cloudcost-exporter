@@ -41,6 +41,26 @@ func (m *MockEC2) EXPECT() *MockEC2MockRecorder {
 	return m.recorder
 }
 
+// DescribeAvailabilityZones mocks base method.
+func (m *MockEC2) DescribeAvailabilityZones(ctx context.Context, input *ec2.DescribeAvailabilityZonesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, input}
+	for _, a := range optFns {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "DescribeAvailabilityZones", varargs...)
+	ret0, _ := ret[0].(*ec2.DescribeAvailabilityZonesOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DescribeAvailabilityZones indicates an expected call of DescribeAvailabilityZones.
+func (mr *MockEC2MockRecorder) DescribeAvailabilityZones(ctx, input any, optFns ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, input}, optFns...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeAvailabilityZones", reflect.TypeOf((*MockEC2)(nil).DescribeAvailabilityZones), varargs...)
+}
+
 // DescribeInstances mocks base method.
 func (m *MockEC2) DescribeInstances(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
 	m.ctrl.T.Helper()
