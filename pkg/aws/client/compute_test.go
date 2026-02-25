@@ -12,6 +12,19 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+func hasAZFilter(filters []types.Filter, az string) bool {
+	for _, f := range filters {
+		if f.Name != nil && *f.Name == "availability-zone" {
+			for _, v := range f.Values {
+				if v == az {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func TestListComputeInstances(t *testing.T) {
 	tests := map[string]struct {
 		ctx                       context.Context
@@ -42,7 +55,7 @@ func TestListComputeInstances(t *testing.T) {
 			ctx: t.Context(),
 			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
 				// Check which AZ filter is applied and return appropriate instances
-				if len(e.Filters) > 0 && e.Filters[0].Values[0] == "us-east-1a" {
+				if hasAZFilter(e.Filters, "us-east-1a") {
 					return &ec2.DescribeInstancesOutput{
 						Reservations: []types.Reservation{
 							{
@@ -101,7 +114,7 @@ func TestListComputeInstances(t *testing.T) {
 			ctx: t.Context(),
 			DescribeInstances: func(ctx context.Context, e *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
 				// Check which AZ filter is applied
-				if len(e.Filters) > 0 && e.Filters[0].Values[0] == "us-east-1a" {
+				if hasAZFilter(e.Filters, "us-east-1a") {
 					// For us-east-1a, return instances with pagination
 					if e.NextToken == nil {
 						return &ec2.DescribeInstancesOutput{

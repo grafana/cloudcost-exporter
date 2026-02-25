@@ -35,14 +35,21 @@ func (e *compute) describeRegions(ctx context.Context, allRegions bool) ([]types
 	return regions.Regions, nil
 }
 
+// runningFilter includes only instances incurring compute costs.
+// "stopping" is included to cover hibernated instances, which are billed during that transition.
+var runningFilter = types.Filter{
+	Name:   aws.String("instance-state-name"),
+	Values: []string{"running", "stopping"},
+}
+
 func (e *compute) listComputeInstances(ctx context.Context) ([]types.Reservation, error) {
 	azs, err := e.getAvailabilityZones(ctx)
 	if err != nil {
-		return e.listComputeInstancesSequential(ctx, nil)
+		return e.listComputeInstancesSequential(ctx, []types.Filter{runningFilter})
 	}
 
 	if len(azs) <= 1 {
-		return e.listComputeInstancesSequential(ctx, nil)
+		return e.listComputeInstancesSequential(ctx, []types.Filter{runningFilter})
 	}
 
 	// Fetch instances from each AZ in parallel to improve performance
@@ -56,6 +63,7 @@ func (e *compute) listComputeInstances(ctx context.Context) ([]types.Reservation
 		az := az
 		eg.Go(func() error {
 			filter := []types.Filter{
+				runningFilter,
 				{
 					Name:   aws.String("availability-zone"),
 					Values: []string{az},
