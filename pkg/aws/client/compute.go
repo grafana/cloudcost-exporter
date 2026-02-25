@@ -35,14 +35,20 @@ func (e *compute) describeRegions(ctx context.Context, allRegions bool) ([]types
 	return regions.Regions, nil
 }
 
+// nonTerminatedFilter excludes terminated and shutting-down instances which have no cost
+var nonTerminatedFilter = types.Filter{
+	Name:   aws.String("instance-state-name"),
+	Values: []string{"pending", "running", "stopping", "stopped"},
+}
+
 func (e *compute) listComputeInstances(ctx context.Context) ([]types.Reservation, error) {
 	azs, err := e.getAvailabilityZones(ctx)
 	if err != nil {
-		return e.listComputeInstancesSequential(ctx, nil)
+		return e.listComputeInstancesSequential(ctx, []types.Filter{nonTerminatedFilter})
 	}
 
 	if len(azs) <= 1 {
-		return e.listComputeInstancesSequential(ctx, nil)
+		return e.listComputeInstancesSequential(ctx, []types.Filter{nonTerminatedFilter})
 	}
 
 	// Fetch instances from each AZ in parallel to improve performance
@@ -56,6 +62,7 @@ func (e *compute) listComputeInstances(ctx context.Context) ([]types.Reservation
 		az := az
 		eg.Go(func() error {
 			filter := []types.Filter{
+				nonTerminatedFilter,
 				{
 					Name:   aws.String("availability-zone"),
 					Values: []string{az},
