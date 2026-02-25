@@ -104,7 +104,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	c.logger.Info("Starting ELB collection")
 
 	if c.shouldScrape() {
-		if err := c.pricingMap.refresh(c.awsRegionClientMap, c.Regions); err != nil {
+		if err := c.pricingMap.refresh(ctx, c.awsRegionClientMap, c.Regions); err != nil {
 			c.logger.Error("Failed to refresh pricing", "error", err)
 			return err
 		}
