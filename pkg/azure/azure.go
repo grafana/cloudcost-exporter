@@ -83,7 +83,7 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 		return nil, err
 	}
 
-	azClientWrapper, err := client.NewAzureClientWrapper(logger, config.SubscriptionId, creds)
+	azClientWrapper, err := client.NewAzureClientWrapper(ctx, logger, config.SubscriptionId, creds)
 	if err != nil {
 		return nil, err
 	}

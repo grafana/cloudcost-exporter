@@ -47,8 +47,7 @@ type DiskPricing struct {
 // DiskStore manages Azure disk inventory and pricing data with background population.
 // Implements chunked pricing strategy to prevent startup hangs while ensuring comprehensive coverage.
 type DiskStore struct {
-	ctx         context.Context         // Parent context for operations
-	logger      *slog.Logger            // Logger with "store=disk" context
+	logger   *slog.Logger            // Logger with "store=disk" context
 	azClient    client.AzureClient      // Azure client for API calls
 	mu          sync.RWMutex            // Protects concurrent access to maps
 	disks       map[string]*Disk        // Disk inventory keyed by disk name
@@ -60,8 +59,7 @@ type DiskStore struct {
 // Disk inventory is populated synchronously (fast), while pricing is loaded in background to prevent startup hangs.
 func NewDiskStore(ctx context.Context, logger *slog.Logger, azClient client.AzureClient) *DiskStore {
 	ds := &DiskStore{
-		ctx:         ctx,
-		logger:      logger.With("store", "disk"),
+		logger:   logger.With("store", "disk"),
 		azClient:    azClient,
 		disks:       make(map[string]*Disk),
 		diskPricing: make(map[string]*DiskPricing),
@@ -200,7 +198,7 @@ func (ds *DiskStore) loadGlobalPricing(ctx context.Context) error {
 }
 
 // GetDiskPricing retrieves pricing for a specific disk based on its SKU, and location.
-func (ds *DiskStore) GetDiskPricing(disk *Disk) (*DiskPricing, error) {
+func (ds *DiskStore) GetDiskPricing(ctx context.Context, disk *Disk) (*DiskPricing, error) {
 	ds.mu.RLock()
 	defer ds.mu.RUnlock()
 
@@ -210,7 +208,7 @@ func (ds *DiskStore) GetDiskPricing(disk *Disk) (*DiskPricing, error) {
 	}
 
 	// Debug: show what we're looking for vs what we have
-	ds.logger.LogAttrs(context.Background(), slog.LevelDebug, "disk pricing lookup failed",
+	ds.logger.LogAttrs(ctx, slog.LevelDebug, "disk pricing lookup failed",
 		slog.String("diskName", disk.Name),
 		slog.String("diskSKU", disk.SKU),
 		slog.Int("diskSize", int(disk.Size)),

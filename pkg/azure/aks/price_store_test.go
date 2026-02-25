@@ -95,7 +95,6 @@ func TestPopulatePriceStore(t *testing.T) {
 
 			p := &PriceStore{
 				logger:             priceStoreTestLogger,
-				context:            t.Context(),
 				azureClientWrapper: mockAzureClient,
 
 				regionMapLock: &sync.RWMutex{},
@@ -194,7 +193,7 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 
 	for name, test := range testTable {
 		t.Run(name, func(t *testing.T) {
-			price, err := fakePriceStore.getPriceInfoFromVmInfo(test.vmInfo)
+			price, err := fakePriceStore.getPriceInfoFromVmInfo(t.Context(), test.vmInfo)
 			if test.expectedErr != nil {
 				assert.Equal(t, test.expectedErr, err)
 			} else {

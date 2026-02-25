@@ -99,8 +99,7 @@ var (
 // Collector is a prometheus collector that collects cost metrics from AKS clusters.
 // Provides comprehensive cost tracking for both virtual machines and persistent volumes.
 type Collector struct {
-	context context.Context
-	logger  *slog.Logger
+	logger *slog.Logger
 
 	PriceStore   *PriceStore   // VM pricing data store
 	MachineStore *MachineStore // VM inventory store
@@ -159,8 +158,7 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 	}(ctx)
 
 	return &Collector{
-		context: ctx,
-		logger:  logger,
+		logger: logger,
 
 		PriceStore:   priceStore,
 		MachineStore: machineStore,
@@ -168,13 +166,13 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 	}, nil
 }
 
-func (c *Collector) getMachinePrices(vmId string) (*MachineSku, error) {
+func (c *Collector) getMachinePrices(ctx context.Context, vmId string) (*MachineSku, error) {
 	vmInfo, err := c.MachineStore.getVmInfoByVmId(vmId)
 	if err != nil {
 		return nil, err
 	}
 
-	prices, err := c.PriceStore.getPriceInfoFromVmInfo(vmInfo)
+	prices, err := c.PriceStore.getPriceInfoFromVmInfo(ctx, vmInfo)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", err, ErrVmPriceRetrievalFailure)
 	}
@@ -192,7 +190,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	machineMetricsCount := 0
 	for _, vmInfo := range machineList {
 		vmId := vmInfo.Id
-		price, err := c.getMachinePrices(vmId)
+		price, err := c.getMachinePrices(ctx, vmId)
 		if err != nil {
 			c.logger.LogAttrs(ctx, slog.LevelWarn, "failed to get machine pricing, skipping VM metric",
 				slog.String("vmId", vmId),
@@ -220,7 +218,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	// Collect Azure Managed Disk metrics for all persistent volumes
 	allDisks := c.DiskStore.GetAllDisks()
 	for _, disk := range allDisks {
-		diskPricing, err := c.DiskStore.GetDiskPricing(disk)
+		diskPricing, err := c.DiskStore.GetDiskPricing(ctx, disk)
 		if err != nil {
 			c.logger.LogAttrs(ctx, slog.LevelWarn, "failed to get disk pricing",
 				slog.String("disk", disk.Name),
@@ -284,6 +282,6 @@ func (c *Collector) Name() string {
 }
 
 func (c *Collector) Register(_ provider.Registry) error {
-	c.logger.LogAttrs(c.context, slog.LevelInfo, "registering collector")
+	c.logger.LogAttrs(context.Background(), slog.LevelInfo, "registering collector")
 	return nil
 }

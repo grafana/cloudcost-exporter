@@ -63,8 +63,7 @@ type VirtualMachineInfo struct {
 }
 
 type MachineStore struct {
-	context context.Context
-	logger  *slog.Logger
+	logger *slog.Logger
 
 	azClientWrapper client.AzureClient
 
@@ -79,8 +78,7 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, azCli
 	logger := parentLogger.With("subsystem", "machineStore")
 
 	ms := &MachineStore{
-		context: parentCtx,
-		logger:  logger,
+		logger: logger,
 
 		azClientWrapper: azClientWrapper,
 
@@ -213,7 +211,7 @@ func (m *MachineStore) getVMSSInfoFromResourceGroup(ctx context.Context, rgName,
 		vmssInfo[vmssName] = vmss
 	}
 
-	m.logger.LogAttrs(m.context, slog.LevelDebug, "finished collecting VMSS",
+	m.logger.LogAttrs(ctx, slog.LevelDebug, "finished collecting VMSS",
 		slog.Int("numOfVmss", len(vmssInfo)),
 		slog.String("resourceGroup", rgName),
 		slog.String("cluster", clusterName),
@@ -229,7 +227,7 @@ func (m *MachineStore) getClustersInSubscription(ctx context.Context) ([]*armcon
 		return nil, err
 	}
 
-	m.logger.LogAttrs(m.context, slog.LevelDebug, "found clusters", slog.Int("numOfClusters", len(clusterList)))
+	m.logger.LogAttrs(ctx, slog.LevelDebug, "found clusters", slog.Int("numOfClusters", len(clusterList)))
 	return clusterList, nil
 }
 
@@ -251,7 +249,7 @@ func (m *MachineStore) getMachineTypesByLocation(ctx context.Context, location s
 		sizeId := to.String(v.Name)
 
 		m.MachineSizeMap[location][sizeId] = v
-		m.logger.LogAttrs(m.context, slog.LevelDebug, "found machine size",
+		m.logger.LogAttrs(ctx, slog.LevelDebug, "found machine size",
 			slog.String("machineSizeMapRegion", location),
 			slog.String("sizeId", sizeId),
 		)
@@ -310,7 +308,7 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) {
 
 	err = machineSizesEg.Wait()
 	if err != nil {
-		m.logger.LogAttrs(m.context, slog.LevelError, "Error populating machine sizes", slog.String("err", err.Error()))
+		m.logger.LogAttrs(ctx, slog.LevelError, "Error populating machine sizes", slog.String("err", err.Error()))
 		return
 	}
 
@@ -365,12 +363,12 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) {
 
 	err = machineInstancesEg.Wait()
 	if err != nil {
-		m.logger.LogAttrs(m.context, slog.LevelError, "Error populating Machine Store", slog.String("err", err.Error()))
+		m.logger.LogAttrs(ctx, slog.LevelError, "Error populating Machine Store", slog.String("err", err.Error()))
 		return
 	}
 
 	m.MachineMap = vmInfoMap
-	m.logger.LogAttrs(m.context, slog.LevelInfo, "machine store populated",
+	m.logger.LogAttrs(ctx, slog.LevelInfo, "machine store populated",
 		slog.Int("numOfMachines", len(m.MachineMap)),
 		slog.Int("numOfClusters", len(clusterList)),
 	)
