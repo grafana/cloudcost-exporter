@@ -92,7 +92,8 @@ func (c *Collector) Describe(_ chan<- *prometheus.Desc) error {
 }
 
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
-	return c.collectMetrics(ctx, ch)
+func (c *Collector) Collect(ctx context.Context, _ chan<- prometheus.Metric) error {
+return c.collectMetrics(ctx)
 }
 
 type Config struct {
