@@ -2,7 +2,6 @@ package s3
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -76,11 +75,23 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 }
 
 // Collect is the function that will be called by the Prometheus client anytime a scrape is performed.
-func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
-	up := c.CollectMetrics(ch)
-	if up == 0 {
-		return fmt.Errorf("error collecting metrics")
+func (c *Collector) Collect(ctx context.Context, _ chan<- prometheus.Metric) error {
+	c.m.Lock()
+	defer c.m.Unlock()
+	now := time.Now()
+	if c.billingData == nil || now.After(c.nextScrape) {
+		endDate := time.Now().AddDate(0, 0, -1)
+		startDate := endDate.AddDate(0, 0, -30)
+		billingData, err := c.client.GetBillingData(ctx, startDate, endDate)
+		if err != nil {
+			log.Printf("Error getting billing data: %v\n", err)
+			return err
+		}
+		c.billingData = billingData
+		c.nextScrape = time.Now().Add(c.interval)
+		c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
 	}
+	exportMetrics(c.billingData, c.metrics)
 	return nil
 }
 
@@ -108,30 +119,6 @@ func (c *Collector) Register(registry provider.Registry) error {
 	registry.MustRegister(c.client.Metrics()...)
 
 	return nil
-}
-
-// CollectMetrics is the function that will be called by the Prometheus client anytime a scrape is performed.
-func (c *Collector) CollectMetrics(_ chan<- prometheus.Metric) float64 {
-	c.m.Lock()
-	defer c.m.Unlock()
-	now := time.Now()
-	// :fire: Checking scrape interval is to _mitigate_ expensive API calls to the cost explorer API
-	if c.billingData == nil || now.After(c.nextScrape) {
-		endDate := time.Now().AddDate(0, 0, -1)
-		// Current assumption is that we're going to pull 30 days worth of billing data
-		startDate := endDate.AddDate(0, 0, -30)
-		billingData, err := c.client.GetBillingData(context.Background(), startDate, endDate)
-		if err != nil {
-			log.Printf("Error getting billing data: %v\n", err)
-			return 0
-		}
-		c.billingData = billingData
-		c.nextScrape = time.Now().Add(c.interval)
-		c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
-	}
-
-	exportMetrics(c.billingData, c.metrics)
-	return 1.0
 }
 
 // exportMetrics will iterate over the S3BillingData and export the metrics to prometheus

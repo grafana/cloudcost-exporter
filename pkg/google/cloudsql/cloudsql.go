@@ -105,10 +105,6 @@ func (c *Collector) Register(registry provider.Registry) error {
 	return nil
 }
 
-func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
-	return 0
-}
-
 func (c *Collector) getAllCloudSQL(ctx context.Context) ([]*sqladmin.DatabaseInstance, error) {
 	var allCloudSQLInfo = []*sqladmin.DatabaseInstance{}
 	seenInstances := make(map[string]bool)

@@ -65,15 +65,6 @@ func (c *Collector) Register(_ provider.Registry) error {
 	return nil
 }
 
-func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
-	err := c.Collect(context.Background(), ch)
-	if err != nil {
-		c.logger.Error("failed to collect metrics", slog.String("msg", err.Error()))
-		return 0
-	}
-	return 1
-}
-
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	for _, project := range c.projects {
 		zones, err := c.gcpClient.GetZones(project)

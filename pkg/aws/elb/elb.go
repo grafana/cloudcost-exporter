@@ -149,15 +149,6 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	return nil
 }
 
-func (c *Collector) CollectMetrics(ch chan<- prometheus.Metric) float64 {
-	err := c.Collect(context.Background(), ch)
-	if err != nil {
-		c.logger.Error("Failed to collect metrics", "error", err)
-		return 0
-	}
-	return 1
-}
-
 func (c *Collector) Name() string {
 	return subsystem
 }

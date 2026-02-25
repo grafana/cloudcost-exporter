@@ -271,8 +271,8 @@ func TestCollector_Collect(t *testing.T) {
 	assert.NotNil(t, collector)
 
 	ch := make(chan prometheus.Metric)
-	up := collector.CollectMetrics(ch)
-	assert.Equal(t, 1.0, up)
+	err = collector.Collect(context.Background(), ch)
+	assert.NoError(t, err)
 
 	r := prometheus.NewPedanticRegistry()
 	err = collector.Register(r)
