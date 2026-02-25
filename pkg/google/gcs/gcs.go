@@ -141,7 +141,7 @@ func (c *Collector) Register(registry provider.Registry) error {
 }
 
 // collectMetrics performs the actual collection work
-func (c *Collector) collectMetrics(ctx context.Context, ch chan<- prometheus.Metric) error {
+func (c *Collector) collectMetrics(ctx context.Context) error {
 	log.Printf("Collecting GCS metrics")
 	now := time.Now()
 
