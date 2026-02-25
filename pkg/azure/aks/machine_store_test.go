@@ -27,8 +27,7 @@ func TestPopulateMachineStore(t *testing.T) {
 
 	newFakeMachineStore := func(t *testing.T, cli client.AzureClient) *MachineStore {
 		return &MachineStore{
-			context: t.Context(),
-			logger:  machineStoreTestLogger,
+			logger: machineStoreTestLogger,
 
 			azClientWrapper: cli,
 

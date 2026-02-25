@@ -64,8 +64,7 @@ type PriceByOperatingSystem map[MachineOperatingSystem]PriceBySku
 type PriceByPriority map[MachinePriority]PriceByOperatingSystem
 
 type PriceStore struct {
-	logger  *slog.Logger
-	context context.Context
+	logger *slog.Logger
 
 	azureClientWrapper client.AzureClient
 
@@ -78,7 +77,6 @@ func NewPricingStore(ctx context.Context, parentLogger *slog.Logger, azClientWra
 
 	p := &PriceStore{
 		logger:             logger,
-		context:            ctx,
 		azureClientWrapper: azClientWrapper,
 
 		regionMapLock: &sync.RWMutex{},
@@ -91,10 +89,10 @@ func NewPricingStore(ctx context.Context, parentLogger *slog.Logger, azClientWra
 	return p
 }
 
-func (p *PriceStore) getPriceBreakdownFromVmInfo(vmInfo *VirtualMachineInfo, price float64) *MachinePrices {
+func (p *PriceStore) getPriceBreakdownFromVmInfo(ctx context.Context, vmInfo *VirtualMachineInfo, price float64) *MachinePrices {
 	ratio, ok := cpuToCostRatio[vmInfo.MachineFamily]
 	if !ok {
-		p.logger.LogAttrs(p.context, slog.LevelInfo, "no ratio found for instance type, using default",
+		p.logger.LogAttrs(ctx, slog.LevelInfo, "no ratio found for instance type, using default",
 			slog.String("instanceType", vmInfo.MachineTypeSku),
 			slog.String("instanceFamily", vmInfo.MachineFamily),
 		)
@@ -107,7 +105,7 @@ func (p *PriceStore) getPriceBreakdownFromVmInfo(vmInfo *VirtualMachineInfo, pri
 	}
 }
 
-func (p *PriceStore) getPriceInfoFromVmInfo(vmInfo *VirtualMachineInfo) (*MachineSku, error) {
+func (p *PriceStore) getPriceInfoFromVmInfo(ctx context.Context, vmInfo *VirtualMachineInfo) (*MachineSku, error) {
 	p.regionMapLock.RLock()
 	defer p.regionMapLock.RUnlock()
 
@@ -122,36 +120,36 @@ func (p *PriceStore) getPriceInfoFromVmInfo(vmInfo *VirtualMachineInfo) (*Machin
 	sku := vmInfo.MachineTypeSku
 
 	if len(region) == 0 || len(sku) == 0 {
-		p.logger.LogAttrs(p.context, slog.LevelError, "region or sku not defined", slog.String("region", region), slog.String("sku", sku), slog.String("vmInfo", fmt.Sprintf("%+v", vmInfo)))
+		p.logger.LogAttrs(ctx, slog.LevelError, "region or sku not defined", slog.String("region", region), slog.String("sku", sku), slog.String("vmInfo", fmt.Sprintf("%+v", vmInfo)))
 		return nil, ErrPriceInformationNotFound
 	}
 
 	rMap := p.RegionMap[region]
 	if rMap == nil {
-		p.logger.LogAttrs(p.context, slog.LevelError, "region not found in price map", slog.String("region", region))
+		p.logger.LogAttrs(ctx, slog.LevelError, "region not found in price map", slog.String("region", region))
 		return nil, ErrPriceInformationNotFound
 	}
 
 	pMap := rMap[priority]
 	if pMap == nil {
-		p.logger.LogAttrs(p.context, slog.LevelError, "priority not found in region map", slog.String("region", region), slog.String("priority", priority.String()), slog.String("vmInfo", fmt.Sprintf("%+v", vmInfo)))
+		p.logger.LogAttrs(ctx, slog.LevelError, "priority not found in region map", slog.String("region", region), slog.String("priority", priority.String()), slog.String("vmInfo", fmt.Sprintf("%+v", vmInfo)))
 		return nil, ErrPriceInformationNotFound
 	}
 
 	osMap := pMap[operatingSystem]
 	if osMap == nil {
-		p.logger.LogAttrs(p.context, slog.LevelError, "os map not found in priority map", slog.String("os", operatingSystem.String()), slog.String("vmInfo", fmt.Sprintf("%+v", vmInfo)))
+		p.logger.LogAttrs(ctx, slog.LevelError, "os map not found in priority map", slog.String("os", operatingSystem.String()), slog.String("vmInfo", fmt.Sprintf("%+v", vmInfo)))
 		return nil, ErrPriceInformationNotFound
 	}
 
 	machineSku := osMap[sku]
 	if machineSku == nil {
-		p.logger.LogAttrs(p.context, slog.LevelError, "sku info not found in os map", slog.String("sku", sku), slog.String("vmInfo", fmt.Sprintf("%+v", vmInfo)))
+		p.logger.LogAttrs(ctx, slog.LevelError, "sku info not found in os map", slog.String("sku", sku), slog.String("vmInfo", fmt.Sprintf("%+v", vmInfo)))
 		return nil, ErrPriceInformationNotFound
 	}
 
 	if machineSku.MachinePricesBreakdown == nil {
-		prices := p.getPriceBreakdownFromVmInfo(vmInfo, float64(machineSku.RetailPrice))
+		prices := p.getPriceBreakdownFromVmInfo(ctx, vmInfo, float64(machineSku.RetailPrice))
 		machineSku.MachinePricesBreakdown = prices
 	}
 

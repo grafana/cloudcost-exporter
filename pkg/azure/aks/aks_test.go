@@ -324,7 +324,7 @@ func TestGetMachinePrices(t *testing.T) {
 			fakeAksCollector.MachineStore = tc.machineStore
 			fakeAksCollector.PriceStore = tc.priceStore
 
-			prices, err := fakeAksCollector.getMachinePrices(tc.vmId)
+			prices, err := fakeAksCollector.getMachinePrices(t.Context(), tc.vmId)
 			if tc.expectedErr != nil {
 				assert.ErrorIs(t, err, tc.expectedErr)
 			}

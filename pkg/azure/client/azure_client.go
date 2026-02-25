@@ -31,9 +31,7 @@ type AzClientWrapper struct {
 	retailPricesClient *retailPriceSdk.RetailPricesClient
 }
 
-func NewAzureClientWrapper(logger *slog.Logger, subscriptionId string, credentials *azidentity.DefaultAzureCredential) (*AzClientWrapper, error) {
-	ctx := context.TODO()
-
+func NewAzureClientWrapper(ctx context.Context, logger *slog.Logger, subscriptionId string, credentials *azidentity.DefaultAzureCredential) (*AzClientWrapper, error) {
 	computeClientFactory, err := armcompute.NewClientFactory(subscriptionId, credentials, nil)
 	if err != nil {
 		logger.LogAttrs(ctx, slog.LevelError, "unable to create compute client factory", slog.String("err", err.Error()))
