@@ -299,7 +299,7 @@ func createAWSConfig(ctx context.Context, region, profile, roleARN string) (aws.
 	}
 
 	if roleARN != "" {
-		role, err := assumeRole(roleARN, optionsFunc)
+		role, err := assumeRole(ctx, roleARN, optionsFunc)
 		if err != nil {
 			return aws.Config{}, err
 		}
@@ -309,9 +309,9 @@ func createAWSConfig(ctx context.Context, region, profile, roleARN string) (aws.
 	return awsconfig.LoadDefaultConfig(ctx, optionsFunc...)
 }
 
-func assumeRole(roleARN string, options []func(*awsconfig.LoadOptions) error) (awsconfig.LoadOptionsFunc, error) {
+func assumeRole(ctx context.Context, roleARN string, options []func(*awsconfig.LoadOptions) error) (awsconfig.LoadOptionsFunc, error) {
 	// Add the credentials to assume the role specified in config.RoleARN
-	ac, err := awsconfig.LoadDefaultConfig(context.Background(), options...)
+	ac, err := awsconfig.LoadDefaultConfig(ctx, options...)
 	if err != nil {
 		return nil, err
 	}

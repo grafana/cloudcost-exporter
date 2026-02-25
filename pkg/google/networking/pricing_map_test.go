@@ -132,7 +132,7 @@ func TestNewPricingMap_PopulateSuccess(t *testing.T) {
 
 	gcpClient := &stubClient{skus: []*billingpb.Sku{frSku, inSku, outSku}}
 
-	pm, err := newPricingMap(testLogger, gcpClient)
+	pm, err := newPricingMap(context.Background(), testLogger, gcpClient)
 	require.NoError(t, err)
 
 	price, err := pm.GetCostOfForwardingRule("us-west1")
@@ -150,7 +150,7 @@ func TestNewPricingMap_PopulateSuccess(t *testing.T) {
 func TestNewPricingMap_ErrorNoSKUs(t *testing.T) {
 	gcpClient := &stubClient{skus: []*billingpb.Sku{}}
 
-	pm, err := newPricingMap(testLogger, gcpClient)
+	pm, err := newPricingMap(context.Background(), testLogger, gcpClient)
 	require.Nil(t, pm)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrNoSKUsFoundForNetworkingService)

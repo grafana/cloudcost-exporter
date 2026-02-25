@@ -82,7 +82,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
 	logger := config.Logger.With("collector", "forwarding_rule")
 
-	pm, err := newPricingMap(logger, gcpClient)
+	pm, err := newPricingMap(ctx, logger, gcpClient)
 	if err != nil {
 		return nil, err
 	}

@@ -62,14 +62,14 @@ type pricingMap struct {
 	mu        sync.RWMutex
 }
 
-func newPricingMap(logger *slog.Logger, gcpClient client.Client) (*pricingMap, error) {
+func newPricingMap(ctx context.Context, logger *slog.Logger, gcpClient client.Client) (*pricingMap, error) {
 	pm := &pricingMap{
 		pricing:   make(map[string]*pricing),
 		logger:    logger,
 		gcpClient: gcpClient,
 	}
 
-	if err := pm.populate(context.Background()); err != nil {
+	if err := pm.populate(ctx); err != nil {
 		return nil, err
 	}
 	return pm, nil
