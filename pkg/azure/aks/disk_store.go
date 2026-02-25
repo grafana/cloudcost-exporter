@@ -47,7 +47,7 @@ type DiskPricing struct {
 // DiskStore manages Azure disk inventory and pricing data with background population.
 // Implements chunked pricing strategy to prevent startup hangs while ensuring comprehensive coverage.
 type DiskStore struct {
-	logger   *slog.Logger            // Logger with "store=disk" context
+	logger      *slog.Logger            // Logger with "store=disk" context
 	azClient    client.AzureClient      // Azure client for API calls
 	mu          sync.RWMutex            // Protects concurrent access to maps
 	disks       map[string]*Disk        // Disk inventory keyed by disk name
@@ -59,7 +59,7 @@ type DiskStore struct {
 // Disk inventory is populated synchronously (fast), while pricing is loaded in background to prevent startup hangs.
 func NewDiskStore(ctx context.Context, logger *slog.Logger, azClient client.AzureClient) *DiskStore {
 	ds := &DiskStore{
-		logger:   logger.With("store", "disk"),
+		logger:      logger.With("store", "disk"),
 		azClient:    azClient,
 		disks:       make(map[string]*Disk),
 		diskPricing: make(map[string]*DiskPricing),
