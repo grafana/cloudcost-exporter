@@ -16,7 +16,7 @@ func main() {
 	options := []func(*config.LoadOptions) error{config.WithEC2IMDSRegion()}
 	options = append(options, config.WithRegion("us-east-2"))
 	options = append(options, config.WithSharedConfigProfile(os.Getenv("AWS_PROFILE")))
-	cfg, err := config.LoadDefaultConfig(context.TODO(), options...)
+	cfg, err := config.LoadDefaultConfig(context.Background(), options...)
 	if err != nil {
 		log.Fatalf("unable to load SDK config, %v", err)
 	}
@@ -35,7 +35,7 @@ func main() {
 		EndTime:   &endTime,
 	}
 	for {
-		resp, err := client.DescribeSpotPriceHistory(context.TODO(), sphi)
+		resp, err := client.DescribeSpotPriceHistory(context.Background(), sphi)
 		if err != nil {
 			break
 		}
