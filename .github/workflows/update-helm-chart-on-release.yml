@@ -1,0 +1,77 @@
+name: Update Helm Chart on Release
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+jobs:
+  update-helm-chart:
+    # Only run for semver app releases (e.g. v0.26.0), not helm chart tags (e.g. vcloudcost-exporter-1.1.0)
+    if: startsWith(github.event.release.tag_name, 'v') && !startsWith(github.event.release.tag_name, 'vcloudcost-exporter-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - name: Validate tag is semver
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '$TAG' is not a valid semver tag (expected vMAJOR.MINOR.PATCH). Skipping."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install yq
+        env:
+          YQ_VERSION: v4.44.3
+          YQ_SHA256: a2c097180dd884a8d50c956ee16a9cec070f30a7947cf4ebf87d5f36213e9ed7
+        run: |
+          wget -qO /tmp/yq \
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
+          echo "${YQ_SHA256}  /tmp/yq" | sha256sum -c
+          sudo mv /tmp/yq /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Update Chart.yaml
+        id: update-versions
+        env:
+          APP_VERSION: ${{ github.event.release.tag_name }}
+        run: |
+          APP_VERSION="${APP_VERSION#v}"
+
+          yq -i ".appVersion = \"${APP_VERSION}\"" charts/cloudcost-exporter/Chart.yaml
+          yq -i '.version |= (split(".") | .[2] = (.[2] | tonumber + 1 | tostring) | join("."))' charts/cloudcost-exporter/Chart.yaml
+
+          echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "chart_version=$(yq '.version' charts/cloudcost-exporter/Chart.yaml)" >> "$GITHUB_OUTPUT"
+
+      - name: Get GitHub App token
+        id: get-github-app-token
+        uses: grafana/shared-workflows/actions/create-github-app-token@7c748d77ca1ccc01af4281ea72c7ec9d2b3d9129 # create-github-app-token/v0.1.0
+        with:
+          github_app: github-app
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
+        with:
+          token: ${{ steps.get-github-app-token.outputs.github_token }}
+          branch: helm-chart/update-to-${{ steps.update-versions.outputs.app_version }}
+          delete-branch: true
+          base: main
+          commit-message: "Update Helm chart appVersion to ${{ steps.update-versions.outputs.app_version }}"
+          title: "Update Helm chart to appVersion ${{ steps.update-versions.outputs.app_version }}"
+          body: |
+            Automated update triggered by release [${{ github.event.release.tag_name }}](${{ github.event.release.html_url }}).
+
+            - `appVersion`: updated to `${{ steps.update-versions.outputs.app_version }}`
+            - `version`: bumped to `${{ steps.update-versions.outputs.chart_version }}`
+
+            Once merged, the [Release Helm Chart](https://github.com/grafana/cloudcost-exporter/actions/workflows/release-helm-chart.yaml) workflow will publish the updated Helm chart.
