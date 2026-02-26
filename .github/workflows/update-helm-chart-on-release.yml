@@ -17,8 +17,9 @@ jobs:
       pull-requests: write
     steps:
       - name: Validate tag is semver
+        env:
+          TAG: ${{ github.event.release.tag_name }}
         run: |
-          TAG="${{ github.event.release.tag_name }}"
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::Tag '$TAG' is not a valid semver tag (expected vMAJOR.MINOR.PATCH). Skipping."
             exit 1
