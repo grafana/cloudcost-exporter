@@ -2,7 +2,7 @@ package s3
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -84,7 +84,7 @@ func (c *Collector) Collect(ctx context.Context, _ chan<- prometheus.Metric) err
 		startDate := endDate.AddDate(0, 0, -30)
 		billingData, err := c.client.GetBillingData(ctx, startDate, endDate)
 		if err != nil {
-			log.Printf("Error getting billing data: %v\n", err)
+			slog.Error("Error getting billing data", "error", err)
 			return err
 		}
 		c.billingData = billingData
@@ -123,7 +123,7 @@ func (c *Collector) Register(registry provider.Registry) error {
 
 // exportMetrics will iterate over the S3BillingData and export the metrics to prometheus
 func exportMetrics(s3BillingData *client.BillingData, m Metrics) {
-	log.Printf("Exporting metrics for %d regions\n", len(s3BillingData.Regions))
+	slog.Info("Exporting metrics", "regions", len(s3BillingData.Regions))
 	for region, pricingModel := range s3BillingData.Regions {
 		for component, pricing := range pricingModel.Model {
 			switch component {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
@@ -79,17 +79,17 @@ func (b *Billing) exportBilling(ctx context.Context, serviceName string, m *metr
 				continue // to skip "Unknown sku"
 			}
 			if err := parseStorageSku(sku, m); err != nil {
-				log.Printf("error parsing storage sku: %v", err)
+				slog.Error("error parsing storage sku", "error", err)
 			}
 			continue
 		}
 		if strings.HasSuffix(sku.Category.ResourceGroup, "Ops") {
 			if err := parseOpSku(sku, m); err != nil {
-				log.Printf("error parsing op sku: %v", err)
+				slog.Error("error parsing op sku", "error", err)
 			}
 			continue
 		}
-		log.Printf("Unknown sku: %s\n", sku.Description)
+		slog.Warn("Unknown sku", "description", sku.Description)
 	}
 	return 1.0
 }
@@ -104,7 +104,7 @@ func (b *Billing) getPricing(ctx context.Context, serviceName string) []*billing
 			if errors.Is(err, iterator.Done) {
 				break
 			}
-			log.Println(err) // keep going if we get an error
+			slog.Error("error iterating SKUs, continuing", "error", err)
 		}
 		skus = append(skus, sku)
 	}

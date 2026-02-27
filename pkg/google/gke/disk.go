@@ -2,7 +2,7 @@ package gke
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
@@ -47,7 +47,7 @@ func NewDisk(disk *compute.Disk, project string) *Disk {
 	}
 	err := extractLabelsFromDesc(disk.Description, d.description)
 	if err != nil {
-		log.Printf("error extracting labels from disk(%s) description: %v", d.Name(), err)
+		slog.Error("error extracting labels from disk description", "disk", d.Name(), "error", err)
 	}
 	return d
 }

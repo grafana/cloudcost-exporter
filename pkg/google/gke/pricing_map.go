@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -270,11 +270,11 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 					}
 				}
 				if storageClass == "" {
-					log.Printf("Storage class not found for %s. Skipping", data.Description)
+					slog.Warn("Storage class not found, skipping", "description", data.Description)
 					continue
 				}
 				if strings.Contains(data.Description, "Confidential") {
-					log.Printf("Storage class contains Confidential: %s\n%s\n", storageClass, data.Description)
+					slog.Info("Storage class contains Confidential, skipping", "storageClass", storageClass, "description", data.Description)
 					continue
 				}
 				// First time seen, need to initialize the StoragePrices for the storageClass
@@ -282,7 +282,7 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 					pm.storage[data.Region].Storage[storageClass] = &StoragePrices{}
 				}
 				if pm.storage[data.Region].Storage[storageClass].ProvisionedSpaceGiB != 0.0 {
-					log.Printf("Storage class %s already exists in region %s", storageClass, data.Region)
+					slog.Warn("Storage class already exists in region", "storageClass", storageClass, "region", data.Region)
 					continue
 				}
 				// Switch statement must go here to handle hyperdisk cases, otherwise what's happening is

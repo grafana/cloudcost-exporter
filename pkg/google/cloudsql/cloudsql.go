@@ -2,7 +2,6 @@ package cloudsql
 
 import (
 	"context"
-	"log"
 	"log/slog"
 	"strings"
 	"time"
@@ -101,7 +100,7 @@ func (c *Collector) Name() string {
 }
 
 func (c *Collector) Register(registry provider.Registry) error {
-	log.Printf("Registering CloudSQL metrics")
+	c.logger.Info("Registering CloudSQL metrics")
 	return nil
 }
 

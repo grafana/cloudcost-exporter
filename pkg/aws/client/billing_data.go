@@ -2,7 +2,7 @@ package client
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
@@ -115,7 +115,7 @@ func unitCostForComponent(component string, pricing *Pricing) float64 {
 	// If the usage is 0, we don't want to divide by 0 which would result in NaN metrics _or_ +Inf
 	// TODO: Assess if we should return the pricing.Cost instead
 	if pricing.Usage == 0 {
-		log.Printf("Usage is 0 for component: %s\n", component)
+		slog.Warn("Usage is 0 for component", "component", component)
 		return 0
 	}
 
