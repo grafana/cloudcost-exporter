@@ -14,65 +14,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// @pokom purposefully left out three discounts that don't fit:
-// 1. Region Standard Tagging Class A Operations
-// 2. Region Standard Tagging Class B Operations
-// 3. Duplicated Regional Standard Class B Operations
-// Filter on `Service Description: storage` and `Sku Description: operations`
-// TODO: Pull this data directly from BigQuery
-var operationsDiscountMap = map[string]map[string]map[string]float64{
-	"region": {
-		"archive": {
-			"class-a": 0.190,
-			"class-b": 0.190,
-		},
-		"coldline": {
-			"class-a": 0.595,
-			"class-b": 0.190,
-		},
-		"nearline": {
-			"class-a": 0.190,
-			"class-b": 0.190,
-		},
-		"standard": {
-			"class-a": 0.190,
-			"class-b": 0.190,
-		},
-		"regional": {
-			"class-a": 0.190,
-			"class-b": 0.190,
-		},
-	},
-	"multi-region": {
-		"coldline": {
-			"class-a": 0.795,
-			"class-b": 0.190,
-		},
-		"nearline": {
-			"class-a": 0.595,
-			"class-b": 0.190,
-		},
-		"standard": {
-			"class-a": 0.595,
-			"class-b": 0.190,
-		},
-		"multi_regional": {
-			"class-a": 0.595,
-			"class-b": 0.190,
-		},
-	},
-	"dual-region": {
-		"standard": {
-			"class-a": 0.595,
-			"class-b": 0.190,
-		},
-		"multi_regional": {
-			"class-a": 0.595,
-			"class-b": 0.190,
-		},
-	},
-}
-
 const (
 	collectorName = "GCS"
 	gibMonthly    = "gibibyte month"
@@ -130,8 +71,6 @@ func (c *Collector) Name() string {
 func (c *Collector) Register(registry provider.Registry) error {
 	log.Printf("Registering GCS metrics")
 	registry.MustRegister(c.metrics.StorageGauge)
-	registry.MustRegister(c.metrics.StorageDiscountGauge)
-	registry.MustRegister(c.metrics.OperationsDiscountGauge)
 	registry.MustRegister(c.metrics.OperationsGauge)
 	registry.MustRegister(c.metrics.BucketInfo)
 	registry.MustRegister(c.metrics.BucketListHistogram)
@@ -153,11 +92,6 @@ func (c *Collector) collectMetrics(ctx context.Context) error {
 	}
 	c.nextScrape = time.Now().Add(c.interval)
 	c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
-	exporterOperationsDiscounts(c.metrics)
-	if err := c.gcpClient.ExportRegionalDiscounts(ctx, c.metrics); err != nil {
-		log.Printf("Error exporting regional discounts: %v", err)
-	}
-
 	if err := c.gcpClient.ExportBucketInfo(ctx, c.Projects, c.metrics); err != nil {
 		log.Printf("Error exporting bucket info: %v", err)
 	}
@@ -171,12 +105,3 @@ func (c *Collector) collectMetrics(ctx context.Context) error {
 	return nil
 }
 
-func exporterOperationsDiscounts(m *metrics.Metrics) {
-	for locationType, locationMap := range operationsDiscountMap {
-		for storageClass, storageClassmap := range locationMap {
-			for opsClass, discount := range storageClassmap {
-				m.OperationsDiscountGauge.WithLabelValues(locationType, strings.ToUpper(storageClass), opsClass).Set(discount)
-			}
-		}
-	}
-}

@@ -57,7 +57,6 @@ type Config struct {
 	Projects         string // Projects is a comma-separated list of projects to scrape metadata from
 	Services         []string
 	ScrapeInterval   time.Duration
-	DefaultDiscount  int
 	CollectorTimeout time.Duration
 	Logger           *slog.Logger
 }
@@ -68,7 +67,7 @@ type Config struct {
 func New(ctx context.Context, config *Config) (*GCP, error) {
 	logger := config.Logger.With("provider", subsystem)
 
-	gcpClient, err := client.NewGCPClient(ctx, client.Config{ProjectId: config.ProjectId, Discount: config.DefaultDiscount})
+	gcpClient, err := client.NewGCPClient(ctx, client.Config{ProjectId: config.ProjectId})
 	if err != nil {
 		return nil, err
 	}

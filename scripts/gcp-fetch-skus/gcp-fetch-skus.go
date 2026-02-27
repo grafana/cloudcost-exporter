@@ -34,7 +34,6 @@ func run(config *Config) error {
 	ctx := context.Background()
 	gcpClient, err := client2.NewGCPClient(ctx, client2.Config{
 		ProjectId: "",
-		Discount:  0,
 	})
 	if err != nil {
 		return err

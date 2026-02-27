@@ -16,16 +16,14 @@ import (
 type Mock struct {
 	mock.Mock
 
-	region   *Region
 	billing  *Billing
 	bucket   *Bucket
 	compute  *Compute
 	sqladmin *SQLAdmin
 }
 
-func NewMock(projectId string, discount int, regionsClient RegionsClient, bucketClient StorageClientInterface, billingClient *billingv1.CloudCatalogClient, computeService *compute.Service, sqladminService *sqladmin.Service) *Mock {
+func NewMock(projectId string, bucketClient StorageClientInterface, billingClient *billingv1.CloudCatalogClient, computeService *compute.Service, sqladminService *sqladmin.Service) *Mock {
 	return &Mock{
-		region:   newRegion(projectId, discount, regionsClient),
 		billing:  newBilling(billingClient),
 		bucket:   newBucket(bucketClient, cache.NewNoopCache[[]*storage.BucketAttrs]()),
 		compute:  newCompute(computeService),
@@ -35,10 +33,6 @@ func NewMock(projectId string, discount int, regionsClient RegionsClient, bucket
 
 func (c *Mock) GetServiceName(ctx context.Context, serviceName string) (string, error) {
 	return c.billing.getServiceName(ctx, serviceName)
-}
-
-func (c *Mock) ExportRegionalDiscounts(ctx context.Context, m *metrics.Metrics) error {
-	return c.region.exportRegionalDiscounts(ctx, m)
 }
 
 func (c *Mock) ExportGCPCostData(ctx context.Context, serviceName string, m *metrics.Metrics) float64 {
