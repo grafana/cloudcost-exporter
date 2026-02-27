@@ -74,7 +74,7 @@ func (b *Billing) exportBilling(ctx context.Context, serviceName string, m *metr
 		if sku.Description == "Bucket Tagging Storage" {
 			continue
 		}
-		if strings.HasSuffix(sku.Category.ResourceGroup, "Storage") {
+		if sku.Category != nil && strings.HasSuffix(sku.Category.ResourceGroup, "Storage") {
 			if strings.Contains(sku.Description, "Early Delete") {
 				continue // to skip "Unknown sku"
 			}
