@@ -177,7 +177,7 @@ func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collectorLastScrapeTime
 	for _, c := range g.collectors {
 		if err := c.Describe(ch); err != nil {
-			g.logger.LogAttrs(context.Background(), slog.LevelError, "Error calling describe",
+			g.logger.LogAttrs(g.ctx, slog.LevelError, "Error calling describe",
 				slog.String("message", err.Error()),
 			)
 		}
@@ -199,7 +199,7 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 			duration, hasError := gatherer.CollectWithGatherer(collectCtx, c, ch, g.logger)
 
 			if !hasError {
-				g.logger.LogAttrs(context.Background(), slog.LevelInfo, "Collect successful",
+				g.logger.LogAttrs(collectCtx, slog.LevelInfo, "Collect successful",
 					slog.String("collector", c.Name()),
 					slog.Duration("duration", time.Duration(duration*float64(time.Second))),
 				)

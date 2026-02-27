@@ -214,7 +214,7 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 }
 
 func (a *AWS) RegisterCollectors(registry provider.Registry) error {
-	a.logger.LogAttrs(context.Background(), slog.LevelInfo, "registering collectors",
+	a.logger.LogAttrs(a.ctx, slog.LevelInfo, "registering collectors",
 		slog.Int("count", len(a.collectors)),
 	)
 	for _, c := range a.collectors {
@@ -231,7 +231,7 @@ func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collectorLastScrapeTime
 	for _, c := range a.collectors {
 		if err := c.Describe(ch); err != nil {
-			a.logger.LogAttrs(context.Background(), slog.LevelError, "failed to describe collector",
+			a.logger.LogAttrs(a.ctx, slog.LevelError, "failed to describe collector",
 				slog.String("message", err.Error()),
 				slog.String("collector", c.Name()),
 			)
