@@ -2,7 +2,7 @@ package client
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -25,7 +25,7 @@ func newBilling(costExplorerService cost.CostExplorer, m *Metrics) *billing {
 }
 
 func (b *billing) getBillingData(ctx context.Context, startDate time.Time, endDate time.Time) (*BillingData, error) {
-	log.Printf("Getting billing data for %s to %s\n", startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
+	slog.Info("Getting billing data", "start", startDate.Format("2006-01-02"), "end", endDate.Format("2006-01-02"))
 	input := &costexplorer.GetCostAndUsageInput{
 		TimePeriod: &types.DateInterval{
 			Start: aws.String(startDate.Format("2006-01-02")), // Specify the start date
@@ -53,7 +53,7 @@ func (b *billing) getBillingData(ctx context.Context, startDate time.Time, endDa
 		b.m.RequestCount.Inc()
 		output, err := b.costExplorerService.GetCostAndUsage(ctx, input)
 		if err != nil {
-			log.Printf("Error getting cost and usage: %v\n", err)
+			slog.Error("Error getting cost and usage", "error", err)
 			b.m.RequestErrorsCount.Inc()
 			return nil, err
 		}
@@ -78,7 +78,7 @@ func parseBillingData(outputs []*costexplorer.GetCostAndUsageOutput) *BillingDat
 		for _, result := range output.ResultsByTime {
 			for _, group := range result.Groups {
 				if group.Keys == nil {
-					log.Printf("skipping group without keys")
+					slog.Warn("skipping group without keys")
 					continue
 				}
 				key := group.Keys[0]
@@ -102,7 +102,7 @@ func getRegionFromKey(key string) string {
 
 	split := strings.Split(key, "-")
 	if len(split) < 2 {
-		log.Printf("Could not find region in key: %s\n", key)
+		slog.Warn("Could not find region in key", "key", key)
 		return ""
 	}
 
@@ -110,7 +110,7 @@ func getRegionFromKey(key string) string {
 	if region, ok := BillingToRegionMap[billingRegion]; ok {
 		return region
 	}
-	log.Printf("Could not find mapped region: %s:%s\n", key, billingRegion)
+	slog.Warn("Could not find mapped region", "key", key, "billingRegion", billingRegion)
 	return ""
 }
 

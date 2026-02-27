@@ -3,7 +3,7 @@ package gcs
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -108,7 +108,7 @@ func New(config *Config, gcpClient client.Client) (*Collector, error) {
 
 	projects := strings.Split(config.Projects, ",")
 	if len(projects) == 1 && projects[0] == "" {
-		log.Printf("No bucket projects specified, defaulting to %s", config.ProjectId)
+		slog.Info("No bucket projects specified, defaulting to project", "projectId", config.ProjectId)
 		projects = []string{config.ProjectId}
 	}
 
@@ -128,7 +128,7 @@ func (c *Collector) Name() string {
 
 // Register is called when the collector is created and is responsible for registering the metrics with the registry
 func (c *Collector) Register(registry provider.Registry) error {
-	log.Printf("Registering GCS metrics")
+	slog.Info("Registering GCS metrics")
 	registry.MustRegister(c.metrics.StorageGauge)
 	registry.MustRegister(c.metrics.StorageDiscountGauge)
 	registry.MustRegister(c.metrics.OperationsDiscountGauge)
@@ -142,7 +142,7 @@ func (c *Collector) Register(registry provider.Registry) error {
 
 // collectMetrics performs the actual collection work
 func (c *Collector) collectMetrics(ctx context.Context) error {
-	log.Printf("Collecting GCS metrics")
+	slog.Info("Collecting GCS metrics")
 	now := time.Now()
 
 	// If the nextScrape time is in the future, return nil and do not scrape
@@ -155,16 +155,16 @@ func (c *Collector) collectMetrics(ctx context.Context) error {
 	c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
 	exporterOperationsDiscounts(c.metrics)
 	if err := c.gcpClient.ExportRegionalDiscounts(ctx, c.metrics); err != nil {
-		log.Printf("Error exporting regional discounts: %v", err)
+		slog.Error("Error exporting regional discounts", "error", err)
 	}
 
 	if err := c.gcpClient.ExportBucketInfo(ctx, c.Projects, c.metrics); err != nil {
-		log.Printf("Error exporting bucket info: %v", err)
+		slog.Error("Error exporting bucket info", "error", err)
 	}
 
 	serviceName, err := c.gcpClient.GetServiceName(ctx, "Cloud Storage")
 	if err != nil {
-		log.Printf("Error getting service name: %v", err)
+		slog.Error("Error getting service name", "error", err)
 		return err
 	}
 	c.gcpClient.ExportGCPCostData(ctx, serviceName, c.metrics)

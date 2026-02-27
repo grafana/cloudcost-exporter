@@ -438,12 +438,17 @@ func (pm *pricingMap) calculateCustomPrice(region string, spec *instanceSpec) (*
 		return nil, fmt.Errorf("%w: region=%s (cpuPrice=%f, ramPrice=%f)", ErrCustomPriceMissing, region, cpuPrice, ramPrice)
 	}
 
+	if cpuSkuID == "" || ramSkuID == "" {
+		return nil, fmt.Errorf("%w: region=%s (cpuSkuID=%q, ramSkuID=%q)", ErrCustomPriceMissing, region, cpuSkuID, ramSkuID)
+	}
+
 	ramGB := float64(spec.ram) / 1024.0
 	totalPrice := float64(spec.cpu)*cpuPrice + ramGB*ramPrice
 
+	skuID := fmt.Sprintf("custom-pricing:%s+%s", cpuSkuID, ramSkuID)
 	return &priceMatch{
 		pricePerHour: totalPrice,
-		skuID:        fmt.Sprintf("custom-pricing:%s+%s", cpuSkuID, ramSkuID),
+		skuID:        skuID,
 		isCustom:     true,
 		cpuPrice:     cpuPrice,
 		ramPrice:     ramPrice,

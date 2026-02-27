@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -470,7 +469,7 @@ func weightedPriceForInstance(price float64, attributes InstanceAttributes) (*Pr
 	}
 	ratio, ok := cpuToCostRatio[attributes.InstanceFamily]
 	if !ok {
-		log.Printf("no ratio found for instance type %s, defaulting to %s", attributes.InstanceType, defaultInstanceFamily)
+		slog.Warn("no ratio found for instance type, defaulting", "instanceType", attributes.InstanceType, "default", defaultInstanceFamily)
 		ratio = cpuToCostRatio[defaultInstanceFamily]
 	}
 

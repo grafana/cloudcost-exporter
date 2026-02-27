@@ -1,7 +1,7 @@
 package client
 
 import (
-	"log"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -62,7 +62,7 @@ func getMachineTypeFromURL(url string) string {
 
 func getMachineFamily(machineType string) string {
 	if !strings.Contains(machineType, "-") {
-		log.Printf("Machine type %s doesn't contain a -", machineType)
+		slog.Warn("Machine type doesn't contain a -", "machineType", machineType)
 		return ""
 	}
 	split := strings.Split(machineType, "-")
@@ -80,7 +80,7 @@ func stripOutKeyFromDescription(description string) string {
 	// If we can't find running in, try to find Commitment v1:
 	splitString := strings.Split(description, "Commitment v1:")
 	if len(splitString) == 1 {
-		log.Printf("No running in or commitment found in description: %s", description)
+		slog.Warn("No running in or commitment found in description", "description", description)
 		return ""
 	}
 	// Take everything after the Commitment v1
@@ -91,7 +91,7 @@ func stripOutKeyFromDescription(description string) string {
 	// SO we need to use a regexp to find the first instance of "in"
 	foundIndex := re.FindStringIndex(split)
 	if len(foundIndex) == 0 {
-		log.Printf("No in found in description: %s", description)
+		slog.Warn("No 'in' found in description", "description", description)
 		return ""
 	}
 	str := split[:foundIndex[0]]

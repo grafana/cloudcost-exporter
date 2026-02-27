@@ -3,7 +3,7 @@ package client
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -32,7 +32,7 @@ func newBucket(storageClient StorageClientInterface, cache cache.Cache[[]*storag
 }
 
 func (b *Bucket) List(ctx context.Context, project string) ([]*storage.BucketAttrs, error) {
-	log.Printf("Listing buckets for project %s", project)
+	slog.Info("Listing buckets for project", "project", project)
 	buckets := make([]*storage.BucketAttrs, 0)
 	it := b.storageClient.Buckets(ctx, project)
 	for {
@@ -60,14 +60,14 @@ func (b *Bucket) exportBucketInfo(ctx context.Context, projects []string, m *met
 		buckets, err = b.List(ctx, project)
 		if err != nil {
 			// We don't want to block here as it's not critical to the exporter
-			log.Printf("error listing buckets for %s: %v", project, err)
+			slog.Error("error listing buckets for project", "project", project, "error", err)
 			m.BucketListHistogram.WithLabelValues(project).Observe(time.Since(start).Seconds())
 			m.BucketListStatus.WithLabelValues(project, "error").Inc()
 			buckets = b.cache.Get(project)
-			log.Printf("pulling %d cached buckets for project %s", len(buckets), project)
+			slog.Info("pulling cached buckets for project", "count", len(buckets), "project", project)
 		}
 
-		log.Printf("updating cached buckets for %s", project)
+		slog.Info("updating cached buckets for project", "project", project)
 		b.cache.Set(project, buckets)
 
 		for _, bucket := range buckets {

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +23,8 @@ func main() {
 
 	err := run(dashes, output, outputDir)
 	if err != nil {
-		log.Fatalf("error generating dashboards: %s", err.Error())
+		slog.Error("error generating dashboards", "error", err)
+		os.Exit(1)
 	}
 }
 
