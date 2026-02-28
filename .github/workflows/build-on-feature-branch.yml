@@ -42,7 +42,7 @@ jobs:
 
       - name: Export Docker Digest
         id: export
-        uses: grafana/shared-workflows/actions/docker-export-digest@1d3e79a89e5fe2e14e27c7d083484f16abc1438b # docker-export-digest/v0.1.1
+        uses: grafana/shared-workflows/actions/docker-export-digest@4d53725e812211a661bd89c8f4925c33584e1f45 # docker-export-digest/v0.1.2
         with:
           digest: ${{ steps.build.outputs.digest }}
           platform: ${{ matrix.platform }}
