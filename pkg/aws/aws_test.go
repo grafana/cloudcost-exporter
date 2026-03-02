@@ -205,6 +205,116 @@ func stringPtr(s string) *string {
 	return &s
 }
 
+func Test_filterExcludedRegions(t *testing.T) {
+	tests := []struct {
+		name        string
+		regions     []types.Region
+		excludeList []string
+		want        []types.Region
+	}{
+		{
+			name: "empty exclude list returns regions unchanged",
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+				{RegionName: stringPtr("me-central-1")},
+			},
+			excludeList: nil,
+			want: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+				{RegionName: stringPtr("me-central-1")},
+			},
+		},
+		{
+			name: "empty exclude list slice returns regions unchanged",
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+			},
+			excludeList: []string{},
+			want: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+			},
+		},
+		{
+			name: "one excluded region is removed",
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+				{RegionName: stringPtr("me-central-1")},
+				{RegionName: stringPtr("eu-west-1")},
+			},
+			excludeList: []string{"me-central-1"},
+			want: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+				{RegionName: stringPtr("eu-west-1")},
+			},
+		},
+		{
+			name: "multiple excluded regions are removed",
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+				{RegionName: stringPtr("me-central-1")},
+				{RegionName: stringPtr("me-south-1")},
+				{RegionName: stringPtr("eu-west-1")},
+			},
+			excludeList: []string{"me-central-1", "me-south-1"},
+			want: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+				{RegionName: stringPtr("eu-west-1")},
+			},
+		},
+		{
+			name: "exclude list entries are trimmed of whitespace",
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+				{RegionName: stringPtr("me-central-1")},
+			},
+			excludeList: []string{"  me-central-1  "},
+			want: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+			},
+		},
+		{
+			name: "nil RegionName is omitted when filtering",
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+				{RegionName: nil},
+				{RegionName: stringPtr("eu-west-1")},
+			},
+			excludeList: []string{"other"}, // non-empty so we run the filter loop; nil is skipped
+			want: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+				{RegionName: stringPtr("eu-west-1")},
+			},
+		},
+		{
+			name:        "empty regions returns empty",
+			regions:     []types.Region{},
+			excludeList: []string{"me-central-1"},
+			want:        []types.Region{},
+		},
+		{
+			name: "all regions excluded returns empty",
+			regions: []types.Region{
+				{RegionName: stringPtr("me-central-1")},
+				{RegionName: stringPtr("me-south-1")},
+			},
+			excludeList: []string{"me-central-1", "me-south-1"},
+			want:        []types.Region{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := filterExcludedRegions(tt.regions, tt.excludeList)
+			require.Len(t, got, len(tt.want))
+			for i := range tt.want {
+				assert.Equal(t, tt.want[i].RegionName != nil, got[i].RegionName != nil)
+				if tt.want[i].RegionName != nil && got[i].RegionName != nil {
+					assert.Equal(t, *tt.want[i].RegionName, *got[i].RegionName)
+				}
+			}
+		})
+	}
+}
+
 func Test_RegisterCollectors(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
