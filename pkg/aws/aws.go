@@ -38,6 +38,7 @@ type Config struct {
 	Region           string
 	Profile          string
 	RoleARN          string
+	ExcludeRegions   []string // AWS region names to skip (e.g. me-central-1)
 	ScrapeInterval   time.Duration
 	CollectorTimeout time.Duration
 	Logger           *slog.Logger
@@ -109,6 +110,8 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting regions: %w", err)
 	}
+
+	regions = filterExcludedRegions(regions, config.ExcludeRegions)
 
 	// Create per-region clients
 	awsClientPerRegion, err := newRegionClientMap(ctx, ac, regions, config.Profile, config.RoleARN)
@@ -263,6 +266,28 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 		}(c)
 	}
 	wg.Wait()
+}
+
+// filterExcludedRegions returns regions with any in excludeList removed. excludeList entries are trimmed of whitespace.
+// When excludeList is non-empty, regions with nil RegionName are omitted from the result.
+func filterExcludedRegions(regions []types.Region, excludeList []string) []types.Region {
+	if len(excludeList) == 0 {
+		return regions
+	}
+	excludeSet := make(map[string]struct{}, len(excludeList))
+	for _, r := range excludeList {
+		excludeSet[strings.TrimSpace(r)] = struct{}{}
+	}
+	filtered := make([]types.Region, 0, len(regions))
+	for _, r := range regions {
+		if r.RegionName == nil {
+			continue
+		}
+		if _, excluded := excludeSet[*r.RegionName]; !excluded {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
 }
 
 func newRegionClientMap(ctx context.Context, globalConfig aws.Config, regions []types.Region, profile string, roleARN string) (map[string]client.Client, error) {

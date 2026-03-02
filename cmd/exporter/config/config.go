@@ -10,10 +10,11 @@ type Config struct {
 	ProjectID string
 	Providers struct {
 		AWS struct {
-			Profile  string
-			Region   string
-			Services StringSliceFlag
-			RoleARN  string
+			Profile        string
+			Region         string
+			Services       StringSliceFlag
+			RoleARN        string
+			ExcludeRegions StringSliceFlag
 		}
 		GCP struct {
 			DefaultGCSDiscount       int
