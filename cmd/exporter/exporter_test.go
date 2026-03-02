@@ -8,7 +8,7 @@ import (
 
 func Test_regionFromConfig(t *testing.T) {
 	tests := map[string]struct {
-		provider string
+		provider  string
 		awsRegion string
 		gcpRegion string
 		want      string
