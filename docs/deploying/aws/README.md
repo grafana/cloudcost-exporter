@@ -56,6 +56,12 @@ Set which AWS service to use:
   - "--aws.services=s3,ec2"
 ```
 
+Optional: exclude specific AWS regions from collection (e.g. to avoid scraping a region that is unavailable):
+```
+  - "--aws.exclude-regions=me-central-1"
+```
+Comma-separated list of region names (e.g. `me-central-1,me-south-1`). Excluded regions are not used when building per-region clients or collectors.
+
 ### `serviceAccount.annotations` (required)
 
 Annotate the `serviceAccount` with the ARN of the role created above.

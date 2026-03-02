@@ -38,6 +38,7 @@ type Config struct {
 	Region           string
 	Profile          string
 	RoleARN          string
+	ExcludeRegions   []string // AWS region names to skip (e.g. me-central-1)
 	ScrapeInterval   time.Duration
 	CollectorTimeout time.Duration
 	Logger           *slog.Logger
@@ -108,6 +109,24 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	regions, err := awsClient.DescribeRegions(ctx, false)
 	if err != nil {
 		return nil, fmt.Errorf("error getting regions: %w", err)
+	}
+
+	// Exclude regions if configured
+	if len(config.ExcludeRegions) > 0 {
+		excludeSet := make(map[string]struct{}, len(config.ExcludeRegions))
+		for _, r := range config.ExcludeRegions {
+			excludeSet[strings.TrimSpace(r)] = struct{}{}
+		}
+		filtered := make([]types.Region, 0, len(regions))
+		for _, r := range regions {
+			if r.RegionName == nil {
+				continue
+			}
+			if _, excluded := excludeSet[*r.RegionName]; !excluded {
+				filtered = append(filtered, r)
+			}
+		}
+		regions = filtered
 	}
 
 	// Create per-region clients
