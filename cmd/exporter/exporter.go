@@ -109,7 +109,7 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 
 	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path)) // landing page
 
-	registryHandler, err := createPromRegistryHandler(csp) // prom metrics handler
+	registryHandler, err := createPromRegistryHandler(csp, regionFromConfig(cfg)) // prom metrics handler
 	if err != nil {
 		return err
 	}
@@ -144,7 +144,19 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 	return nil
 }
 
-func createPromRegistryHandler(csp provider.Provider) (http.Handler, error) {
+func regionFromConfig(cfg *config.Config) string {
+	switch cfg.Provider {
+	case "aws":
+		return cfg.Providers.AWS.Region
+	case "gcp":
+		return cfg.Providers.GCP.Region
+	default:
+		// TODO: add region support for Azure (currently has no region in config)
+		return ""
+	}
+}
+
+func createPromRegistryHandler(csp provider.Provider, region string) (http.Handler, error) {
 	var subsystem = "metrics_handler"
 	requestDuration := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -153,14 +165,16 @@ func createPromRegistryHandler(csp provider.Provider) (http.Handler, error) {
 			NativeHistogramBucketFactor:    1.1,
 			NativeHistogramMaxBucketNumber: 10,
 			Buckets:                        []float64{1, 2, 5, 7, 10, 20, 40, 80},
+			ConstLabels:                    prometheus.Labels{"region": region},
 		},
 		[]string{"method"},
 	)
 
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "requests_total"),
-			Help: "Total number of HTTP requests for the metrics endpoint",
+			Name:        prometheus.BuildFQName(cloudcost_exporter.ExporterName, subsystem, "requests_total"),
+			Help:        "Total number of HTTP requests for the metrics endpoint",
+			ConstLabels: prometheus.Labels{"region": region},
 		},
 		[]string{"code", "method"},
 	)
