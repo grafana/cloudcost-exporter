@@ -151,6 +151,7 @@ func regionFromConfig(cfg *config.Config) string {
 	case "gcp":
 		return cfg.Providers.GCP.Region
 	default:
+		// TODO: add region support for Azure (currently has no region in config)
 		return ""
 	}
 }
