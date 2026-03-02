@@ -73,6 +73,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	fs.Var(&cfg.Providers.GCP.Projects, "gcp.projects", "GCP project(s).")
 	fs.Var(config.NewDeprecatedStringSliceFlag(&cfg.Providers.GCP.Projects, &cfg.Providers.GCP.BucketProjectsDeprecated), "gcp.bucket-projects", "GCP project(s). (deprecated: use --gcp.projects instead)")
 	fs.Var(&cfg.Providers.AWS.Services, "aws.services", "AWS service(s).")
+	fs.Var(&cfg.Providers.AWS.ExcludeRegions, "aws.exclude-regions", "AWS region(s) to exclude from cost collection.")
 	fs.Var(&cfg.Providers.Azure.Services, "azure.services", "Azure service(s).")
 	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s).")
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
@@ -215,6 +216,7 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 			RoleARN:          cfg.Providers.AWS.RoleARN,
 			ScrapeInterval:   cfg.Collector.ScrapeInterval,
 			Services:         strings.Split(cfg.Providers.AWS.Services.String(), ","),
+			ExcludeRegions:   strings.Split(cfg.Providers.AWS.ExcludeRegions.String(), ","),
 			CollectorTimeout: collectorTimeout,
 		})
 
