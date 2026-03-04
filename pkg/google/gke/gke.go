@@ -4,11 +4,11 @@ import (
 	"context"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/compute/v1"
@@ -19,6 +19,13 @@ import (
 
 const (
 	subsystem = "gcp_gke"
+
+	// zoneCollectConcurrencyLimit caps the total number of zone-level goroutines
+	// (ListInstances + ListDisks) that run simultaneously per project during a
+	// scrape. GCP regions contain ~50 zones; without a limit every scrape would
+	// fire ~100 concurrent API calls per project. The value of 10 means at most
+	// 5 zones are queried in parallel, which stays well within GCP quota defaults.
+	zoneCollectConcurrencyLimit = 10
 )
 
 var (
@@ -71,23 +78,24 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		if err != nil {
 			return err
 		}
-		wg := sync.WaitGroup{}
-		// Multiply by 2 because we are making two requests per zone
-		wg.Add(len(zones) * 2)
+		// Two goroutines are launched per zone (ListInstances + ListDisks).
+		// zoneCollectConcurrencyLimit caps the total across both, so at most
+		// zoneCollectConcurrencyLimit/2 zones are queried in parallel.
+		eg, egCtx := errgroup.WithContext(ctx)
+		eg.SetLimit(zoneCollectConcurrencyLimit)
 		instances := make(chan []*client.MachineSpec, len(zones))
 		disks := make(chan []*compute.Disk, len(zones))
 		for _, zone := range zones {
-			go func(zone *compute.Zone) {
-				defer wg.Done()
+			eg.Go(func() error {
 				now := time.Now()
-				c.logger.LogAttrs(ctx, slog.LevelInfo,
+				c.logger.LogAttrs(egCtx, slog.LevelInfo,
 					"Listing instances for project %s in zone %s",
 					slog.String("project", project),
 					slog.String("zone", zone.Name))
 
 				results, err := c.gcpClient.ListInstancesInZone(project, zone.Name)
 				if err != nil {
-					c.logger.LogAttrs(ctx, slog.LevelError,
+					c.logger.LogAttrs(egCtx, slog.LevelError,
 						"error listing instances in zone",
 						slog.String("project", project),
 						slog.String("zone", zone.Name),
@@ -95,30 +103,32 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 						slog.String("msg", err.Error()))
 
 					instances <- nil
-					return
+					return nil
 				}
-				c.logger.LogAttrs(ctx, slog.LevelInfo,
+				c.logger.LogAttrs(egCtx, slog.LevelInfo,
 					"finished listing instances in zone",
 					slog.String("project", project),
 					slog.String("zone", zone.Name),
 					slog.Duration("duration", time.Since(now)))
 				instances <- results
-			}(zone)
-			go func(zone *compute.Zone) {
-				defer wg.Done()
-				results, err := c.gcpClient.ListDisks(ctx, project, zone.Name)
+				return nil
+			})
+			eg.Go(func() error {
+				results, err := c.gcpClient.ListDisks(egCtx, project, zone.Name)
 				if err != nil {
 					c.logger.Error("error listing disks in zone %s: %v",
 						slog.String("zone", zone.Name),
 						slog.String("msg", err.Error()))
-					return
+					return nil
 				}
 				disks <- results
-			}(zone)
+				return nil
+			})
 		}
 
 		go func() {
-			wg.Wait()
+			// Goroutines always return nil; Wait() will not return an error.
+			_ = eg.Wait()
 			close(instances)
 			close(disks)
 		}()
