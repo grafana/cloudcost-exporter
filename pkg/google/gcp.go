@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/gatherer"
@@ -12,6 +11,7 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/google/cloudsql"
 	"github.com/grafana/cloudcost-exporter/pkg/google/networking"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
@@ -20,7 +20,15 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
 
-const subsystem = "gcp"
+const (
+	subsystem = "gcp"
+
+	// collectConcurrencyLimit caps the number of collector goroutines that run
+	// simultaneously during a scrape. This prevents unbounded API fan-out when
+	// many collectors are registered and keeps memory and rate-limit usage
+	// predictable. The value matches Azure's ConcurrentGoroutineLimit.
+	collectConcurrencyLimit = 10
+)
 
 var (
 	collectorLastScrapeErrorDesc = prometheus.NewDesc(
@@ -190,12 +198,10 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 	collectCtx, cancel := context.WithTimeout(g.ctx, g.collectorTimeout)
 	defer cancel()
 
-	wg := sync.WaitGroup{}
-	wg.Add(len(g.collectors))
+	eg, collectCtx := errgroup.WithContext(collectCtx)
+	eg.SetLimit(collectConcurrencyLimit)
 	for _, c := range g.collectors {
-		go func(c provider.Collector) {
-			defer wg.Done()
-
+		eg.Go(func() error {
 			duration, hasError := gatherer.CollectWithGatherer(collectCtx, c, ch, g.logger)
 
 			if !hasError {
@@ -213,7 +219,9 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.CounterValue, collectorErrors, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, duration, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
-		}(c)
+			return nil
+		})
 	}
-	wg.Wait()
+	// Goroutines always return nil; Wait() will not return an error.
+	_ = eg.Wait()
 }

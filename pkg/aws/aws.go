@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -21,6 +20,7 @@ import (
 	rdsCollector "github.com/grafana/cloudcost-exporter/pkg/aws/rds"
 	"github.com/grafana/cloudcost-exporter/pkg/gatherer"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
@@ -76,6 +76,12 @@ var (
 const (
 	subsystem        = "aws"
 	maxRetryAttempts = 10
+
+	// collectConcurrencyLimit caps the number of collector goroutines that run
+	// simultaneously during a scrape. This prevents unbounded API fan-out when
+	// many collectors are registered and keeps memory and rate-limit usage
+	// predictable. The value matches Azure's ConcurrentGoroutineLimit.
+	collectConcurrencyLimit = 10
 
 	// AWS service names used across the AWS provider.
 	serviceS3    = "S3"
@@ -247,12 +253,10 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	collectCtx, cancel := context.WithTimeout(a.ctx, a.collectorTimeout)
 	defer cancel()
 
-	wg := &sync.WaitGroup{}
-	wg.Add(len(a.collectors))
+	g, collectCtx := errgroup.WithContext(collectCtx)
+	g.SetLimit(collectConcurrencyLimit)
 	for _, c := range a.collectors {
-		go func(c provider.Collector) {
-			defer wg.Done()
-
+		g.Go(func() error {
 			duration, hasError := gatherer.CollectWithGatherer(collectCtx, c, ch, a.logger)
 
 			//TODO: remove collectorErrors once we have the new metrics
@@ -263,9 +267,11 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.CounterValue, collectorErrors, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, duration, subsystem, c.Name())
 			ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, c.Name())
-		}(c)
+			return nil
+		})
 	}
-	wg.Wait()
+	// Goroutines always return nil; Wait() will not return an error.
+	_ = g.Wait()
 }
 
 // filterExcludedRegions returns regions with any in excludeList removed. excludeList entries are trimmed of whitespace.

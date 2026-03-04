@@ -369,6 +369,64 @@ func Test_RegisterCollectors(t *testing.T) {
 	}
 }
 
+func Test_CollectConcurrencyLimit(t *testing.T) {
+	// numCollectors is intentionally larger than collectConcurrencyLimit to
+	// exercise the limit.  The mock Collect sleeps briefly so that goroutines
+	// overlap in time; without SetLimit the peak would equal numCollectors.
+	const numCollectors = 25
+
+	var (
+		mu                 sync.Mutex
+		currentConcurrency int
+		peakConcurrency    int
+		totalCalls         int
+	)
+
+	ctrl := gomock.NewController(t)
+	c := mock_provider.NewMockCollector(ctrl)
+	c.EXPECT().Name().Return("concurrent-collector").AnyTimes()
+	c.EXPECT().Register(gomock.Any()).Return(nil).AnyTimes()
+	c.EXPECT().Collect(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ chan<- prometheus.Metric) error {
+			mu.Lock()
+			currentConcurrency++
+			totalCalls++
+			if currentConcurrency > peakConcurrency {
+				peakConcurrency = currentConcurrency
+			}
+			mu.Unlock()
+
+			time.Sleep(10 * time.Millisecond)
+
+			mu.Lock()
+			currentConcurrency--
+			mu.Unlock()
+			return nil
+		},
+	).Times(numCollectors)
+
+	a := &AWS{
+		Config:           nil,
+		collectors:       make([]provider.Collector, numCollectors),
+		logger:           logger,
+		ctx:              t.Context(),
+		collectorTimeout: 1 * time.Minute,
+	}
+	for i := range numCollectors {
+		a.collectors[i] = c
+	}
+
+	// Use a buffered channel so goroutines can always send metrics without
+	// blocking (gatherer internals emit a few metrics per collector).
+	ch := make(chan prometheus.Metric, numCollectors*10)
+	a.Collect(ch)
+	close(ch)
+
+	assert.Equal(t, numCollectors, totalCalls, "every collector must be called exactly once")
+	assert.LessOrEqual(t, peakConcurrency, collectConcurrencyLimit,
+		"peak concurrency must not exceed collectConcurrencyLimit")
+}
+
 func Test_CollectMetrics(t *testing.T) {
 	tests := map[string]struct {
 		numCollectors   int
