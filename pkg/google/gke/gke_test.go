@@ -1,6 +1,7 @@
 package gke
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -8,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
+	"time"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
@@ -503,4 +506,88 @@ func TestCollector_Collect(t *testing.T) {
 			assert.ElementsMatch(t, metrics, test.expectedMetrics)
 		})
 	}
+}
+
+// concurrentGCPClient is a test double for client.Client that tracks the
+// peak number of goroutines running ListInstancesInZone and ListDisks
+// simultaneously.  Methods not needed by Collector.Collect are inherited from
+// the embedded interface (nil) and will panic if called unexpectedly.
+type concurrentGCPClient struct {
+	client.Client // nil for all non-overridden methods
+
+	zones []*computev1.Zone
+
+	mu                 sync.Mutex
+	currentConcurrency int
+	peakConcurrency    int
+}
+
+func (c *concurrentGCPClient) GetZones(_ string) ([]*computev1.Zone, error) {
+	return c.zones, nil
+}
+
+func (c *concurrentGCPClient) ListInstancesInZone(_ string, _ string) ([]*client.MachineSpec, error) {
+	c.mu.Lock()
+	c.currentConcurrency++
+	if c.currentConcurrency > c.peakConcurrency {
+		c.peakConcurrency = c.currentConcurrency
+	}
+	c.mu.Unlock()
+
+	time.Sleep(10 * time.Millisecond)
+
+	c.mu.Lock()
+	c.currentConcurrency--
+	c.mu.Unlock()
+	return nil, nil
+}
+
+func (c *concurrentGCPClient) ListDisks(_ context.Context, _ string, _ string) ([]*computev1.Disk, error) {
+	c.mu.Lock()
+	c.currentConcurrency++
+	if c.currentConcurrency > c.peakConcurrency {
+		c.peakConcurrency = c.currentConcurrency
+	}
+	c.mu.Unlock()
+
+	time.Sleep(10 * time.Millisecond)
+
+	c.mu.Lock()
+	c.currentConcurrency--
+	c.mu.Unlock()
+	return nil, nil
+}
+
+func TestCollector_ZoneConcurrencyLimit(t *testing.T) {
+	// 8 zones → 16 goroutines (2 per zone: ListInstancesInZone + ListDisks),
+	// but zoneCollectConcurrencyLimit=10 caps the total.
+	const numZones = 8
+
+	zones := make([]*computev1.Zone, numZones)
+	for i := range numZones {
+		zones[i] = &computev1.Zone{Name: fmt.Sprintf("us-central1-%c", 'a'+i)}
+	}
+
+	fakeClient := &concurrentGCPClient{zones: zones}
+
+	// Build the Collector directly to bypass the billing/pricing initialisation
+	// that New() performs — it is irrelevant for a concurrency test.
+	collector := &Collector{
+		gcpClient: fakeClient,
+		config:    &Config{Logger: logger},
+		projects:  []string{"proj1"},
+		pricingMap: &PricingMap{
+			compute: map[string]*FamilyPricing{},
+			storage: map[string]*StoragePricing{},
+		},
+		logger: logger,
+	}
+
+	ch := make(chan prometheus.Metric, numZones*10)
+	err := collector.Collect(t.Context(), ch)
+	close(ch)
+	require.NoError(t, err)
+
+	assert.LessOrEqual(t, fakeClient.peakConcurrency, zoneCollectConcurrencyLimit,
+		"peak zone goroutine concurrency must not exceed zoneCollectConcurrencyLimit")
 }
