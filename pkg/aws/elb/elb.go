@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -40,7 +42,7 @@ var (
 )
 
 type Collector struct {
-	Regions            []ec2Types.Region
+	regions            []ec2Types.Region
 	ScrapeInterval     time.Duration
 	pricingMap         *ELBPricingMap
 	awsRegionClientMap map[string]client.Client
@@ -82,7 +84,7 @@ type elbProduct struct {
 
 func New(config *Config) *Collector {
 	return &Collector{
-		Regions:            config.Regions,
+		regions:            config.Regions,
 		ScrapeInterval:     config.ScrapeInterval,
 		awsRegionClientMap: config.RegionClients,
 		logger:             config.Logger,
@@ -104,7 +106,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	c.logger.Info("Starting ELB collection")
 
 	if c.shouldScrape() {
-		if err := c.pricingMap.refresh(ctx, c.awsRegionClientMap, c.Regions); err != nil {
+		if err := c.pricingMap.refresh(ctx, c.awsRegionClientMap, c.regions); err != nil {
 			c.logger.Error("Failed to refresh pricing", "error", err)
 			return err
 		}
@@ -151,6 +153,10 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 
 func (c *Collector) Name() string {
 	return subsystem
+}
+
+func (c *Collector) Regions() []string {
+	return slices.Collect(maps.Keys(c.awsRegionClientMap))
 }
 
 func (c *Collector) shouldScrape() bool {

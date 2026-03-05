@@ -258,6 +258,16 @@ func (m *MachineStore) getMachineTypesByLocation(ctx context.Context, location s
 	return nil
 }
 
+func (m *MachineStore) GetRegions() []string {
+	m.machineSizeMapLock.RLock()
+	defer m.machineSizeMapLock.RUnlock()
+	regions := make([]string, 0, len(m.MachineSizeMap))
+	for region := range m.MachineSizeMap {
+		regions = append(regions, region)
+	}
+	return regions
+}
+
 func (m *MachineStore) GetListOfVmsForSubscription() []*VirtualMachineInfo {
 	m.machineMapLock.RLock()
 	defer m.machineMapLock.RUnlock()

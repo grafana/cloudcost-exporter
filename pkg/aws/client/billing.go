@@ -96,22 +96,33 @@ func parseBillingData(outputs []*costexplorer.GetCostAndUsageOutput) *BillingDat
 
 // getRegionFromKey returns the region from the key. If the key is requests, it will return an empty string because there is no region associated with it.
 func getRegionFromKey(key string) string {
+	region := "unknown"
 	if key == "Requests-Tier1" || key == "Requests-Tier2" {
-		return ""
+		return region
 	}
 
 	split := strings.Split(key, "-")
 	if len(split) < 2 {
-		slog.Warn("Could not find region in key", "key", key)
-		return ""
+		return region
 	}
 
 	billingRegion := split[0]
 	if region, ok := BillingToRegionMap[billingRegion]; ok {
 		return region
 	}
-	slog.Warn("Could not find mapped region", "key", key, "billingRegion", billingRegion)
-	return ""
+
+	// Per AWS S3 documentation, usage types for us-east-1 may appear without a
+	// region prefix (e.g. "TimedStorage-ByteHrs" instead of "USE1-TimedStorage-ByteHrs").
+	if billingRegion == "TimedStorage" {
+		return BillingToRegionMap["USE1"]
+	}
+	// Known prefixes that are not region codes; skip them silently.
+	// "Global" = free tier credits, "DataTransfer" = inter-region transfer costs.
+	switch billingRegion {
+	case "Global", "DataTransfer":
+		return region
+	}
+	return region
 }
 
 // getComponentFromKey returns the component from the key. If the component does not contain a region, it will return
@@ -124,6 +135,10 @@ func getComponentFromKey(key string) string {
 	split := strings.Split(key, "-")
 	if len(split) < 2 {
 		return val
+	}
+	// Handle known S3 components that appear without a region prefix (no-prefix = us-east-1).
+	if split[0] == "TimedStorage" {
+		return "TimedStorage"
 	}
 	val = split[1]
 	// Check to see if the value is a region. If so, set val to empty string to skip the dimension
