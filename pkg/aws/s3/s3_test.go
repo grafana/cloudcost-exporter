@@ -37,8 +37,10 @@ func TestNewCollector(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			c := mock_client.NewMockClient(ctrl)
+			c.EXPECT().DescribeRegions(gomock.Any(), false).Return(nil, nil)
 
-			got := New(tt.args.interval, c)
+			got, err := New(context.Background(), tt.args.interval, c)
+			assert.NoError(t, err)
 			assert.NotNil(t, got)
 			assert.Equal(t, tt.args.interval, got.interval)
 		})
