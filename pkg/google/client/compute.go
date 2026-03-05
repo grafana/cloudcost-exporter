@@ -29,6 +29,9 @@ func (c *Compute) getZones(project string) ([]*compute.Zone, error) {
 }
 
 func (c *Compute) getRegions(project string) ([]*compute.Region, error) {
+	if c.computeService == nil {
+		return nil, fmt.Errorf("compute service not initialized")
+	}
 	regions, err := c.computeService.Regions.List(project).Do()
 	if err != nil {
 		return nil, err

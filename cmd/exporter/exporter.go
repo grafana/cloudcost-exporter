@@ -77,6 +77,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	fs.Var(&cfg.Providers.Azure.Services, "azure.services", "Azure service(s).")
 	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s).")
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
+	flag.StringVar(&cfg.Providers.Azure.Region, "azure.region", "", "Azure region")
 	flag.StringVar(&cfg.Providers.AWS.RoleARN, "aws.roleARN", "", "Optional AWS role ARN to assume for cross-account access.")
 	// TODO - PUT PROJECT-ID UNDER GCP
 	flag.StringVar(&cfg.ProjectID, "project-id", "ops-tools-1203", "Project ID to target.")
@@ -221,6 +222,7 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 			SubscriptionId:   cfg.Providers.Azure.SubscriptionId,
 			Services:         cfg.Providers.Azure.Services,
 			CollectorTimeout: collectorTimeout,
+			Region:           cfg.Providers.Azure.Region,
 		})
 	case "aws":
 		return aws.New(ctx, &aws.Config{

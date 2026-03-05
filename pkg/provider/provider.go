@@ -21,6 +21,10 @@ type Collector interface {
 	Name() string
 }
 
+type RegionsProvider interface {
+	Regions() []string
+}
+
 type Provider interface {
 	prometheus.Collector
 	RegisterCollectors(r Registry) error

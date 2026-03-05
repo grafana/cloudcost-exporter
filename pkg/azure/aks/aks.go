@@ -281,6 +281,10 @@ func (c *Collector) Name() string {
 	return subsystem
 }
 
+func (c *Collector) Regions() []string {
+	return c.MachineStore.GetRegions()
+}
+
 func (c *Collector) Register(_ provider.Registry) error {
 	// Register has no ctx parameter in the Collector interface, so context.Background() is intentional here.
 	c.logger.LogAttrs(context.Background(), slog.LevelInfo, "registering collector")

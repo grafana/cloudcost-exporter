@@ -18,7 +18,7 @@ var gathererDurationHistogramVec = prometheus.NewHistogramVec(
 		NativeHistogramBucketFactor:    1.1,
 		NativeHistogramMaxBucketNumber: 100,
 	},
-	[]string{"collector"},
+	[]string{"collector", "region"},
 )
 
 var gathererErrorCounterVec = prometheus.NewCounterVec(
@@ -26,7 +26,7 @@ var gathererErrorCounterVec = prometheus.NewCounterVec(
 		Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "error_total"),
 		Help: "Total number of errors that occurred during the last scrape.",
 	},
-	[]string{"collector"},
+	[]string{"collector", "region"},
 )
 
 var gathererTotalCounterVec = prometheus.NewCounterVec(
@@ -34,28 +34,30 @@ var gathererTotalCounterVec = prometheus.NewCounterVec(
 		Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "total"),
 		Help: "Total number of scrapes.",
 	},
-	[]string{"collector"},
+	[]string{"collector", "region"},
 )
 
-func emitHistogramMetric(ch chan<- prometheus.Metric, collectorName string, duration float64) {
+func emitHistogramMetric(ch chan<- prometheus.Metric, collectorName string, region string, duration float64) {
 	ch <- prometheus.MustNewConstHistogram(
-		gathererDurationHistogramVec.WithLabelValues(collectorName).(prometheus.Histogram).Desc(),
+		gathererDurationHistogramVec.WithLabelValues(collectorName, region).(prometheus.Histogram).Desc(),
 		1,
 		duration,
 		nil,
 		collectorName,
+		region,
 	)
 
-	counter := gathererTotalCounterVec.WithLabelValues(collectorName)
+	counter := gathererTotalCounterVec.WithLabelValues(collectorName, region)
 	counter.Inc()
 
 	m := &io_prometheus_client.Metric{}
 	if err := counter.Write(m); err == nil && m.Counter != nil {
 		ch <- prometheus.MustNewConstMetric(
-			gathererTotalCounterVec.WithLabelValues(collectorName).Desc(),
+			gathererTotalCounterVec.WithLabelValues(collectorName, region).Desc(),
 			prometheus.CounterValue,
 			m.GetCounter().GetValue(),
 			collectorName,
+			region,
 		)
 	}
 }
@@ -86,27 +88,39 @@ func CollectWithGatherer(ctx context.Context, c provider.Collector, ch chan<- pr
 		)
 	}
 
+	regions := []string{"unknown"}
+	if rp, ok := c.(provider.RegionsProvider); ok {
+		if r := rp.Regions(); len(r) > 0 {
+			regions = r
+		}
+	}
+
 	if _, err := tempRegistry.Gather(); err != nil {
 		hasError = true
 		logger.LogAttrs(ctx, slog.LevelError, "did not detect gatherer",
 			slog.String("collector", c.Name()),
 			slog.String("message", err.Error()),
 		)
-		errorCounter := gathererErrorCounterVec.WithLabelValues(c.Name())
-		errorCounter.Inc()
+		for _, region := range regions {
+			errorCounter := gathererErrorCounterVec.WithLabelValues(c.Name(), region)
+			errorCounter.Inc()
 
-		m := &io_prometheus_client.Metric{}
-		if err := errorCounter.Write(m); err == nil && m.Counter != nil {
-			ch <- prometheus.MustNewConstMetric(
-				gathererErrorCounterVec.WithLabelValues(c.Name()).Desc(),
-				prometheus.CounterValue,
-				m.GetCounter().GetValue(),
-				c.Name(),
-			)
+			m := &io_prometheus_client.Metric{}
+			if err := errorCounter.Write(m); err == nil && m.Counter != nil {
+				ch <- prometheus.MustNewConstMetric(
+					gathererErrorCounterVec.WithLabelValues(c.Name(), region).Desc(),
+					prometheus.CounterValue,
+					m.GetCounter().GetValue(),
+					c.Name(),
+					region,
+				)
+			}
 		}
 	}
 
-	emitHistogramMetric(ch, c.Name(), duration)
+	for _, region := range regions {
+		emitHistogramMetric(ch, c.Name(), region, duration)
+	}
 
 	return duration, hasError
 }
