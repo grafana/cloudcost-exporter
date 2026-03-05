@@ -116,6 +116,14 @@ type Config struct {
 
 func (c *Collector) Name() string { return strings.ToUpper(serviceName) }
 
+func (c *Collector) Regions() []string {
+	regions := make([]string, 0, len(c.regions))
+	for _, r := range c.regions {
+		regions = append(regions, *r.RegionName)
+	}
+	return regions
+}
+
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- VPCEndpointHourlyGaugeDesc
 	ch <- VPCEndpointServiceHourlyGaugeDesc

@@ -62,6 +62,7 @@ func NewMetrics() Metrics {
 // It is responsible for registering and collecting metrics
 type Collector struct {
 	client      client.Client
+	regions     []string
 	interval    time.Duration
 	nextScrape  time.Time
 	metrics     Metrics
@@ -96,15 +97,30 @@ func (c *Collector) Collect(ctx context.Context, _ chan<- prometheus.Metric) err
 }
 
 // New creates a new Collector with a client and scrape interval defined.
-func New(scrapeInterval time.Duration, client client.Client) *Collector {
+func New(ctx context.Context, scrapeInterval time.Duration, client client.Client) (*Collector, error) {
+	awsRegions, err := client.DescribeRegions(ctx, false)
+	if err != nil {
+		slog.Warn("failed to describe regions for S3 collector", "error", err)
+	}
+	regions := make([]string, 0, len(awsRegions))
+	for _, r := range awsRegions {
+		if r.RegionName != nil {
+			regions = append(regions, *r.RegionName)
+		}
+	}
 	return &Collector{
 		client:   client,
+		regions:  regions,
 		interval: scrapeInterval,
 		// Initially Set nextScrape to the current time minus the scrape interval so that the first scrape will run immediately
 		nextScrape: time.Now().Add(-scrapeInterval),
 		metrics:    NewMetrics(),
 		m:          sync.RWMutex{},
-	}
+	}, nil
+}
+
+func (c *Collector) Regions() []string {
+	return c.regions
 }
 
 func (c *Collector) Name() string {
