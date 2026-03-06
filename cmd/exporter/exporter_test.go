@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	"github.com/grafana/cloudcost-exporter/pkg/aws"
@@ -18,12 +19,14 @@ import (
 
 func Test_selectProvider(t *testing.T) {
 	tests := map[string]struct {
-		providerName   string
-		awsCalled      bool
-		azureCalled    bool
-		gcpCalled      bool
-		constructorErr error
-		wantErr        bool
+		providerName         string
+		collectorTimeout     time.Duration
+		awsCalled            bool
+		azureCalled          bool
+		gcpCalled            bool
+		constructorErr       error
+		wantErr              bool
+		wantCollectorTimeout time.Duration // if non-zero, asserts the timeout forwarded to the constructor
 	}{
 		"aws provider": {
 			providerName: "aws",
@@ -37,14 +40,36 @@ func Test_selectProvider(t *testing.T) {
 			providerName: "gcp",
 			gcpCalled:    true,
 		},
-		"constructor error is propagated": {
+		"aws constructor error is propagated": {
 			providerName:   "aws",
+			constructorErr: errors.New("constructor failed"),
+			wantErr:        true,
+		},
+		"azure constructor error is propagated": {
+			providerName:   "azure",
+			constructorErr: errors.New("constructor failed"),
+			wantErr:        true,
+		},
+		"gcp constructor error is propagated": {
+			providerName:   "gcp",
 			constructorErr: errors.New("constructor failed"),
 			wantErr:        true,
 		},
 		"unknown provider returns error": {
 			providerName: "unknown",
 			wantErr:      true,
+		},
+		"zero timeout defaults to one minute": {
+			providerName:         "aws",
+			collectorTimeout:     0,
+			awsCalled:            true,
+			wantCollectorTimeout: time.Minute,
+		},
+		"explicit timeout is passed through": {
+			providerName:         "aws",
+			collectorTimeout:     5 * time.Minute,
+			awsCalled:            true,
+			wantCollectorTimeout: 5 * time.Minute,
 		},
 	}
 
@@ -54,25 +79,29 @@ func Test_selectProvider(t *testing.T) {
 			defer ctrl.Finish()
 
 			var awsCalled, azureCalled, gcpCalled bool
+			var capturedTimeout time.Duration
 
 			mockProv := mock_provider.NewMockProvider(ctrl)
 
-			stubAWS := func(_ context.Context, _ *aws.Config) (provider.Provider, error) {
+			stubAWS := func(_ context.Context, cfg *aws.Config) (provider.Provider, error) {
 				awsCalled = true
+				capturedTimeout = cfg.CollectorTimeout
 				if tc.constructorErr != nil {
 					return nil, tc.constructorErr
 				}
 				return mockProv, nil
 			}
-			stubAzure := func(_ context.Context, _ *azure.Config) (provider.Provider, error) {
+			stubAzure := func(_ context.Context, cfg *azure.Config) (provider.Provider, error) {
 				azureCalled = true
+				capturedTimeout = cfg.CollectorTimeout
 				if tc.constructorErr != nil {
 					return nil, tc.constructorErr
 				}
 				return mockProv, nil
 			}
-			stubGCP := func(_ context.Context, _ *google.Config) (provider.Provider, error) {
+			stubGCP := func(_ context.Context, cfg *google.Config) (provider.Provider, error) {
 				gcpCalled = true
+				capturedTimeout = cfg.CollectorTimeout
 				if tc.constructorErr != nil {
 					return nil, tc.constructorErr
 				}
@@ -80,6 +109,7 @@ func Test_selectProvider(t *testing.T) {
 			}
 
 			cfg := &config.Config{Provider: tc.providerName}
+			cfg.Collector.Timeout = tc.collectorTimeout
 			got, err := selectProviderWith(context.Background(), cfg, stubAWS, stubAzure, stubGCP)
 
 			if tc.wantErr {
@@ -102,6 +132,9 @@ func Test_selectProvider(t *testing.T) {
 			}
 			if gcpCalled != tc.gcpCalled {
 				t.Errorf("gcpCalled = %v, want %v", gcpCalled, tc.gcpCalled)
+			}
+			if tc.wantCollectorTimeout != 0 && capturedTimeout != tc.wantCollectorTimeout {
+				t.Errorf("collectorTimeout = %v, want %v", capturedTimeout, tc.wantCollectorTimeout)
 			}
 		})
 	}
