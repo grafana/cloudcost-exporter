@@ -208,6 +208,22 @@ func createPromRegistryHandler(csp provider.Provider, region string) (http.Handl
 }
 
 func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider, error) {
+	return selectProviderWith(ctx, cfg,
+		func(ctx context.Context, cfg *aws.Config) (provider.Provider, error) { return aws.New(ctx, cfg) },
+		func(ctx context.Context, cfg *azure.Config) (provider.Provider, error) { return azure.New(ctx, cfg) },
+		func(ctx context.Context, cfg *google.Config) (provider.Provider, error) { return google.New(ctx, cfg) },
+	)
+}
+
+type newProviderFunc[T any] func(context.Context, T) (provider.Provider, error)
+
+func selectProviderWith(
+	ctx context.Context,
+	cfg *config.Config,
+	newAWS newProviderFunc[*aws.Config],
+	newAzure newProviderFunc[*azure.Config],
+	newGCP newProviderFunc[*google.Config],
+) (provider.Provider, error) {
 	// Set collector timeout with 1 minute default
 	collectorTimeout := cfg.Collector.Timeout
 	if collectorTimeout == 0 {
@@ -216,14 +232,14 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 
 	switch cfg.Provider {
 	case "azure":
-		return azure.New(ctx, &azure.Config{
+		return newAzure(ctx, &azure.Config{
 			Logger:           cfg.Logger,
 			SubscriptionId:   cfg.Providers.Azure.SubscriptionId,
 			Services:         cfg.Providers.Azure.Services,
 			CollectorTimeout: collectorTimeout,
 		})
 	case "aws":
-		return aws.New(ctx, &aws.Config{
+		return newAWS(ctx, &aws.Config{
 			Logger:           cfg.Logger,
 			Region:           cfg.Providers.AWS.Region,
 			Profile:          cfg.Providers.AWS.Profile,
@@ -235,7 +251,7 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 		})
 
 	case "gcp":
-		return google.New(ctx, &google.Config{
+		return newGCP(ctx, &google.Config{
 			Logger:           cfg.Logger,
 			ProjectId:        cfg.ProjectID,
 			Region:           cfg.Providers.GCP.Region,
