@@ -208,19 +208,17 @@ func createPromRegistryHandler(csp provider.Provider, region string) (http.Handl
 }
 
 func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider, error) {
-	return selectProviderWith(ctx, cfg,
-		func(ctx context.Context, c *aws.Config) (provider.Provider, error) { return aws.New(ctx, c) },
-		func(ctx context.Context, c *azure.Config) (provider.Provider, error) { return azure.New(ctx, c) },
-		func(ctx context.Context, c *google.Config) (provider.Provider, error) { return google.New(ctx, c) },
-	)
+	return selectProviderWith(ctx, cfg, aws.New, azure.New, google.New)
 }
+
+type newProviderFunc[T any, P provider.Provider] func(context.Context, T) (P, error)
 
 func selectProviderWith(
 	ctx context.Context,
 	cfg *config.Config,
-	newAWS func(context.Context, *aws.Config) (provider.Provider, error),
-	newAzure func(context.Context, *azure.Config) (provider.Provider, error),
-	newGCP func(context.Context, *google.Config) (provider.Provider, error),
+	newAWS newProviderFunc[*aws.Config, *aws.AWS],
+	newAzure newProviderFunc[*azure.Config, *azure.Azure],
+	newGCP newProviderFunc[*google.Config, *google.GCP],
 ) (provider.Provider, error) {
 	// Set collector timeout with 1 minute default
 	collectorTimeout := cfg.Collector.Timeout
