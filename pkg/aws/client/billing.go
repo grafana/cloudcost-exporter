@@ -94,7 +94,8 @@ func parseBillingData(outputs []*costexplorer.GetCostAndUsageOutput) *BillingDat
 	return billingData
 }
 
-// getRegionFromKey returns the region from the key. If the key is requests, it will return an empty string because there is no region associated with it.
+// getRegionFromKey returns the region from the key. Keys without a recognisable
+// region prefix are returned as "unknown".
 func getRegionFromKey(key string) string {
 	region := "unknown"
 	if key == "Requests-Tier1" || key == "Requests-Tier2" {
@@ -115,12 +116,6 @@ func getRegionFromKey(key string) string {
 	// region prefix (e.g. "TimedStorage-ByteHrs" instead of "USE1-TimedStorage-ByteHrs").
 	if billingRegion == "TimedStorage" {
 		return BillingToRegionMap["USE1"]
-	}
-	// Known prefixes that are not region codes; skip them silently.
-	// "Global" = free tier credits, "DataTransfer" = inter-region transfer costs.
-	switch billingRegion {
-	case "Global", "DataTransfer":
-		return region
 	}
 	return region
 }
