@@ -18,7 +18,7 @@ import (
 	rds "github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	rdsCollector "github.com/grafana/cloudcost-exporter/pkg/aws/rds"
-	"github.com/grafana/cloudcost-exporter/pkg/gatherer"
+	"github.com/grafana/cloudcost-exporter/pkg/collectormetrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
@@ -257,7 +257,7 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	g.SetLimit(collectConcurrencyLimit)
 	for _, c := range a.collectors {
 		g.Go(func() error {
-			duration, hasError := gatherer.CollectWithGatherer(collectCtx, c, ch, a.logger)
+			duration, hasError := collectormetrics.Collect(collectCtx, c, ch, a.logger)
 
 			//TODO: remove collectorErrors once we have the new metrics
 			collectorErrors := 0.0

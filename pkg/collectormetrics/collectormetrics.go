@@ -1,4 +1,4 @@
-package gatherer
+package collectormetrics
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var gathererDurationHistogramVec = prometheus.NewHistogramVec(
+var durationHistogramVec = prometheus.NewHistogramVec(
 	prometheus.HistogramOpts{
 		Name:                           prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "duration_seconds"),
 		Help:                           "Duration of a collector scrape in seconds",
@@ -20,7 +20,7 @@ var gathererDurationHistogramVec = prometheus.NewHistogramVec(
 	[]string{"collector"},
 )
 
-var gathererErrorCounterVec = prometheus.NewCounterVec(
+var errorCounterVec = prometheus.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "error_total"),
 		Help: "Total number of errors that occurred during the last scrape.",
@@ -28,7 +28,7 @@ var gathererErrorCounterVec = prometheus.NewCounterVec(
 	[]string{"collector"},
 )
 
-var gathererTotalCounterVec = prometheus.NewCounterVec(
+var totalCounterVec = prometheus.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "total"),
 		Help: "Total number of scrapes.",
@@ -36,31 +36,21 @@ var gathererTotalCounterVec = prometheus.NewCounterVec(
 	[]string{"collector"},
 )
 
-func emitHistogramMetric(ch chan<- prometheus.Metric, collectorName string, duration float64) {
-	h := gathererDurationHistogramVec.WithLabelValues(collectorName).(prometheus.Histogram)
+func emitOperationalMetrics(ch chan<- prometheus.Metric, collectorName string, duration float64) {
+	h := durationHistogramVec.WithLabelValues(collectorName).(prometheus.Histogram)
 	h.Observe(duration)
 	ch <- h
 
-	counter := gathererTotalCounterVec.WithLabelValues(collectorName)
+	counter := totalCounterVec.WithLabelValues(collectorName)
 	counter.Inc()
 	ch <- counter
 }
 
-// CollectWithGatherer collects metrics from a collector and uses the Gatherer interface to detect errors.
-func CollectWithGatherer(ctx context.Context, c provider.Collector, ch chan<- prometheus.Metric, logger *slog.Logger) (float64, bool) {
+// Collect collects metrics from a collector and emits operational metrics to the channel.
+func Collect(ctx context.Context, c provider.Collector, ch chan<- prometheus.Metric, logger *slog.Logger) (float64, bool) {
 	start := time.Now()
 	var hasError bool
 	var duration float64
-
-	tempRegistry := prometheus.NewRegistry()
-	// also register errors if the temporary registry to detect errors via Gatherer interface fails
-	if err := c.Register(tempRegistry); err != nil {
-		hasError = true
-		logger.LogAttrs(ctx, slog.LevelError, "could not register collector with gatherer",
-			slog.String("collector", c.Name()),
-			slog.String("message", err.Error()),
-		)
-	}
 
 	collectErr := c.Collect(ctx, ch)
 	duration = time.Since(start).Seconds()
@@ -70,20 +60,12 @@ func CollectWithGatherer(ctx context.Context, c provider.Collector, ch chan<- pr
 			slog.String("collector", c.Name()),
 			slog.String("message", collectErr.Error()),
 		)
-	}
-
-	if _, err := tempRegistry.Gather(); err != nil {
-		hasError = true
-		logger.LogAttrs(ctx, slog.LevelError, "did not detect gatherer",
-			slog.String("collector", c.Name()),
-			slog.String("message", err.Error()),
-		)
-		errorCounter := gathererErrorCounterVec.WithLabelValues(c.Name())
+		errorCounter := errorCounterVec.WithLabelValues(c.Name())
 		errorCounter.Inc()
 		ch <- errorCounter
 	}
 
-	emitHistogramMetric(ch, c.Name(), duration)
+	emitOperationalMetrics(ch, c.Name(), duration)
 
 	return duration, hasError
 }
