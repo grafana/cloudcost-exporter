@@ -81,6 +81,7 @@ const (
 
 type Collector struct {
 	Projects   []string
+	regions    []string
 	interval   time.Duration
 	nextScrape time.Time
 	metrics    *metrics.Metrics
@@ -112,14 +113,21 @@ func New(config *Config, gcpClient client.Client) (*Collector, error) {
 		projects = []string{config.ProjectId}
 	}
 
+	regions := client.RegionsForProjects(gcpClient, projects, slog.Default())
+
 	return &Collector{
 		Projects: projects,
+		regions:  regions,
 		interval: config.ScrapeInterval,
 		// Set nextScrape to the current time minus the scrape interval so that the first scrape will run immediately
 		nextScrape: time.Now().Add(-config.ScrapeInterval),
 		metrics:    metrics.NewMetrics(),
 		gcpClient:  gcpClient,
 	}, nil
+}
+
+func (c *Collector) Regions() []string {
+	return c.regions
 }
 
 func (c *Collector) Name() string {

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -64,7 +66,7 @@ var (
 
 // Collector is a prometheus collector that collects metrics from AWS EKS clusters.
 type Collector struct {
-	Regions            []ec2Types.Region
+	regions            []ec2Types.Region
 	ScrapeInterval     time.Duration
 	computePricingMap  *ComputePricingMap
 	storagePricingMap  *StoragePricingMap
@@ -124,7 +126,7 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 
 	return &Collector{
 		ScrapeInterval:     config.ScrapeInterval,
-		Regions:            config.Regions,
+		regions:            config.Regions,
 		logger:             logger,
 		awsRegionClientMap: config.RegionMap,
 		computePricingMap:  computeMap,
@@ -136,7 +138,7 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
 
-	numOfRegions := len(c.Regions)
+	numOfRegions := len(c.regions)
 
 	wgInstances := sync.WaitGroup{}
 	wgInstances.Add(numOfRegions)
@@ -146,7 +148,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	wgVolumes.Add(numOfRegions)
 	volumeCh := make(chan []ec2Types.Volume, numOfRegions)
 
-	for _, region := range c.Regions {
+	for _, region := range c.regions {
 		regionName := *region.RegionName
 
 		regionClient, ok := c.awsRegionClientMap[regionName]
@@ -372,6 +374,10 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 
 func (c *Collector) Name() string {
 	return subsystem
+}
+
+func (c *Collector) Regions() []string {
+	return slices.Collect(maps.Keys(c.awsRegionClientMap))
 }
 
 func (c *Collector) Register(_ provider.Registry) error {

@@ -56,6 +56,7 @@ type Config struct {
 type Collector struct {
 	gcpClient  client.Client
 	projects   []string
+	regions    []string
 	pricingMap *pricingMap
 	logger     *slog.Logger
 	ctx        context.Context
@@ -102,13 +103,21 @@ func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collect
 		}
 	}()
 
+	projects := strings.Split(config.Projects, ",")
+	regions := client.RegionsForProjects(gcpClient, projects, logger)
+
 	return &Collector{
-		projects:   strings.Split(config.Projects, ","),
+		projects:   projects,
+		regions:    regions,
 		gcpClient:  gcpClient,
 		logger:     logger,
 		pricingMap: pm,
 		ctx:        ctx,
 	}, nil
+}
+
+func (c *Collector) Regions() []string {
+	return c.regions
 }
 
 func (c *Collector) Name() string {

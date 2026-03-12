@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -177,6 +179,10 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 
 func (c *Collector) Name() string {
 	return subsystem
+}
+
+func (c *Collector) Regions() []string {
+	return slices.Collect(maps.Keys(c.regionMap))
 }
 
 func (c *Collector) Register(registry provider.Registry) error {
