@@ -6,6 +6,7 @@ import (
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	elbTypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	msktypes "github.com/aws/aws-sdk-go-v2/service/kafka/types"
 	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	rdsTypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
@@ -73,6 +74,14 @@ func (m *mockClient) ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstanc
 }
 
 func (m *mockClient) GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, engineCode, isOutpost string) (string, error) {
+	panic("not implemented")
+}
+
+func (m *mockClient) ListMSKClusters(ctx context.Context) ([]msktypes.Cluster, error) {
+	panic("not implemented")
+}
+
+func (m *mockClient) ListMSKServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
 	panic("not implemented")
 }
 

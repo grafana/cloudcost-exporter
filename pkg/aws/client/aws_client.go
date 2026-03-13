@@ -6,12 +6,14 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	elbTypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	msktypes "github.com/aws/aws-sdk-go-v2/service/kafka/types"
 	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	rdsTypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	c "github.com/grafana/cloudcost-exporter/pkg/aws/services/costexplorer"
 	e "github.com/grafana/cloudcost-exporter/pkg/aws/services/ec2"
 	elbv2client "github.com/grafana/cloudcost-exporter/pkg/aws/services/elbv2"
+	mskclient "github.com/grafana/cloudcost-exporter/pkg/aws/services/msk"
 	p "github.com/grafana/cloudcost-exporter/pkg/aws/services/pricing"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -22,6 +24,7 @@ type Config struct {
 	BillingService c.CostExplorer
 	RDSService     *rds.Client
 	ELBService     elbv2client.ELBv2
+	MSKService     mskclient.MSK
 }
 
 type AWSClient struct {
@@ -30,6 +33,7 @@ type AWSClient struct {
 	billing        *billing
 	rdsService     *rdsService
 	elbService     *elb
+	mskService     *mskService
 	metrics        *Metrics
 }
 
@@ -41,6 +45,7 @@ func NewAWSClient(cfg Config) *AWSClient {
 		billing:        newBilling(cfg.BillingService, m),
 		elbService:     newELB(cfg.ELBService),
 		rdsService:     newRDS(cfg.RDSService),
+		mskService:     newMSK(cfg.MSKService),
 		metrics:        m,
 	}
 }
@@ -99,4 +104,12 @@ func (c *AWSClient) GetRDSUnitData(ctx context.Context, instType, region, deploy
 
 func (c *AWSClient) ListVPCServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
 	return c.priceService.listVPCServicePrices(ctx, region, filters)
+}
+
+func (c *AWSClient) ListMSKClusters(ctx context.Context) ([]msktypes.Cluster, error) {
+	return c.mskService.listMSKClusters(ctx)
+}
+
+func (c *AWSClient) ListMSKServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
+	return c.priceService.listMSKServicePrices(ctx, region, filters)
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	msk "github.com/aws/aws-sdk-go-v2/service/kafka"
 	awsPricing "github.com/aws/aws-sdk-go-v2/service/pricing"
 	rds "github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -25,6 +26,7 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/elb"
+	mskCollector "github.com/grafana/cloudcost-exporter/pkg/aws/msk"
 	awsgwnat "github.com/grafana/cloudcost-exporter/pkg/aws/natgateway"
 	awsvpc "github.com/grafana/cloudcost-exporter/pkg/aws/vpc"
 
@@ -90,6 +92,7 @@ const (
 	serviceNATGW = "NATGATEWAY"
 	serviceELB   = "ELB"
 	serviceVPC   = "VPC"
+	serviceMSK   = "MSK"
 )
 
 func New(ctx context.Context, config *Config) (*AWS, error) {
@@ -206,6 +209,25 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				Client:         awsVPCClient,
 			})
 			collectors = append(collectors, collector)
+		case serviceMSK:
+			pricingConfig := awsConfig
+			if pricingConfig.Region != "us-east-1" || config.Profile != "" || config.RoleARN != "" {
+				var err error
+				pricingConfig, err = createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
+				if err != nil {
+					return nil, err
+				}
+			}
+			awsMSKClient := client.NewAWSClient(client.Config{
+				PricingService: awsPricing.NewFromConfig(pricingConfig),
+			})
+			collector := mskCollector.New(ctx, &mskCollector.Config{
+				Regions:   regions,
+				RegionMap: regionClients,
+				Client:    awsMSKClient,
+				Logger:    logger,
+			})
+			collectors = append(collectors, collector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",
 				slog.String("service", service),
@@ -310,6 +332,7 @@ func newRegionClientMap(ctx context.Context, globalConfig aws.Config, regions []
 				BillingService: costexplorer.NewFromConfig(globalConfig),
 				RDSService:     rds.NewFromConfig(ac),
 				ELBService:     elbv2.NewFromConfig(ac),
+				MSKService:     msk.NewFromConfig(ac),
 			})
 	}
 

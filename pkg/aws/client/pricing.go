@@ -168,6 +168,21 @@ func (p *pricing) listVPCServicePrices(ctx context.Context, region string, filte
 	return p.getPricesFromProductList(ctx, input)
 }
 
+func (p *pricing) listMSKServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
+	input := &awsPricing.GetProductsInput{
+		ServiceCode: aws.String("AmazonMSK"),
+		Filters: append([]pricingTypes.Filter{
+			{
+				Field: aws.String("regionCode"),
+				Type:  pricingTypes.FilterTypeTermMatch,
+				Value: aws.String(region),
+			},
+		}, filters...),
+	}
+
+	return p.getPricesFromProductList(ctx, input)
+}
+
 func (p *pricing) listELBPrices(ctx context.Context, region string) ([]string, error) {
 	// Fetch ELB pricing from AWS Pricing API
 	input := &awsPricing.GetProductsInput{

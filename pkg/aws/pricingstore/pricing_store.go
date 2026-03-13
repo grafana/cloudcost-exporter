@@ -16,6 +16,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// PriceFetchFunc fetches pricing product JSON strings for a given region.
+// The caller provides all client/filter context via closure.
+type PriceFetchFunc func(ctx context.Context, region string) ([]string, error)
+
 const (
 	// Generic pricing constant
 	USD = "USD"
@@ -61,7 +65,8 @@ type PricingStore struct {
 	pricePerUnitPerRegion map[string]*map[string]float64
 	regionPricingMapLock  *sync.RWMutex
 
-	filters []pricingTypes.Filter
+	filters     []pricingTypes.Filter
+	fetchPrices PriceFetchFunc
 }
 
 type PricingStoreRefresher interface {
@@ -91,6 +96,27 @@ func NewPricingStore(ctx context.Context, logger *slog.Logger, regions []ec2Type
 	return p
 }
 
+// NewPricingStoreWithFetch creates a new PricingStore that loads prices through
+// the provided fetch strategy instead of the default EC2 region-client path.
+func NewPricingStoreWithFetch(ctx context.Context, logger *slog.Logger, regions []ec2Types.Region, fetchPrices PriceFetchFunc) *PricingStore {
+	p := &PricingStore{
+		logger:                logger,
+		pricePerUnitPerRegion: make(map[string]*map[string]float64),
+		regions:               regions,
+		fetchPrices:           fetchPrices,
+
+		regionPricingMapLock: &sync.RWMutex{},
+	}
+
+	// Populate the store before it is used by the Collector.
+	err := p.PopulatePricingMap(ctx)
+	if err != nil {
+		p.logger.Error("error populating pricing map", "error", err)
+	}
+
+	return p
+}
+
 // populatePricingMap fetches the pricing information for a product from the AWS Pricing API.
 func (p *PricingStore) PopulatePricingMap(ctx context.Context) error {
 	p.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing pricing map")
@@ -100,16 +126,29 @@ func (p *PricingStore) PopulatePricingMap(ctx context.Context) error {
 	m := sync.Mutex{}
 	for _, region := range p.regions {
 		eg.Go(func() error {
-			p.logger.LogAttrs(ctx, slog.LevelDebug, "fetching pricing info", slog.String("region", *region.RegionName))
+			regionName := *region.RegionName
+			p.logger.LogAttrs(ctx, slog.LevelDebug, "fetching pricing info", slog.String("region", regionName))
 
-			regionClient, ok := p.awsRegionClientMap[*region.RegionName]
-			if !ok {
-				return errClientNotFound
-			}
+			var (
+				priceList []string
+				err       error
+			)
 
-			priceList, err := regionClient.ListEC2ServicePrices(ctx, *region.RegionName, p.filters)
-			if err != nil {
-				return fmt.Errorf("%w: %w", errListPrices, err)
+			if p.fetchPrices != nil {
+				priceList, err = p.fetchPrices(ctx, regionName)
+				if err != nil {
+					return fmt.Errorf("%w: %w", errListPrices, err)
+				}
+			} else {
+				regionClient, ok := p.awsRegionClientMap[regionName]
+				if !ok {
+					return errClientNotFound
+				}
+
+				priceList, err = regionClient.ListEC2ServicePrices(ctx, regionName, p.filters)
+				if err != nil {
+					return fmt.Errorf("%w: %w", errListPrices, err)
+				}
 			}
 
 			m.Lock()

@@ -13,6 +13,7 @@
                 "ec2:DescribeVolumes",
                 "ec2:DescribeVpcEndpoints",
                 "elasticloadbalancing:DescribeLoadBalancers",
+                "kafka:ListClustersV2",
                 "pricing:GetProducts",
                 "rds:DescribeDBInstances"
             ],
