@@ -52,7 +52,7 @@ type Collector struct {
 func New(ctx context.Context, config *Config) *Collector {
 	logger := config.Logger.With("logger", serviceName)
 
-	pricingStore := pricingstore.NewPricingStore(ctx, logger, config.Regions, config.RegionMap, NATGatewayFilters)
+	pricingStore := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.RegionMap))
 
 	go func(ctx context.Context) {
 		priceTicker := time.NewTicker(pricingstore.PriceRefreshInterval)
@@ -126,3 +126,14 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 }
 
 func (c *Collector) Register(registry provider.Registry) error { return nil }
+
+func newPriceFetcher(regionMap map[string]awsclient.Client) pricingstore.PriceFetchFunc {
+	return func(ctx context.Context, region string) ([]string, error) {
+		regionClient, ok := regionMap[region]
+		if !ok {
+			return nil, fmt.Errorf("no client found for region %s", region)
+		}
+
+		return regionClient.ListEC2ServicePrices(ctx, region, NATGatewayFilters)
+	}
+}

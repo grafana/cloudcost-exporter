@@ -99,7 +99,6 @@ type Config struct {
 }
 
 type clusterPricingData struct {
-	region        string
 	clusterName   string
 	clusterARN    string
 	instanceType  string
@@ -113,7 +112,7 @@ func New(ctx context.Context, config *Config) *Collector {
 		logger = config.Logger.With("logger", serviceName)
 	}
 
-	pricingStore := pricingstore.NewPricingStoreWithFetch(ctx, logger, config.Regions, newPriceFetcher(config.Client))
+	pricingStore := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.Client))
 
 	go func(ctx context.Context) {
 		priceTicker := time.NewTicker(pricingstore.PriceRefreshInterval)
@@ -175,7 +174,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 }
 
 func (c *Collector) collectCluster(ch chan<- prometheus.Metric, region string, cluster msktypes.Cluster) {
-	clusterData, err := buildClusterPricingData(region, cluster)
+	clusterData, err := buildClusterPricingData(cluster)
 	if err != nil {
 		c.logger.Warn("skipping unsupported or incomplete MSK cluster", "region", region, "cluster_arn", aws.ToString(cluster.ClusterArn), "error", err)
 		return
@@ -201,7 +200,7 @@ func (c *Collector) collectCluster(ch chan<- prometheus.Metric, region string, c
 		ComputeHourlyGaugeDesc,
 		prometheus.GaugeValue,
 		computeHourlyRate,
-		clusterData.region,
+		region,
 		clusterData.clusterName,
 		clusterData.clusterARN,
 		clusterData.instanceType,
@@ -210,23 +209,25 @@ func (c *Collector) collectCluster(ch chan<- prometheus.Metric, region string, c
 		StorageHourlyGaugeDesc,
 		prometheus.GaugeValue,
 		storageHourlyRate,
-		clusterData.region,
+		region,
 		clusterData.clusterName,
 		clusterData.clusterARN,
 	)
 }
 
-func buildClusterPricingData(region string, cluster msktypes.Cluster) (clusterPricingData, error) {
+func buildClusterPricingData(cluster msktypes.Cluster) (clusterPricingData, error) {
 	if cluster.ClusterType != "" && cluster.ClusterType != msktypes.ClusterTypeProvisioned {
 		return clusterPricingData{}, fmt.Errorf("cluster type %q is not supported", cluster.ClusterType)
 	}
 	if cluster.Provisioned == nil {
 		return clusterPricingData{}, fmt.Errorf("cluster is missing provisioned data")
 	}
-	if cluster.ClusterName == nil || *cluster.ClusterName == "" {
+	clusterName := aws.ToString(cluster.ClusterName)
+	if clusterName == "" {
 		return clusterPricingData{}, fmt.Errorf("cluster name is missing")
 	}
-	if cluster.ClusterArn == nil || *cluster.ClusterArn == "" {
+	clusterARN := aws.ToString(cluster.ClusterArn)
+	if clusterARN == "" {
 		return clusterPricingData{}, fmt.Errorf("cluster ARN is missing")
 	}
 
@@ -234,17 +235,18 @@ func buildClusterPricingData(region string, cluster msktypes.Cluster) (clusterPr
 	if provisioned.StorageMode == msktypes.StorageModeTiered {
 		return clusterPricingData{}, fmt.Errorf("tiered storage is not supported")
 	}
-	if provisioned.NumberOfBrokerNodes == nil || *provisioned.NumberOfBrokerNodes <= 0 {
+	brokerCount := aws.ToInt32(provisioned.NumberOfBrokerNodes)
+	if brokerCount <= 0 {
 		return clusterPricingData{}, fmt.Errorf("broker count is missing")
 	}
 	if provisioned.BrokerNodeGroupInfo == nil {
 		return clusterPricingData{}, fmt.Errorf("broker node group info is missing")
 	}
-	if provisioned.BrokerNodeGroupInfo.InstanceType == nil || *provisioned.BrokerNodeGroupInfo.InstanceType == "" {
+	instanceType := aws.ToString(provisioned.BrokerNodeGroupInfo.InstanceType)
+	if instanceType == "" {
 		return clusterPricingData{}, fmt.Errorf("instance type is missing")
 	}
 
-	instanceType := *provisioned.BrokerNodeGroupInfo.InstanceType
 	if strings.HasPrefix(instanceType, "express.") {
 		return clusterPricingData{}, fmt.Errorf("express brokers are not supported")
 	}
@@ -253,7 +255,8 @@ func buildClusterPricingData(region string, cluster msktypes.Cluster) (clusterPr
 	if storageInfo == nil || storageInfo.EbsStorageInfo == nil {
 		return clusterPricingData{}, fmt.Errorf("EBS storage info is missing")
 	}
-	if storageInfo.EbsStorageInfo.VolumeSize == nil || *storageInfo.EbsStorageInfo.VolumeSize <= 0 {
+	volumeSizeGiB := aws.ToInt32(storageInfo.EbsStorageInfo.VolumeSize)
+	if volumeSizeGiB <= 0 {
 		return clusterPricingData{}, fmt.Errorf("EBS volume size is missing")
 	}
 	if storageInfo.EbsStorageInfo.ProvisionedThroughput != nil && aws.ToBool(storageInfo.EbsStorageInfo.ProvisionedThroughput.Enabled) {
@@ -261,12 +264,11 @@ func buildClusterPricingData(region string, cluster msktypes.Cluster) (clusterPr
 	}
 
 	return clusterPricingData{
-		region:        region,
-		clusterName:   *cluster.ClusterName,
-		clusterARN:    *cluster.ClusterArn,
+		clusterName:   clusterName,
+		clusterARN:    clusterARN,
 		instanceType:  instanceType,
-		brokerCount:   *provisioned.NumberOfBrokerNodes,
-		volumeSizeGiB: *storageInfo.EbsStorageInfo.VolumeSize,
+		brokerCount:   brokerCount,
+		volumeSizeGiB: volumeSizeGiB,
 	}, nil
 }
 

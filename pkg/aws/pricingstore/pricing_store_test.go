@@ -1,38 +1,31 @@
 package pricingstore_test
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/mock/gomock"
 
 	aws "github.com/aws/aws-sdk-go-v2/aws"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
-
-	awsclient "github.com/grafana/cloudcost-exporter/pkg/aws/client"
-	mock_client "github.com/grafana/cloudcost-exporter/pkg/aws/client/mocks"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/pricingstore"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 func TestNewPricingStore(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
 	tests := map[string]struct {
 		logger          *slog.Logger
 		regions         []ec2Types.Region
-		regionClient    *mock_client.MockClient
+		fetchPrices     pricingstore.PriceFetchFunc
 		expectedRegions int
 	}{
 		"creates new pricing store with empty regions": {
 			logger:          testLogger,
 			regions:         []ec2Types.Region{},
-			regionClient:    nil,
+			fetchPrices:     func(context.Context, string) ([]string, error) { return nil, nil },
 			expectedRegions: 0,
 		},
 		"creates new pricing store with single region": {
@@ -40,17 +33,15 @@ func TestNewPricingStore(t *testing.T) {
 			regions: []ec2Types.Region{
 				{RegionName: aws.String("us-east-1")},
 			},
-			regionClient: func() *mock_client.MockClient {
-				m := mock_client.NewMockClient(ctrl)
-				m.EXPECT().
-					ListEC2ServicePrices(gomock.Any(), "us-east-1", []pricingTypes.Filter{}).
-					Return([]string{
-						`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.004"}}}}}}}`,
-						`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Bytes","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.045"}}}}}}}`,
-					}, nil).
-					Times(1)
-				return m
-			}(),
+			fetchPrices: func(_ context.Context, region string) ([]string, error) {
+				if region != "us-east-1" {
+					return nil, nil
+				}
+				return []string{
+					`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.004"}}}}}}}`,
+					`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Bytes","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.045"}}}}}}}`,
+				}, nil
+			},
 			expectedRegions: 1,
 		},
 		"creates new pricing store with multiple regions": {
@@ -59,37 +50,29 @@ func TestNewPricingStore(t *testing.T) {
 				{RegionName: aws.String("us-east-1")},
 				{RegionName: aws.String("us-west-2")},
 			},
-			regionClient: func() *mock_client.MockClient {
-				m := mock_client.NewMockClient(ctrl)
-				m.EXPECT().
-					ListEC2ServicePrices(gomock.Any(), "us-east-1", []pricingTypes.Filter{}).
-					Return([]string{
+			fetchPrices: func(_ context.Context, region string) ([]string, error) {
+				switch region {
+				case "us-east-1":
+					return []string{
 						`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.004"}}}}}}}`,
 						`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Bytes","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.045"}}}}}}}`,
-					}, nil).
-					Times(1)
-				m.EXPECT().
-					ListEC2ServicePrices(gomock.Any(), "us-west-2", []pricingTypes.Filter{}).
-					Return([]string{
+					}, nil
+				case "us-west-2":
+					return []string{
 						`{"product":{"attributes":{"usagetype":"USW2-NatGateway-Hours","regionCode":"us-west-2"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.005"}}}}}}}`,
 						`{"product":{"attributes":{"usagetype":"USW2-NatGateway-Bytes","regionCode":"us-west-2"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.055"}}}}}}}`,
-					}, nil).
-					Times(1)
-				return m
-			}(),
+					}, nil
+				default:
+					return nil, nil
+				}
+			},
 			expectedRegions: 2,
 		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			awsRegionClientMap := map[string]awsclient.Client{}
-			for i := 0; i < tt.expectedRegions; i++ {
-				regionName := *tt.regions[i].RegionName
-				awsRegionClientMap[regionName] = tt.regionClient
-			}
-
-			store := pricingstore.NewPricingStore(t.Context(), tt.logger, tt.regions, awsRegionClientMap, []pricingTypes.Filter{})
+			store := pricingstore.NewPricingStore(t.Context(), tt.logger, tt.regions, tt.fetchPrices)
 
 			assert.NotNil(t, store)
 			assert.NotNil(t, store.GetPricePerUnitPerRegion())
@@ -118,4 +101,37 @@ func TestNewPricingStore(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewPricingStoreInvokesInjectedFetcher(t *testing.T) {
+	regions := []ec2Types.Region{
+		{RegionName: aws.String("us-east-1")},
+		{RegionName: aws.String("us-west-2")},
+	}
+
+	calls := map[string]int{}
+	store := pricingstore.NewPricingStore(t.Context(), testLogger, regions, func(ctx context.Context, region string) ([]string, error) {
+		calls[region]++
+
+		switch region {
+		case "us-east-1":
+			return []string{
+				`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.004"}}}}}}}`,
+			}, nil
+		case "us-west-2":
+			return []string{
+				`{"product":{"attributes":{"usagetype":"USW2-NatGateway-Hours","regionCode":"us-west-2"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.005"}}}}}}}`,
+			}, nil
+		default:
+			return nil, nil
+		}
+	})
+
+	assert.NotNil(t, store)
+	assert.Equal(t, map[string]int{
+		"us-east-1": 1,
+		"us-west-2": 1,
+	}, calls)
+	assert.Equal(t, 0.004, (*store.GetPricePerUnitPerRegion()["us-east-1"])["USE1-NatGateway-Hours"])
+	assert.Equal(t, 0.005, (*store.GetPricePerUnitPerRegion()["us-west-2"])["USW2-NatGateway-Hours"])
 }

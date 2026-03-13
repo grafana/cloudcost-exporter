@@ -30,7 +30,6 @@ func TestBuildClusterPricingData(t *testing.T) {
 			name:    "extracts supported provisioned cluster",
 			cluster: newProvisionedCluster("test-cluster", "arn:aws:kafka:us-east-1:123456789012:cluster/test-cluster", "kafka.m5.large", 3, 100),
 			want: clusterPricingData{
-				region:        "us-east-1",
 				clusterName:   "test-cluster",
 				clusterARN:    "arn:aws:kafka:us-east-1:123456789012:cluster/test-cluster",
 				instanceType:  "kafka.m5.large",
@@ -90,7 +89,7 @@ func TestBuildClusterPricingData(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := buildClusterPricingData("us-east-1", tt.cluster)
+			got, err := buildClusterPricingData(tt.cluster)
 			if tt.wantErr {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErrMsg)
