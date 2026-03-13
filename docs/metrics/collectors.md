@@ -6,7 +6,7 @@ Metrics exported by the gatherer for each collector scrape operation. These metr
 |------------------------------------------------------|-------------|------------------------------------------------------------------|-------------------------------------------|
 | cloudcost_exporter_collector_duration_seconds        | Histogram   | Duration of a collector scrape in seconds                       | `collector`=&lt;name of the collector&gt; |
 | cloudcost_exporter_collector_total                   | Counter     | Total number of scrapes performed by a collector                | `collector`=&lt;name of the collector&gt; |
-| cloudcost_exporter_collector_error_total             | Counter     | Total number of errors that occurred during collector scrapes   | `collector`=&lt;name of the collector&gt; |
+| cloudcost_exporter_collector_error                   | Counter     | Total number of errors that occurred during collector scrapes   | `collector`=&lt;name of the collector&gt; |
 
 ## Notes
 

@@ -22,7 +22,7 @@ var durationHistogramVec = prometheus.NewHistogramVec(
 
 var errorCounterVec = prometheus.NewCounterVec(
 	prometheus.CounterOpts{
-		Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "error_total"),
+		Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "error"),
 		Help: "Total number of errors that occurred during the last scrape.",
 	},
 	[]string{"collector"},
