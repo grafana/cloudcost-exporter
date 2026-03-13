@@ -13,7 +13,7 @@ import (
 
 	"github.com/grafana/cloudcost-exporter/pkg/azure/aks"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
-	"github.com/grafana/cloudcost-exporter/pkg/gatherer"
+	"github.com/grafana/cloudcost-exporter/pkg/collectormetrics"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
@@ -151,7 +151,7 @@ func (a *Azure) Collect(ch chan<- prometheus.Metric) {
 		go func(c provider.Collector) {
 			defer wg.Done()
 
-			duration, hasError := gatherer.CollectWithGatherer(collectCtx, c, ch, a.logger)
+			duration, hasError := collectormetrics.Collect(collectCtx, c, ch, a.logger)
 
 			//TODO: remove collectorErrors once we have the new metrics
 			collectorErrors := 0.0
