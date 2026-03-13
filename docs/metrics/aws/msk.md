@@ -1,9 +1,9 @@
 # AWS MSK Metrics
 
-| Metric name                                              | Metric type | Description                                                                 | Labels                                                                                                                                               |
-|----------------------------------------------------------|-------------|-----------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| cloudcost_aws_msk_compute_hourly_rate_usd_per_hour       | Gauge       | Hourly broker compute cost for an AWS MSK cluster. Cost represented in USD/hour | `region`=&lt;AWS region&gt; <br/> `cluster_name`=&lt;MSK cluster name&gt; <br/> `cluster_arn`=&lt;MSK cluster ARN&gt; <br/> `instance_type`=&lt;broker instance type&gt; |
-| cloudcost_aws_msk_storage_hourly_rate_usd_per_hour       | Gauge       | Hourly provisioned storage cost for an AWS MSK cluster. Cost represented in USD/hour | `region`=&lt;AWS region&gt; <br/> `cluster_name`=&lt;MSK cluster name&gt; <br/> `cluster_arn`=&lt;MSK cluster ARN&gt;                             |
+| Metric name                                              | Metric type | Description                                                                          | Labels                                                                                                                                               |
+|----------------------------------------------------------|-------------|--------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| cloudcost_aws_msk_compute_hourly_rate_usd_per_hour       | Gauge       | Hourly broker compute cost for an AWS MSK cluster. Cost represented in USD/hour      | `region`=<AWS region> <br/> `cluster_name`=<MSK cluster name> <br/> `cluster_arn`=<MSK cluster ARN> <br/> `instance_type`=<broker instance type> |
+| cloudcost_aws_msk_storage_hourly_rate_usd_per_hour       | Gauge       | Hourly provisioned storage cost for an AWS MSK cluster. Cost represented in USD/hour | `region`=<AWS region> <br/> `cluster_name`=<MSK cluster name> <br/> `cluster_arn`=<MSK cluster ARN>                             |
 
 ## Overview
 
@@ -22,23 +22,25 @@ aws:
 ```
 
 Or via command line:
-
 ```bash
 --aws.services=ec2,s3,msk
 ```
 
-## Metric semantics
+## Labels
 
-- `cloudcost_aws_msk_compute_hourly_rate_usd_per_hour` is the broker-hour list price multiplied by the cluster's broker count.
-- `cloudcost_aws_msk_storage_hourly_rate_usd_per_hour` is derived from provisioned storage, not live disk consumption.
-- Storage cost uses total allocated cluster storage: `broker_count * volume_size_gib_per_broker`.
-- Clusters that require extra pricing dimensions are skipped with a warning so the scrape can continue.
+- **region**: The AWS region where the MSK cluster is running
+- **cluster_name**: The name of the MSK cluster
+- **cluster_arn**: The Amazon Resource Name (ARN) of the MSK cluster
+- **instance_type**: The broker instance type (compute metric only)
 
-## Pricing source
+## Notes
 
-- Broker pricing is resolved from the AWS Pricing API in `us-east-1` using the regional broker shape.
-- Storage pricing is resolved from the AWS Pricing API in `us-east-1` using the regional local-storage SKU.
-- All costs are emitted in USD and represent list price only.
+- Compute cost is the broker-hour list price multiplied by the cluster's broker count
+- Storage cost is derived from provisioned storage (`broker_count * volume_size_gib_per_broker`), not live disk consumption
+- Clusters that require extra pricing dimensions are skipped with a warning so the scrape can continue
+- Pricing data is fetched from the AWS Pricing API (us-east-1 region)
+- Metrics are refreshed periodically based on the configured scrape interval
+- All costs are represented in USD per hour
 
 ## IAM Permissions
 
