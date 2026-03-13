@@ -6,6 +6,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	elbTypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	msktypes "github.com/aws/aws-sdk-go-v2/service/kafka/types"
 	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	rdsTypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,6 +28,8 @@ type Client interface {
 	DescribeLoadBalancers(ctx context.Context) ([]elbTypes.LoadBalancer, error)
 	ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstance, error)
 	GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, engineCode, isOutpost string) (string, error)
+	ListMSKClusters(ctx context.Context) ([]msktypes.Cluster, error)
+	ListMSKServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error)
 
 	// TODO: Break out Metrics into an independent interface
 	Metrics() []prometheus.Collector

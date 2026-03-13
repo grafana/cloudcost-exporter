@@ -66,23 +66,7 @@ func validateRDSPriceData(ctx context.Context, priceList string) (float64, error
 		return 0, fmt.Errorf("OnDemand is nil")
 	}
 
-	// example of onDemandPayload
-	// {
-	// 	"terms": {
-	// 	  "OnDemand": {
-	// 		"<termId>": {
-	// 		  "priceDimensions": {
-	// 			"<dimensionId>": {
-	// 			  "pricePerUnit": {"USD": "0.0840000000"}
-	// 			}
-	// 		  }
-	// 		}
-	// 	  }
-	// 	}
-	//   }
 	var term *AWSTerm
-	// we iterate over the onDemand map to get the value
-	// since the key is unknown (AWS id specific)
 	for _, t := range priceData.Terms.OnDemand {
 		if t == nil || t.PriceDimensions == nil {
 			slog.ErrorContext(ctx, "PriceDimensions is nil")
@@ -92,7 +76,6 @@ func validateRDSPriceData(ctx context.Context, priceList string) (float64, error
 		break
 	}
 
-	// same logic for the RDS price
 	var dimension *AWSPriceDimension
 	for _, d := range term.PriceDimensions {
 		if d == nil || d.PricePerUnit == nil {

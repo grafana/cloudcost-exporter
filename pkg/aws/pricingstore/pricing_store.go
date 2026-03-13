@@ -11,10 +11,12 @@ import (
 	"time"
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
-	awsclient "github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"golang.org/x/sync/errgroup"
 )
+
+// PriceFetchFunc fetches pricing product JSON strings for a given region.
+// The caller provides all client/filter context via closure.
+type PriceFetchFunc func(ctx context.Context, region string) ([]string, error)
 
 const (
 	// Generic pricing constant
@@ -26,9 +28,9 @@ const (
 )
 
 var (
-	errListPrices         = errors.New("error listing prices")
-	errClientNotFound     = errors.New("no client found")
-	errGeneratePricingMap = errors.New("error generating pricing map")
+	errListPrices                = errors.New("error listing prices")
+	errGeneratePricingMap        = errors.New("error generating pricing map")
+	errPriceFetcherNotConfigured = errors.New("price fetcher not configured")
 
 	PriceRefreshInterval = 24 * time.Hour
 )
@@ -53,15 +55,13 @@ type productInfo struct {
 type PricingStore struct {
 	logger *slog.Logger
 
-	// AWS region to client map
-	awsRegionClientMap map[string]awsclient.Client
-	regions            []ec2Types.Region
+	regions []ec2Types.Region
 
 	// Maps a region to a map of units to prices
 	pricePerUnitPerRegion map[string]*map[string]float64
 	regionPricingMapLock  *sync.RWMutex
 
-	filters []pricingTypes.Filter
+	fetchPrices PriceFetchFunc
 }
 
 type PricingStoreRefresher interface {
@@ -69,19 +69,25 @@ type PricingStoreRefresher interface {
 	GetPricePerUnitPerRegion() map[string]*map[string]float64
 }
 
-// NewPricingStore creates a new PricingStore.
-// It populates the store before it is used by the Collector.
-func NewPricingStore(ctx context.Context, logger *slog.Logger, regions []ec2Types.Region, awsRegionClientMap map[string]awsclient.Client, filters []pricingTypes.Filter) *PricingStore {
-	p := &PricingStore{
+func newPricingStore(logger *slog.Logger, regions []ec2Types.Region) *PricingStore {
+	return &PricingStore{
 		logger:                logger,
 		pricePerUnitPerRegion: make(map[string]*map[string]float64),
 		regions:               regions,
-		awsRegionClientMap:    awsRegionClientMap,
-		filters:               filters,
-
-		regionPricingMapLock: &sync.RWMutex{},
+		regionPricingMapLock:  &sync.RWMutex{},
 	}
+}
 
+// NewPricingStore creates a new PricingStore.
+// It populates the store before it is used by the Collector.
+func NewPricingStore(ctx context.Context, logger *slog.Logger, regions []ec2Types.Region, fetchPrices PriceFetchFunc) *PricingStore {
+	p := newPricingStore(logger, regions)
+	p.fetchPrices = fetchPrices
+
+	return p.populate(ctx)
+}
+
+func (p *PricingStore) populate(ctx context.Context) *PricingStore {
 	// Populate the store before it is used by the Collector.
 	err := p.PopulatePricingMap(ctx)
 	if err != nil {
@@ -100,16 +106,12 @@ func (p *PricingStore) PopulatePricingMap(ctx context.Context) error {
 	m := sync.Mutex{}
 	for _, region := range p.regions {
 		eg.Go(func() error {
-			p.logger.LogAttrs(ctx, slog.LevelDebug, "fetching pricing info", slog.String("region", *region.RegionName))
+			regionName := *region.RegionName
+			p.logger.LogAttrs(ctx, slog.LevelDebug, "fetching pricing info", slog.String("region", regionName))
 
-			regionClient, ok := p.awsRegionClientMap[*region.RegionName]
-			if !ok {
-				return errClientNotFound
-			}
-
-			priceList, err := regionClient.ListEC2ServicePrices(ctx, *region.RegionName, p.filters)
+			priceList, err := p.listPrices(ctx, regionName)
 			if err != nil {
-				return fmt.Errorf("%w: %w", errListPrices, err)
+				return err
 			}
 
 			m.Lock()
@@ -128,6 +130,19 @@ func (p *PricingStore) PopulatePricingMap(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (p *PricingStore) listPrices(ctx context.Context, region string) ([]string, error) {
+	if p.fetchPrices == nil {
+		return nil, errPriceFetcherNotConfigured
+	}
+
+	priceList, err := p.fetchPrices(ctx, region)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errListPrices, err)
+	}
+
+	return priceList, nil
 }
 
 // GetPricePerUnitPerRegion returns the pricePerUnitPerRegion map.

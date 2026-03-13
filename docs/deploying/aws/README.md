@@ -32,7 +32,7 @@ The AWS-specific values can also be set like this:
 helm install my-release grafana/cloudcost-exporter \
 --set 'containerArgs[0]=--provider=aws' \
 --set 'containerArgs[1]=--aws.region=us-east-1' \
---set 'containerArgs[2]=--aws.services=s3\,ec2' \
+--set 'containerArgs[2]=--aws.services=s3\,ec2\,msk' \
 --set-string serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="arn:aws:iam::123456789012:role/CloudCostExporterRole" \
 --namespace cloudcost-exporter --create-namespace
 ```
@@ -53,8 +53,10 @@ This is often a global endpoint so only needs to be set to one region.
 
 Set which AWS service to use:
 ```
-  - "--aws.services=s3,ec2"
+  - "--aws.services=s3,ec2,msk"
 ```
+
+If you enable the MSK collector, the IAM policy must also include `kafka:ListClustersV2`.
 
 Optional: exclude specific AWS regions from collection (e.g. to avoid scraping a region that is unavailable):
 ```

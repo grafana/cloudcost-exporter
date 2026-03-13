@@ -16,6 +16,7 @@ import (
 
 	types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	types0 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	types3 "github.com/aws/aws-sdk-go-v2/service/kafka/types"
 	types1 "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	types2 "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	client "github.com/grafana/cloudcost-exporter/pkg/aws/client"
@@ -165,6 +166,36 @@ func (m *MockClient) ListELBPrices(ctx context.Context, region string) ([]string
 func (mr *MockClientMockRecorder) ListELBPrices(ctx, region any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListELBPrices", reflect.TypeOf((*MockClient)(nil).ListELBPrices), ctx, region)
+}
+
+// ListMSKClusters mocks base method.
+func (m *MockClient) ListMSKClusters(ctx context.Context) ([]types3.Cluster, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListMSKClusters", ctx)
+	ret0, _ := ret[0].([]types3.Cluster)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListMSKClusters indicates an expected call of ListMSKClusters.
+func (mr *MockClientMockRecorder) ListMSKClusters(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMSKClusters", reflect.TypeOf((*MockClient)(nil).ListMSKClusters), ctx)
+}
+
+// ListMSKServicePrices mocks base method.
+func (m *MockClient) ListMSKServicePrices(ctx context.Context, region string, filters []types1.Filter) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListMSKServicePrices", ctx, region, filters)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListMSKServicePrices indicates an expected call of ListMSKServicePrices.
+func (mr *MockClientMockRecorder) ListMSKServicePrices(ctx, region, filters any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMSKServicePrices", reflect.TypeOf((*MockClient)(nil).ListMSKServicePrices), ctx, region, filters)
 }
 
 // ListOnDemandPrices mocks base method.
