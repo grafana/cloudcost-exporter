@@ -7,6 +7,7 @@ import (
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -72,7 +73,7 @@ func CollectWithGatherer(ctx context.Context, c provider.Collector, ch chan<- pr
 		)
 	}
 
-	regions := []string{"unknown"}
+	regions := []string{utils.RegionUnknown}
 	if rp, ok := c.(provider.RegionsProvider); ok {
 		if r := rp.Regions(); len(r) > 0 {
 			regions = r

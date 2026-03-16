@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"maps"
-	"slices"
 	"sync"
 	"time"
 
@@ -156,7 +154,7 @@ func (c *Collector) Name() string {
 }
 
 func (c *Collector) Regions() []string {
-	return slices.Collect(maps.Keys(c.awsRegionClientMap))
+	return utils.RegionsFromMap(c.awsRegionClientMap)
 }
 
 func (c *Collector) shouldScrape() bool {

@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
-	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -377,7 +375,7 @@ func (c *Collector) Name() string {
 }
 
 func (c *Collector) Regions() []string {
-	return slices.Collect(maps.Keys(c.awsRegionClientMap))
+	return utils.RegionsFromMap(c.awsRegionClientMap)
 }
 
 func (c *Collector) Register(_ provider.Registry) error {

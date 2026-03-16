@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	cost "github.com/grafana/cloudcost-exporter/pkg/aws/services/costexplorer"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 type billing struct {
@@ -97,7 +98,7 @@ func parseBillingData(outputs []*costexplorer.GetCostAndUsageOutput) *BillingDat
 // getRegionFromKey returns the region from the key. Keys without a recognisable
 // region prefix are returned as "unknown".
 func getRegionFromKey(key string) string {
-	region := "unknown"
+	region := utils.RegionUnknown
 	if key == "Requests-Tier1" || key == "Requests-Tier2" {
 		return region
 	}

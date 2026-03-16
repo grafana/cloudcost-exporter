@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"maps"
-	"slices"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -182,7 +180,7 @@ func (c *Collector) Name() string {
 }
 
 func (c *Collector) Regions() []string {
-	return slices.Collect(maps.Keys(c.regionMap))
+	return utils.RegionsFromMap(c.regionMap)
 }
 
 func (c *Collector) Register(registry provider.Registry) error {
