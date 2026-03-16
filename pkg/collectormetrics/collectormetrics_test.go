@@ -81,11 +81,9 @@ func TestCollect_ErrorCounterEmitted(t *testing.T) {
 		}
 		var dtoMetric dto.Metric
 		require.NoError(t, m.Write(&dtoMetric))
-		for _, lp := range dtoMetric.GetLabel() {
-			if lp.GetName() == "collector" && lp.GetValue() == collectorName {
-				counterValue = dtoMetric.GetCounter().GetValue()
-				found = true
-			}
+		if labels := dtoMetric.GetLabel(); len(labels) == 1 && labels[0].GetValue() == collectorName {
+			counterValue = dtoMetric.GetCounter().GetValue()
+			found = true
 		}
 	}
 	assert.True(t, found, "error counter metric should be emitted to channel when Collect fails")
