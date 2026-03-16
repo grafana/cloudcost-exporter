@@ -1,6 +1,6 @@
 # Cloud Cost Exporter
 
-Prometheus exporter that collects pricing rates from AWS, GCP, and Azure. Exports per-resource rates (`$/core/hr`, `$/GiB/hr`) as Prometheus metrics. Rates, not total spend. Go 1.25+.
+Prometheus exporter that collects pricing rates from AWS, GCP, and Azure. Exports rates per instance of a given resource (`$/core/hr`, `$/GiB/hr`) as Prometheus metrics. Rates, not total spend. Go 1.25+.
 
 Agent self-check: If you find information in this AGENTS.md that contradicts the code, flag it to the user.
 
