@@ -7,7 +7,9 @@ import (
 
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -66,18 +68,28 @@ func TestCollect_ErrorCounterEmitted(t *testing.T) {
 
 	assert.True(t, hasError, "hasError should be true when Collect fails")
 
-	// Verify that the error counter metric was emitted to the channel.
-	// All metrics in errorCounterVec share the same Desc, so matching
-	// on Desc() is sufficient to identify the error counter family.
-	errorCounterDesc := errorCounterVec.WithLabelValues(collectorName).Desc()
+	descCh := make(chan *prometheus.Desc, 1)
+	errorCounterVec.Describe(descCh)
+	expectedDesc := <-descCh
+
+	// Drain the full channel and verify the error counter was emitted.
 	var found bool
+	var counterValue float64
 	for m := range ch {
-		if m.Desc() == errorCounterDesc {
-			found = true
-			break
+		if m.Desc() != expectedDesc {
+			continue
+		}
+		var dtoMetric dto.Metric
+		require.NoError(t, m.Write(&dtoMetric))
+		for _, lp := range dtoMetric.GetLabel() {
+			if lp.GetName() == "collector" && lp.GetValue() == collectorName {
+				counterValue = dtoMetric.GetCounter().GetValue()
+				found = true
+			}
 		}
 	}
 	assert.True(t, found, "error counter metric should be emitted to channel when Collect fails")
+	assert.Equal(t, 1.0, counterValue, "error counter should be incremented by 1")
 }
 
 type collectorConfig struct {
