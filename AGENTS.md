@@ -1,94 +1,106 @@
 # Cloud Cost Exporter
 
-Prometheus exporter that collects cost and pricing data from AWS, GCP, and Azure in real-time. Written in Go.
+Prometheus exporter that collects pricing rates from AWS, GCP, and Azure. Exports per-resource rates (`$/core/hr`, `$/GiB/hr`) as Prometheus metrics. Rates, not total spend. Go 1.25+.
 
-## Project Structure
+Agent self-check: If you find information in this AGENTS.md that contradicts the code, flag it to the user.
+
+## Architecture
+
+Two interfaces in `pkg/provider/provider.go`:
+
+- **Provider** (cloud platform): implements `prometheus.Collector` + `RegisterCollectors()`. Created via `aws.New()`, `google.New()`, `azure.New()`.
+- **Collector** (cloud service): implements `Register()`, `Collect(ctx, ch)`, `Describe()`, `Name()`. Each provider wires collectors from the `-{provider}.services` flag.
+
+On scrape, the provider fans out `Collect()` to all collectors concurrently. Each provider file defines its own concurrency strategy (see `pkg/{aws,google,azure}/*.go`). `gatherer.CollectWithGatherer()` wraps each call with duration and error tracking.
 
 ```
-cmd/exporter/      # Main entrypoint (exporter.go)
-cmd/dashboards/    # Dashboard generation
-pkg/aws/           # AWS provider + collectors
-pkg/azure/         # Azure provider + collectors
-pkg/google/        # GCP provider + collectors
-pkg/gatherer/      # Metric gathering logic
-pkg/metrics/       # Shared metrics definitions
-pkg/provider/      # Provider interface
-pkg/utils/         # Shared utilities
-charts/            # Helm chart
-cloudcost-exporter-dashboards/  # Grafana dashboards (grafana-foundation-sdk)
-docs/              # Guides and references
+cmd/exporter/exporter.go             # Entrypoint: flags, provider selection, HTTP server
+  config/config.go                   # Config structs, StringSliceFlag type
+pkg/provider/provider.go             # Provider, Collector, Registry interfaces
+pkg/aws/aws.go                       # AWS: S3, EC2, RDS, NATGATEWAY, ELB, VPC
+pkg/google/gcp.go                    # GCP: GCS, GKE, CLB, SQL, VPC
+pkg/azure/azure.go                   # Azure: AKS
+pkg/gatherer/gatherer.go             # Wraps Collect(): duration, errors, metadata metrics
+pkg/utils/consts.go                  # Shared metric suffixes, HoursInMonth, GenerateDesc()
+cmd/dashboards/main.go               # Dashboard generation (grafana-foundation-sdk)
+cloudcost-exporter-dashboards/       # Generated output. Never edit by hand.
 ```
 
-Each cloud provider has an entrypoint at `pkg/{aws,azure,google}/{provider}.go` that initializes the provider and its collectors. A collector handles cost data for a single service and emits Prometheus metrics.
+### Metric naming
 
-## Build Commands
+Pattern: `cloudcost_{provider}_{service}_{description}_{unit}`
+
+- `MetricPrefix = "cloudcost"` for cost metrics. `ExporterName = "cloudcost_exporter"` for operational metrics. Both in `main.go`. Mixing them produces wrong names.
+- Subsystems: `aws_s3`, `gcp_gke`, `azure_aks`
+- Standard suffixes in `pkg/utils/consts.go`: `instance_cpu_usd_per_core_hour`, `instance_memory_usd_per_gib_hour`, `instance_total_usd_per_hour`, `persistent_volume_usd_per_hour`
+- Build with `prometheus.BuildFQName(prefix, subsystem, suffix)`
+
+## Build and test
 
 ```bash
-make build-binary      # Compile the Go binary
-make build-image       # Build Docker image
+make build-binary      # Compile binary (CGO_ENABLED=0)
+make build-image       # Docker image (multi-stage, scratch base)
 make build             # lint + generate + build-binary + build-image
-make test              # Full test suite (lint, generate, build, go test)
-make lint              # Run golangci-lint
-make generate          # Run go generate (generates mocks)
-make build-dashboards  # Generate Grafana dashboards via grafana-foundation-sdk
+make test              # lint + generate + build-dashboards + go test
+make lint              # golangci-lint v2
+make generate          # go generate (mocks via mockgen/mockery)
+make build-dashboards  # Grafana dashboards
 ```
 
-## Running Locally
+CI runs on push to `main` and PRs: build, lint, test, dashboard drift check.
 
-Authenticate with the cloud provider first:
+Rule: Never push to `main`.
 
-```bash
-# AWS
-aws sso login --profile $AWS_PROFILE
-
-# GCP
-gcloud auth application-default login
-
-# Azure
-az login
-```
-
-Then run:
+### Running locally
 
 ```bash
-go run cmd/exporter/exporter.go --help
-
-go run cmd/exporter/exporter.go -provider gcp -project-id=$GCP_PROJECT_ID
-go run cmd/exporter/exporter.go -provider aws -aws.profile $AWS_PROFILE
+go run cmd/exporter/exporter.go -provider gcp -project-id=$GCP_PROJECT_ID -gcp.services GKE,GCS
+go run cmd/exporter/exporter.go -provider aws -aws.profile $AWS_PROFILE -aws.services EC2,S3
 go run cmd/exporter/exporter.go -provider azure -azure.subscription-id $AZ_SUBSCRIPTION_ID
 ```
 
-> **Warning:** AWS Cost Explorer charges $0.01 per request. Default settings limit to 1 request/hour, but each restart triggers a new request.
+### Adding a collector
 
-## Guidelines
+See `docs/contribute/creating-a-new-module.md`. Reference implementations per provider:
+- AWS: `pkg/aws/ec2/` (worker pool pattern, spot/on-demand price tiers, instance + volume metrics)
+- GCP: `pkg/google/gke/` (errgroup concurrency, multi-project, disk deduplication)
+- Azure: `pkg/azure/aks/` (ticker-based store refresh, dual storage metrics per-GiB + total)
 
-### Safe Operations (execute without asking)
+### Testing
 
-- `go test ./...`, `go build`, `go vet`
+Run `make generate` before writing tests. See reference implementations above for patterns.
+
+## Caveats
+
+- **`ExporterName` vs `MetricPrefix`**: `ExporterName` (`cloudcost_exporter`) is for operational metrics. `MetricPrefix` (`cloudcost`) is for cost metrics.
+- **Dashboard drift**: Edit `cmd/dashboards/`, run `make build-dashboards`, commit generated output. CI fails on mismatch.
+- **`main.go` exists for mockery**: Root `main.go` exports constants so mockery finds the package. Entrypoint is `cmd/exporter/exporter.go`.
+- **Silent collector init failures**: Provider skips failed collectors and continues. Check startup logs.
+- **AWS pricing region**: RDS and VPC pricing require `us-east-1` specifically.
+
+## Documentation Writing Style
+
+Active voice. Cut every word that serves no function. No meta-commentary.
+
+- Drop redundant adverbs: `fully accurate` → `accurate`
+- Drop wordy phrases: `we need to remove the availability zone` → `remove the availability zone`
+- Prefer active verbs: `is able to pull metrics` → `can pull metrics`, `unable to create` → `failed to create`
+- Write timeless documentation: Describe things as they are, not how they changed or will change.
+
+## Operations
+
+### Safe to execute
+
+- `go test ./...`, `go build ./...`, `go vet ./...`
 - `make lint`, `make generate`, `make build-binary`, `make build-dashboards`
 - `gh pr view`, `gh api --method GET`
-- Read-only cloud CLI commands
 
-### Destructive Operations (ALWAYS ask for approval first)
+### Requires user approval
 
 - `docker push`, `make push`, `make push-dev`
-- `gh pr merge`, `gh api --method POST/PUT/DELETE`
-- Any release label changes on PRs
-
-## Required Tools
-
-- Go (1.21+)
-- Docker
-- `golangci-lint`
-- `mockery` and `mockgen` (for `make generate` — install per their docs, not via `go install`)
-- Cloud CLIs: `gcloud`, `aws`, `az`
+- Release label changes on PRs
+- Destructive git operations (`push --force`, `reset --hard`)
 
 ## Releases
 
-Automated via PR labels. Add `release:major`, `release:minor`, or `release:patch` when merging a PR to trigger a release.
-
-## Workflow Requirements
-
-- All changes via Pull Requests
-- CI validates lint, tests, and builds
-- **Do not mention AI tools (Claude, Copilot, etc.) in commit messages or PR descriptions**
+Automated via PR labels on merge to `main`. Ask user whether to add release label when drafting PR. Add exactly one: `release:major`, `release:minor`, or `release:patch`. Multiple labels fail the workflow.
