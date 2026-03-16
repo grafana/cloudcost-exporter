@@ -68,17 +68,25 @@ See `docs/contribute/creating-a-new-module.md`. Reference implementations per pr
 - GCP: `pkg/google/gke/` (errgroup concurrency, multi-project, disk deduplication)
 - Azure: `pkg/azure/aks/` (ticker-based store refresh, dual storage metrics per-GiB + total)
 
+New collectors, and changes to collectors, must **always** be documented in `docs/metrics/<provider>/`.
+
 ### Testing
 
 Run `make generate` before writing tests. See reference implementations above for patterns.
+
+### Code patterns
+
+- **Reuse constants**: Use existing suffix constants from `pkg/utils/consts.go`.
+- **Provider parity**: Match structure, naming, and config initialization patterns of existing services across providers.
+- **Dead code**: Remove unused functions, commented-out tests, and unused imports.
+- **Code generators**: Keep generation tools (e.g., region generators, SKU generators) in dedicated packages (e.g., `pkg/azure/generate/`), separate from service logic.
 
 ## Caveats
 
 - **`ExporterName` vs `MetricPrefix`**: `ExporterName` (`cloudcost_exporter`) is for operational metrics. `MetricPrefix` (`cloudcost`) is for cost metrics.
 - **Dashboard drift**: Edit `cmd/dashboards/`, run `make build-dashboards`, commit generated output. CI fails on mismatch.
 - **`main.go` exists for mockery**: Root `main.go` exports constants so mockery finds the package. Entrypoint is `cmd/exporter/exporter.go`.
-- **Silent collector init failures**: Provider skips failed collectors and continues. Check startup logs.
-- **AWS pricing region**: RDS and VPC pricing require `us-east-1` specifically.
+- **Silent collector init failures**: Provider skips failed collectors and continues by design so that a collector failing does not fail the whole app. Check startup logs.
 
 ## Documentation Writing Style
 
