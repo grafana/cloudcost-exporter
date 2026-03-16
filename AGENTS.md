@@ -4,6 +4,8 @@ Prometheus exporter that collects pricing rates from AWS, GCP, and Azure. Export
 
 Agent self-check: If you find information in this AGENTS.md that contradicts the code, flag it to the user.
 
+This is a public repository. Never reference private Grafana repos in issues, PRs, or code comments.
+
 ## Architecture
 
 Two interfaces in `pkg/provider/provider.go`:
