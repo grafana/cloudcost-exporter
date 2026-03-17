@@ -138,7 +138,13 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 
 		switch service {
 		case serviceS3:
-			collector := s3.New(config.ScrapeInterval, awsClient)
+			collector, err := s3.New(ctx, config.ScrapeInterval, awsClient)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
 			collectors = append(collectors, collector)
 		case serviceEC2:
 			collector, err := ec2Collector.New(ctx, &ec2Collector.Config{

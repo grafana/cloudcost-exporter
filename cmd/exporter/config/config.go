@@ -26,6 +26,7 @@ type Config struct {
 		Azure struct {
 			Services       StringSliceFlag
 			SubscriptionId string
+			Region         string
 		}
 	}
 	Collector struct {

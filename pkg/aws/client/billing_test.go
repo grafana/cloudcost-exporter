@@ -55,9 +55,56 @@ func Test_getRegionFromKey(t *testing.T) {
 		key, want := record[0], record[1]
 		got := getRegionFromKey(key)
 		mappedWant := BillingToRegionMap[want]
+		if want == "unknown" {
+			mappedWant = "unknown"
+		}
 		if mappedWant != got {
 			t.Fatalf("getRegionFromKey(%s) = %v, want %v", key, got, want)
 		}
+	}
+}
+
+func Test_getRegionFromKey_unknown(t *testing.T) {
+	tests := map[string]struct {
+		key  string
+		want string
+	}{
+		"bare Requests-Tier1 has no region": {
+			key:  "Requests-Tier1",
+			want: "unknown",
+		},
+		"bare Requests-Tier2 has no region": {
+			key:  "Requests-Tier2",
+			want: "unknown",
+		},
+		"Global prefix (free-tier credits) has no region": {
+			key:  "Global-Bucket-Hrs-FreeTier",
+			want: "unknown",
+		},
+		"DataTransfer prefix without region code has no region": {
+			key:  "DataTransfer-In-Bytes",
+			want: "unknown",
+		},
+		"DataTransfer-Out prefix without region code has no region": {
+			key:  "DataTransfer-Out-Bytes",
+			want: "unknown",
+		},
+		"completely unrecognised prefix has no region": {
+			key:  "SomeNewPrefix-Bytes",
+			want: "unknown",
+		},
+		"key too short to contain a region": {
+			key:  "NoHyphen",
+			want: "unknown",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := getRegionFromKey(tt.key); got != tt.want {
+				t.Errorf("getRegionFromKey(%q) = %q, want %q", tt.key, got, tt.want)
+			}
+		})
 	}
 }
 

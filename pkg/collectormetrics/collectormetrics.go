@@ -7,6 +7,7 @@ import (
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -17,7 +18,7 @@ var durationHistogramVec = prometheus.NewHistogramVec(
 		NativeHistogramBucketFactor:    1.1,
 		NativeHistogramMaxBucketNumber: 100,
 	},
-	[]string{"collector"},
+	[]string{"collector", "region"},
 )
 
 var errorCounterVec = prometheus.NewCounterVec(
@@ -25,7 +26,7 @@ var errorCounterVec = prometheus.NewCounterVec(
 		Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "error"),
 		Help: "Total number of errors that occurred during the last scrape.",
 	},
-	[]string{"collector"},
+	[]string{"collector", "region"},
 )
 
 var totalCounterVec = prometheus.NewCounterVec(
@@ -33,15 +34,15 @@ var totalCounterVec = prometheus.NewCounterVec(
 		Name: prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "total"),
 		Help: "Total number of scrapes.",
 	},
-	[]string{"collector"},
+	[]string{"collector", "region"},
 )
 
-func emitOperationalMetrics(ch chan<- prometheus.Metric, collectorName string, duration float64) {
-	h := durationHistogramVec.WithLabelValues(collectorName).(prometheus.Histogram)
+func emitOperationalMetrics(ch chan<- prometheus.Metric, collectorName string, region string, duration float64) {
+	h := durationHistogramVec.WithLabelValues(collectorName, region).(prometheus.Histogram)
 	h.Observe(duration)
 	ch <- h
 
-	counter := totalCounterVec.WithLabelValues(collectorName)
+	counter := totalCounterVec.WithLabelValues(collectorName, region)
 	counter.Inc()
 	ch <- counter
 }
@@ -54,18 +55,30 @@ func Collect(ctx context.Context, c provider.Collector, ch chan<- prometheus.Met
 
 	collectErr := c.Collect(ctx, ch)
 	duration = time.Since(start).Seconds()
+
+	regions := []string{utils.RegionUnknown}
+	if rp, ok := c.(provider.RegionsProvider); ok {
+		if r := rp.Regions(); len(r) > 0 {
+			regions = r
+		}
+	}
+
 	if collectErr != nil {
 		hasError = true
 		logger.LogAttrs(ctx, slog.LevelError, "could not collect metrics",
 			slog.String("collector", c.Name()),
 			slog.String("message", collectErr.Error()),
 		)
-		errorCounter := errorCounterVec.WithLabelValues(c.Name())
-		errorCounter.Inc()
-		ch <- errorCounter
+		for _, region := range regions {
+			errorCounter := errorCounterVec.WithLabelValues(c.Name(), region)
+			errorCounter.Inc()
+			ch <- errorCounter
+		}
 	}
 
-	emitOperationalMetrics(ch, c.Name(), duration)
+	for _, region := range regions {
+		emitOperationalMetrics(ch, c.Name(), region, duration)
+	}
 
 	return duration, hasError
 }

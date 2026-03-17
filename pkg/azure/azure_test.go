@@ -161,6 +161,7 @@ func Test_CollectMetrics(t *testing.T) {
 				c.EXPECT().Describe(gomock.Any()).Return(nil).AnyTimes()
 			}
 			azure := &Azure{
+				config:           &Config{Region: "eastus"},
 				context:          t.Context(),
 				logger:           testLogger,
 				collectors:       []provider.Collector{},

@@ -176,3 +176,12 @@ func ClusterNameFromInstance(instance types.Instance) string {
 	}
 	return ""
 }
+
+// RegionsFromEC2Types converts a slice of EC2 Region types to a slice of region name strings.
+func RegionsFromEC2Types(regions []types.Region) []string {
+	result := make([]string, 0, len(regions))
+	for _, r := range regions {
+		result = append(result, *r.RegionName)
+	}
+	return result
+}

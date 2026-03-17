@@ -78,6 +78,7 @@ func Test_NewWithDependencies(t *testing.T) {
 				{RegionName: stringPtr("us-east-1")},
 			},
 			setupMockClient: func(m *mock_client.MockClient) {
+				m.EXPECT().DescribeRegions(gomock.Any(), false).Return(nil, nil)
 			},
 			setupRegionClients: map[string]client.Client{},
 			expectedCollectors: 1,
@@ -91,6 +92,9 @@ func Test_NewWithDependencies(t *testing.T) {
 			regions: []types.Region{
 				{RegionName: stringPtr("us-east-1")},
 				{RegionName: stringPtr("us-west-2")},
+			},
+			setupMockClient: func(m *mock_client.MockClient) {
+				m.EXPECT().DescribeRegions(gomock.Any(), false).Return(nil, nil)
 			},
 			setupRegionClients: map[string]client.Client{
 				"us-east-1": &mockRegionClient{}, // EC2 collector needs region map
@@ -118,6 +122,9 @@ func Test_NewWithDependencies(t *testing.T) {
 			services: []string{"s3", "S3"},
 			regions: []types.Region{
 				{RegionName: stringPtr("us-east-1")},
+			},
+			setupMockClient: func(m *mock_client.MockClient) {
+				m.EXPECT().DescribeRegions(gomock.Any(), false).Return(nil, nil).Times(2)
 			},
 			setupRegionClients: map[string]client.Client{},
 			expectedCollectors: 2, // Both should create collectors
@@ -489,7 +496,7 @@ func Test_CollectMetrics(t *testing.T) {
 				c.EXPECT().Describe(gomock.Any()).Return(nil).AnyTimes()
 			}
 			aws := &AWS{
-				Config:           nil,
+				Config:           &Config{Region: "us-east-1"},
 				collectors:       []provider.Collector{},
 				logger:           logger,
 				ctx:              t.Context(),

@@ -179,6 +179,10 @@ func (c *Collector) Name() string {
 	return subsystem
 }
 
+func (c *Collector) Regions() []string {
+	return utils.RegionsFromMap(c.regionMap)
+}
+
 func (c *Collector) Register(registry provider.Registry) error {
 	return nil
 }

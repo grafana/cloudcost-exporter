@@ -49,6 +49,7 @@ var (
 )
 
 type Azure struct {
+	config  *Config
 	context context.Context
 	logger  *slog.Logger
 
@@ -61,6 +62,7 @@ type Azure struct {
 
 type Config struct {
 	Logger *slog.Logger
+	Region string
 
 	SubscriptionId string
 

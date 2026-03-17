@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
@@ -81,7 +82,7 @@ func TestCollect_ErrorCounterEmitted(t *testing.T) {
 		}
 		var dtoMetric dto.Metric
 		require.NoError(t, m.Write(&dtoMetric))
-		if labels := dtoMetric.GetLabel(); len(labels) == 1 && labels[0].GetValue() == collectorName {
+		if labels := dtoMetric.GetLabel(); len(labels) == 2 && labels[0].GetValue() == collectorName && labels[1].GetValue() == utils.RegionUnknown {
 			counterValue = dtoMetric.GetCounter().GetValue()
 			found = true
 		}
