@@ -218,6 +218,7 @@ func TestGCP_CollectMetrics(t *testing.T) {
 					"duration_seconds",
 					"last_scrape_time",
 					"collector_total",
+					"collector_error",
 				}
 				for _, suffix := range ignoredMetricSuffix {
 					if strings.Contains(metricName, suffix) {

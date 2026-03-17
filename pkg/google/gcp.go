@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grafana/cloudcost-exporter/pkg/gatherer"
+	"github.com/grafana/cloudcost-exporter/pkg/collectormetrics"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/google/cloudsql"
 	"github.com/grafana/cloudcost-exporter/pkg/google/networking"
@@ -202,7 +202,7 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 	eg.SetLimit(collectConcurrencyLimit)
 	for _, c := range g.collectors {
 		eg.Go(func() error {
-			duration, hasError := gatherer.CollectWithGatherer(collectCtx, c, ch, g.logger)
+			duration, hasError := collectormetrics.Collect(collectCtx, c, ch, g.logger)
 
 			if !hasError {
 				g.logger.LogAttrs(collectCtx, slog.LevelInfo, "Collect successful",
