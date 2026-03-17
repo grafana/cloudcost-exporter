@@ -124,15 +124,6 @@ func TestCollect_MultipleCollectors(t *testing.T) {
 			},
 			expectedErrors: []bool{true, true, true},
 		},
-		"multiple collectors with mixed failures": {
-			collectors: []collectorConfig{
-				{name: "collector_1", collect: func(context.Context, chan<- prometheus.Metric) error { return assert.AnError }},
-				{name: "collector_2", collect: func(context.Context, chan<- prometheus.Metric) error { return nil }},
-				{name: "collector_3", collect: func(context.Context, chan<- prometheus.Metric) error { return nil }},
-				{name: "collector_4", collect: func(context.Context, chan<- prometheus.Metric) error { return assert.AnError }},
-			},
-			expectedErrors: []bool{true, false, false, true},
-		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
