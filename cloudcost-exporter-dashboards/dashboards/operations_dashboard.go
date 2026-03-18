@@ -4,6 +4,8 @@ import (
 	"github.com/grafana/grafana-foundation-sdk/go/cog"
 	"github.com/grafana/grafana-foundation-sdk/go/common"
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
+	"github.com/grafana/grafana-foundation-sdk/go/logs"
+	"github.com/grafana/grafana-foundation-sdk/go/loki"
 	"github.com/grafana/grafana-foundation-sdk/go/prometheus"
 	"github.com/grafana/grafana-foundation-sdk/go/stat"
 	"github.com/grafana/grafana-foundation-sdk/go/table"
@@ -32,6 +34,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			IncludeAll(true).
 			AllValue(".*"),
 		).
+		WithVariable(dashboard.NewDatasourceVariableBuilder("loki_datasource").
+			Label("Loki Data Source").
+			Type("loki"),
+		).
 		Annotation(dashboard.NewAnnotationQueryBuilder().
 			Name("Annotations & Alerts").
 			Datasource(dashboard.DataSourceRef{
@@ -47,6 +53,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 		WithPanel(collectorStatusCurrent().Height(6).Span(12)).
 		WithPanel(imageVersionsByCluster().Height(6).Span(12)).
 		WithPanel(collectorScrapeDurationOverTime().Height(8).Span(24)).
+		WithPanel(exporterLogs().Height(8).Span(24)).
 		WithRow(dashboard.NewRowBuilder("AWS")).
 		WithPanel(costExplorerAPIRequestsOverTime().Height(6).Span(12)).
 		WithPanel(awsS3NextPricingMapRefreshOverTime().Height(6).Span(12)).
@@ -56,11 +63,35 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 	return builder
 }
 
-func prometheusDatasourceRef() dashboard.DataSourceRef {
-	return dashboard.DataSourceRef{
+func prometheusDatasourceRef() common.DataSourceRef {
+	return common.DataSourceRef{
 		Type: cog.ToPtr[string]("prometheus"),
 		Uid:  cog.ToPtr[string]("${datasource}"),
 	}
+}
+
+func lokiDatasourceRef() common.DataSourceRef {
+	return common.DataSourceRef{
+		Type: cog.ToPtr[string]("loki"),
+		Uid:  cog.ToPtr[string]("${loki_datasource}"),
+	}
+}
+
+func exporterLogs() *logs.PanelBuilder {
+	return logs.NewPanelBuilder().
+		Title("CloudCost Exporter Logs").
+		Description("Application logs for cloudcost-exporter, filtered by cluster.").
+		Datasource(lokiDatasourceRef()).
+		WithTarget(
+			loki.NewDataqueryBuilder().
+				Expr(`{cluster=~"$cluster", namespace="cloudcost-exporter"}`).
+				RefId("A"),
+		).
+		ShowTime(true).
+		ShowLabels(false).
+		WrapLogMessage(true).
+		SortOrder(common.LogsSortOrderDescending).
+		DedupStrategy(common.LogsDedupStrategyNone)
 }
 
 func prometheusQuery(expression string, legendFormat string) *prometheus.DataqueryBuilder {
