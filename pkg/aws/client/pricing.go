@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"log/slog"
@@ -271,8 +270,8 @@ func (p *pricing) getRDSUnitData(ctx context.Context, instType, region, deployme
 	}
 
 	if len(products.PriceList) != 1 {
-		slog.ErrorContext(ctx, "expected 1 price list, got", "count", len(products.PriceList))
-		return "", fmt.Errorf("expected 1 price list, got %d", len(products.PriceList))
+		slog.WarnContext(ctx, "expected 1 price list, got", "count", len(products.PriceList))
+		return "", nil
 	}
 	return products.PriceList[0], nil
 }

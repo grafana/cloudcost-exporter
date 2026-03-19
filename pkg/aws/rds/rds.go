@@ -124,6 +124,10 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				logger.Error("error listing rds prices", "error", err)
 				return err
 			}
+			if v == "" {
+				logger.Warn("no pricing data found for RDS instance, skipping", "instanceType", *instance.DBInstanceClass, "region", region, "engine", *instance.Engine)
+				continue
+			}
 			validatedPrice, err := validateRDSPriceData(ctx, v)
 			if err != nil {
 				logger.Error("error validating RDS price data", "error", err)
