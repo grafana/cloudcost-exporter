@@ -269,8 +269,12 @@ func (p *pricing) getRDSUnitData(ctx context.Context, instType, region, deployme
 		return "", err
 	}
 
-	if len(products.PriceList) != 1 {
-		slog.WarnContext(ctx, "expected 1 price list, got", "count", len(products.PriceList))
+	if len(products.PriceList) == 0 {
+		slog.WarnContext(ctx, "no price list found for RDS instance", "instanceType", instType, "region", region)
+		return "", nil
+	}
+	if len(products.PriceList) > 1 {
+		slog.WarnContext(ctx, "ambiguous price list, expected 1 got multiple", "count", len(products.PriceList), "instanceType", instType, "region", region)
 		return "", nil
 	}
 	return products.PriceList[0], nil
