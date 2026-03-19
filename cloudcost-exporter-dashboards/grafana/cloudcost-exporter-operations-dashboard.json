@@ -296,6 +296,40 @@
         }
       },
       {
+        "type": "logs",
+        "targets": [
+          {
+            "expr": "{cluster=~\"$cluster\", namespace=\"cloudcost-exporter\"}",
+            "refId": "A"
+          }
+        ],
+        "title": "CloudCost Exporter Logs",
+        "description": "Application logs for cloudcost-exporter, filtered by cluster.",
+        "transparent": false,
+        "datasource": {
+          "type": "loki",
+          "uid": "${loki_datasource}"
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 15
+        },
+        "repeatDirection": "h",
+        "options": {
+          "showLabels": false,
+          "showCommonLabels": false,
+          "showTime": true,
+          "showLogContextToggle": false,
+          "wrapLogMessage": true,
+          "prettifyLogMessage": false,
+          "enableLogDetails": false,
+          "sortOrder": "Descending",
+          "dedupStrategy": "none"
+        }
+      },
+      {
         "type": "row",
         "collapsed": false,
         "title": "AWS",
@@ -303,7 +337,7 @@
           "h": 1,
           "w": 24,
           "x": 0,
-          "y": 15
+          "y": 23
         },
         "id": 0,
         "panels": []
@@ -328,7 +362,7 @@
           "h": 6,
           "w": 12,
           "x": 0,
-          "y": 16
+          "y": 24
         },
         "repeatDirection": "h",
         "fieldConfig": {
@@ -359,7 +393,7 @@
           "h": 6,
           "w": 12,
           "x": 12,
-          "y": 16
+          "y": 24
         },
         "repeatDirection": "h",
         "fieldConfig": {
@@ -377,7 +411,7 @@
           "h": 1,
           "w": 24,
           "x": 0,
-          "y": 22
+          "y": 30
         },
         "id": 0,
         "panels": []
@@ -403,7 +437,7 @@
           "h": 6,
           "w": 12,
           "x": 0,
-          "y": 23
+          "y": 31
         },
         "repeatDirection": "h",
         "fieldConfig": {
@@ -434,7 +468,7 @@
           "h": 6,
           "w": 12,
           "x": 12,
-          "y": 23
+          "y": 31
         },
         "repeatDirection": "h",
         "fieldConfig": {
@@ -474,6 +508,19 @@
           "refresh": 1,
           "includeAll": true,
           "allValue": ".*",
+          "auto": false,
+          "auto_min": "10s",
+          "auto_count": 30
+        },
+        {
+          "type": "datasource",
+          "name": "loki_datasource",
+          "label": "Loki Data Source",
+          "skipUrlSync": false,
+          "query": "loki",
+          "multi": false,
+          "allowCustomValue": true,
+          "includeAll": false,
           "auto": false,
           "auto_min": "10s",
           "auto_count": 30
