@@ -111,35 +111,30 @@ func TestMultiOrSingleAZ(t *testing.T) {
 
 func TestCollector_Collect(t *testing.T) {
 	const cacheKey = "us-east-1-db.t3.medium-mysql-Single-AZ-AWS Outposts"
+	validPriceJSON := `{
+            "terms": {
+                "OnDemand": {
+                    "term1": {
+                        "priceDimensions": {
+                            "dim1": {
+                                "pricePerUnit": {"USD": "0.456"}
+                            }
+                        }
+                    }
+                }
+            }
+        }`
 	tests := []struct {
-		name             string
-		ListRDSInstances []rdsTypes.DBInstance
-		pricingKey       string
+		name                 string
+		ListRDSInstances     []rdsTypes.DBInstance
+		pricingKey           string
+		getRDSUnitDataRet    string
+		expectGetRDSUnitData bool
+		expectMetric         bool
+		initialCache         map[string]float64
 	}{
 		{
-			name: "instance without price in cache",
-			ListRDSInstances: []rdsTypes.DBInstance{{
-				DBSubnetGroup: &rdsTypes.DBSubnetGroup{
-					Subnets: []rdsTypes.Subnet{
-						{
-							SubnetOutpost: &rdsTypes.Outpost{
-								Arn: aws.String("some-outpost-arn"),
-							},
-						},
-					},
-				},
-				AvailabilityZone:     aws.String("us-east-1a"),
-				DBInstanceClass:      aws.String("db.t3.medium"),
-				Engine:               aws.String("postgres"),
-				DBInstanceIdentifier: aws.String("test-db"),
-				MultiAZ:              aws.Bool(false),
-				DbiResourceId:        aws.String("test-db"),
-				DBInstanceArn:        aws.String("some-arn"),
-			}},
-			pricingKey: createPricingKey("us-east-1", "db.t3.medium", "postgres", "Single-AZ", "AWS Region"),
-		},
-		{
-			name: "instance with price in cache",
+			name: "cache hit - uses cached price",
 			ListRDSInstances: []rdsTypes.DBInstance{{
 				DBSubnetGroup: &rdsTypes.DBSubnetGroup{
 					Subnets: []rdsTypes.Subnet{
@@ -153,12 +148,51 @@ func TestCollector_Collect(t *testing.T) {
 				AvailabilityZone:     aws.String("us-east-1a"),
 				DBInstanceClass:      aws.String("db.t3.medium"),
 				Engine:               aws.String("mysql"),
+				DBInstanceIdentifier: aws.String("test-db"),
+				MultiAZ:              aws.Bool(false),
+				DbiResourceId:        aws.String("test-db"),
+				DBInstanceArn:        aws.String("some-arn"),
+			}},
+			pricingKey:           cacheKey,
+			expectGetRDSUnitData: false,
+			expectMetric:         true,
+			initialCache:         map[string]float64{cacheKey: 0.123},
+		},
+		{
+			name: "cache miss - fetches price from API",
+			ListRDSInstances: []rdsTypes.DBInstance{{
+				DBSubnetGroup:        &rdsTypes.DBSubnetGroup{},
+				AvailabilityZone:     aws.String("us-east-1a"),
+				DBInstanceClass:      aws.String("db.t3.medium"),
+				Engine:               aws.String("postgres"),
 				DBInstanceIdentifier: aws.String("test-db-2"),
 				MultiAZ:              aws.Bool(false),
 				DbiResourceId:        aws.String("test-db-2"),
-				DBInstanceArn:        aws.String("some-arn"),
+				DBInstanceArn:        aws.String("some-arn-2"),
 			}},
-			pricingKey: cacheKey,
+			pricingKey:           createPricingKey("us-east-1", "db.t3.medium", "postgres", "Single-AZ", "AWS Region"),
+			getRDSUnitDataRet:    validPriceJSON,
+			expectGetRDSUnitData: true,
+			expectMetric:         true,
+			initialCache:         map[string]float64{},
+		},
+		{
+			name: "no pricing data returned for instance - skips without error",
+			ListRDSInstances: []rdsTypes.DBInstance{{
+				DBSubnetGroup:        &rdsTypes.DBSubnetGroup{},
+				AvailabilityZone:     aws.String("us-east-1a"),
+				DBInstanceClass:      aws.String("db.t3.medium"),
+				Engine:               aws.String("aurora-postgresql"),
+				DBInstanceIdentifier: aws.String("test-db-3"),
+				MultiAZ:              aws.Bool(false),
+				DbiResourceId:        aws.String("test-db-3"),
+				DBInstanceArn:        aws.String("some-arn-3"),
+			}},
+			pricingKey:           createPricingKey("us-east-1", "db.t3.medium", "aurora-postgresql", "Single-AZ", "AWS Region"),
+			getRDSUnitDataRet:    "",
+			expectGetRDSUnitData: true,
+			expectMetric:         false,
+			initialCache:         map[string]float64{},
 		},
 	}
 
@@ -172,27 +206,14 @@ func TestCollector_Collect(t *testing.T) {
 				Return(tt.ListRDSInstances, nil).
 				Times(1)
 
-			// if the pricing key is not empty, then we expect the GetRDSUnitData method to be called
-			if tt.pricingKey != "cache-key" {
+			if tt.expectGetRDSUnitData {
 				mockClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-					Return(`{
-            "terms": {
-                "OnDemand": {
-                    "term1": {
-                        "priceDimensions": {
-                            "dim1": {
-                                "pricePerUnit": {"USD": "0.456"}
-                            }
-                        }
-                    }
-                }
-            }
-        }`, nil).
-					AnyTimes()
+					Return(tt.getRDSUnitDataRet, nil).
+					Times(1)
 			}
 
 			c := &Collector{
-				pricingMap:     &pricingMap{pricingMap: map[string]float64{tt.pricingKey: 0.456, cacheKey: 0.123}},
+				pricingMap:     &pricingMap{pricingMap: tt.initialCache},
 				regions:        []types.Region{{RegionName: aws.String("us-east-1")}},
 				regionMap:      map[string]client.Client{"us-east-1": mockClient},
 				scrapeInterval: time.Minute,
@@ -203,15 +224,23 @@ func TestCollector_Collect(t *testing.T) {
 			err := c.Collect(t.Context(), ch)
 			assert.NoError(t, err)
 
+			if !tt.expectMetric {
+				select {
+				case <-ch:
+					t.Fatal("expected no metric to be collected")
+				default:
+				}
+				return
+			}
+
 			select {
 			case metric := <-ch:
 				metricResult := utils.ReadMetrics(metric)
 				close(ch)
-				assert.NoError(t, err)
 				labels := metricResult.Labels
 				hourlyPrice, _ := c.pricingMap.Get(tt.pricingKey)
 				assert.Equal(t, *tt.ListRDSInstances[0].DBInstanceClass, labels["tier"])
-				assert.Equal(t, *tt.ListRDSInstances[0].DBInstanceIdentifier, labels["id"])
+				assert.Equal(t, *tt.ListRDSInstances[0].DbiResourceId, labels["id"])
 				assert.Equal(t, hourlyPrice, metricResult.Value)
 			default:
 				t.Fatal("expected a metric to be collected")
