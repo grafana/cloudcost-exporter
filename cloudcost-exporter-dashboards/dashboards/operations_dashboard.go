@@ -65,10 +65,6 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Type("dashboard").
 			BuiltIn(1)}).
 		Preload(false).
-		WithRow(dashboard.NewRowBuilder("Overview & Logs").
-			Title("Overview & Logs").
-			GridPos(dashboard.GridPos{H: 1, W: 24, X: 0, Y: 0}).
-			Id(0x47)).
 		WithRow(dashboard.NewRowBuilder("Overview").
 			Title("Overview").
 			GridPos(dashboard.GridPos{H: 1, W: 24, X: 0, Y: 1}).
