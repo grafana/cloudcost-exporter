@@ -35,23 +35,29 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				"1d"})).
 		LiveNow(false).
 		Version(0x9).
-		Variables([]cog.Builder[dashboard.VariableModel]{dashboard.NewQueryVariableBuilder("cluster").
-			Name("cluster").
-			Label("Cluster").
-			Hide(0).
-			Query(dashboard.StringOrMap{Map: map[string]interface{}{"label": "cluster", "metric": "cloudcost_exporter_collector_duration_seconds", "qryType": 1, "query": "label_values(cloudcost_exporter_collector_duration_seconds,cluster)", "refId": "PrometheusVariableQueryEditor-VariableQuery"}}).
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
-			Current(dashboard.VariableOption{Text: dashboard.StringOrArrayOfString{String: cog.ToPtr[string]("All")}, Value: dashboard.StringOrArrayOfString{ArrayOfString: []string{"$__all"}}}).
-			Multi(true).
-			Refresh(1).
-			Sort(1).
-			IncludeAll(true),
+		Variables([]cog.Builder[dashboard.VariableModel]{dashboard.NewDatasourceVariableBuilder("datasource").
+			Label("Data Source").
+			Type("prometheus"),
+			dashboard.NewDatasourceVariableBuilder("loki_datasource").
+				Label("Loki Data Source").
+				Type("loki"),
+			dashboard.NewQueryVariableBuilder("cluster").
+				Name("cluster").
+				Label("Cluster").
+				Hide(0).
+				Query(dashboard.StringOrMap{Map: map[string]interface{}{"label": "cluster", "metric": "cloudcost_exporter_collector_duration_seconds", "qryType": 1, "query": "label_values(cloudcost_exporter_collector_duration_seconds,cluster)", "refId": "PrometheusVariableQueryEditor-VariableQuery"}}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
+				Current(dashboard.VariableOption{Text: dashboard.StringOrArrayOfString{String: cog.ToPtr[string]("All")}, Value: dashboard.StringOrArrayOfString{ArrayOfString: []string{"$__all"}}}).
+				Multi(true).
+				Refresh(1).
+				Sort(1).
+				IncludeAll(true),
 			dashboard.NewQueryVariableBuilder("collector").
 				Name("collector").
 				Label("Collector").
 				Hide(0).
 				Query(dashboard.StringOrMap{Map: map[string]interface{}{"label": "collector", "metric": "cloudcost_exporter_collector_duration_seconds", "qryType": 1, "query": "label_values(cloudcost_exporter_collector_duration_seconds,collector)", "refId": "PrometheusVariableQueryEditor-VariableQuery"}}).
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 				Current(dashboard.VariableOption{Text: dashboard.StringOrArrayOfString{String: cog.ToPtr[string]("All")}, Value: dashboard.StringOrArrayOfString{ArrayOfString: []string{"$__all"}}}).
 				Multi(true).
 				Refresh(1).
@@ -77,17 +83,17 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("Active").
 				RefId("A").
 				QueryType("instant").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}),
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}),
 				prometheus.NewDataqueryBuilder().
 					Expr("count(count by(collector) (cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"$collector\"}))").
 					Instant().
 					LegendFormat("Total").
 					RefId("B").
 					QueryType("instant").
-					Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+					Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("Active Collectors").
 			Description("Number of distinct collectors currently reporting duration metrics.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 0, Y: 1}).
 			Span(0x8).
 			Unit("short").
@@ -115,10 +121,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("P95").
 				RefId("A").
 				QueryType("instant").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("P95 Collection Duration").
 			Description("95th percentile of collector run duration across all selected clusters and collectors.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 8, Y: 1}).
 			Span(0x8).
 			Unit("s").
@@ -146,10 +152,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("Success Rate").
 				RefId("A").
 				QueryType("instant").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("Success Rate").
 			Description("Percentage of successful collector runs (total - errors) / total.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 16, Y: 1}).
 			Span(0x8).
 			Unit("percent").
@@ -179,10 +185,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{collector}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("Error Rate by Collector (%)").
 			Description("Per-collector error rate over time — errors / total collector runs.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 0, Y: 10}).
 			Span(0x8).
 			Unit("percent").
@@ -237,10 +243,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{collector}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("Success Rate by Collector (%)").
 			Description("Per-collector success rate over time.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 8, Y: 10}).
 			Span(0x8).
 			Unit("percent").
@@ -296,17 +302,17 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("Total/s").
 				RefId("A").
 				QueryType("range").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}),
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}),
 				prometheus.NewDataqueryBuilder().
 					Expr("0 * sum(rate(cloudcost_exporter_collector_total{cluster=~\"$cluster\", collector=~\"$collector\"}[$__rate_interval]))").
 					Range().
 					LegendFormat("Errors/s").
 					RefId("B").
 					QueryType("range").
-					Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+					Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("Collection Rate vs Error Rate").
 			Description("Collection attempt rate vs error rate — shows the error share relative to total throughput.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 16, Y: 10}).
 			Span(0x8).
 			Unit("ops").
@@ -363,10 +369,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{cluster}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("Version History per Environment").
 			Description("Version deployed per cluster over time. Each coloured bar segment shows a running version; gaps indicate no data.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 9, W: 24, X: 0, Y: 19}).
 			Span(0x18).
 			Decimals(0).
@@ -427,10 +433,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("AWS").
 				RefId("A").
 				QueryType("instant").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("P95 Duration — AWS").
 			Description("P95 collection duration across AWS collectors.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 0, Y: 28}).
 			Height(0x6).
 			Span(0x8).
@@ -459,10 +465,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("GCP").
 				RefId("A").
 				QueryType("instant").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("P95 Duration — GCP").
 			Description("P95 collection duration across GCP collectors.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 8, Y: 28}).
 			Height(0x6).
 			Span(0x8).
@@ -491,10 +497,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("Azure").
 				RefId("A").
 				QueryType("instant").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("P95 Duration — Azure").
 			Description("P95 collection duration across Azure collectors.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 16, Y: 28}).
 			Height(0x6).
 			Span(0x8).
@@ -523,10 +529,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("AWS").
 				RefId("A").
 				QueryType("instant").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("Success Rate — AWS").
 			Description("Success rate for AWS collectors (errors assumed 0).").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 0, Y: 34}).
 			Height(0x6).
 			Span(0x8).
@@ -557,10 +563,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("GCP").
 				RefId("A").
 				QueryType("instant").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("Success Rate — GCP").
 			Description("Success rate for GCP collectors (errors assumed 0).").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 8, Y: 34}).
 			Height(0x6).
 			Span(0x8).
@@ -591,10 +597,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("Azure").
 				RefId("A").
 				QueryType("instant").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("Success Rate — Azure").
 			Description("Success rate for Azure collectors (errors assumed 0).").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 16, Y: 34}).
 			Height(0x6).
 			Span(0x8).
@@ -630,10 +636,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				Instant(false).
 				RefId("A").
 				QueryType("range").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("grafanacloud-logs")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("${loki_datasource}")})}).
 			Title("Error Log Rate").
 			Description("Rate of log lines containing error-level messages from the cloudcost-exporter namespace.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("grafanacloud-logs")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("${loki_datasource}")}).
 			GridPos(dashboard.GridPos{H: 8, W: 24, X: 0, Y: 40}).
 			Height(0x8).
 			Span(0x18).
@@ -686,10 +692,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				Instant(false).
 				RefId("A").
 				QueryType("range").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("grafanacloud-logs")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("${loki_datasource}")})}).
 			Title("Error Logs").
 			Description("Log lines at error level from the cloudcost-exporter namespace.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("grafanacloud-logs")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("${loki_datasource}")}).
 			GridPos(dashboard.GridPos{H: 10, W: 24, X: 0, Y: 48}).
 			Height(0xa).
 			Span(0x18).
@@ -711,10 +717,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				Instant(false).
 				RefId("A").
 				QueryType("range").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("grafanacloud-logs")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("${loki_datasource}")})}).
 			Title("All Logs (cloudcost-exporter namespace)").
 			Description("All logs from the cloudcost-exporter namespace across selected clusters.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("grafanacloud-logs")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("${loki_datasource}")}).
 			GridPos(dashboard.GridPos{H: 10, W: 24, X: 0, Y: 58}).
 			Height(0xa).
 			Span(0x18).
@@ -740,10 +746,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{collector}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("P99 Duration by Collector").
 			Description("P50, P95, and P99 latency percentiles of collection duration per collector over time.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 0, Y: 69}).
 			Span(0x8).
 			Unit("s").
@@ -798,10 +804,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{collector}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("P95 Duration by Collector").
 			Description("P95 collection duration trend per collector.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 8, Y: 69}).
 			Span(0x8).
 			Unit("s").
@@ -855,10 +861,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{collector}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("P50 Duration by Collector").
 			Description("P50 (median) collection duration trend per collector.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 16, Y: 69}).
 			Span(0x8).
 			Unit("s").
@@ -912,10 +918,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{collector}}").
 				RefId("A").
 				QueryType("instant").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("P95 Duration by Collector (current, ranked)").
 			Description("Current P95 collection duration ranked by collector. Identifies the slowest collectors at a glance.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 8, W: 24, X: 0, Y: 78}).
 			Height(0x8).
 			Span(0x18).
@@ -963,10 +969,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{region}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("P95 Top 10 Slowest Regions").
 			Description("P95 collection duration trend over time, broken down by region.").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 8, W: 12, X: 0, Y: 87}).
 			Height(0x8).
 			Unit("s").
@@ -1018,10 +1024,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{region}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("P95 Duration — GCP Regions").
 			Description("GCP regions identified by naming convention (no hyphen before trailing digit, e.g. europe-west4, us-central1).").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 8, W: 12, X: 12, Y: 87}).
 			Height(0x8).
 			Unit("s").
@@ -1073,10 +1079,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{region}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("P95 Duration — AWS Regions").
 			Description("AWS regions identified by naming convention (hyphen before trailing digit, e.g. us-east-1, eu-west-2).").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 8, W: 12, X: 0, Y: 95}).
 			Height(0x8).
 			Unit("s").
@@ -1128,10 +1134,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{region}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")})}).
 			Title("P95 Duration — Azure Regions").
 			Description("Azure regions identified by naming convention (no hyphens, e.g. eastus, westeurope, eastus2).").
-			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}).
 			GridPos(dashboard.GridPos{H: 8, W: 12, X: 12, Y: 95}).
 			Height(0x8).
 			Unit("s").
