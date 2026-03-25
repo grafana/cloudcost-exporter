@@ -333,9 +333,6 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
-			Overrides([]cog.Builder[dashboard.DashboardFieldConfigSourceOverrides]{dashboard.NewDashboardFieldConfigSourceOverridesBuilder().
-				Matcher(dashboard.MatcherConfig{Id: "byName", Options: "Errors/s"}).
-				Properties([]dashboard.DynamicConfigValue{{Id: "color", Value: map[string]interface{}{"fixedColor": "red", "mode": "fixed"}}})}).
 			WithOverride(dashboard.MatcherConfig{Id: "byName", Options: "Errors/s"}, []dashboard.DynamicConfigValue{{Id: "color", Value: map[string]interface{}{"fixedColor": "red", "mode": "fixed"}}}).
 			Legend(common.NewVizLegendOptionsBuilder().
 				DisplayMode("table").
