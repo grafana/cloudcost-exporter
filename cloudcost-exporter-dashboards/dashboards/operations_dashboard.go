@@ -110,8 +110,8 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Unit("short").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
+					{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds").
 				FixedColor("#ad46ff")).
@@ -141,9 +141,9 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](30), Color: "yellow"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](120), Color: "red"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
+					{Value: cog.ToPtr[float64](30), Color: "yellow"},
+					{Value: cog.ToPtr[float64](120), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("none").
@@ -175,9 +175,9 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Max(100).
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "red"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](90), Color: "yellow"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](95), Color: "green"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "red"},
+					{Value: cog.ToPtr[float64](90), Color: "yellow"},
+					{Value: cog.ToPtr[float64](95), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("area").
@@ -207,7 +207,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Min(0).
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -266,7 +266,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Max(100).
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -330,13 +330,13 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Unit("reqps").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Overrides([]cog.Builder[dashboard.DashboardFieldConfigSourceOverrides]{dashboard.NewDashboardFieldConfigSourceOverridesBuilder().
 				Matcher(dashboard.MatcherConfig{Id: "byName", Options: "Errors/s"}).
-				Properties([]dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "color", Value: map[string]interface{}{"fixedColor": "red", "mode": "fixed"}}})}).
-			WithOverride(dashboard.MatcherConfig{Id: "byName", Options: "Errors/s"}, []dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "color", Value: map[string]interface{}{"fixedColor": "red", "mode": "fixed"}}}).
+				Properties([]dashboard.DynamicConfigValue{{Id: "color", Value: map[string]interface{}{"fixedColor": "red", "mode": "fixed"}}})}).
+			WithOverride(dashboard.MatcherConfig{Id: "byName", Options: "Errors/s"}, []dashboard.DynamicConfigValue{{Id: "color", Value: map[string]interface{}{"fixedColor": "red", "mode": "fixed"}}}).
 			Legend(common.NewVizLegendOptionsBuilder().
 				DisplayMode("table").
 				Placement("right").
@@ -396,8 +396,8 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Span(0x18).
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "orange"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](1), Color: "green"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "orange"},
+					{Value: cog.ToPtr[float64](1), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			ShowValue("never").
@@ -438,9 +438,9 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](30), Color: "yellow"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](120), Color: "red"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
+					{Value: cog.ToPtr[float64](30), Color: "yellow"},
+					{Value: cog.ToPtr[float64](120), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("none").
@@ -470,9 +470,9 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](30), Color: "yellow"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](120), Color: "red"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
+					{Value: cog.ToPtr[float64](30), Color: "yellow"},
+					{Value: cog.ToPtr[float64](120), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("none").
@@ -502,9 +502,9 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](30), Color: "yellow"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](120), Color: "red"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
+					{Value: cog.ToPtr[float64](30), Color: "yellow"},
+					{Value: cog.ToPtr[float64](120), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("none").
@@ -536,9 +536,9 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Max(100).
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "red"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](90), Color: "yellow"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](95), Color: "green"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "red"},
+					{Value: cog.ToPtr[float64](90), Color: "yellow"},
+					{Value: cog.ToPtr[float64](95), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("none").
@@ -570,9 +570,9 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Max(100).
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "red"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](90), Color: "yellow"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](95), Color: "green"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "red"},
+					{Value: cog.ToPtr[float64](90), Color: "yellow"},
+					{Value: cog.ToPtr[float64](95), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("none").
@@ -604,9 +604,9 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Max(100).
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "red"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](90), Color: "yellow"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](95), Color: "green"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "red"},
+					{Value: cog.ToPtr[float64](90), Color: "yellow"},
+					{Value: cog.ToPtr[float64](95), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("none").
@@ -641,7 +641,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Unit("logrowspersec").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("fixed").
 				FixedColor("red")).
@@ -750,8 +750,8 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
+					{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -808,8 +808,8 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
+					{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -865,8 +865,8 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
+					{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -923,8 +923,8 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
+					{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Orientation("horizontal").
@@ -973,8 +973,8 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
+					{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -1028,8 +1028,8 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
+					{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -1083,8 +1083,8 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
+					{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -1138,8 +1138,8 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
-					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
+					{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
