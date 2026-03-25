@@ -21,7 +21,7 @@ var (
 
 // Main entry point to generate the dashboard JSON, by calling builder.Build()
 func OperationsDashboard() *dashboard.DashboardBuilder {
-	builder := dashboard.NewDashboardBuilder("CloudCost Exporter Operations Dashboard").
+	builder := dashboard.NewDashboardBuilder("CCE operational dashboard").
 		Id(3826820004253696).
 		Uid("lel4qt7").
 		Title("CCE operational dashboard").
@@ -40,7 +40,6 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				"2h",
 				"1d"})).
 		LiveNow(false).
-		Version(0xb).
 		Variables([]cog.Builder[dashboard.VariableModel]{
 			dashboard.NewDatasourceVariableBuilder("datasource").
 				Name("datasource").
@@ -67,7 +66,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				Name("collector").
 				Label("Collector").
 				Hide(0).
-				Query(dashboard.StringOrMap{Map: map[string]interface{}{"label": "collector", "metric": "cloudcost_exporter_collector_duration_seconds", "qryType": 1, "query": "label_values(cloudcost_exporter_collector_duration_seconds,collector)", "refId": "PrometheusVariableQueryEditor-VariableQuery"}}).
+				Query(dashboard.StringOrMap{Map: map[string]interface{}{"refId": "PrometheusVariableQueryEditor-VariableQuery", "label": "collector", "metric": "cloudcost_exporter_collector_duration_seconds", "qryType": 1, "query": "label_values(cloudcost_exporter_collector_duration_seconds,collector)"}}).
 				Datasource(promDS).
 				Current(dashboard.VariableOption{Text: dashboard.StringOrArrayOfString{String: cog.ToPtr[string]("All")}, Value: dashboard.StringOrArrayOfString{ArrayOfString: []string{"$__all"}}}).
 				Multi(true).
@@ -98,12 +97,13 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				prometheus.NewDataqueryBuilder().
 					Expr("count(count by(collector) (count_over_time(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"$collector\"}[$__range])))").
 					Instant().
-					LegendFormat("Total").
+					EditorMode("code").
+					LegendFormat("Expected Active").
 					RefId("B").
 					QueryType("instant").
 					Datasource(promDS)}).
 			Title("Active Collectors").
-			Description("Number of distinct collectors currently reporting duration metrics.").
+			Description("Active: distinct collectors currently reporting duration metrics. Expected Active: distinct collectors seen at any point in the selected time range.").
 			Datasource(promDS).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 0, Y: 1}).
 			Span(0x8).
@@ -323,11 +323,11 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 					QueryType("range").
 					Datasource(promDS)}).
 			Title("Collection Rate vs Error Rate").
-			Description("Collection attempt rate vs error rate — shows the error share relative to total throughput.").
+			Description("Absolute collection rate (Total/s) and error rate (Errors/s) over time.").
 			Datasource(promDS).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 16, Y: 10}).
 			Span(0x8).
-			Unit("ops").
+			Unit("reqps").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
 				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"}})).
@@ -423,14 +423,14 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 		WithPanel(stat.NewPanelBuilder().
 			Id(0x40).
 			Targets([]cog.Builder[variants.Dataquery]{prometheus.NewDataqueryBuilder().
-				Expr("histogram_quantile(0.95, sum by(le) (rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"aws_ec2|aws_elb|aws_rds|S3|NATGATEWAY|VPC\"}[$__rate_interval])))").
+				Expr("histogram_quantile(0.95, sum(rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"aws_ec2|aws_elb|aws_rds|S3|NATGATEWAY|VPC\"}[$__rate_interval])))").
 				Instant().
 				LegendFormat("AWS").
 				RefId("A").
 				QueryType("instant").
 				Datasource(promDS)}).
 			Title("P95 Duration — AWS").
-			Description("P95 collection duration across AWS collectors.").
+			Description("P95 collection duration across AWS collectors (aws_ec2, aws_elb, aws_rds, S3, NATGATEWAY, VPC). Unaffected by the collector variable.").
 			Datasource(promDS).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 0, Y: 28}).
 			Height(0x6).
@@ -455,14 +455,14 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 		WithPanel(stat.NewPanelBuilder().
 			Id(0x41).
 			Targets([]cog.Builder[variants.Dataquery]{prometheus.NewDataqueryBuilder().
-				Expr("histogram_quantile(0.95, sum by(le) (rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"gcp_gke|GCS|ForwardingRule\"}[$__rate_interval])))").
+				Expr("histogram_quantile(0.95, sum(rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"gcp_gke|GCS|ForwardingRule\"}[$__rate_interval])))").
 				Instant().
 				LegendFormat("GCP").
 				RefId("A").
 				QueryType("instant").
 				Datasource(promDS)}).
 			Title("P95 Duration — GCP").
-			Description("P95 collection duration across GCP collectors.").
+			Description("P95 collection duration across GCP collectors (gcp_gke, GCS, ForwardingRule). Unaffected by the collector variable.").
 			Datasource(promDS).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 8, Y: 28}).
 			Height(0x6).
@@ -487,14 +487,14 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 		WithPanel(stat.NewPanelBuilder().
 			Id(0x42).
 			Targets([]cog.Builder[variants.Dataquery]{prometheus.NewDataqueryBuilder().
-				Expr("histogram_quantile(0.95, sum by(le) (rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"azure_aks\"}[$__rate_interval])))").
+				Expr("histogram_quantile(0.95, sum(rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"azure_aks\"}[$__rate_interval])))").
 				Instant().
 				LegendFormat("Azure").
 				RefId("A").
 				QueryType("instant").
 				Datasource(promDS)}).
 			Title("P95 Duration — Azure").
-			Description("P95 collection duration across Azure collectors.").
+			Description("P95 collection duration across Azure collectors (azure_aks). Unaffected by the collector variable.").
 			Datasource(promDS).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 16, Y: 28}).
 			Height(0x6).
@@ -526,7 +526,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				QueryType("instant").
 				Datasource(promDS)}).
 			Title("Success Rate — AWS").
-			Description("Success rate for AWS collectors").
+			Description("Success rate for AWS collectors (aws_ec2, aws_elb, aws_rds, S3, NATGATEWAY, VPC). Unaffected by the collector variable. Falls back to 0 errors when no error series are present.").
 			Datasource(promDS).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 0, Y: 34}).
 			Height(0x6).
@@ -560,7 +560,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				QueryType("instant").
 				Datasource(promDS)}).
 			Title("Success Rate — GCP").
-			Description("Success rate for GCP collectors").
+			Description("Success rate for GCP collectors (gcp_gke, GCS, ForwardingRule). Unaffected by the collector variable. Falls back to 0 errors when no error series are present.").
 			Datasource(promDS).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 8, Y: 34}).
 			Height(0x6).
@@ -594,7 +594,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				QueryType("instant").
 				Datasource(promDS)}).
 			Title("Success Rate — Azure").
-			Description("Success rate for Azure collectors").
+			Description("Success rate for Azure collectors (azure_aks). Unaffected by the collector variable. Falls back to 0 errors when no error series are present.").
 			Datasource(promDS).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 16, Y: 34}).
 			Height(0x6).
@@ -638,7 +638,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			GridPos(dashboard.GridPos{H: 8, W: 24, X: 0, Y: 40}).
 			Height(0x8).
 			Span(0x18).
-			Unit("short").
+			Unit("logrowspersec").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
 				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"}})).
@@ -743,7 +743,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				QueryType("range").
 				Datasource(promDS)}).
 			Title("P99 Duration by Collector").
-			Description("P50, P95, and P99 latency percentiles of collection duration per collector over time.").
+			Description("P99 collection duration trend per collector.").
 			Datasource(promDS).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 0, Y: 69}).
 			Span(0x8).
@@ -915,7 +915,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				QueryType("instant").
 				Datasource(promDS)}).
 			Title("P95 Duration by Collector (current, ranked)").
-			Description("Current P95 collection duration ranked by collector. Identifies the slowest collectors at a glance.").
+			Description("P95 collection duration per collector, ranked descending. Computed over the full selected time range via $__rate_interval — for narrow time ranges this reflects recent behavior; for wide ranges (e.g. 2d) it averages over the whole window.").
 			Datasource(promDS).
 			GridPos(dashboard.GridPos{H: 8, W: 24, X: 0, Y: 78}).
 			Height(0x8).
@@ -966,7 +966,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				QueryType("range").
 				Datasource(promDS)}).
 			Title("P95 Top 10 Slowest Regions").
-			Description("P95 collection duration trend over time, broken down by region.").
+			Description("P95 collection duration trend over time, broken down by region. Shows up to the 10 slowest regions at each point in time.").
 			Datasource(promDS).
 			GridPos(dashboard.GridPos{H: 8, W: 12, X: 0, Y: 87}).
 			Height(0x8).
@@ -1014,7 +1014,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 		WithPanel(timeseries.NewPanelBuilder().
 			Id(0x1f).
 			Targets([]cog.Builder[variants.Dataquery]{prometheus.NewDataqueryBuilder().
-				Expr("histogram_quantile(0.95, sum by(region) (rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"$collector\", region=~\".*[a-z][0-9]+$\"}[$__rate_interval])))").
+				Expr("histogram_quantile(0.95, sum by(region) (rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"$collector\", region=~\".*[a-z]-[a-z]+[0-9]+$\"}[$__rate_interval])))").
 				Range().
 				LegendFormat("{{region}}").
 				RefId("A").

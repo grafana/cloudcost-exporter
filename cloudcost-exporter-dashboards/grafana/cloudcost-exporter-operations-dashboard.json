@@ -23,21 +23,7 @@
   "fiscalYearStartMonth": 0,
   "liveNow": false,
   "schemaVersion": 41,
-  "version": 11,
   "panels": [
-    {
-      "type": "row",
-      "collapsed": false,
-      "title": "Overview \u0026 Logs",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
-      "id": 71,
-      "panels": []
-    },
     {
       "type": "row",
       "collapsed": false,
@@ -68,10 +54,11 @@
           }
         },
         {
-          "expr": "count(count by(collector) (cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"$collector\"}))",
+          "expr": "count(count by(collector) (count_over_time(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"$collector\"}[$__range])))",
           "instant": true,
           "range": false,
-          "legendFormat": "Total",
+          "editorMode": "code",
+          "legendFormat": "Expected Active",
           "refId": "B",
           "queryType": "instant",
           "datasource": {
@@ -81,7 +68,7 @@
         }
       ],
       "title": "Active Collectors",
-      "description": "Number of distinct collectors currently reporting duration metrics.",
+      "description": "Active: distinct collectors currently reporting duration metrics. Expected Active: distinct collectors seen at any point in the selected time range.",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -516,7 +503,7 @@
         }
       ],
       "title": "Collection Rate vs Error Rate",
-      "description": "Collection attempt rate vs error rate — shows the error share relative to total throughput.",
+      "description": "Absolute collection rate (Total/s) and error rate (Errors/s) over time.",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -547,7 +534,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
+          "unit": "reqps",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -738,7 +725,7 @@
       "id": 64,
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by(le) (rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"aws_ec2|aws_elb|aws_rds|S3|NATGATEWAY|VPC\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum(rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"aws_ec2|aws_elb|aws_rds|S3|NATGATEWAY|VPC\"}[$__rate_interval])))",
           "instant": true,
           "range": false,
           "legendFormat": "AWS",
@@ -751,7 +738,7 @@
         }
       ],
       "title": "P95 Duration — AWS",
-      "description": "P95 collection duration across AWS collectors.",
+      "description": "P95 collection duration across AWS collectors (aws_ec2, aws_elb, aws_rds, S3, NATGATEWAY, VPC). Unaffected by the collector variable.",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -812,7 +799,7 @@
       "id": 65,
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by(le) (rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"gcp_gke|GCS|ForwardingRule\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum(rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"gcp_gke|GCS|ForwardingRule\"}[$__rate_interval])))",
           "instant": true,
           "range": false,
           "legendFormat": "GCP",
@@ -825,7 +812,7 @@
         }
       ],
       "title": "P95 Duration — GCP",
-      "description": "P95 collection duration across GCP collectors.",
+      "description": "P95 collection duration across GCP collectors (gcp_gke, GCS, ForwardingRule). Unaffected by the collector variable.",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -886,7 +873,7 @@
       "id": 66,
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by(le) (rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"azure_aks\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum(rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"azure_aks\"}[$__rate_interval])))",
           "instant": true,
           "range": false,
           "legendFormat": "Azure",
@@ -899,7 +886,7 @@
         }
       ],
       "title": "P95 Duration — Azure",
-      "description": "P95 collection duration across Azure collectors.",
+      "description": "P95 collection duration across Azure collectors (azure_aks). Unaffected by the collector variable.",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -973,7 +960,7 @@
         }
       ],
       "title": "Success Rate — AWS",
-      "description": "Success rate for AWS collectors (errors assumed 0).",
+      "description": "Success rate for AWS collectors (aws_ec2, aws_elb, aws_rds, S3, NATGATEWAY, VPC). Unaffected by the collector variable. Falls back to 0 errors when no error series are present.",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -1049,7 +1036,7 @@
         }
       ],
       "title": "Success Rate — GCP",
-      "description": "Success rate for GCP collectors (errors assumed 0).",
+      "description": "Success rate for GCP collectors (gcp_gke, GCS, ForwardingRule). Unaffected by the collector variable. Falls back to 0 errors when no error series are present.",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -1125,7 +1112,7 @@
         }
       ],
       "title": "Success Rate — Azure",
-      "description": "Success rate for Azure collectors (errors assumed 0).",
+      "description": "Success rate for Azure collectors (azure_aks). Unaffected by the collector variable. Falls back to 0 errors when no error series are present.",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -1242,7 +1229,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "logrowspersec",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -1386,19 +1373,6 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 68
-      },
-      "id": 75,
-      "panels": []
-    },
-    {
-      "type": "row",
-      "collapsed": false,
-      "title": "By Collector",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
         "y": 69
       },
       "id": 76,
@@ -1422,7 +1396,7 @@
         }
       ],
       "title": "P99 Duration by Collector",
-      "description": "P50, P95, and P99 latency percentiles of collection duration per collector over time.",
+      "description": "P99 collection duration trend per collector.",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -1729,7 +1703,7 @@
         }
       ],
       "title": "P95 Duration by Collector (current, ranked)",
-      "description": "Current P95 collection duration ranked by collector. Identifies the slowest collectors at a glance.",
+      "description": "P95 collection duration per collector, ranked descending. Computed over the full selected time range via $__rate_interval — for narrow time ranges this reflects recent behavior; for wide ranges (e.g. 2d) it averages over the whole window.",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -1816,19 +1790,6 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 86
-      },
-      "id": 77,
-      "panels": []
-    },
-    {
-      "type": "row",
-      "collapsed": false,
-      "title": "By Region",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
         "y": 87
       },
       "id": 78,
@@ -1852,7 +1813,7 @@
         }
       ],
       "title": "P95 Top 10 Slowest Regions",
-      "description": "P95 collection duration trend over time, broken down by region.",
+      "description": "P95 collection duration trend over time, broken down by region. Shows up to the 10 slowest regions at each point in time.",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -1938,7 +1899,7 @@
       "id": 31,
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by(region) (rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"$collector\", region=~\".*[a-z][0-9]+$\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by(region) (rate(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"$collector\", region=~\".*[a-z]-[a-z]+[0-9]+$\"}[$__rate_interval])))",
           "instant": false,
           "range": true,
           "legendFormat": "{{region}}",
