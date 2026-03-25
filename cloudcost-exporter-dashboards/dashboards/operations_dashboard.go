@@ -21,7 +21,7 @@ var (
 
 // Main entry point to generate the dashboard JSON, by calling builder.Build()
 func OperationsDashboard() *dashboard.DashboardBuilder {
-	builder := dashboard.NewDashboardBuilder("CCE operational dashboard").
+	builder := dashboard.NewDashboardBuilder("CloudCost Exporter operational dashboard").
 		Id(3826820004253696).
 		Uid("lel4qt7").
 		Title("CCE operational dashboard").
