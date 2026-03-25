@@ -96,7 +96,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				QueryType("instant").
 				Datasource(promDS),
 				prometheus.NewDataqueryBuilder().
-					Expr("count(count by(collector) (cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"$collector\"}))").
+					Expr("count(count by(collector) (count_over_time(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"$collector\"}[$__range])))").
 					Instant().
 					LegendFormat("Total").
 					RefId("B").
