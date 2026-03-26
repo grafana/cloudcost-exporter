@@ -6,25 +6,21 @@ import (
 	"github.com/grafana/grafana-foundation-sdk/go/cog/variants"
 	"github.com/grafana/grafana-foundation-sdk/go/common"
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
+	"github.com/grafana/grafana-foundation-sdk/go/expr"
 	"github.com/grafana/grafana-foundation-sdk/go/logs"
 	"github.com/grafana/grafana-foundation-sdk/go/loki"
 	"github.com/grafana/grafana-foundation-sdk/go/prometheus"
 	"github.com/grafana/grafana-foundation-sdk/go/stat"
-	"github.com/grafana/grafana-foundation-sdk/go/statetimeline"
+	"github.com/grafana/grafana-foundation-sdk/go/table"
 	"github.com/grafana/grafana-foundation-sdk/go/timeseries"
-)
-
-var (
-	promDS = common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("${datasource}")}
-	lokiDS = common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("${loki_datasource}")}
 )
 
 // Main entry point to generate the dashboard JSON, by calling builder.Build()
 func OperationsDashboard() *dashboard.DashboardBuilder {
-	builder := dashboard.NewDashboardBuilder("CloudCost Exporter operational dashboard").
+	builder := dashboard.NewDashboardBuilder("Cloud Cost Exporter Operational Dashboard").
 		Id(3826820004253696).
 		Uid("lel4qt7").
-		Title("CCE operational dashboard").
+		Title("Cloud Cost Exporter Operational Dashboard").
 		Timezone("utc").
 		Editable().
 		Tooltip(0).
@@ -40,39 +36,49 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				"2h",
 				"1d"})).
 		LiveNow(false).
-		Variables([]cog.Builder[dashboard.VariableModel]{
-			dashboard.NewDatasourceVariableBuilder("datasource").
-				Name("datasource").
-				Type("prometheus").
-				Label("Datasource").
-				Hide(0),
-			dashboard.NewDatasourceVariableBuilder("loki_datasource").
-				Name("loki_datasource").
-				Type("loki").
-				Label("Loki Datasource").
-				Hide(0),
-			dashboard.NewQueryVariableBuilder("cluster").
-				Name("cluster").
-				Label("Cluster").
+		Variables([]cog.Builder[dashboard.VariableModel]{dashboard.NewQueryVariableBuilder("cluster").
+			Name("cluster").
+			Label("Cluster").
+			Hide(0).
+			Query(dashboard.StringOrMap{Map: map[string]interface{}{"label": "cluster", "qryType": 1, "query": "label_values(cluster)", "refId": "PrometheusVariableQueryEditor-VariableQuery"}}).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
+			Current(dashboard.VariableOption{Text: dashboard.StringOrArrayOfString{String: cog.ToPtr[string]("All")}, Value: dashboard.StringOrArrayOfString{ArrayOfString: []string{"$__all"}}}).
+			Multi(true).
+			Refresh(2).
+			Sort(1).
+			IncludeAll(true),
+			dashboard.NewQueryVariableBuilder("collector").
+				Name("collector").
+				Label("Collector").
 				Hide(0).
-				Query(dashboard.StringOrMap{Map: map[string]interface{}{"label": "cluster", "metric": "cloudcost_exporter_collector_duration_seconds", "qryType": 1, "query": "label_values(cloudcost_exporter_collector_duration_seconds,cluster)", "refId": "PrometheusVariableQueryEditor-VariableQuery"}}).
-				Datasource(promDS).
+				Query(dashboard.StringOrMap{Map: map[string]interface{}{"label": "collector", "metric": "cloudcost_exporter_collector_duration_seconds", "qryType": 1, "query": "label_values(cloudcost_exporter_collector_duration_seconds,collector)", "refId": "PrometheusVariableQueryEditor-VariableQuery"}}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
 				Current(dashboard.VariableOption{Text: dashboard.StringOrArrayOfString{String: cog.ToPtr[string]("All")}, Value: dashboard.StringOrArrayOfString{ArrayOfString: []string{"$__all"}}}).
 				Multi(true).
 				Refresh(1).
 				Sort(1).
 				IncludeAll(true),
-			dashboard.NewQueryVariableBuilder("collector").
-				Name("collector").
-				Label("Collector").
+			dashboard.NewQueryVariableBuilder("latest_version").
+				Name("latest_version").
+				Label("Latest Version").
+				Hide(2).
+				Query(dashboard.StringOrMap{Map: map[string]interface{}{"refId": "PrometheusVariableQueryEditor-VariableQuery", "label": "version", "metric": "cloudcost_exporter_build_info", "qryType": 1, "query": "label_values(cloudcost_exporter_build_info,version)"}}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}).
+				Current(dashboard.VariableOption{Text: dashboard.StringOrArrayOfString{String: cog.ToPtr[string]("v0.29.1")}, Value: dashboard.StringOrArrayOfString{String: cog.ToPtr[string]("v0.29.1")}}).
+				Refresh(2).
+				Sort(0),
+			dashboard.NewDatasourceVariableBuilder("prometheus_datasource").
+				Name("prometheus_datasource").
+				Label("Prometheus Datasource").
 				Hide(0).
-				Query(dashboard.StringOrMap{Map: map[string]interface{}{"refId": "PrometheusVariableQueryEditor-VariableQuery", "label": "collector", "metric": "cloudcost_exporter_collector_duration_seconds", "qryType": 1, "query": "label_values(cloudcost_exporter_collector_duration_seconds,collector)"}}).
-				Datasource(promDS).
-				Current(dashboard.VariableOption{Text: dashboard.StringOrArrayOfString{String: cog.ToPtr[string]("All")}, Value: dashboard.StringOrArrayOfString{ArrayOfString: []string{"$__all"}}}).
-				Multi(true).
-				Refresh(1).
-				Sort(1).
-				IncludeAll(true)}).
+				Type("prometheus").
+				Current(dashboard.VariableOption{Text: dashboard.StringOrArrayOfString{String: cog.ToPtr[string]("Billing Admin")}, Value: dashboard.StringOrArrayOfString{String: cog.ToPtr[string]("000000170")}}),
+			dashboard.NewDatasourceVariableBuilder("loki_datasource").
+				Name("loki_datasource").
+				Label("Loki Datasource").
+				Hide(0).
+				Type("loki").
+				Current(dashboard.VariableOption{Text: dashboard.StringOrArrayOfString{String: cog.ToPtr[string]("App o11y frontend")}, Value: dashboard.StringOrArrayOfString{String: cog.ToPtr[string]("b0d2d509-cccf-4525-ada7-9c43325e780a")}})}).
 		Annotations([]cog.Builder[dashboard.AnnotationQuery]{dashboard.NewAnnotationQueryBuilder().
 			Name("Annotations & Alerts").
 			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("grafana"), Uid: cog.ToPtr[string]("-- Grafana --")}).
@@ -93,7 +99,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("Active").
 				RefId("A").
 				QueryType("instant").
-				Datasource(promDS),
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}),
 				prometheus.NewDataqueryBuilder().
 					Expr("count(count by(collector) (count_over_time(cloudcost_exporter_collector_duration_seconds{cluster=~\"$cluster\", collector=~\"$collector\"}[$__range])))").
 					Instant().
@@ -101,17 +107,17 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 					LegendFormat("Expected Active").
 					RefId("B").
 					QueryType("instant").
-					Datasource(promDS)}).
+					Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
 			Title("Active Collectors").
 			Description("Active: distinct collectors currently reporting duration metrics. Expected Active: distinct collectors seen at any point in the selected time range.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("mixed"), Uid: cog.ToPtr[string]("-- Mixed --")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 0, Y: 1}).
 			Span(0x8).
 			Unit("short").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
-					{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds").
 				FixedColor("#ad46ff")).
@@ -132,18 +138,18 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("P95").
 				RefId("A").
 				QueryType("instant").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("P95 Collection Duration").
 			Description("95th percentile of collector run duration across all selected clusters and collectors.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 8, Y: 1}).
 			Span(0x8).
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
-					{Value: cog.ToPtr[float64](30), Color: "yellow"},
-					{Value: cog.ToPtr[float64](120), Color: "red"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](30), Color: "yellow"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](120), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("none").
@@ -164,10 +170,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("Success Rate").
 				RefId("A").
 				QueryType("instant").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("Success Rate").
 			Description("Percentage of successful collector runs (total - errors) / total.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 16, Y: 1}).
 			Span(0x8).
 			Unit("percent").
@@ -175,9 +181,9 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Max(100).
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "red"},
-					{Value: cog.ToPtr[float64](90), Color: "yellow"},
-					{Value: cog.ToPtr[float64](95), Color: "green"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "red"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](90), Color: "yellow"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](95), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("area").
@@ -197,17 +203,17 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{collector}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("Error Rate by Collector (%)").
 			Description("Per-collector error rate over time — errors / total collector runs.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 0, Y: 10}).
 			Span(0x8).
 			Unit("percent").
 			Min(0).
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -255,10 +261,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{collector}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("Success Rate by Collector (%)").
 			Description("Per-collector success rate over time.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 8, Y: 10}).
 			Span(0x8).
 			Unit("percent").
@@ -266,7 +272,7 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Max(100).
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -314,26 +320,29 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("Total/s").
 				RefId("A").
 				QueryType("range").
-				Datasource(promDS),
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}),
 				prometheus.NewDataqueryBuilder().
 					Expr("sum(rate(cloudcost_exporter_collector_error{cluster=~\"$cluster\", collector=~\"$collector\"}[$__rate_interval])) or vector(0)").
 					Range().
 					LegendFormat("Errors/s").
 					RefId("B").
 					QueryType("range").
-					Datasource(promDS)}).
+					Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")})}).
 			Title("Collection Rate vs Error Rate").
 			Description("Absolute collection rate (Total/s) and error rate (Errors/s) over time.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("mixed"), Uid: cog.ToPtr[string]("-- Mixed --")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 16, Y: 10}).
 			Span(0x8).
 			Unit("reqps").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
-			WithOverride(dashboard.MatcherConfig{Id: "byName", Options: "Errors/s"}, []dashboard.DynamicConfigValue{{Id: "color", Value: map[string]interface{}{"fixedColor": "red", "mode": "fixed"}}}).
+			Overrides([]cog.Builder[dashboard.DashboardFieldConfigSourceOverrides]{dashboard.NewDashboardFieldConfigSourceOverridesBuilder().
+				Matcher(dashboard.MatcherConfig{Id: "byName", Options: "Errors/s"}).
+				Properties([]dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "color", Value: map[string]interface{}{"fixedColor": "red", "mode": "fixed"}}})}).
+			WithOverride(dashboard.MatcherConfig{Id: "byName", Options: "Errors/s"}, []dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "color", Value: map[string]interface{}{"fixedColor": "red", "mode": "fixed"}}}).
 			Legend(common.NewVizLegendOptionsBuilder().
 				DisplayMode("table").
 				Placement("right").
@@ -370,49 +379,65 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			InsertNulls(common.BoolOrFloat64{Bool: cog.ToPtr[bool](false)}).
 			SpanNulls(common.BoolOrFloat64{Bool: cog.ToPtr[bool](false)}).
 			AxisBorderShow(false)).
-		WithPanel(statetimeline.NewPanelBuilder().
+		WithPanel(table.NewPanelBuilder().
 			Id(0x46).
 			Targets([]cog.Builder[variants.Dataquery]{prometheus.NewDataqueryBuilder().
-				Expr("topk without(version) (1, max by(cluster, version) (cloudcost_exporter_build_info)) and on(version) topk(1, count by(version) (max by(cluster, version) (cloudcost_exporter_build_info)))").
-				Range().
-				LegendFormat("{{cluster}} - {{version}}").
+				Expr("max by(cluster, version) (cloudcost_exporter_build_info{version=~\"${latest_version}\"}) or (max by(cluster, version) (cloudcost_exporter_build_info{version!~\"${latest_version}\"}) * 2)").
+				Instant().
 				RefId("A").
-				QueryType("range").
-				Datasource(promDS),
+				Hide(true).
+				QueryType("instant").
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}),
 				prometheus.NewDataqueryBuilder().
-					Expr("(topk without(version) (1, max by(cluster, version) (cloudcost_exporter_build_info)) unless on(version) topk(1, count by(version) (max by(cluster, version) (cloudcost_exporter_build_info)))) * 0").
-					Range().
-					LegendFormat("{{cluster}} - {{version}}").
+					Expr("min_over_time(timestamp(max by(cluster, version) (cloudcost_exporter_build_info))[$__range:6h])").
+					Instant().
 					RefId("B").
-					QueryType("range").
-					Datasource(promDS)}).
-			Title("Version History per Cluster").
-			Description("Shows when each version became active per cluster. Transitions indicate upgrade events.").
-			Datasource(promDS).
+					Hide(true).
+					QueryType("instant").
+					Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("edprtf91hz01se")}),
+				expr.NewTypeSqlBuilder().
+					Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("__expr__"), Uid: cog.ToPtr[string]("__expr__")}).
+					Expression("SELECT A.cluster, A.version, A.__value__ AS status, B.__value__ * 1000 AS deployed_at FROM A LEFT JOIN B ON A.cluster = B.cluster AND A.version = B.version ORDER BY A.cluster LIMIT 1000").
+					RefId("C")}).
+			Title("Version Deployment per Cluster").
+			Description("Current version per cluster and when it was first seen in the selected time range. Green = on ${latest_version} (latest), Orange = on an older version. Deployed At reflects the earliest timestamp within the range, not the absolute deploy date.").
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("mixed"), Uid: cog.ToPtr[string]("-- Mixed --")}).
 			GridPos(dashboard.GridPos{H: 9, W: 24, X: 0, Y: 19}).
 			Span(0x18).
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "orange"},
-					{Value: cog.ToPtr[float64](1), Color: "green"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](2), Color: "orange"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
-				Mode("thresholds")).
-			ShowValue("never").
-			RowHeight(0.8).
-			AlignValue("left").
-			Legend(common.NewVizLegendOptionsBuilder().
-				DisplayMode("list").
-				Placement("bottom").
-				ShowLegend(false)).
-			Tooltip(common.NewVizTooltipOptionsBuilder().
-				Mode("single").
-				Sort("none").
-				HideZeros(false)).
-			AxisPlacement("auto").
-			HideFrom(common.NewHideSeriesConfigBuilder().
-				Tooltip(false).
-				Legend(false).
-				Viz(false))).
+				Mode("fixed").
+				FixedColor("text")).
+			Overrides([]cog.Builder[dashboard.DashboardFieldConfigSourceOverrides]{dashboard.NewDashboardFieldConfigSourceOverridesBuilder().
+				Matcher(dashboard.MatcherConfig{Id: "byName", Options: "cluster"}).
+				Properties([]dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "displayName", Value: "Cluster"}}),
+				dashboard.NewDashboardFieldConfigSourceOverridesBuilder().
+					Matcher(dashboard.MatcherConfig{Id: "byName", Options: "version"}).
+					Properties([]dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "displayName", Value: "Version"}}),
+				dashboard.NewDashboardFieldConfigSourceOverridesBuilder().
+					Matcher(dashboard.MatcherConfig{Id: "byName", Options: "status"}).
+					Properties([]dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "displayName", Value: "Status"},
+						dashboard.DynamicConfigValue{Id: "color", Value: map[string]interface{}{"mode": "thresholds"}},
+						dashboard.DynamicConfigValue{Id: "custom.cellOptions", Value: map[string]interface{}{"type": "color-background"}},
+						dashboard.DynamicConfigValue{Id: "mappings", Value: []interface{}{map[string]interface{}{"options": map[string]interface{}{"1": map[string]interface{}{"color": "green", "index": 0, "text": "Latest"}, "2": map[string]interface{}{"color": "orange", "index": 1, "text": "Outdated"}}, "type": "value"}}}}),
+				dashboard.NewDashboardFieldConfigSourceOverridesBuilder().
+					Matcher(dashboard.MatcherConfig{Id: "byName", Options: "deployed_at"}).
+					Properties([]dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "displayName", Value: "Deployed At"},
+						dashboard.DynamicConfigValue{Id: "unit", Value: "dateTimeAsIso"}})}).
+			WithOverride(dashboard.MatcherConfig{Id: "byName", Options: "cluster"}, []dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "displayName", Value: "Cluster"}}).
+			WithOverride(dashboard.MatcherConfig{Id: "byName", Options: "version"}, []dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "displayName", Value: "Version"}}).
+			WithOverride(dashboard.MatcherConfig{Id: "byName", Options: "status"}, []dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "displayName", Value: "Status"},
+				dashboard.DynamicConfigValue{Id: "color", Value: map[string]interface{}{"mode": "thresholds"}},
+				dashboard.DynamicConfigValue{Id: "custom.cellOptions", Value: map[string]interface{}{"type": "color-background"}},
+				dashboard.DynamicConfigValue{Id: "mappings", Value: []interface{}{map[string]interface{}{"options": map[string]interface{}{"2": map[string]interface{}{"color": "orange", "index": 1, "text": "Outdated"}, "1": map[string]interface{}{"color": "green", "index": 0, "text": "Latest"}}, "type": "value"}}}}).
+			WithOverride(dashboard.MatcherConfig{Id: "byName", Options: "deployed_at"}, []dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "displayName", Value: "Deployed At"},
+				dashboard.DynamicConfigValue{Id: "unit", Value: "dateTimeAsIso"}}).
+			CellHeight("sm").
+			Align("auto").
+			CellOptions(common.TableAutoCellOptionsOrTableSparklineCellOptionsOrTableBarGaugeCellOptionsOrTableColoredBackgroundCellOptionsOrTableColorTextCellOptionsOrTableImageCellOptionsOrTableDataLinksCellOptionsOrTableActionsCellOptionsOrTableJsonViewCellOptions{TableAutoCellOptions: cog.ToPtr[common.TableAutoCellOptions](common.TableAutoCellOptions{Type: "auto"})})).
 		WithRow(dashboard.NewRowBuilder("By Provider").
 			Title("By Provider").
 			GridPos(dashboard.GridPos{H: 1, W: 24, X: 0, Y: 28}).
@@ -425,19 +450,19 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("AWS").
 				RefId("A").
 				QueryType("instant").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("P95 Duration — AWS").
 			Description("P95 collection duration across AWS collectors (aws_ec2, aws_elb, aws_rds, S3, NATGATEWAY, VPC). Unaffected by the collector variable.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 0, Y: 28}).
 			Height(0x6).
 			Span(0x8).
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
-					{Value: cog.ToPtr[float64](30), Color: "yellow"},
-					{Value: cog.ToPtr[float64](120), Color: "red"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](30), Color: "yellow"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](120), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("none").
@@ -457,19 +482,19 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("GCP").
 				RefId("A").
 				QueryType("instant").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("P95 Duration — GCP").
 			Description("P95 collection duration across GCP collectors (gcp_gke, GCS, ForwardingRule). Unaffected by the collector variable.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 8, Y: 28}).
 			Height(0x6).
 			Span(0x8).
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
-					{Value: cog.ToPtr[float64](30), Color: "yellow"},
-					{Value: cog.ToPtr[float64](120), Color: "red"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](30), Color: "yellow"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](120), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("none").
@@ -489,19 +514,19 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("Azure").
 				RefId("A").
 				QueryType("instant").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("P95 Duration — Azure").
 			Description("P95 collection duration across Azure collectors (azure_aks). Unaffected by the collector variable.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 16, Y: 28}).
 			Height(0x6).
 			Span(0x8).
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
-					{Value: cog.ToPtr[float64](30), Color: "yellow"},
-					{Value: cog.ToPtr[float64](120), Color: "red"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](30), Color: "yellow"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](120), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("none").
@@ -521,10 +546,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("AWS").
 				RefId("A").
 				QueryType("instant").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("Success Rate — AWS").
 			Description("Success rate for AWS collectors (aws_ec2, aws_elb, aws_rds, S3, NATGATEWAY, VPC). Unaffected by the collector variable. Falls back to 0 errors when no error series are present.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 0, Y: 34}).
 			Height(0x6).
 			Span(0x8).
@@ -533,9 +558,9 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Max(100).
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "red"},
-					{Value: cog.ToPtr[float64](90), Color: "yellow"},
-					{Value: cog.ToPtr[float64](95), Color: "green"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "red"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](90), Color: "yellow"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](95), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("none").
@@ -555,10 +580,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("GCP").
 				RefId("A").
 				QueryType("instant").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("Success Rate — GCP").
 			Description("Success rate for GCP collectors (gcp_gke, GCS, ForwardingRule). Unaffected by the collector variable. Falls back to 0 errors when no error series are present.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 8, Y: 34}).
 			Height(0x6).
 			Span(0x8).
@@ -567,9 +592,9 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Max(100).
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "red"},
-					{Value: cog.ToPtr[float64](90), Color: "yellow"},
-					{Value: cog.ToPtr[float64](95), Color: "green"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "red"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](90), Color: "yellow"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](95), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("none").
@@ -589,10 +614,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("Azure").
 				RefId("A").
 				QueryType("instant").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("Success Rate — Azure").
 			Description("Success rate for Azure collectors (azure_aks). Unaffected by the collector variable. Falls back to 0 errors when no error series are present.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 6, W: 8, X: 16, Y: 34}).
 			Height(0x6).
 			Span(0x8).
@@ -601,9 +626,9 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 			Max(100).
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "red"},
-					{Value: cog.ToPtr[float64](90), Color: "yellow"},
-					{Value: cog.ToPtr[float64](95), Color: "green"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "red"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](90), Color: "yellow"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](95), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("thresholds")).
 			GraphMode("none").
@@ -628,17 +653,17 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				Instant(false).
 				RefId("A").
 				QueryType("range").
-				Datasource(lokiDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("$loki_datasource")})}).
 			Title("Error Log Rate").
 			Description("Rate of log lines containing error-level messages from the cloudcost-exporter namespace.").
-			Datasource(lokiDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("$loki_datasource")}).
 			GridPos(dashboard.GridPos{H: 8, W: 24, X: 0, Y: 40}).
 			Height(0x8).
 			Span(0x18).
 			Unit("logrowspersec").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("fixed").
 				FixedColor("red")).
@@ -684,10 +709,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				Instant(false).
 				RefId("A").
 				QueryType("range").
-				Datasource(lokiDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("$loki_datasource")})}).
 			Title("Error Logs").
 			Description("Log lines at error level from the cloudcost-exporter namespace.").
-			Datasource(lokiDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("$loki_datasource")}).
 			GridPos(dashboard.GridPos{H: 10, W: 24, X: 0, Y: 48}).
 			Height(0xa).
 			Span(0x18).
@@ -709,10 +734,10 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				Instant(false).
 				RefId("A").
 				QueryType("range").
-				Datasource(lokiDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("$loki_datasource")})}).
 			Title("All Logs (cloudcost-exporter namespace)").
 			Description("All logs from the cloudcost-exporter namespace across selected clusters.").
-			Datasource(lokiDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("loki"), Uid: cog.ToPtr[string]("$loki_datasource")}).
 			GridPos(dashboard.GridPos{H: 10, W: 24, X: 0, Y: 58}).
 			Height(0xa).
 			Span(0x18).
@@ -738,17 +763,17 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{collector}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("P99 Duration by Collector").
 			Description("P99 collection duration trend per collector.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 0, Y: 69}).
 			Span(0x8).
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
-					{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -796,17 +821,17 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{collector}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("P95 Duration by Collector").
 			Description("P95 collection duration trend per collector.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 8, Y: 69}).
 			Span(0x8).
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
-					{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -853,17 +878,17 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{collector}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("P50 Duration by Collector").
 			Description("P50 (median) collection duration trend per collector.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 9, W: 8, X: 16, Y: 69}).
 			Span(0x8).
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
-					{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -910,18 +935,18 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{collector}}").
 				RefId("A").
 				QueryType("instant").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("P95 Duration by Collector (current, ranked)").
 			Description("P95 collection duration per collector, ranked descending. Computed over the full selected time range via $__rate_interval — for narrow time ranges this reflects recent behavior; for wide ranges (e.g. 2d) it averages over the whole window.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 8, W: 24, X: 0, Y: 78}).
 			Height(0x8).
 			Span(0x18).
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
-					{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Orientation("horizontal").
@@ -961,17 +986,17 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{region}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("P95 Top 10 Slowest Regions").
 			Description("P95 collection duration trend over time, broken down by region. Shows up to the 10 slowest regions at each point in time.").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 8, W: 12, X: 0, Y: 87}).
 			Height(0x8).
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
-					{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -1016,17 +1041,17 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{region}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("P95 Duration — GCP Regions").
 			Description("GCP regions identified by naming convention (no hyphen before trailing digit, e.g. europe-west4, us-central1).").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 8, W: 12, X: 12, Y: 87}).
 			Height(0x8).
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
-					{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -1071,17 +1096,17 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{region}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("P95 Duration — AWS Regions").
 			Description("AWS regions identified by naming convention (hyphen before trailing digit, e.g. us-east-1, eu-west-2).").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 8, W: 12, X: 0, Y: 95}).
 			Height(0x8).
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
-					{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -1126,17 +1151,17 @@ func OperationsDashboard() *dashboard.DashboardBuilder {
 				LegendFormat("{{region}}").
 				RefId("A").
 				QueryType("range").
-				Datasource(promDS)}).
+				Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")})}).
 			Title("P95 Duration — Azure Regions").
 			Description("Azure regions identified by naming convention (no hyphens, e.g. eastus, westeurope, eastus2).").
-			Datasource(promDS).
+			Datasource(common.DataSourceRef{Type: cog.ToPtr[string]("prometheus"), Uid: cog.ToPtr[string]("$prometheus_datasource")}).
 			GridPos(dashboard.GridPos{H: 8, W: 12, X: 12, Y: 95}).
 			Height(0x8).
 			Unit("s").
 			Thresholds(dashboard.NewThresholdsConfigBuilder().
 				Mode("absolute").
-				Steps([]dashboard.Threshold{{Value: cog.ToPtr[float64](0), Color: "green"},
-					{Value: cog.ToPtr[float64](80), Color: "red"}})).
+				Steps([]dashboard.Threshold{dashboard.Threshold{Value: cog.ToPtr[float64](0), Color: "green"},
+					dashboard.Threshold{Value: cog.ToPtr[float64](80), Color: "red"}})).
 			ColorScheme(dashboard.NewFieldColorBuilder().
 				Mode("palette-classic")).
 			Legend(common.NewVizLegendOptionsBuilder().
