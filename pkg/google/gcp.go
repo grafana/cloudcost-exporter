@@ -141,7 +141,7 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 				continue
 			}
 		case "SQL":
-			collector, err = cloudsql.New(&cloudsql.Config{
+			collector, err = cloudsql.New(ctx, &cloudsql.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         config.Logger,
