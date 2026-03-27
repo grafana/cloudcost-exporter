@@ -86,7 +86,7 @@ var (
 type Collector struct {
 	regions      []ec2types.Region
 	regionMap    map[string]client.Client
-	PricingStore pricingstore.PricingStoreRefresher
+	pricingStore pricingstore.PricingStoreRefresher
 	logger       *slog.Logger
 }
 
@@ -133,13 +133,13 @@ func New(ctx context.Context, config *Config) *Collector {
 	return &Collector{
 		regions:      config.Regions,
 		regionMap:    config.RegionMap,
-		PricingStore: pricingStore,
+		pricingStore: pricingStore,
 		logger:       logger,
 	}
 }
 
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
-	snapshot := c.PricingStore.Snapshot()
+	snapshot := c.pricingStore.Snapshot()
 
 	for _, region := range c.regions {
 		select {
