@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -44,6 +46,7 @@ var (
 type Collector struct {
 	// Collector fields
 	scrapeInterval time.Duration
+	regions        []string
 	PricingStore   pricingstore.PricingStoreRefresher
 
 	logger *slog.Logger
@@ -71,6 +74,7 @@ func New(ctx context.Context, config *Config) *Collector {
 	return &Collector{
 		logger:         logger,
 		scrapeInterval: config.ScrapeInterval,
+		regions:        slices.Collect(maps.Keys(config.RegionMap)),
 		PricingStore:   pricingStore,
 	}
 }
@@ -83,6 +87,8 @@ type Config struct {
 }
 
 func (c *Collector) Name() string { return strings.ToUpper(serviceName) }
+
+func (c *Collector) Regions() []string { return c.regions }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- HourlyGaugeDesc

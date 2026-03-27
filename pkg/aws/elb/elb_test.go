@@ -34,7 +34,7 @@ func TestNew(t *testing.T) {
 
 	assert.NotNil(t, collector)
 	assert.Equal(t, config.ScrapeInterval, collector.ScrapeInterval)
-	assert.Equal(t, config.Regions, collector.Regions)
+	assert.Equal(t, config.Regions, collector.regions)
 	assert.Equal(t, mockClient, collector.awsRegionClientMap["us-east-1"])
 	assert.NotNil(t, collector.pricingMap)
 }

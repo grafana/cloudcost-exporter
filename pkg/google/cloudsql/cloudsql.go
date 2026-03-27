@@ -22,6 +22,7 @@ type Config struct {
 
 type Collector struct {
 	projects   []string
+	regions    []string
 	gcpClient  client.Client
 	config     *Config
 	pricingMap *pricingMap
@@ -45,13 +46,20 @@ var (
 
 func New(config *Config, gcpClient client.Client) (*Collector, error) {
 	pm := newPricingMap(config.Logger, gcpClient)
+	projects := strings.Split(config.Projects, ",")
+	regions := client.RegionsForProjects(gcpClient, projects, config.Logger)
 	return &Collector{
 		gcpClient:  gcpClient,
 		config:     config,
 		pricingMap: pm,
-		projects:   strings.Split(config.Projects, ","),
+		projects:   projects,
+		regions:    regions,
 		logger:     config.Logger,
 	}, nil
+}
+
+func (c *Collector) Regions() []string {
+	return c.regions
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {

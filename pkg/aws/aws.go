@@ -19,7 +19,7 @@ import (
 	rds "github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	rdsCollector "github.com/grafana/cloudcost-exporter/pkg/aws/rds"
-	"github.com/grafana/cloudcost-exporter/pkg/gatherer"
+	"github.com/grafana/cloudcost-exporter/pkg/collectormetrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
@@ -141,7 +141,13 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 
 		switch service {
 		case serviceS3:
-			collector := s3.New(config.ScrapeInterval, awsClient)
+			collector, err := s3.New(ctx, config.ScrapeInterval, awsClient)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
 			collectors = append(collectors, collector)
 		case serviceEC2:
 			collector, err := ec2Collector.New(ctx, &ec2Collector.Config{
@@ -279,7 +285,7 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	g.SetLimit(collectConcurrencyLimit)
 	for _, c := range a.collectors {
 		g.Go(func() error {
-			duration, hasError := gatherer.CollectWithGatherer(collectCtx, c, ch, a.logger)
+			duration, hasError := collectormetrics.Collect(collectCtx, c, ch, a.logger)
 
 			//TODO: remove collectorErrors once we have the new metrics
 			collectorErrors := 0.0

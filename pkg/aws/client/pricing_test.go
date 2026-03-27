@@ -338,7 +338,7 @@ func Test_GetRDSUnitData(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "multiple prices",
+			name: "multiple prices - ambiguous match, skips without error",
 			GetProducts: func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error) {
 				return &awsPricing.GetProductsOutput{
 					PriceList: []string{
@@ -348,17 +348,17 @@ func Test_GetRDSUnitData(t *testing.T) {
 				}, nil
 			},
 			want:    "",
-			wantErr: true,
+			wantErr: false,
 		},
 		{
-			name: "empty price list",
+			name: "empty price list - no match, skips without error",
 			GetProducts: func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error) {
 				return &awsPricing.GetProductsOutput{
 					PriceList: []string{},
 				}, nil
 			},
 			want:    "",
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name: "pricing API errors",

@@ -161,6 +161,7 @@ func Test_CollectMetrics(t *testing.T) {
 				c.EXPECT().Describe(gomock.Any()).Return(nil).AnyTimes()
 			}
 			azure := &Azure{
+				config:           &Config{Region: "eastus"},
 				context:          t.Context(),
 				logger:           testLogger,
 				collectors:       []provider.Collector{},
@@ -187,6 +188,7 @@ func Test_CollectMetrics(t *testing.T) {
 					"duration_seconds",
 					"last_scrape_time",
 					"collector_total",
+					"collector_error",
 				}
 				for _, suffix := range ignoredMetricSuffix {
 					if strings.Contains(metricName, suffix) {

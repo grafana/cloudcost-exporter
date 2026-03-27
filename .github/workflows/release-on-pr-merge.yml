@@ -153,7 +153,7 @@ jobs:
 
       - name: Run GoReleaser
         if: needs.check-release-label.outputs.should-release == 'true'
-        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7.0.0
         with:
           distribution: goreleaser
           version: 2
@@ -188,7 +188,7 @@ jobs:
 
       - name: Build and Push Image
         id: build
-        uses: grafana/shared-workflows/actions/docker-build-push-image@ef27c620a88acc9f3007f30be5e9407324e8975b # docker-build-push-image/v0.3.0
+        uses: grafana/shared-workflows/actions/docker-build-push-image@21ae57f82e5256e5a418406388926d4ba24bccf2 # docker-build-push-image/v0.3.2
         with:
           registries: dockerhub
           platforms: ${{ matrix.platform }}
@@ -202,7 +202,7 @@ jobs:
 
       - name: Export Docker Digest
         id: export
-        uses: grafana/shared-workflows/actions/docker-export-digest@1d3e79a89e5fe2e14e27c7d083484f16abc1438b # docker-export-digest/v0.1.1
+        uses: grafana/shared-workflows/actions/docker-export-digest@4d53725e812211a661bd89c8f4925c33584e1f45 # docker-export-digest/v0.1.2
         with:
           digest: ${{ steps.build.outputs.digest }}
           platform: ${{ matrix.platform }}

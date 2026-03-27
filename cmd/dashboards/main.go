@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
@@ -29,6 +28,16 @@ func main() {
 }
 
 func run(dashes []*dashboard.DashboardBuilder, output *string, outputDir *string) error {
+	var root *os.Root
+	if *output != "console" {
+		var err error
+		root, err = os.OpenRoot(*outputDir)
+		if err != nil {
+			return fmt.Errorf("open output directory: %w", err)
+		}
+		defer root.Close()
+	}
+
 	for _, dash := range dashes {
 		build, err := dash.Build()
 		if err != nil {
@@ -59,8 +68,7 @@ func run(dashes []*dashboard.DashboardBuilder, output *string, outputDir *string
 			return err
 		}
 		slug := sluggify(*build.Title)
-		path := filepath.Join(*outputDir, slug+".json")
-		if err := os.WriteFile(path, data, 0644); err != nil {
+		if err := root.WriteFile(slug+".json", data, 0644); err != nil {
 			return err
 		}
 	}

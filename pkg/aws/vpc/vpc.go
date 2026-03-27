@@ -116,6 +116,10 @@ type Config struct {
 
 func (c *Collector) Name() string { return strings.ToUpper(serviceName) }
 
+func (c *Collector) Regions() []string {
+	return awsclient.RegionsFromEC2Types(c.regions)
+}
+
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- VPCEndpointHourlyGaugeDesc
 	ch <- VPCEndpointServiceHourlyGaugeDesc
