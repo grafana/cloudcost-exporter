@@ -19,6 +19,8 @@ import (
 	"google.golang.org/api/option"
 	sqladmin "google.golang.org/api/sqladmin/v1beta4"
 	"google.golang.org/genproto/googleapis/type/money"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func newTestGCPClient(t *testing.T, computeHandlers map[string]any, sqlAdminHandlers map[string]any, skus []*billingpb.Sku) *client.Mock {
@@ -57,6 +59,41 @@ func newTestGCPClient(t *testing.T, computeHandlers map[string]any, sqlAdminHand
 	require.NoError(t, err)
 
 	return client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService)
+}
+
+type failingCatalogServer struct {
+	billingpb.UnimplementedCloudCatalogServer
+}
+
+func (s *failingCatalogServer) ListServices(_ context.Context, _ *billingpb.ListServicesRequest) (*billingpb.ListServicesResponse, error) {
+	return nil, status.Error(codes.Internal, "billing API unavailable")
+}
+
+func TestNew_FailsIfInitialSKUFetchFails(t *testing.T) {
+	catalogClient := client.NewTestBillingClient(t, &failingCatalogServer{})
+
+	computeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(struct{}{})
+	}))
+	t.Cleanup(computeSrv.Close)
+
+	sqlAdminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(struct{}{})
+	}))
+	t.Cleanup(sqlAdminSrv.Close)
+
+	computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(computeSrv.URL))
+	require.NoError(t, err)
+
+	sqlAdminService, err := sqladmin.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(sqlAdminSrv.URL))
+	require.NoError(t, err)
+
+	gcpClient := client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService)
+	config := &Config{Projects: "test-project", Logger: slog.New(slog.NewTextHandler(os.Stdout, nil))}
+
+	_, err = New(context.Background(), config, gcpClient)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "failed to initialise Cloud SQL pricing")
 }
 
 func TestCollector(t *testing.T) {
