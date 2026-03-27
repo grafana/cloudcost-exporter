@@ -202,7 +202,7 @@ func TestCollector(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			gcpClient := newTestGCPClient(t, tt.regionsHandlers, tt.sqlAdminHandlers, tt.skus)
 			config := &Config{Projects: "test-project", Logger: slog.New(slog.NewTextHandler(os.Stdout, nil))}
-			collector, err := New(config, gcpClient)
+			collector, err := New(context.Background(), config, gcpClient)
 			require.NoError(t, err)
 
 			ch := make(chan prometheus.Metric, 1)
@@ -280,8 +280,8 @@ func TestGetAllCloudSQL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gcpClient := newTestGCPClient(t, tt.regionsHandlers, tt.sqlAdminHandlers, nil)
-			config := &Config{Projects: "test-project"}
-			collector, err := New(config, gcpClient)
+			config := &Config{Projects: "test-project", Logger: slog.New(slog.NewTextHandler(os.Stdout, nil))}
+			collector, err := New(context.Background(), config, gcpClient)
 			require.NoError(t, err)
 
 			instances, err := collector.getAllCloudSQL(context.Background())

@@ -2,6 +2,7 @@ package cloudsql
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -44,10 +45,30 @@ var (
 	)
 )
 
-func New(config *Config, gcpClient client.Client) (*Collector, error) {
+func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
 	pm := newPricingMap(config.Logger, gcpClient)
 	projects := strings.Split(config.Projects, ",")
 	regions := client.RegionsForProjects(gcpClient, projects, config.Logger)
+
+	if err := pm.getSKus(ctx); err != nil {
+		return nil, fmt.Errorf("failed to initialise Cloud SQL pricing: %w", err)
+	}
+
+	go func() {
+		ticker := time.NewTicker(CostRefreshInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := pm.getSKus(ctx); err != nil {
+					config.Logger.Error("failed to refresh Cloud SQL pricing SKUs", "error", err)
+				}
+			}
+		}
+	}()
+
 	return &Collector{
 		gcpClient:  gcpClient,
 		config:     config,
@@ -68,11 +89,6 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	logger := c.logger.With("logger", "cloudsql")
-
-	if err := c.pricingMap.getSKus(ctx); err != nil {
-		logger.Error("failed to load pricing SKUs", "error", err)
-		return err
-	}
 
 	instances, err := c.getAllCloudSQL(ctx)
 	if err != nil {
