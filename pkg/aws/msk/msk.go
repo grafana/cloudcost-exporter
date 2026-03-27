@@ -140,6 +140,8 @@ func New(ctx context.Context, config *Config) *Collector {
 }
 
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
+	snapshot := c.PricingStore.Snapshot()
+
 	for _, region := range c.regions {
 		select {
 		case <-ctx.Done():
@@ -166,27 +168,27 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		}
 
 		for _, cluster := range clusters {
-			c.collectCluster(ch, regionName, cluster)
+			c.collectCluster(ch, snapshot, regionName, cluster)
 		}
 	}
 
 	return nil
 }
 
-func (c *Collector) collectCluster(ch chan<- prometheus.Metric, region string, cluster msktypes.Cluster) {
+func (c *Collector) collectCluster(ch chan<- prometheus.Metric, snapshot pricingstore.Snapshot, region string, cluster msktypes.Cluster) {
 	clusterData, err := buildClusterPricingData(cluster)
 	if err != nil {
 		c.logger.Warn("skipping unsupported or incomplete MSK cluster", "region", region, "cluster_arn", aws.ToString(cluster.ClusterArn), "error", err)
 		return
 	}
 
-	brokerUnitPrice, err := c.getBrokerUnitPrice(region, clusterData.instanceType)
+	brokerUnitPrice, err := c.getBrokerUnitPrice(snapshot, region, clusterData.instanceType)
 	if err != nil {
 		c.logger.Warn("skipping MSK cluster with unpriceable broker shape", "region", region, "cluster_arn", clusterData.clusterARN, "instance_type", clusterData.instanceType, "error", err)
 		return
 	}
 
-	storagePricePerGiBMonth, err := c.getStoragePricePerGiBMonth(region)
+	storagePricePerGiBMonth, err := c.getStoragePricePerGiBMonth(snapshot, region)
 	if err != nil {
 		c.logger.Warn("skipping MSK cluster with unpriceable storage shape", "region", region, "cluster_arn", clusterData.clusterARN, "error", err)
 		return
@@ -288,28 +290,28 @@ func newPriceFetcher(pricingClient client.Client) pricingstore.PriceFetchFunc {
 	}
 }
 
-func (c *Collector) getBrokerUnitPrice(region, instanceType string) (float64, error) {
+func (c *Collector) getBrokerUnitPrice(snapshot pricingstore.Snapshot, region, instanceType string) (float64, error) {
 	usageType := mskBrokerUsageTypePrefix + strings.TrimPrefix(instanceType, "kafka.")
-	return c.findRegionPrice(region, func(candidate string) bool {
+	return c.findRegionPrice(snapshot, region, func(candidate string) bool {
 		return strings.HasSuffix(candidate, usageType)
 	})
 }
 
-func (c *Collector) getStoragePricePerGiBMonth(region string) (float64, error) {
-	return c.findRegionPrice(region, func(candidate string) bool {
+func (c *Collector) getStoragePricePerGiBMonth(snapshot pricingstore.Snapshot, region string) (float64, error) {
+	return c.findRegionPrice(snapshot, region, func(candidate string) bool {
 		return strings.HasSuffix(candidate, mskStorageUsageType)
 	})
 }
 
-func (c *Collector) findRegionPrice(region string, matches func(string) bool) (float64, error) {
-	pricePerUnit, ok := c.PricingStore.GetPricePerUnitPerRegion()[region]
-	if !ok || pricePerUnit == nil {
+func (c *Collector) findRegionPrice(snapshot pricingstore.Snapshot, region string, matches func(string) bool) (float64, error) {
+	pricePerUnit, ok := snapshot.Region(region)
+	if !ok {
 		return 0, fmt.Errorf("no pricing data found for region %s", region)
 	}
 
 	matched := false
 	price := 0.0
-	for usageType, candidatePrice := range *pricePerUnit {
+	for usageType, candidatePrice := range pricePerUnit.Entries() {
 		if !matches(usageType) {
 			continue
 		}

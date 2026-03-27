@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
 	"log/slog"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -52,30 +54,91 @@ type productInfo struct {
 	}
 }
 
+type priceSnapshot struct {
+	byRegion map[string]map[string]float64
+}
+
+// Snapshot is an immutable view of the pricing data published by the store.
+type Snapshot struct {
+	ptr *priceSnapshot
+}
+
+// Regions yields each region and its pricing view from the snapshot.
+func (s Snapshot) Regions() iter.Seq2[string, RegionSnapshot] {
+	return func(yield func(string, RegionSnapshot) bool) {
+		if s.ptr == nil {
+			return
+		}
+
+		for region, prices := range s.ptr.byRegion {
+			if !yield(region, RegionSnapshot{prices: prices}) {
+				return
+			}
+		}
+	}
+}
+
+// Region returns the pricing view for one region.
+func (s Snapshot) Region(region string) (RegionSnapshot, bool) {
+	if s.ptr == nil {
+		return RegionSnapshot{}, false
+	}
+
+	prices, ok := s.ptr.byRegion[region]
+	if !ok {
+		return RegionSnapshot{}, false
+	}
+
+	return RegionSnapshot{prices: prices}, true
+}
+
+// RegionSnapshot is an immutable view of one region's pricing data.
+type RegionSnapshot struct {
+	prices map[string]float64
+}
+
+// Get returns one exact usage type price.
+func (r RegionSnapshot) Get(usageType string) (float64, bool) {
+	price, ok := r.prices[usageType]
+	return price, ok
+}
+
+// Entries yields each usage type and price from the region snapshot.
+func (r RegionSnapshot) Entries() iter.Seq2[string, float64] {
+	return func(yield func(string, float64) bool) {
+		for usageType, price := range r.prices {
+			if !yield(usageType, price) {
+				return
+			}
+		}
+	}
+}
+
 type PricingStore struct {
 	logger *slog.Logger
 
 	regions []ec2Types.Region
 
-	// Maps a region to a map of units to prices
-	pricePerUnitPerRegion map[string]*map[string]float64
-	regionPricingMapLock  *sync.RWMutex
+	// Snapshots are built off to the side and swapped atomically so readers
+	// always see a consistent view without taking locks.
+	current atomic.Pointer[priceSnapshot]
 
 	fetchPrices PriceFetchFunc
 }
 
 type PricingStoreRefresher interface {
 	PopulatePricingMap(ctx context.Context) error
-	GetPricePerUnitPerRegion() map[string]*map[string]float64
+	Snapshot() Snapshot
 }
 
 func newPricingStore(logger *slog.Logger, regions []ec2Types.Region) *PricingStore {
-	return &PricingStore{
-		logger:                logger,
-		pricePerUnitPerRegion: make(map[string]*map[string]float64),
-		regions:               regions,
-		regionPricingMapLock:  &sync.RWMutex{},
+	store := &PricingStore{
+		logger:  logger,
+		regions: regions,
 	}
+	store.current.Store(&priceSnapshot{byRegion: make(map[string]map[string]float64)})
+
+	return store
 }
 
 // NewPricingStore creates a new PricingStore.
@@ -97,16 +160,34 @@ func (p *PricingStore) populate(ctx context.Context) *PricingStore {
 	return p
 }
 
-// populatePricingMap fetches the pricing information for a product from the AWS Pricing API.
+// PopulatePricingMap fetches pricing information and publishes a new snapshot.
 func (p *PricingStore) PopulatePricingMap(ctx context.Context) error {
 	p.logger.LogAttrs(ctx, slog.LevelInfo, "Refreshing pricing map")
+
+	priceList, err := p.fetchAllPrices(ctx)
+	if err != nil {
+		return err
+	}
+
+	next, err := p.buildSnapshot(priceList)
+	if err != nil {
+		return fmt.Errorf("%w: %w", errGeneratePricingMap, err)
+	}
+
+	p.current.Store(next)
+	return nil
+}
+
+func (p *PricingStore) fetchAllPrices(ctx context.Context) ([]string, error) {
 	var prices []string
+
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(errGroupLimit)
-	m := sync.Mutex{}
+
+	var mu sync.Mutex
 	for _, region := range p.regions {
+		regionName := *region.RegionName
 		eg.Go(func() error {
-			regionName := *region.RegionName
 			p.logger.LogAttrs(ctx, slog.LevelDebug, "fetching pricing info", slog.String("region", regionName))
 
 			priceList, err := p.listPrices(ctx, regionName)
@@ -114,22 +195,19 @@ func (p *PricingStore) PopulatePricingMap(ctx context.Context) error {
 				return err
 			}
 
-			m.Lock()
+			mu.Lock()
 			prices = append(prices, priceList...)
-			m.Unlock()
+			mu.Unlock()
+
 			return nil
 		})
 	}
-	err := eg.Wait()
-	if err != nil {
-		return err
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
 	}
 
-	if err := p.populatePriceStore(prices); err != nil {
-		return fmt.Errorf("%w: %w", errGeneratePricingMap, err)
-	}
-
-	return nil
+	return prices, nil
 }
 
 func (p *PricingStore) listPrices(ctx context.Context, region string) ([]string, error) {
@@ -145,32 +223,28 @@ func (p *PricingStore) listPrices(ctx context.Context, region string) ([]string,
 	return priceList, nil
 }
 
-// GetPricePerUnitPerRegion returns the pricePerUnitPerRegion map.
-func (p *PricingStore) GetPricePerUnitPerRegion() map[string]*map[string]float64 {
-	return p.pricePerUnitPerRegion
+func (p *PricingStore) Snapshot() Snapshot {
+	return Snapshot{ptr: p.current.Load()}
 }
 
-// populatePriceStore receives a json with a list of all the prices per product.
-// It iterates over the products in the price list and parses the price for each product.
-func (p *PricingStore) populatePriceStore(priceList []string) error {
-	// Clear out price store only if we have new price data
-	p.regionPricingMapLock.Lock()
-	defer p.regionPricingMapLock.Unlock()
+func (p *PricingStore) buildSnapshot(priceList []string) (*priceSnapshot, error) {
+	snapshot := &priceSnapshot{byRegion: make(map[string]map[string]float64)}
 
 	for _, product := range priceList {
 		var productInfo productInfo
 		if err := json.Unmarshal([]byte(product), &productInfo); err != nil {
 			p.logger.Error("error unmarshalling product output", "error", err)
-			return err
+			return nil, err
 		}
 
 		region := productInfo.Product.Attributes.Region
-		if p.pricePerUnitPerRegion[region] == nil {
-			product := make(map[string]float64)
-			p.pricePerUnitPerRegion[region] = &product
+		if snapshot.byRegion[region] == nil {
+			snapshot.byRegion[region] = make(map[string]float64)
 		}
 
-		// Extract pricing information
+		// The UsageType is the unit of the price.
+		// Metrics should be created per UsageType unit of work.
+		unit := productInfo.Product.Attributes.UsageType
 		for _, term := range productInfo.Terms.OnDemand {
 			for _, priceDimension := range term.PriceDimensions {
 				price, err := strconv.ParseFloat(priceDimension.PricePerUnit[USD], 64)
@@ -178,13 +252,10 @@ func (p *PricingStore) populatePriceStore(priceList []string) error {
 					p.logger.Error(fmt.Sprintf("error parsing price: %s, skipping", err))
 					continue
 				}
-
-				// The UsageType is the unit of the price.
-				// Metrics should be created per UsageType unit of work.
-				unit := productInfo.Product.Attributes.UsageType
-				(*p.pricePerUnitPerRegion[region])[unit] = price
+				snapshot.byRegion[region][unit] = price
 			}
 		}
 	}
-	return nil
+
+	return snapshot, nil
 }

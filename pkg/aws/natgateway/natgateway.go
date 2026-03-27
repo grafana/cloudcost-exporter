@@ -100,13 +100,14 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
 
-	for region, pricePerUnit := range c.PricingStore.GetPricePerUnitPerRegion() {
+	snapshot := c.PricingStore.Snapshot()
+	for region, pricePerUnit := range snapshot.Regions() {
 		var (
 			hourlyPrice         float64
 			dataProcessingPrice float64
 		)
 
-		for usageType, price := range *pricePerUnit {
+		for usageType, price := range pricePerUnit.Entries() {
 			if strings.Contains(usageType, NATGatewayHours) {
 				// Aggregate all hourly NAT Gateway prices for this region into a single value
 				// E.g `USE1-NatGateway-Hours` and `USE1-NatGateway-Hours-Additional`
