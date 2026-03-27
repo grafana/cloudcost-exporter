@@ -131,33 +131,22 @@ type PricingStoreRefresher interface {
 	Snapshot() Snapshot
 }
 
-func newPricingStore(logger *slog.Logger, regions []ec2Types.Region) *PricingStore {
-	store := &PricingStore{
-		logger:  logger,
-		regions: regions,
-	}
-	store.current.Store(&priceSnapshot{byRegion: make(map[string]map[string]float64)})
-
-	return store
-}
-
 // NewPricingStore creates a new PricingStore.
 // It populates the store before it is used by the Collector.
 func NewPricingStore(ctx context.Context, logger *slog.Logger, regions []ec2Types.Region, fetchPrices PriceFetchFunc) *PricingStore {
-	p := newPricingStore(logger, regions)
-	p.fetchPrices = fetchPrices
+	store := &PricingStore{
+		logger:      logger,
+		regions:     regions,
+		fetchPrices: fetchPrices,
+	}
+	store.current.Store(&priceSnapshot{byRegion: make(map[string]map[string]float64)})
 
-	return p.populate(ctx)
-}
-
-func (p *PricingStore) populate(ctx context.Context) *PricingStore {
-	// Populate the store before it is used by the Collector.
-	err := p.PopulatePricingMap(ctx)
+	err := store.PopulatePricingMap(ctx)
 	if err != nil {
-		p.logger.Error("error populating pricing map", "error", err)
+		store.logger.Error("error populating pricing map", "error", err)
 	}
 
-	return p
+	return store
 }
 
 // PopulatePricingMap fetches pricing information and publishes a new snapshot.
@@ -238,8 +227,10 @@ func (p *PricingStore) buildSnapshot(priceList []string) (*priceSnapshot, error)
 		}
 
 		region := productInfo.Product.Attributes.Region
-		if snapshot.byRegion[region] == nil {
-			snapshot.byRegion[region] = make(map[string]float64)
+		regionPrices := snapshot.byRegion[region]
+		if regionPrices == nil {
+			regionPrices = make(map[string]float64)
+			snapshot.byRegion[region] = regionPrices
 		}
 
 		// The UsageType is the unit of the price.
@@ -252,7 +243,7 @@ func (p *PricingStore) buildSnapshot(priceList []string) (*priceSnapshot, error)
 					p.logger.Error(fmt.Sprintf("error parsing price: %s, skipping", err))
 					continue
 				}
-				snapshot.byRegion[region][unit] = price
+				regionPrices[unit] = price
 			}
 		}
 	}

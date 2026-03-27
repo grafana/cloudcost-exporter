@@ -19,16 +19,16 @@ var testLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 func TestNewPricingStore(t *testing.T) {
 	tests := map[string]struct {
-		logger          *slog.Logger
-		regions         []ec2Types.Region
-		fetchPrices     pricingstore.PriceFetchFunc
-		expectedRegions int
+		logger         *slog.Logger
+		regions        []ec2Types.Region
+		fetchPrices    pricingstore.PriceFetchFunc
+		expectedPrices map[string]map[string]float64
 	}{
 		"creates new pricing store with empty regions": {
-			logger:          testLogger,
-			regions:         []ec2Types.Region{},
-			fetchPrices:     func(context.Context, string) ([]string, error) { return nil, nil },
-			expectedRegions: 0,
+			logger:         testLogger,
+			regions:        []ec2Types.Region{},
+			fetchPrices:    func(context.Context, string) ([]string, error) { return nil, nil },
+			expectedPrices: map[string]map[string]float64{},
 		},
 		"creates new pricing store with single region": {
 			logger: testLogger,
@@ -44,7 +44,12 @@ func TestNewPricingStore(t *testing.T) {
 					`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Bytes","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"0.045"}}}}}}}`,
 				}, nil
 			},
-			expectedRegions: 1,
+			expectedPrices: map[string]map[string]float64{
+				"us-east-1": {
+					"USE1-NatGateway-Hours": 0.004,
+					"USE1-NatGateway-Bytes": 0.045,
+				},
+			},
 		},
 		"creates new pricing store with multiple regions": {
 			logger: testLogger,
@@ -68,33 +73,25 @@ func TestNewPricingStore(t *testing.T) {
 					return nil, nil
 				}
 			},
-			expectedRegions: 2,
+			expectedPrices: map[string]map[string]float64{
+				"us-east-1": {
+					"USE1-NatGateway-Hours": 0.004,
+					"USE1-NatGateway-Bytes": 0.045,
+				},
+				"us-west-2": {
+					"USW2-NatGateway-Hours": 0.005,
+					"USW2-NatGateway-Bytes": 0.055,
+				},
+			},
 		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			store := pricingstore.NewPricingStore(t.Context(), tt.logger, tt.regions, tt.fetchPrices)
-			snapshot := store.Snapshot()
-			pricesByRegion := snapshotToMap(snapshot)
 
 			assert.NotNil(t, store)
-			assert.Len(t, pricesByRegion, tt.expectedRegions)
-
-			for i := 0; i < tt.expectedRegions; i++ {
-				regionName := *tt.regions[i].RegionName
-				prices, ok := pricesByRegion[regionName]
-				assert.True(t, ok)
-
-				switch regionName {
-				case "us-east-1":
-					assert.Equal(t, 0.004, prices["USE1-NatGateway-Hours"])
-					assert.Equal(t, 0.045, prices["USE1-NatGateway-Bytes"])
-				case "us-west-2":
-					assert.Equal(t, 0.005, prices["USW2-NatGateway-Hours"])
-					assert.Equal(t, 0.055, prices["USW2-NatGateway-Bytes"])
-				}
-			}
+			assert.Equal(t, tt.expectedPrices, snapshotToMap(store.Snapshot()))
 		})
 	}
 }
@@ -132,17 +129,8 @@ func TestNewPricingStoreInvokesInjectedFetcher(t *testing.T) {
 		"us-west-2": 1,
 	}, calls)
 
-	east, ok := store.Snapshot().Region("us-east-1")
-	assert.True(t, ok)
-	eastPrice, ok := east.Get("USE1-NatGateway-Hours")
-	assert.True(t, ok)
-	assert.Equal(t, 0.004, eastPrice)
-
-	west, ok := store.Snapshot().Region("us-west-2")
-	assert.True(t, ok)
-	westPrice, ok := west.Get("USW2-NatGateway-Hours")
-	assert.True(t, ok)
-	assert.Equal(t, 0.005, westPrice)
+	assertSnapshotPrice(t, store.Snapshot(), "us-east-1", "USE1-NatGateway-Hours", 0.004)
+	assertSnapshotPrice(t, store.Snapshot(), "us-west-2", "USW2-NatGateway-Hours", 0.005)
 }
 
 func TestPopulatePricingMapPublishesNewSnapshotWithoutMutatingExistingOne(t *testing.T) {
@@ -160,19 +148,8 @@ func TestPopulatePricingMapPublishesNewSnapshotWithoutMutatingExistingOne(t *tes
 	currentPrice = "0.005"
 	assert.NoError(t, store.PopulatePricingMap(t.Context()))
 
-	after := store.Snapshot()
-
-	beforeRegion, ok := before.Region("us-east-1")
-	assert.True(t, ok)
-	beforePrice, ok := beforeRegion.Get("USE1-NatGateway-Hours")
-	assert.True(t, ok)
-	assert.Equal(t, 0.004, beforePrice)
-
-	afterRegion, ok := after.Region("us-east-1")
-	assert.True(t, ok)
-	afterPrice, ok := afterRegion.Get("USE1-NatGateway-Hours")
-	assert.True(t, ok)
-	assert.Equal(t, 0.005, afterPrice)
+	assertSnapshotPrice(t, before, "us-east-1", "USE1-NatGateway-Hours", 0.004)
+	assertSnapshotPrice(t, store.Snapshot(), "us-east-1", "USE1-NatGateway-Hours", 0.005)
 }
 
 func snapshotToMap(snapshot pricingstore.Snapshot) map[string]map[string]float64 {
@@ -186,4 +163,15 @@ func snapshotToMap(snapshot pricingstore.Snapshot) map[string]map[string]float64
 	}
 
 	return pricesByRegion
+}
+
+func assertSnapshotPrice(t *testing.T, snapshot pricingstore.Snapshot, region, usageType string, want float64) {
+	t.Helper()
+
+	regionSnapshot, ok := snapshot.Region(region)
+	assert.True(t, ok)
+
+	got, ok := regionSnapshot.Get(usageType)
+	assert.True(t, ok)
+	assert.Equal(t, want, got)
 }
