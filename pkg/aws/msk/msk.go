@@ -20,9 +20,8 @@ import (
 )
 
 const (
-	subsystem     = "aws_msk"
-	serviceName   = "msk"
-	hoursPerMonth = 730.5
+	subsystem   = "aws_msk"
+	serviceName = "msk"
 
 	mskBrokerUsageTypePrefix = "Kafka."
 	mskStorageUsageType      = "Kafka.Storage.GP2"
@@ -196,7 +195,7 @@ func (c *Collector) collectCluster(ch chan<- prometheus.Metric, snapshot pricing
 
 	computeHourlyRate := brokerUnitPrice * float64(clusterData.brokerCount)
 	totalAllocatedStorageGiB := float64(clusterData.brokerCount) * float64(clusterData.volumeSizeGiB)
-	storageHourlyRate := (storagePricePerGiBMonth / hoursPerMonth) * totalAllocatedStorageGiB
+	storageHourlyRate := (storagePricePerGiBMonth / utils.HoursInMonth) * totalAllocatedStorageGiB
 
 	ch <- prometheus.MustNewConstMetric(
 		ComputeHourlyGaugeDesc,
