@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
@@ -69,6 +70,41 @@ func (s *failingCatalogServer) ListServices(_ context.Context, _ *billingpb.List
 	return nil, status.Error(codes.Internal, "billing API unavailable")
 }
 
+type switchableCatalogServer struct {
+	billingpb.UnimplementedCloudCatalogServer
+	mu       sync.Mutex
+	disabled bool
+	skus     []*billingpb.Sku
+}
+
+func (s *switchableCatalogServer) disable() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.disabled = true
+}
+
+func (s *switchableCatalogServer) ListServices(_ context.Context, _ *billingpb.ListServicesRequest) (*billingpb.ListServicesResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.disabled {
+		return nil, status.Error(codes.Unavailable, "billing server disabled")
+	}
+	return &billingpb.ListServicesResponse{
+		Services: []*billingpb.Service{
+			{Name: "services/cloud-sql", DisplayName: "Cloud SQL"},
+		},
+	}, nil
+}
+
+func (s *switchableCatalogServer) ListSkus(_ context.Context, _ *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.disabled {
+		return nil, status.Error(codes.Unavailable, "billing server disabled")
+	}
+	return &billingpb.ListSkusResponse{Skus: s.skus}, nil
+}
+
 func TestNew_FailsIfInitialSKUFetchFails(t *testing.T) {
 	catalogClient := client.NewTestBillingClient(t, &failingCatalogServer{})
 
@@ -94,6 +130,95 @@ func TestNew_FailsIfInitialSKUFetchFails(t *testing.T) {
 	_, err = New(context.Background(), config, gcpClient)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "failed to initialise Cloud SQL pricing")
+}
+
+func TestCollect_UsesCachedSKUs(t *testing.T) {
+	skus := []*billingpb.Sku{
+		{
+			SkuId: "test-sku-id",
+			Category: &billingpb.Category{
+				ServiceDisplayName: "Cloud SQL",
+			},
+			Description: "Cloud SQL: MYSQL db-f1-micro ZONAL instance running in test-region",
+			GeoTaxonomy: &billingpb.GeoTaxonomy{
+				Regions: []string{"test-region"},
+			},
+			PricingInfo: []*billingpb.PricingInfo{
+				{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{
+							{
+								UnitPrice: &money.Money{
+									Nanos: 25000000, // $0.025 per hour
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	billingSrv := &switchableCatalogServer{skus: skus}
+	catalogClient := client.NewTestBillingClient(t, billingSrv)
+
+	computeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/projects/test-project/regions" {
+			_ = json.NewEncoder(w).Encode(&computev1.RegionList{
+				Items: []*computev1.Region{{Name: "test-region"}},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(struct{}{})
+	}))
+	t.Cleanup(computeSrv.Close)
+
+	sqlAdminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/sql/v1beta4/projects/test-project/instances" {
+			_ = json.NewEncoder(w).Encode(&sqladmin.InstancesListResponse{
+				Items: []*sqladmin.DatabaseInstance{
+					{
+						Name:            "test-name",
+						Region:          "test-region",
+						ConnectionName:  "test-project:test-region:test-name",
+						Settings:        &sqladmin.Settings{Tier: "db-f1-micro", AvailabilityType: "ZONAL"},
+						DatabaseVersion: "MYSQL_8_0",
+					},
+				},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(struct{}{})
+	}))
+	t.Cleanup(sqlAdminSrv.Close)
+
+	computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(computeSrv.URL))
+	require.NoError(t, err)
+
+	sqlAdminService, err := sqladmin.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(sqlAdminSrv.URL))
+	require.NoError(t, err)
+
+	gcpClient := client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService)
+	config := &Config{Projects: "test-project", Logger: slog.New(slog.NewTextHandler(os.Stdout, nil))}
+
+	collector, err := New(context.Background(), config, gcpClient)
+	require.NoError(t, err)
+
+	// Disable the billing backend — Collect() must use SKUs cached at init
+	billingSrv.disable()
+
+	ch := make(chan prometheus.Metric, 10)
+	err = collector.Collect(context.Background(), ch)
+	require.NoError(t, err)
+
+	select {
+	case metric := <-ch:
+		result := utils.ReadMetrics(metric)
+		assert.Equal(t, "test-project:test-region:test-name", result.Labels["instance"])
+		assert.InDelta(t, 0.025, result.Value, 1e-9)
+	default:
+		t.Fatal("expected a metric to be emitted from cached SKUs")
+	}
 }
 
 func TestCollector(t *testing.T) {
