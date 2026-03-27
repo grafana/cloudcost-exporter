@@ -55,7 +55,7 @@ type Collector struct {
 func New(ctx context.Context, config *Config) *Collector {
 	logger := config.Logger.With("logger", serviceName)
 
-	pricingStore := pricingstore.NewPricingStore(ctx, logger, config.Regions, config.RegionMap, NATGatewayFilters)
+	pricingStore := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.RegionMap))
 
 	go func(ctx context.Context) {
 		priceTicker := time.NewTicker(pricingstore.PriceRefreshInterval)
@@ -100,13 +100,14 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
 
-	for region, pricePerUnit := range c.PricingStore.GetPricePerUnitPerRegion() {
+	snapshot := c.PricingStore.Snapshot()
+	for region, pricePerUnit := range snapshot.Regions() {
 		var (
 			hourlyPrice         float64
 			dataProcessingPrice float64
 		)
 
-		for usageType, price := range *pricePerUnit {
+		for usageType, price := range pricePerUnit.Entries() {
 			if strings.Contains(usageType, NATGatewayHours) {
 				// Aggregate all hourly NAT Gateway prices for this region into a single value
 				// E.g `USE1-NatGateway-Hours` and `USE1-NatGateway-Hours-Additional`
@@ -132,3 +133,14 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 }
 
 func (c *Collector) Register(registry provider.Registry) error { return nil }
+
+func newPriceFetcher(regionMap map[string]awsclient.Client) pricingstore.PriceFetchFunc {
+	return func(ctx context.Context, region string) ([]string, error) {
+		regionClient, ok := regionMap[region]
+		if !ok {
+			return nil, fmt.Errorf("no client found for region %s", region)
+		}
+
+		return regionClient.ListEC2ServicePrices(ctx, region, NATGatewayFilters)
+	}
+}

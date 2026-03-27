@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	awsPricing "github.com/aws/aws-sdk-go-v2/service/pricing"
+	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/services/mocks"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
@@ -389,4 +390,49 @@ func Test_GetRDSUnitData(t *testing.T) {
 			assert.NoError(t, err)
 		})
 	}
+}
+
+func Test_ListMSKServicePrices(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	getFilterValue := func(filters []pricingTypes.Filter, field string) string {
+		for _, filter := range filters {
+			if aws.ToString(filter.Field) == field {
+				return aws.ToString(filter.Value)
+			}
+		}
+
+		return ""
+	}
+
+	client := mocks.NewMockPricing(ctrl)
+	client.EXPECT().
+		GetProducts(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error) {
+			assert.Equal(t, "AmazonMSK", aws.ToString(input.ServiceCode))
+			assert.Equal(t, "us-east-1", getFilterValue(input.Filters, "regionCode"))
+			assert.Equal(t, "RunBroker", getFilterValue(input.Filters, "operation"))
+			assert.Equal(t, "Broker", getFilterValue(input.Filters, "group"))
+			return &awsPricing.GetProductsOutput{
+				PriceList: []string{`{"price":"one"}`, `{"price":"two"}`},
+			}, nil
+		}).
+		Times(1)
+
+	c := newPricing(client, nil)
+	got, err := c.listMSKServicePrices(t.Context(), "us-east-1", []pricingTypes.Filter{
+		{
+			Field: aws.String("operation"),
+			Type:  pricingTypes.FilterTypeTermMatch,
+			Value: aws.String("RunBroker"),
+		},
+		{
+			Field: aws.String("group"),
+			Type:  pricingTypes.FilterTypeTermMatch,
+			Value: aws.String("Broker"),
+		},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, []string{`{"price":"one"}`, `{"price":"two"}`}, got)
 }

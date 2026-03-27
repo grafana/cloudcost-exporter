@@ -5,6 +5,7 @@
 - **[EC2](./aws/ec2.md)** - Elastic Compute Cloud instances (spot and on-demand pricing)
 - **[S3](./aws/s3.md)** - Simple Storage Service buckets
 - **[RDS](./aws/rds.md)** - Relational Database Service instances
+- **[MSK](./aws/msk.md)** - Managed Streaming for Apache Kafka clusters
 - **[ELB](./aws/elb.md)** - Elastic Load Balancers (ALB, NLB)
 - **[NAT Gateway](./aws/natgateway.md)** - Network Address Translation gateways
 - **[VPC](./aws/vpc.md)** - VPC endpoints and services

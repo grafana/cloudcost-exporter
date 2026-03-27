@@ -143,6 +143,17 @@ func Test_NewWithDependencies(t *testing.T) {
 			},
 			expectedCollectors: 1,
 		},
+		{
+			name:     "MSK service creates MSK collector",
+			services: []string{"MSK"},
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+			},
+			setupRegionClients: map[string]client.Client{
+				"us-east-1": &mockRegionClient{},
+			},
+			expectedCollectors: 1,
+		},
 	}
 
 	for _, tt := range tests {
@@ -177,7 +188,7 @@ func Test_NewWithDependencies(t *testing.T) {
 			}
 
 			// Call function
-			awsConfig := aws.Config{}
+			awsConfig := aws.Config{Region: "us-east-1"}
 			aws, err := newWithDependencies(
 				t.Context(),
 				config,

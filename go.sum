@@ -80,6 +80,8 @@ github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.7 h1:5EniKhL
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.7/go.mod h1:x0nZssQ3qZSnIcePWLvcoFisRXJzcTVvYpAAdYX8+GI=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.20 h1:2HvVAIq+YqgGotK6EkMf+KIEqTISmTYh5zLpYyeTo1Y=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.20/go.mod h1:V4X406Y666khGa8ghKmphma/7C0DAtEQYhkq9z4vpbk=
+github.com/aws/aws-sdk-go-v2/service/kafka v1.49.0 h1:ducXwInIszhvm402b7nTfKbDdtXqDfGxUTz3C5LJ0pI=
+github.com/aws/aws-sdk-go-v2/service/kafka v1.49.0/go.mod h1:lU7xpeY4j0/f1Klx/Inm4ljp6TTyMoVlVJAyZNeQGJU=
 github.com/aws/aws-sdk-go-v2/service/pricing v1.40.14 h1:Z3GB0K5jp4NA7h8jF+47NpMFEcEhk2cC/3cp+sNVnZI=
 github.com/aws/aws-sdk-go-v2/service/pricing v1.40.14/go.mod h1:kIKQg3oQXFIQhLS0VHI1oCdml2mApKG9cSgfVPrYuY4=
 github.com/aws/aws-sdk-go-v2/service/rds v1.116.3 h1:H/ZYZ6QR4EXJAYElI5xkIM/yCz+A4uHIvWpzl+IfJks=

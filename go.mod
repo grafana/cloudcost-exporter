@@ -37,6 +37,8 @@ require (
 	gopkg.in/matryer/try.v1 v1.0.0-20150601225556-312d2599e12e
 )
 
+require github.com/aws/aws-sdk-go-v2/service/kafka v1.49.0
+
 require (
 	cel.dev/expr v0.25.1 // indirect
 	cloud.google.com/go v0.123.0 // indirect

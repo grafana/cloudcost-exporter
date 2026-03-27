@@ -11,6 +11,7 @@ import (
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	elbv2Types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	msktypes "github.com/aws/aws-sdk-go-v2/service/kafka/types"
 	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	rdsTypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -88,6 +89,16 @@ func (m *MockClient) ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstanc
 func (m *MockClient) GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, engineCode, isOutpost string) (string, error) {
 	args := m.Called(ctx, instType, region, deploymentOption, engineCode, isOutpost)
 	return args.Get(0).(string), args.Error(1)
+}
+
+func (m *MockClient) ListMSKClusters(ctx context.Context) ([]msktypes.Cluster, error) {
+	args := m.Called(ctx)
+	return args.Get(0).([]msktypes.Cluster), args.Error(1)
+}
+
+func (m *MockClient) ListMSKServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
+	args := m.Called(ctx, region, filters)
+	return args.Get(0).([]string), args.Error(1)
 }
 
 func (m *MockClient) Metrics() []prometheus.Collector {
