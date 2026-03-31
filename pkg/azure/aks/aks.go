@@ -51,7 +51,7 @@ func (mp MachinePriority) String() string {
 var (
 	ErrClientCreationFailure         = errors.New("failed to create client")
 	ErrPageAdvanceFailure            = errors.New("failed to advance page")
-	ErrPriceStorePopulationFailure   = errors.New("failed to populate price store")
+	ErrVMPriceStorePopulationFailure = errors.New("failed to populate VM price store")
 	ErrMachineStorePopulationFailure = errors.New("failed to populate machine store")
 	ErrVmPriceRetrievalFailure       = errors.New("failed to retrieve price info for VM")
 )
@@ -101,9 +101,9 @@ var (
 type Collector struct {
 	logger *slog.Logger
 
-	PriceStore   *PriceStore   // VM pricing data store
+	VMPriceStore *VMPriceStore // Azure VM retail prices (not disk)
 	MachineStore *MachineStore // VM inventory store
-	DiskStore    *DiskStore    // Disk inventory and pricing store (persistent volumes)
+	DiskStore    *DiskStore    // Managed disk inventory and retail pricing
 }
 
 type Config struct {
@@ -112,7 +112,7 @@ type Config struct {
 
 func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (*Collector, error) {
 	logger := cfg.Logger.With("collector", "aks")
-	priceStore := NewPricingStore(logger, azClientWrapper)
+	vmPriceStore := NewVMPriceStore(logger, azClientWrapper)
 	machineStore, err := NewMachineStore(ctx, logger, azClientWrapper)
 	if err != nil {
 		return nil, err
@@ -127,7 +127,7 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 		}
 
 		interval := priceRefreshInterval
-		if populated := priceStore.PopulatePriceStore(ctx, machineStore.GetRegions()); !populated {
+		if populated := vmPriceStore.PopulateVMPriceStore(ctx, machineStore.GetRegions()); !populated {
 			interval = priceRefreshRetryInterval
 		}
 
@@ -139,7 +139,7 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 				return
 			case <-priceTicker.C:
 				interval := priceRefreshInterval
-				if populated := priceStore.PopulatePriceStore(ctx, machineStore.GetRegions()); !populated {
+				if populated := vmPriceStore.PopulateVMPriceStore(ctx, machineStore.GetRegions()); !populated {
 					interval = priceRefreshRetryInterval
 				}
 				priceTicker.Reset(interval)
@@ -175,7 +175,7 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 	return &Collector{
 		logger: logger,
 
-		PriceStore:   priceStore,
+		VMPriceStore: vmPriceStore,
 		MachineStore: machineStore,
 		DiskStore:    diskStore,
 	}, nil
@@ -187,7 +187,7 @@ func (c *Collector) getMachinePrices(ctx context.Context, vmId string) (*Machine
 		return nil, err
 	}
 
-	prices, err := c.PriceStore.getPriceInfoFromVmInfo(ctx, vmInfo)
+	prices, err := c.VMPriceStore.getPriceInfoFromVmInfo(ctx, vmInfo)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", err, ErrVmPriceRetrievalFailure)
 	}

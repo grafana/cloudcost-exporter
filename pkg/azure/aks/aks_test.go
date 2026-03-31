@@ -25,11 +25,11 @@ func TestNew(t *testing.T) {
 
 func TestCollect(t *testing.T) {
 	// Note, this will not test a ton of the underlying functionality of the
-	// Machine Store and the Pricing Store, as those are individually tested
+	// Machine Store and the VM price store, as those are individually tested
 	// in their respective *_test.go files
 	testTable := map[string]struct {
 		machineStore *MachineStore
-		priceStore   *PriceStore
+		vmPriceStore *VMPriceStore
 		diskStore    *DiskStore
 
 		expectedErr error
@@ -51,7 +51,7 @@ func TestCollect(t *testing.T) {
 					},
 				},
 			},
-			priceStore: &PriceStore{
+			vmPriceStore: &VMPriceStore{
 				logger:        aksTestLogger,
 				regionMapLock: &sync.RWMutex{},
 				RegionMap: map[string]PriceByPriority{
@@ -97,7 +97,7 @@ func TestCollect(t *testing.T) {
 					},
 				},
 			},
-			priceStore: &PriceStore{
+			vmPriceStore: &VMPriceStore{
 				logger:        aksTestLogger,
 				regionMapLock: &sync.RWMutex{},
 				RegionMap: map[string]PriceByPriority{
@@ -133,7 +133,7 @@ func TestCollect(t *testing.T) {
 				logger: aksTestLogger,
 			}
 			fakeAksCollector.MachineStore = tc.machineStore
-			fakeAksCollector.PriceStore = tc.priceStore
+			fakeAksCollector.VMPriceStore = tc.vmPriceStore
 			fakeAksCollector.DiskStore = tc.diskStore
 
 			promCh := make(chan prometheus.Metric)
@@ -158,7 +158,7 @@ func TestCollect(t *testing.T) {
 func TestGetMachinePrices(t *testing.T) {
 	testTable := map[string]struct {
 		machineStore *MachineStore
-		priceStore   *PriceStore
+		vmPriceStore *VMPriceStore
 
 		vmId           string
 		expectedErr    error
@@ -166,7 +166,7 @@ func TestGetMachinePrices(t *testing.T) {
 	}{
 		"nil machine store": {
 			machineStore: &MachineStore{machineMapLock: &sync.RWMutex{}, logger: aksTestLogger},
-			priceStore: &PriceStore{
+			vmPriceStore: &VMPriceStore{
 				logger:        aksTestLogger,
 				regionMapLock: &sync.RWMutex{},
 				RegionMap: map[string]PriceByPriority{
@@ -195,7 +195,7 @@ func TestGetMachinePrices(t *testing.T) {
 					"vmWrongId": {},
 				},
 			},
-			priceStore: &PriceStore{
+			vmPriceStore: &VMPriceStore{
 				logger:        aksTestLogger,
 				regionMapLock: &sync.RWMutex{},
 				RegionMap: map[string]PriceByPriority{
@@ -216,7 +216,7 @@ func TestGetMachinePrices(t *testing.T) {
 			expectedPrices: nil,
 		},
 
-		"nil vm passed to price store": {
+		"nil vm passed to VM price store": {
 			machineStore: &MachineStore{
 				logger:         aksTestLogger,
 				machineMapLock: &sync.RWMutex{},
@@ -224,7 +224,7 @@ func TestGetMachinePrices(t *testing.T) {
 					"vmId": nil,
 				},
 			},
-			priceStore: &PriceStore{
+			vmPriceStore: &VMPriceStore{
 				logger:        aksTestLogger,
 				regionMapLock: &sync.RWMutex{},
 				RegionMap:     map[string]PriceByPriority{},
@@ -235,7 +235,7 @@ func TestGetMachinePrices(t *testing.T) {
 			expectedPrices: nil,
 		},
 
-		"price store wrong region": {
+		"VM price store wrong region": {
 			machineStore: &MachineStore{
 				logger:         aksTestLogger,
 				machineMapLock: &sync.RWMutex{},
@@ -250,7 +250,7 @@ func TestGetMachinePrices(t *testing.T) {
 					},
 				},
 			},
-			priceStore: &PriceStore{
+			vmPriceStore: &VMPriceStore{
 				logger:        aksTestLogger,
 				regionMapLock: &sync.RWMutex{},
 				RegionMap: map[string]PriceByPriority{
@@ -286,7 +286,7 @@ func TestGetMachinePrices(t *testing.T) {
 					},
 				},
 			},
-			priceStore: &PriceStore{
+			vmPriceStore: &VMPriceStore{
 				logger:        aksTestLogger,
 				regionMapLock: &sync.RWMutex{},
 				RegionMap: map[string]PriceByPriority{
@@ -322,7 +322,7 @@ func TestGetMachinePrices(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			fakeAksCollector := &Collector{}
 			fakeAksCollector.MachineStore = tc.machineStore
-			fakeAksCollector.PriceStore = tc.priceStore
+			fakeAksCollector.VMPriceStore = tc.vmPriceStore
 
 			prices, err := fakeAksCollector.getMachinePrices(t.Context(), tc.vmId)
 			if tc.expectedErr != nil {
