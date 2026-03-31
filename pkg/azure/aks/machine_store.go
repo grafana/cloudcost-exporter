@@ -73,8 +73,8 @@ type MachineStore struct {
 	MachineMap     map[string]*VirtualMachineInfo
 	machineMapLock *sync.RWMutex
 
-	readyOnce sync.Once
-	ready     chan struct{}
+	initialPopulationOnce sync.Once
+	initialPopulation     chan struct{}
 }
 
 func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, azClientWrapper client.AzureClient) (*MachineStore, error) {
@@ -91,7 +91,7 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, azCli
 		MachineMap:     make(map[string]*VirtualMachineInfo),
 		machineMapLock: &sync.RWMutex{},
 
-		ready: make(chan struct{}),
+		initialPopulation: make(chan struct{}),
 	}
 
 	// Populate before using
@@ -100,8 +100,8 @@ func NewMachineStore(parentCtx context.Context, parentLogger *slog.Logger, azCli
 	return ms, nil
 }
 
-func (m *MachineStore) Ready() <-chan struct{} {
-	return m.ready
+func (m *MachineStore) Done() <-chan struct{} {
+	return m.initialPopulation
 }
 
 func (m *MachineStore) getVmInfoByVmId(vmId string) (*VirtualMachineInfo, error) {
@@ -290,9 +290,9 @@ func (m *MachineStore) GetListOfVmsForSubscription() []*VirtualMachineInfo {
 }
 
 func (m *MachineStore) PopulateMachineStore(ctx context.Context) {
-	defer m.readyOnce.Do(func() {
-		if m.ready != nil {
-			close(m.ready)
+	defer m.initialPopulationOnce.Do(func() {
+		if m.initialPopulation != nil {
+			close(m.initialPopulation)
 		}
 	})
 

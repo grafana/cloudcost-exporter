@@ -123,7 +123,7 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 		select {
 		case <-ctx.Done():
 			return
-		case <-machineStore.Ready():
+		case <-machineStore.Done():
 		}
 
 		interval := priceRefreshInterval
