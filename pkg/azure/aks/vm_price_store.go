@@ -75,6 +75,9 @@ type VMPriceStore struct {
 
 	regionMapLock *sync.RWMutex
 	RegionMap     map[string]PriceByPriority
+
+	initialPopulationOnce sync.Once
+	initialPopulation     chan struct{}
 }
 
 func NewVMPriceStore(parentLogger *slog.Logger, azClientWrapper client.AzureClient) *VMPriceStore {
@@ -84,11 +87,16 @@ func NewVMPriceStore(parentLogger *slog.Logger, azClientWrapper client.AzureClie
 		logger:             logger,
 		azureClientWrapper: azClientWrapper,
 
-		regionMapLock: &sync.RWMutex{},
-		RegionMap:     make(map[string]PriceByPriority),
+		regionMapLock:     &sync.RWMutex{},
+		RegionMap:         make(map[string]PriceByPriority),
+		initialPopulation: make(chan struct{}),
 	}
 
 	return p
+}
+
+func (p *VMPriceStore) Done() <-chan struct{} {
+	return p.initialPopulation
 }
 
 func (p *VMPriceStore) getPriceBreakdownFromVmInfo(ctx context.Context, vmInfo *VirtualMachineInfo, price float64) *MachinePrices {
@@ -274,6 +282,10 @@ func (p *VMPriceStore) PopulateVMPriceStore(ctx context.Context, regions []strin
 		slog.Int("regionsLoaded", len(p.RegionMap)),
 		slog.String("foundRegions", strings.Join(foundRegions, ",")),
 		slog.String("loadedRegions", strings.Join(loadedRegions, ",")))
+
+	p.initialPopulationOnce.Do(func() {
+		close(p.initialPopulation)
+	})
 	return true
 }
 
