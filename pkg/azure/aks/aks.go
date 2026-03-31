@@ -112,7 +112,7 @@ type Config struct {
 
 func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (*Collector, error) {
 	logger := cfg.Logger.With("collector", "aks")
-	priceStore := NewPricingStore(ctx, logger, azClientWrapper)
+	priceStore := NewPricingStore(logger, azClientWrapper)
 	machineStore, err := NewMachineStore(ctx, logger, azClientWrapper)
 	if err != nil {
 		return nil, err

@@ -21,8 +21,8 @@ const (
 	AzureMeterRegion       = `'primary'`
 	DefaultInstanceFamily  = "General purpose"
 
-	MiBsToGiB                = 1024
-	priceRefreshInterval     = 24 * time.Hour
+	MiBsToGiB                 = 1024
+	priceRefreshInterval      = 24 * time.Hour
 	priceRefreshRetryInterval = 30 * time.Minute
 
 	listPricesMaxRetries = 5
@@ -73,7 +73,7 @@ type PriceStore struct {
 	RegionMap     map[string]PriceByPriority
 }
 
-func NewPricingStore(ctx context.Context, parentLogger *slog.Logger, azClientWrapper client.AzureClient) *PriceStore {
+func NewPricingStore(parentLogger *slog.Logger, azClientWrapper client.AzureClient) *PriceStore {
 	logger := parentLogger.With("subsystem", "priceStore")
 
 	p := &PriceStore{
