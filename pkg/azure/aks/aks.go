@@ -112,7 +112,7 @@ type Config struct {
 
 func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (*Collector, error) {
 	logger := cfg.Logger.With("collector", "aks")
-	priceStore := NewPricingStore(ctx, logger, azClientWrapper)
+	priceStore := NewPricingStore(logger, azClientWrapper)
 	machineStore, err := NewMachineStore(ctx, logger, azClientWrapper)
 	if err != nil {
 		return nil, err
@@ -120,14 +120,29 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 	diskStore := NewDiskStore(ctx, logger, azClientWrapper)
 
 	go func(ctx context.Context) {
-		priceTicker := time.NewTicker(priceRefreshInterval)
+		select {
+		case <-ctx.Done():
+			return
+		case <-machineStore.Done():
+		}
+
+		interval := priceRefreshInterval
+		if populated := priceStore.PopulatePriceStore(ctx, machineStore.GetRegions()); !populated {
+			interval = priceRefreshRetryInterval
+		}
+
+		priceTicker := time.NewTicker(interval)
 		defer priceTicker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-priceTicker.C:
-				priceStore.PopulatePriceStore(ctx)
+				interval := priceRefreshInterval
+				if populated := priceStore.PopulatePriceStore(ctx, machineStore.GetRegions()); !populated {
+					interval = priceRefreshRetryInterval
+				}
+				priceTicker.Reset(interval)
 			}
 		}
 	}(ctx)

@@ -101,7 +101,7 @@ func TestPopulatePriceStore(t *testing.T) {
 				RegionMap:     make(map[string]PriceByPriority),
 			}
 
-			p.PopulatePriceStore(t.Context())
+			p.PopulatePriceStore(t.Context(), []string{"westus", "centraleurope"})
 
 			mapEq := reflect.DeepEqual(tc.expectedPriceMap, p.RegionMap)
 			assert.True(t, mapEq)
