@@ -97,8 +97,9 @@ func TestPopulateVMPriceStore(t *testing.T) {
 				logger:             vmPriceStoreTestLogger,
 				azureClientWrapper: mockAzureClient,
 
-				regionMapLock: &sync.RWMutex{},
-				RegionMap:     make(map[string]PriceByPriority),
+				regionMapLock:     &sync.RWMutex{},
+				RegionMap:         make(map[string]PriceByPriority),
+				initialPopulation: make(chan struct{}),
 			}
 
 			p.PopulateVMPriceStore(t.Context(), []string{"westus", "centraleurope"})
