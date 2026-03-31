@@ -1,3 +1,6 @@
+// vm_price_store.go holds Azure Virtual Machine retail prices (consumption SKUs) keyed by region, priority, OS, and SKU.
+// Managed disk inventory and pricing live in managed_disk_store.go.
+
 package aks
 
 import (
@@ -64,7 +67,8 @@ type PriceByOperatingSystem map[MachineOperatingSystem]PriceBySku
 
 type PriceByPriority map[MachinePriority]PriceByOperatingSystem
 
-type PriceStore struct {
+// VMPriceStore caches VM retail prices from the Azure Retail Prices API.
+type VMPriceStore struct {
 	logger *slog.Logger
 
 	azureClientWrapper client.AzureClient
@@ -73,10 +77,10 @@ type PriceStore struct {
 	RegionMap     map[string]PriceByPriority
 }
 
-func NewPricingStore(parentLogger *slog.Logger, azClientWrapper client.AzureClient) *PriceStore {
-	logger := parentLogger.With("subsystem", "priceStore")
+func NewVMPriceStore(parentLogger *slog.Logger, azClientWrapper client.AzureClient) *VMPriceStore {
+	logger := parentLogger.With("subsystem", "vmPriceStore")
 
-	p := &PriceStore{
+	p := &VMPriceStore{
 		logger:             logger,
 		azureClientWrapper: azClientWrapper,
 
@@ -87,7 +91,7 @@ func NewPricingStore(parentLogger *slog.Logger, azClientWrapper client.AzureClie
 	return p
 }
 
-func (p *PriceStore) getPriceBreakdownFromVmInfo(ctx context.Context, vmInfo *VirtualMachineInfo, price float64) *MachinePrices {
+func (p *VMPriceStore) getPriceBreakdownFromVmInfo(ctx context.Context, vmInfo *VirtualMachineInfo, price float64) *MachinePrices {
 	ratio, ok := cpuToCostRatio[vmInfo.MachineFamily]
 	if !ok {
 		p.logger.LogAttrs(ctx, slog.LevelInfo, "no ratio found for instance type, using default",
@@ -103,7 +107,7 @@ func (p *PriceStore) getPriceBreakdownFromVmInfo(ctx context.Context, vmInfo *Vi
 	}
 }
 
-func (p *PriceStore) getPriceInfoFromVmInfo(ctx context.Context, vmInfo *VirtualMachineInfo) (*MachineSku, error) {
+func (p *VMPriceStore) getPriceInfoFromVmInfo(ctx context.Context, vmInfo *VirtualMachineInfo) (*MachineSku, error) {
 	p.regionMapLock.RLock()
 	defer p.regionMapLock.RUnlock()
 
@@ -154,7 +158,7 @@ func (p *PriceStore) getPriceInfoFromVmInfo(ctx context.Context, vmInfo *Virtual
 	return machineSku, nil
 }
 
-func (p *PriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, sku *retailPriceSdk.ResourceSKU) bool {
+func (p *VMPriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, sku *retailPriceSdk.ResourceSKU) bool {
 	productName := sku.ProductName
 	if len(productName) == 0 || !strings.Contains(productName, "Virtual Machines") {
 		p.logger.LogAttrs(ctx, slog.LevelDebug, "product is not a virtual machine", slog.String("sku", sku.SkuName))
@@ -170,15 +174,16 @@ func (p *PriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, 
 	return true
 }
 
-func (p *PriceStore) PopulatePriceStore(ctx context.Context, regions []string) bool {
+// PopulateVMPriceStore loads VM retail prices for the given ARM regions into RegionMap.
+func (p *VMPriceStore) PopulateVMPriceStore(ctx context.Context, regions []string) bool {
 	if len(regions) == 0 {
-		p.logger.LogAttrs(ctx, slog.LevelInfo, "no regions available, skipping price store population")
+		p.logger.LogAttrs(ctx, slog.LevelInfo, "no regions available, skipping VM price store population")
 		return false
 	}
 
 	startTime := time.Now()
 
-	p.logger.Info("populating price store")
+	p.logger.Info("populating VM price store")
 
 	regionClauses := make([]string, len(regions))
 	for i, r := range regions {
@@ -204,7 +209,7 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context, regions []string) b
 	})
 
 	if err != nil {
-		p.logger.LogAttrs(ctx, slog.LevelError, "error populating prices", slog.String("err", err.Error()))
+		p.logger.LogAttrs(ctx, slog.LevelError, "error populating VM prices", slog.String("err", err.Error()))
 		return false
 	}
 
@@ -262,7 +267,7 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context, regions []string) b
 		loadedRegions = append(loadedRegions, region)
 	}
 
-	p.logger.LogAttrs(ctx, slog.LevelInfo, "price store populated",
+	p.logger.LogAttrs(ctx, slog.LevelInfo, "VM price store populated",
 		slog.Duration("duration", time.Since(startTime)),
 		slog.Int("totalPrices", len(prices)),
 		slog.Int("regionsFound", len(regionsFound)),

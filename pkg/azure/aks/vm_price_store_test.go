@@ -16,10 +16,10 @@ import (
 )
 
 var (
-	priceStoreTestLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+	vmPriceStoreTestLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
-func TestPopulatePriceStore(t *testing.T) {
+func TestPopulateVMPriceStore(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -93,15 +93,15 @@ func TestPopulatePriceStore(t *testing.T) {
 			call := mockAzureClient.EXPECT().ListPrices(gomock.Any(), gomock.Any())
 			call.Times(tc.timesToCallListPrices).Return(tc.apiReturns, tc.expectedErr)
 
-			p := &PriceStore{
-				logger:             priceStoreTestLogger,
+			p := &VMPriceStore{
+				logger:             vmPriceStoreTestLogger,
 				azureClientWrapper: mockAzureClient,
 
 				regionMapLock: &sync.RWMutex{},
 				RegionMap:     make(map[string]PriceByPriority),
 			}
 
-			p.PopulatePriceStore(t.Context(), []string{"westus", "centraleurope"})
+			p.PopulateVMPriceStore(t.Context(), []string{"westus", "centraleurope"})
 
 			mapEq := reflect.DeepEqual(tc.expectedPriceMap, p.RegionMap)
 			assert.True(t, mapEq)
@@ -110,7 +110,7 @@ func TestPopulatePriceStore(t *testing.T) {
 }
 
 func TestGetPriceInfoFromVmInfo(t *testing.T) {
-	fakePriceStore := &PriceStore{
+	fakeVMPriceStore := &VMPriceStore{
 		RegionMap: map[string]PriceByPriority{
 			"region1": {
 				OnDemand: PriceByOperatingSystem{
@@ -193,7 +193,7 @@ func TestGetPriceInfoFromVmInfo(t *testing.T) {
 
 	for name, test := range testTable {
 		t.Run(name, func(t *testing.T) {
-			price, err := fakePriceStore.getPriceInfoFromVmInfo(t.Context(), test.vmInfo)
+			price, err := fakeVMPriceStore.getPriceInfoFromVmInfo(t.Context(), test.vmInfo)
 			if test.expectedErr != nil {
 				assert.Equal(t, test.expectedErr, err)
 			} else {
