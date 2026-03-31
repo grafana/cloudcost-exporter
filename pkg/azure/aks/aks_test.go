@@ -16,6 +16,13 @@ var (
 	aksTestLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
+// closedChan returns a pre-closed channel to simulate a ready VMPriceStore in tests.
+func closedChan() chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
+
 func TestNew(t *testing.T) {
 	t.Skip()
 	// Note - testing the new functionality doesn't really do anything useful.
@@ -52,8 +59,9 @@ func TestCollect(t *testing.T) {
 				},
 			},
 			vmPriceStore: &VMPriceStore{
-				logger:        aksTestLogger,
-				regionMapLock: &sync.RWMutex{},
+				logger:            aksTestLogger,
+				regionMapLock:     &sync.RWMutex{},
+				initialPopulation: closedChan(),
 				RegionMap: map[string]PriceByPriority{
 					"westus": {
 						OnDemand: {
@@ -98,8 +106,9 @@ func TestCollect(t *testing.T) {
 				},
 			},
 			vmPriceStore: &VMPriceStore{
-				logger:        aksTestLogger,
-				regionMapLock: &sync.RWMutex{},
+				logger:            aksTestLogger,
+				regionMapLock:     &sync.RWMutex{},
+				initialPopulation: closedChan(),
 				RegionMap: map[string]PriceByPriority{
 					"centralus": {
 						OnDemand: {
