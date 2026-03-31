@@ -1,6 +1,5 @@
-// Package aks provides Azure Kubernetes Service (AKS) cost collection functionality.
-// This file implements disk pricing store with chunked/background pricing population
-// to prevent startup hangs while providing comprehensive pricing data.
+// managed_disk_store.go implements DiskStore: Azure Managed Disk subscription inventory plus a retail-pricing cache for those disks.
+// VM compute pricing is in vm_price_store.go.
 //
 // Auto-generation maintenance:
 // The mapClusterRegionToPricingRegion function and disk SKU functions are auto-generated from the Azure Retail Prices API.
@@ -44,8 +43,7 @@ type DiskPricing struct {
 	Unit        string  // Unit of measure (typically "1/Month")
 }
 
-// DiskStore manages Azure disk inventory and pricing data with background population.
-// Implements chunked pricing strategy to prevent startup hangs while ensuring comprehensive coverage.
+// DiskStore manages Azure managed disk inventory and retail pricing with background refresh.
 type DiskStore struct {
 	logger      *slog.Logger            // Logger with "store=disk" context
 	azClient    client.AzureClient      // Azure client for API calls
