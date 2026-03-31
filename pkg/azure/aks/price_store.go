@@ -21,8 +21,9 @@ const (
 	AzureMeterRegion       = `'primary'`
 	DefaultInstanceFamily  = "General purpose"
 
-	MiBsToGiB            = 1024
-	priceRefreshInterval = 24 * time.Hour
+	MiBsToGiB                = 1024
+	priceRefreshInterval     = 24 * time.Hour
+	priceRefreshRetryInterval = 30 * time.Minute
 
 	listPricesMaxRetries = 5
 )
@@ -82,9 +83,6 @@ func NewPricingStore(ctx context.Context, parentLogger *slog.Logger, azClientWra
 		regionMapLock: &sync.RWMutex{},
 		RegionMap:     make(map[string]PriceByPriority),
 	}
-
-	// populate the store before it is used
-	go p.PopulatePriceStore(ctx)
 
 	return p
 }
@@ -156,12 +154,6 @@ func (p *PriceStore) getPriceInfoFromVmInfo(ctx context.Context, vmInfo *Virtual
 	return machineSku, nil
 }
 
-// Note that while we could do this with the following filter in the search:
-//
-//	`serviceName eq 'Virtual Machines' and priceType eq 'Consumption' and contains(productName, "Virtual Machines") and (contains(skuName, "Low Priority") ne true)`
-//
-// We have observed that, in practice, this is _much_ slower than
-// filtering client-side.  :(
 func (p *PriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, sku *retailPriceSdk.ResourceSKU) bool {
 	productName := sku.ProductName
 	if len(productName) == 0 || !strings.Contains(productName, "Virtual Machines") {
@@ -178,24 +170,33 @@ func (p *PriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, 
 	return true
 }
 
-func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
+func (p *PriceStore) PopulatePriceStore(ctx context.Context, regions []string) bool {
+	if len(regions) == 0 {
+		p.logger.LogAttrs(ctx, slog.LevelInfo, "no regions available, skipping price store population")
+		return false
+	}
+
 	startTime := time.Now()
 
 	p.logger.Info("populating price store")
 
-	// Create a context with a longer timeout specifically for pricing API calls
-	pricingCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
-	defer cancel()
+	regionClauses := make([]string, len(regions))
+	for i, r := range regions {
+		regionClauses[i] = fmt.Sprintf("armRegionName eq '%s'", r)
+	}
+	filter := fmt.Sprintf("%s and (%s)", AzurePriceSearchFilter, strings.Join(regionClauses, " or "))
 
 	opts := &retailPriceSdk.RetailPricesClientListOptions{
 		APIVersion: to.StringPtr(AZ_API_VERSION),
-		Filter:     to.StringPtr(AzurePriceSearchFilter),
+		Filter:     to.StringPtr(filter),
 	}
 
 	var prices []*retailPriceSdk.ResourceSKU
 	err := try.Do(func(attempt int) (bool, error) {
+		retryCtx, retryCancel := context.WithTimeout(ctx, 15*time.Minute)
+		defer retryCancel()
 		var err error
-		prices, err = p.azureClientWrapper.ListPrices(pricingCtx, opts)
+		prices, err = p.azureClientWrapper.ListPrices(retryCtx, opts)
 		if attempt == listPricesMaxRetries && err != nil {
 			return false, fmt.Errorf("%w: %w", ErrMaxRetriesReached, err)
 		}
@@ -204,7 +205,7 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
 
 	if err != nil {
 		p.logger.LogAttrs(ctx, slog.LevelError, "error populating prices", slog.String("err", err.Error()))
-		return
+		return false
 	}
 
 	p.logger.LogAttrs(ctx, slog.LevelDebug, "found prices", slog.Int("numOfPrices", len(prices)))
@@ -268,6 +269,7 @@ func (p *PriceStore) PopulatePriceStore(ctx context.Context) {
 		slog.Int("regionsLoaded", len(p.RegionMap)),
 		slog.String("foundRegions", strings.Join(foundRegions, ",")),
 		slog.String("loadedRegions", strings.Join(loadedRegions, ",")))
+	return true
 }
 
 func getMachineOperatingSystemFromSku(sku *retailPriceSdk.ResourceSKU) MachineOperatingSystem {
