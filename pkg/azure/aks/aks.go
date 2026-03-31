@@ -203,31 +203,36 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	machineList := c.MachineStore.GetListOfVmsForSubscription()
 
 	machineMetricsCount := 0
-	for _, vmInfo := range machineList {
-		vmId := vmInfo.Id
-		price, err := c.getMachinePrices(ctx, vmId)
-		if err != nil {
-			c.logger.LogAttrs(ctx, slog.LevelWarn, "failed to get machine pricing, skipping VM metric",
-				slog.String("vmId", vmId),
-				slog.String("region", vmInfo.Region),
-				slog.String("error", err.Error()))
-			continue
-		}
+	select {
+	case <-c.VMPriceStore.Done():
+		for _, vmInfo := range machineList {
+			vmId := vmInfo.Id
+			price, err := c.getMachinePrices(ctx, vmId)
+			if err != nil {
+				c.logger.LogAttrs(ctx, slog.LevelWarn, "failed to get machine pricing, skipping VM metric",
+					slog.String("vmId", vmId),
+					slog.String("region", vmInfo.Region),
+					slog.String("error", err.Error()))
+				continue
+			}
 
-		labelValues := []string{
-			vmInfo.Name,
-			vmInfo.Region,
-			vmInfo.MachineTypeSku,
-			vmInfo.MachineFamily,
-			vmInfo.OwningCluster,
-			vmInfo.Priority.String(),
-			vmInfo.OperatingSystem.String(),
-		}
+			labelValues := []string{
+				vmInfo.Name,
+				vmInfo.Region,
+				vmInfo.MachineTypeSku,
+				vmInfo.MachineFamily,
+				vmInfo.OwningCluster,
+				vmInfo.Priority.String(),
+				vmInfo.OperatingSystem.String(),
+			}
 
-		ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerCore, labelValues...)
-		ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerGiB, labelValues...)
-		ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.RetailPrice, labelValues...)
-		machineMetricsCount++
+			ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerCore, labelValues...)
+			ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerGiB, labelValues...)
+			ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.RetailPrice, labelValues...)
+			machineMetricsCount++
+		}
+	default:
+		c.logger.LogAttrs(ctx, slog.LevelInfo, "VM price store not yet populated, skipping VM metrics collection")
 	}
 
 	// Collect Azure Managed Disk metrics for all persistent volumes
