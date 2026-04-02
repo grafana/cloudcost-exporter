@@ -63,11 +63,6 @@ type Snapshot struct {
 	ptr *priceSnapshot
 }
 
-// IsReady reports whether the snapshot contains pricing data for at least one region.
-func (s Snapshot) IsReady() bool {
-	return s.ptr != nil && len(s.ptr.byRegion) > 0
-}
-
 // Regions yields each region and its pricing view from the snapshot.
 func (s Snapshot) Regions() iter.Seq2[string, RegionSnapshot] {
 	return func(yield func(string, RegionSnapshot) bool) {
