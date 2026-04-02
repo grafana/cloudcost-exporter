@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 
@@ -39,7 +40,7 @@ func (m *ManagedKafka) listLocations(ctx context.Context, project string) ([]str
 	for {
 		location, err := it.Next()
 		if err != nil {
-			if err == iterator.Done {
+			if errors.Is(err, iterator.Done) {
 				break
 			}
 			return nil, err
@@ -69,7 +70,7 @@ func (m *ManagedKafka) listClusters(ctx context.Context, project, location strin
 	for {
 		cluster, err := it.Next()
 		if err != nil {
-			if err == iterator.Done {
+			if errors.Is(err, iterator.Done) {
 				break
 			}
 			return nil, err
