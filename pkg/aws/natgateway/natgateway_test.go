@@ -1,6 +1,7 @@
 package natgateway_test
 
 import (
+	"errors"
 	"log/slog"
 	"os"
 	"strings"
@@ -259,4 +260,39 @@ func TestCollector_CollectAggregatesMultipleUsageTypesPerRegion(t *testing.T) {
 		// 0.050 + 0.005 = 0.055
 		assert.InDelta(t, 0.055, dataProcessingMetric.Value, 1e-9)
 	}
+}
+
+func TestCollector_CollectReturnsErrorWhenStoreNotReady(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// A client that returns an error causes PopulatePricingMap to fail at init,
+	// leaving the store empty. The first Collect() must return ErrStoreNotReady.
+	regionClient := mock_client.NewMockClient(ctrl)
+	regionClient.EXPECT().
+		ListEC2ServicePrices(gomock.Any(), "us-east-1", testNATGatewayFilters).
+		Return(nil, errors.New("pricing API unavailable")).
+		Times(1)
+
+	collector := natgateway.New(t.Context(), &natgateway.Config{
+		ScrapeInterval: 1 * time.Hour,
+		Regions:        []ec2Types.Region{{RegionName: aws.String("us-east-1")}},
+		Logger:         testLogger,
+		RegionMap: map[string]awsclient.Client{
+			"us-east-1": regionClient,
+		},
+	})
+
+	ch := make(chan prometheus.Metric)
+	err := collector.Collect(t.Context(), ch)
+	close(ch)
+
+	assert.ErrorIs(t, err, natgateway.ErrStoreNotReady)
+
+	// No metrics emitted on error.
+	var count int
+	for range ch {
+		count++
+	}
+	assert.Equal(t, 0, count)
 }

@@ -2,6 +2,7 @@ package natgateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -24,6 +25,8 @@ const (
 )
 
 var (
+	ErrStoreNotReady = errors.New("pricing store not ready: no pricing data available")
+
 	subsystem = fmt.Sprintf("aws_%s", serviceName)
 
 	HourlyGaugeDesc = utils.GenerateDesc(
@@ -101,6 +104,10 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
 
 	snapshot := c.PricingStore.Snapshot()
+	if !snapshot.IsReady() {
+		return ErrStoreNotReady
+	}
+
 	for region, pricePerUnit := range snapshot.Regions() {
 		var (
 			hourlyPrice         float64
