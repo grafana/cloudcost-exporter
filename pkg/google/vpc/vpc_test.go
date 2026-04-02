@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
+	managedkafkapb "cloud.google.com/go/managedkafka/apiv1/managedkafkapb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
 	"google.golang.org/api/compute/v1"
@@ -136,5 +137,13 @@ func (m *mockGCPClient) ListForwardingRules(ctx context.Context, projectId strin
 }
 
 func (m *mockGCPClient) ListSQLInstances(ctx context.Context, projectId string) ([]*sqladmin.DatabaseInstance, error) {
+	return nil, nil
+}
+
+func (m *mockGCPClient) ListManagedKafkaLocations(ctx context.Context, projectId string) ([]string, error) {
+	return nil, nil
+}
+
+func (m *mockGCPClient) ListManagedKafkaClusters(ctx context.Context, projectId string, location string) ([]*managedkafkapb.Cluster, error) {
 	return nil, nil
 }

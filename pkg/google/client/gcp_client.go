@@ -7,6 +7,8 @@ import (
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	computeapiv1 "cloud.google.com/go/compute/apiv1"
+	managedkafka "cloud.google.com/go/managedkafka/apiv1"
+	managedkafkapb "cloud.google.com/go/managedkafka/apiv1/managedkafkapb"
 	"cloud.google.com/go/storage"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client/cache"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
@@ -20,6 +22,9 @@ type GCPClient struct {
 	regions  *Region
 	bucket   *Bucket
 	sqlAdmin *SQLAdmin
+
+	managedKafka    *ManagedKafka
+	managedKafkaErr error
 }
 
 type Config struct {
@@ -53,12 +58,21 @@ func NewGCPClient(ctx context.Context, cfg Config) (*GCPClient, error) {
 		return nil, fmt.Errorf("could not create sql admin client: %w", err)
 	}
 
+	managedKafkaClient, err := managedkafka.NewClient(ctx)
+	managedKafkaInitErr := err
+	var managedKafkaService *ManagedKafka
+	if managedKafkaClient != nil {
+		managedKafkaService = newManagedKafka(managedKafkaClient)
+	}
+
 	return &GCPClient{
-		compute:  newCompute(computeService),
-		billing:  newBilling(cloudCatalogClient),
-		regions:  newRegion(cfg.ProjectId, cfg.Discount, regionsClient),
-		bucket:   newBucket(storageClient, cache.NewBucketCache()),
-		sqlAdmin: newSQLAdmin(sqlAdminClient, cfg.ProjectId),
+		compute:         newCompute(computeService),
+		billing:         newBilling(cloudCatalogClient),
+		regions:         newRegion(cfg.ProjectId, cfg.Discount, regionsClient),
+		bucket:          newBucket(storageClient, cache.NewBucketCache()),
+		sqlAdmin:        newSQLAdmin(sqlAdminClient, cfg.ProjectId),
+		managedKafka:    managedKafkaService,
+		managedKafkaErr: managedKafkaInitErr,
 	}, nil
 }
 
@@ -104,4 +118,24 @@ func (c *GCPClient) ListForwardingRules(ctx context.Context, projectId string, r
 
 func (c *GCPClient) ListSQLInstances(ctx context.Context, projectId string) ([]*sqladmin.DatabaseInstance, error) {
 	return c.sqlAdmin.listInstances(ctx, projectId)
+}
+
+func (c *GCPClient) ListManagedKafkaLocations(ctx context.Context, projectId string) ([]string, error) {
+	if c.managedKafka == nil {
+		if c.managedKafkaErr != nil {
+			return nil, fmt.Errorf("managed kafka client not initialized: %w", c.managedKafkaErr)
+		}
+		return nil, fmt.Errorf("managed kafka client not initialized")
+	}
+	return c.managedKafka.listLocations(ctx, projectId)
+}
+
+func (c *GCPClient) ListManagedKafkaClusters(ctx context.Context, projectId string, location string) ([]*managedkafkapb.Cluster, error) {
+	if c.managedKafka == nil {
+		if c.managedKafkaErr != nil {
+			return nil, fmt.Errorf("managed kafka client not initialized: %w", c.managedKafkaErr)
+		}
+		return nil, fmt.Errorf("managed kafka client not initialized")
+	}
+	return c.managedKafka.listClusters(ctx, projectId, location)
 }

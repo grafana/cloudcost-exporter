@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
+	managedkafkapb "cloud.google.com/go/managedkafka/apiv1/managedkafkapb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
 	"google.golang.org/api/compute/v1"
 	sqladmin "google.golang.org/api/sqladmin/v1beta4"
@@ -21,4 +22,6 @@ type Client interface {
 	ListDisks(ctx context.Context, project string, zone string) ([]*compute.Disk, error)
 	ListForwardingRules(ctx context.Context, project string, region string) ([]*compute.ForwardingRule, error)
 	ListSQLInstances(ctx context.Context, project string) ([]*sqladmin.DatabaseInstance, error)
+	ListManagedKafkaLocations(ctx context.Context, project string) ([]string, error)
+	ListManagedKafkaClusters(ctx context.Context, project string, location string) ([]*managedkafkapb.Cluster, error)
 }

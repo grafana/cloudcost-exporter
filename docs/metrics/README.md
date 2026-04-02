@@ -15,6 +15,7 @@
 - **[GKE](./gcp/gke.md)** - Google Kubernetes Engine clusters
 - **[GCS](./gcp/gcs.md)** - Google Cloud Storage buckets
 - **[Cloud SQL](./gcp/cloudsql.md)** - Managed database instances
+- **[Managed Kafka](./gcp/managedkafka.md)** - Managed Service for Apache Kafka clusters
 - **[CLB](./gcp/clb.md)** - Cloud Load Balancers via forwarding rules
 - **[VPC](./gcp/vpc.md)** - Cloud NAT Gateway, VPN Gateway, Private Service Connect
 

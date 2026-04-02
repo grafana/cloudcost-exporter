@@ -5,6 +5,7 @@ import (
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
+	managedkafkapb "cloud.google.com/go/managedkafka/apiv1/managedkafkapb"
 	"cloud.google.com/go/storage"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client/cache"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
@@ -21,6 +22,8 @@ type Mock struct {
 	bucket   *Bucket
 	compute  *Compute
 	sqladmin *SQLAdmin
+
+	managedKafka *ManagedKafka
 }
 
 func NewMock(projectId string, discount int, regionsClient RegionsClient, bucketClient StorageClientInterface, billingClient *billingv1.CloudCatalogClient, computeService *compute.Service, sqladminService *sqladmin.Service) *Mock {
@@ -75,4 +78,18 @@ func (c *Mock) ListForwardingRules(ctx context.Context, project string, region s
 
 func (c *Mock) ListSQLInstances(ctx context.Context, projectId string) ([]*sqladmin.DatabaseInstance, error) {
 	return c.sqladmin.listInstances(ctx, projectId)
+}
+
+func (c *Mock) ListManagedKafkaLocations(ctx context.Context, projectId string) ([]string, error) {
+	if c.managedKafka == nil {
+		return nil, nil
+	}
+	return c.managedKafka.listLocations(ctx, projectId)
+}
+
+func (c *Mock) ListManagedKafkaClusters(ctx context.Context, projectId string, location string) ([]*managedkafkapb.Cluster, error) {
+	if c.managedKafka == nil {
+		return nil, nil
+	}
+	return c.managedKafka.listClusters(ctx, projectId, location)
 }
