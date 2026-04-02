@@ -2,12 +2,12 @@ package natgateway
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -25,8 +25,6 @@ const (
 )
 
 var (
-	ErrStoreNotReady = errors.New("pricing store not ready: no pricing data available")
-
 	subsystem = fmt.Sprintf("aws_%s", serviceName)
 
 	HourlyGaugeDesc = utils.GenerateDesc(
@@ -43,22 +41,39 @@ var (
 		"Data processing cost of NAT Gateway by region. Cost represented in USD/GB",
 		[]string{"region"},
 	)
+	PricingRefreshErrorDesc = utils.GenerateDesc(
+		cloudcost_exporter.ExporterName,
+		subsystem,
+		"pricing_last_refresh_error",
+		"1 if the last background pricing data refresh failed, 0 otherwise.",
+		[]string{},
+	)
 )
 
 // Collector implements provider.Collector
 type Collector struct {
-	// Collector fields
 	scrapeInterval time.Duration
 	regions        []string
 	PricingStore   pricingstore.PricingStoreRefresher
+	lastRefreshErr atomic.Bool
 
 	logger *slog.Logger
 }
 
-func New(ctx context.Context, config *Config) *Collector {
+func New(ctx context.Context, config *Config) (*Collector, error) {
 	logger := config.Logger.With("logger", serviceName)
 
-	pricingStore := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.RegionMap))
+	pricingStore, err := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.RegionMap))
+	if err != nil {
+		return nil, fmt.Errorf("natgateway: failed to populate initial pricing data: %w", err)
+	}
+
+	c := &Collector{
+		logger:         logger,
+		scrapeInterval: config.ScrapeInterval,
+		regions:        slices.Collect(maps.Keys(config.RegionMap)),
+		PricingStore:   pricingStore,
+	}
 
 	go func(ctx context.Context) {
 		priceTicker := time.NewTicker(pricingstore.PriceRefreshInterval)
@@ -69,17 +84,17 @@ func New(ctx context.Context, config *Config) *Collector {
 				return
 			case <-priceTicker.C:
 				logger.LogAttrs(ctx, slog.LevelInfo, "refreshing pricing map")
-				pricingStore.PopulatePricingMap(ctx)
+				if err := pricingStore.PopulatePricingMap(ctx); err != nil {
+					logger.Error("error refreshing pricing map", "error", err)
+					c.lastRefreshErr.Store(true)
+				} else {
+					c.lastRefreshErr.Store(false)
+				}
 			}
 		}
 	}(ctx)
 
-	return &Collector{
-		logger:         logger,
-		scrapeInterval: config.ScrapeInterval,
-		regions:        slices.Collect(maps.Keys(config.RegionMap)),
-		PricingStore:   pricingStore,
-	}
+	return c, nil
 }
 
 type Config struct {
@@ -96,6 +111,7 @@ func (c *Collector) Regions() []string { return c.regions }
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- HourlyGaugeDesc
 	ch <- DataProcessingGaugeDesc
+	ch <- PricingRefreshErrorDesc
 	return nil
 }
 
@@ -103,10 +119,13 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
 
-	snapshot := c.PricingStore.Snapshot()
-	if !snapshot.IsReady() {
-		return ErrStoreNotReady
+	refreshErrVal := 0.0
+	if c.lastRefreshErr.Load() {
+		refreshErrVal = 1.0
 	}
+	ch <- prometheus.MustNewConstMetric(PricingRefreshErrorDesc, prometheus.GaugeValue, refreshErrVal)
+
+	snapshot := c.PricingStore.Snapshot()
 
 	for region, pricePerUnit := range snapshot.Regions() {
 		var (

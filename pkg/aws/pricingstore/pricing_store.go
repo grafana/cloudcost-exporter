@@ -64,7 +64,6 @@ type Snapshot struct {
 }
 
 // IsReady reports whether the snapshot contains pricing data for at least one region.
-// A false result means the background store has not yet completed its first successful populate.
 func (s Snapshot) IsReady() bool {
 	return s.ptr != nil && len(s.ptr.byRegion) > 0
 }
@@ -137,9 +136,10 @@ type PricingStoreRefresher interface {
 	Snapshot() Snapshot
 }
 
-// NewPricingStore creates a new PricingStore.
-// It populates the store before it is used by the Collector.
-func NewPricingStore(ctx context.Context, logger *slog.Logger, regions []ec2Types.Region, fetchPrices PriceFetchFunc) *PricingStore {
+// NewPricingStore creates a new PricingStore and populates it synchronously.
+// It always returns a non-nil store. If the initial populate fails, the store
+// is empty and the error is returned so callers can decide whether to proceed or abort.
+func NewPricingStore(ctx context.Context, logger *slog.Logger, regions []ec2Types.Region, fetchPrices PriceFetchFunc) (*PricingStore, error) {
 	store := &PricingStore{
 		logger:      logger,
 		regions:     regions,
@@ -147,12 +147,11 @@ func NewPricingStore(ctx context.Context, logger *slog.Logger, regions []ec2Type
 	}
 	store.current.Store(&priceSnapshot{byRegion: make(map[string]map[string]float64)})
 
-	err := store.PopulatePricingMap(ctx)
-	if err != nil {
-		store.logger.Error("error populating pricing map", "error", err)
+	if err := store.PopulatePricingMap(ctx); err != nil {
+		return store, err
 	}
 
-	return store
+	return store, nil
 }
 
 // PopulatePricingMap fetches pricing information and publishes a new snapshot.

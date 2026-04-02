@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	aws "github.com/aws/aws-sdk-go-v2/aws"
@@ -63,7 +64,7 @@ func TestNew(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			collector := natgateway.New(t.Context(), &natgateway.Config{
+			collector, err := natgateway.New(t.Context(), &natgateway.Config{
 				ScrapeInterval: tt.ScrapeInterval,
 				Regions:        []ec2Types.Region{{RegionName: aws.String(tt.regionName)}},
 				Logger:         tt.Logger,
@@ -71,6 +72,7 @@ func TestNew(t *testing.T) {
 					tt.regionName: tt.regionClient,
 				},
 			})
+			require.NoError(t, err)
 			assert.NotNil(t, collector)
 			assert.NotNil(t, collector.PricingStore)
 			assert.Equal(t, tt.ScrapeInterval, utils.DefaultScrapeInterval)
@@ -101,10 +103,11 @@ func TestCollector_Describe(t *testing.T) {
 		expectedDescs     []string
 	}{
 		"expect correct descriptions": {
-			expectedDescCount: 2, // HourlyGaugeDesc and DataProcessingGaugeDesc
+			expectedDescCount: 3,
 			expectedDescs: []string{
 				natgateway.HourlyGaugeDesc.String(),
 				natgateway.DataProcessingGaugeDesc.String(),
+				natgateway.PricingRefreshErrorDesc.String(),
 			},
 		},
 	}
@@ -153,6 +156,7 @@ func TestCollector_Collect(t *testing.T) {
 				return m
 			}(),
 			expectedMetrics: []prometheus.Metric{
+				prometheus.MustNewConstMetric(natgateway.PricingRefreshErrorDesc, prometheus.GaugeValue, 0.0),
 				prometheus.MustNewConstMetric(natgateway.HourlyGaugeDesc, prometheus.GaugeValue, 0.045, "us-east-1"),
 				prometheus.MustNewConstMetric(natgateway.DataProcessingGaugeDesc, prometheus.GaugeValue, 0.045, "us-east-1"),
 			},
@@ -162,7 +166,7 @@ func TestCollector_Collect(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			region := "us-east-1"
-			collector := natgateway.New(t.Context(), &natgateway.Config{
+			collector, err := natgateway.New(t.Context(), &natgateway.Config{
 				ScrapeInterval: 1 * time.Hour,
 				Regions:        []ec2Types.Region{{RegionName: aws.String(region)}},
 				Logger:         testLogger,
@@ -170,9 +174,10 @@ func TestCollector_Collect(t *testing.T) {
 					region: tt.regionClient,
 				},
 			})
+			require.NoError(t, err)
 
 			ch := make(chan prometheus.Metric, len(tt.expectedMetrics))
-			err := collector.Collect(t.Context(), ch)
+			err = collector.Collect(t.Context(), ch)
 			close(ch)
 
 			assert.NoError(t, err)
@@ -210,7 +215,7 @@ func TestCollector_CollectAggregatesMultipleUsageTypesPerRegion(t *testing.T) {
 		return m
 	}()
 
-	collector := natgateway.New(t.Context(), &natgateway.Config{
+	collector, err := natgateway.New(t.Context(), &natgateway.Config{
 		ScrapeInterval: 1 * time.Hour,
 		Regions:        []ec2Types.Region{{RegionName: aws.String(region)}},
 		Logger:         testLogger,
@@ -218,9 +223,10 @@ func TestCollector_CollectAggregatesMultipleUsageTypesPerRegion(t *testing.T) {
 			region: regionClient,
 		},
 	})
+	require.NoError(t, err)
 
 	ch := make(chan prometheus.Metric, 10)
-	err := collector.Collect(t.Context(), ch)
+	err = collector.Collect(t.Context(), ch)
 	close(ch)
 
 	assert.NoError(t, err)
@@ -233,8 +239,8 @@ func TestCollector_CollectAggregatesMultipleUsageTypesPerRegion(t *testing.T) {
 		}
 	}
 
-	// We expect exactly one hourly and one data-processing metric for the region
-	assert.Len(t, results, 2)
+	// We expect the refresh error gauge plus one hourly and one data-processing metric.
+	assert.Len(t, results, 3)
 
 	var (
 		hourlyMetric         *utils.MetricResult
@@ -262,19 +268,17 @@ func TestCollector_CollectAggregatesMultipleUsageTypesPerRegion(t *testing.T) {
 	}
 }
 
-func TestCollector_CollectReturnsErrorWhenStoreNotReady(t *testing.T) {
+func TestNew_ReturnsErrorWhenPricingAPIUnavailable(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	// A client that returns an error causes PopulatePricingMap to fail at init,
-	// leaving the store empty. The first Collect() must return ErrStoreNotReady.
 	regionClient := mock_client.NewMockClient(ctrl)
 	regionClient.EXPECT().
 		ListEC2ServicePrices(gomock.Any(), "us-east-1", testNATGatewayFilters).
 		Return(nil, errors.New("pricing API unavailable")).
 		Times(1)
 
-	collector := natgateway.New(t.Context(), &natgateway.Config{
+	_, err := natgateway.New(t.Context(), &natgateway.Config{
 		ScrapeInterval: 1 * time.Hour,
 		Regions:        []ec2Types.Region{{RegionName: aws.String("us-east-1")}},
 		Logger:         testLogger,
@@ -283,16 +287,5 @@ func TestCollector_CollectReturnsErrorWhenStoreNotReady(t *testing.T) {
 		},
 	})
 
-	ch := make(chan prometheus.Metric)
-	err := collector.Collect(t.Context(), ch)
-	close(ch)
-
-	assert.ErrorIs(t, err, natgateway.ErrStoreNotReady)
-
-	// No metrics emitted on error.
-	var count int
-	for range ch {
-		count++
-	}
-	assert.Equal(t, 0, count)
+	require.Error(t, err)
 }

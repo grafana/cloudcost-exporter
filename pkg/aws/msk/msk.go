@@ -111,7 +111,10 @@ func New(ctx context.Context, config *Config) *Collector {
 		logger = config.Logger.With("logger", serviceName)
 	}
 
-	pricingStore := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.Client))
+	pricingStore, err := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.Client))
+	if err != nil {
+		logger.Error("error populating pricing map", "error", err)
+	}
 
 	go func(ctx context.Context) {
 		priceTicker := time.NewTicker(pricingstore.PriceRefreshInterval)

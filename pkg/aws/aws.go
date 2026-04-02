@@ -182,12 +182,18 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			})
 			collectors = append(collectors, collector)
 		case serviceNATGW:
-			natGwCollector := awsgwnat.New(ctx, &awsgwnat.Config{
+			natGwCollector, err := awsgwnat.New(ctx, &awsgwnat.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
 				Regions:        regions,
 				RegionMap:      regionClients,
 			})
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
 			collectors = append(collectors, natGwCollector)
 		case serviceELB:
 			collector := elb.New(&elb.Config{
