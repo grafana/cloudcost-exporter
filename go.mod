@@ -21,7 +21,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/rds v1.116.3
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.9
 	github.com/google/go-cmp v0.7.0
-	github.com/googleapis/gax-go/v2 v2.20.0
+	github.com/googleapis/gax-go/v2 v2.21.0
 	github.com/grafana/grafana-foundation-sdk/go v0.0.12
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
