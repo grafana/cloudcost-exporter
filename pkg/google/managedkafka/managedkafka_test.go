@@ -123,6 +123,38 @@ func TestNewFailsIfInitialPricingFetchFails(t *testing.T) {
 	assert.ErrorContains(t, err, "failed to initialise Managed Kafka pricing")
 }
 
+func TestNewFailsIfPricingContainsMultipleComputePricesForRegion(t *testing.T) {
+	_, err := New(t.Context(), &Config{
+		Projects: "test-project",
+		Logger:   testLogger(),
+	}, &stubClient{
+		serviceName: "services/managed-kafka",
+		skus: []*billingpb.Sku{
+			newSKU("Managed Service for Apache Kafka CPU+RAM", "us-central1", 0, 90000000, ""),
+			newSKUWithUsage("Data Compute Units in us-central1", "us-central1", 0, 91000000, "h", "hour", ""),
+		},
+	})
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "multiple compute prices found for region us-central1")
+}
+
+func TestNewAllowsDuplicateComputePriceForRegionWhenValuesMatch(t *testing.T) {
+	_, err := New(t.Context(), &Config{
+		Projects: "test-project",
+		Logger:   testLogger(),
+	}, &stubClient{
+		serviceName: "services/managed-kafka",
+		skus: []*billingpb.Sku{
+			newSKU("Managed Service for Apache Kafka CPU+RAM", "us-central1", 0, 90000000, ""),
+			newSKUWithUsage("Data Compute Units in us-central1", "us-central1", 0, 90000000, "h", "hour", ""),
+			newSKUWithUsage("Local Storage in us-central1", "us-central1", 0, 170000000, "GiBy.mo", "gibibyte month", ""),
+		},
+	})
+
+	require.NoError(t, err)
+}
+
 func TestCollectorCollectEmitsHourlyRateMetrics(t *testing.T) {
 	gcpClient := &stubClient{
 		serviceName: "services/managed-kafka",

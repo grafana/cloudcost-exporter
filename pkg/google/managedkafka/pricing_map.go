@@ -29,8 +29,13 @@ const (
 )
 
 type pricing struct {
-	computePricePerDCUHour      float64
-	localStoragePricePerGiBHour float64
+	compute      *priceEntry
+	localStorage *priceEntry
+}
+
+type priceEntry struct {
+	value  float64
+	source string
 }
 
 type pricingMap struct {
@@ -86,15 +91,8 @@ func (pm *pricingMap) populate(ctx context.Context) error {
 				pricingByRegion[region] = &pricing{}
 			}
 
-			switch component {
-			case computeComponent:
-				if price > pricingByRegion[region].computePricePerDCUHour {
-					pricingByRegion[region].computePricePerDCUHour = price
-				}
-			case localStorageComponent:
-				if price > pricingByRegion[region].localStoragePricePerGiBHour {
-					pricingByRegion[region].localStoragePricePerGiBHour = price
-				}
+			if err := pricingByRegion[region].setPrice(component, sku.GetDescription(), price, region); err != nil {
+				return err
 			}
 		}
 	}
@@ -110,16 +108,51 @@ func (pm *pricingMap) populate(ctx context.Context) error {
 	return nil
 }
 
+func (p *pricing) setPrice(component, description string, price float64, region string) error {
+	switch component {
+	case computeComponent:
+		return setPriceEntry(&p.compute, "compute", description, price, region)
+	case localStorageComponent:
+		return setPriceEntry(&p.localStorage, "local storage", description, price, region)
+	}
+
+	return nil
+}
+
+func setPriceEntry(current **priceEntry, component, description string, price float64, region string) error {
+	if *current != nil {
+		if (*current).value != price {
+			return fmt.Errorf(
+				"multiple %s prices found for region %s: %q=%v, %q=%v",
+				component,
+				region,
+				(*current).source,
+				(*current).value,
+				description,
+				price,
+			)
+		}
+		return nil
+	}
+
+	*current = &priceEntry{
+		value:  price,
+		source: description,
+	}
+
+	return nil
+}
+
 func (pm *pricingMap) ComputePricePerDCUHour(region string) (float64, error) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
 	pricing, ok := pm.pricing[region]
-	if !ok || pricing.computePricePerDCUHour == 0 {
+	if !ok || pricing.compute == nil || pricing.compute.value == 0 {
 		return 0, fmt.Errorf("compute pricing not found for region %s", region)
 	}
 
-	return pricing.computePricePerDCUHour, nil
+	return pricing.compute.value, nil
 }
 
 func (pm *pricingMap) LocalStoragePricePerGiBHour(region string) (float64, error) {
@@ -127,11 +160,11 @@ func (pm *pricingMap) LocalStoragePricePerGiBHour(region string) (float64, error
 	defer pm.mu.RUnlock()
 
 	pricing, ok := pm.pricing[region]
-	if !ok || pricing.localStoragePricePerGiBHour == 0 {
+	if !ok || pricing.localStorage == nil || pricing.localStorage.value == 0 {
 		return 0, fmt.Errorf("local storage pricing not found for region %s", region)
 	}
 
-	return pricing.localStoragePricePerGiBHour, nil
+	return pricing.localStorage.value, nil
 }
 
 func classifySKU(sku *billingpb.Sku) (string, bool) {
