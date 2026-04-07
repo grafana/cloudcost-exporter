@@ -26,13 +26,14 @@ type Mock struct {
 	managedKafka *ManagedKafka
 }
 
-func NewMock(projectId string, discount int, regionsClient RegionsClient, bucketClient StorageClientInterface, billingClient *billingv1.CloudCatalogClient, computeService *compute.Service, sqladminService *sqladmin.Service) *Mock {
+func NewMock(projectId string, discount int, regionsClient RegionsClient, bucketClient StorageClientInterface, billingClient *billingv1.CloudCatalogClient, computeService *compute.Service, sqladminService *sqladmin.Service, managedKafkaClient ManagedKafkaClient) *Mock {
 	return &Mock{
-		region:   newRegion(projectId, discount, regionsClient),
-		billing:  newBilling(billingClient),
-		bucket:   newBucket(bucketClient, cache.NewNoopCache[[]*storage.BucketAttrs]()),
-		compute:  newCompute(computeService),
-		sqladmin: newSQLAdmin(sqladminService, projectId),
+		region:       newRegion(projectId, discount, regionsClient),
+		billing:      newBilling(billingClient),
+		bucket:       newBucket(bucketClient, cache.NewNoopCache[[]*storage.BucketAttrs]()),
+		compute:      newCompute(computeService),
+		sqladmin:     newSQLAdmin(sqladminService, projectId),
+		managedKafka: newManagedKafka(managedKafkaClient),
 	}
 }
 
@@ -81,15 +82,9 @@ func (c *Mock) ListSQLInstances(ctx context.Context, projectId string) ([]*sqlad
 }
 
 func (c *Mock) ListManagedKafkaLocations(ctx context.Context, projectId string) ([]string, error) {
-	if c.managedKafka == nil {
-		return nil, nil
-	}
 	return c.managedKafka.listLocations(ctx, projectId)
 }
 
 func (c *Mock) ListManagedKafkaClusters(ctx context.Context, projectId string, location string) ([]*managedkafkapb.Cluster, error) {
-	if c.managedKafka == nil {
-		return nil, nil
-	}
 	return c.managedKafka.listClusters(ctx, projectId, location)
 }

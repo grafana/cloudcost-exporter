@@ -13,16 +13,16 @@ import (
 	locationpb "google.golang.org/genproto/googleapis/cloud/location"
 )
 
-type managedKafkaAPI interface {
+type ManagedKafkaClient interface {
 	ListClusters(context.Context, *managedkafkapb.ListClustersRequest, ...gax.CallOption) *managedkafka.ClusterIterator
 	ListLocations(context.Context, *locationpb.ListLocationsRequest, ...gax.CallOption) *managedkafka.LocationIterator
 }
 
 type ManagedKafka struct {
-	client managedKafkaAPI
+	client ManagedKafkaClient
 }
 
-func newManagedKafka(client managedKafkaAPI) *ManagedKafka {
+func newManagedKafka(client ManagedKafkaClient) *ManagedKafka {
 	return &ManagedKafka{client: client}
 }
 
