@@ -32,6 +32,7 @@ Or via command line:
 - Compute cost uses Google Cloud's DCU pricing model: `1 vCPU = 0.6 DCU`, `1 GiB RAM = 0.1 DCU`
 - Storage cost uses the service's billed local storage allocation of `100 GiB` per provisioned vCPU
 - The collector uses the Cloud Billing Catalog API for pricing and the Managed Kafka API for cluster inventory
+- The billing catalog exposes cluster compute as `Data Compute Units` and local storage as `Local Storage`; the collector converts local storage `GiBy.mo` prices to hourly rates before export
 - Metrics use list pricing and ignore discounted CUD SKUs
 
 ## IAM Permissions

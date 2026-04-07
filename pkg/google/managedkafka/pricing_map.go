@@ -9,15 +9,23 @@ import (
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 const (
 	managedKafkaServiceName = "Managed Service for Apache Kafka"
 
-	computeDescription         = "CPU+RAM"
-	connectComputeDescription  = "Connect CPU+RAM"
-	localStorageDescription    = "Local Storage"
-	longTermStorageDescription = "Long term storage"
+	computeComponent      = "compute"
+	localStorageComponent = "local_storage"
+
+	legacyComputeDescription    = "cpu+ram"
+	currentComputeDescription   = "data compute units"
+	connectDescription          = "connect"
+	localStorageDescription     = "local storage"
+	longTermStorageDescription  = "long term"
+	storageDescription          = "storage"
+	monthlyUsageUnitDescription = "month"
+	monthlyUsageUnitSuffix      = ".mo"
 )
 
 type pricing struct {
@@ -64,7 +72,7 @@ func (pm *pricingMap) populate(ctx context.Context) error {
 			continue
 		}
 
-		price, ok := priceForSKU(sku)
+		price, ok := priceForSKU(sku, component)
 		if !ok {
 			continue
 		}
@@ -79,11 +87,11 @@ func (pm *pricingMap) populate(ctx context.Context) error {
 			}
 
 			switch component {
-			case computeDescription:
+			case computeComponent:
 				if price > pricingByRegion[region].computePricePerDCUHour {
 					pricingByRegion[region].computePricePerDCUHour = price
 				}
-			case localStorageDescription:
+			case localStorageComponent:
 				if price > pricingByRegion[region].localStoragePricePerGiBHour {
 					pricingByRegion[region].localStoragePricePerGiBHour = price
 				}
@@ -140,15 +148,18 @@ func classifySKU(sku *billingpb.Sku) (string, bool) {
 		return "", false
 	}
 
+	description = strings.ToLower(description)
+
 	switch {
-	case strings.Contains(description, connectComputeDescription):
+	case strings.Contains(description, connectDescription) &&
+		(strings.Contains(description, legacyComputeDescription) || strings.Contains(description, currentComputeDescription)):
 		return "", false
-	case strings.Contains(description, computeDescription):
-		return computeDescription, true
-	case strings.Contains(description, longTermStorageDescription):
+	case strings.Contains(description, legacyComputeDescription), strings.Contains(description, currentComputeDescription):
+		return computeComponent, true
+	case strings.Contains(description, longTermStorageDescription) && strings.Contains(description, storageDescription):
 		return "", false
 	case strings.Contains(description, localStorageDescription):
-		return localStorageDescription, true
+		return localStorageComponent, true
 	default:
 		return "", false
 	}
@@ -170,7 +181,7 @@ func isDiscountedSKU(sku *billingpb.Sku) bool {
 	return false
 }
 
-func priceForSKU(sku *billingpb.Sku) (float64, bool) {
+func priceForSKU(sku *billingpb.Sku, component string) (float64, bool) {
 	if sku == nil || len(sku.GetPricingInfo()) == 0 {
 		return 0, false
 	}
@@ -185,7 +196,12 @@ func priceForSKU(sku *billingpb.Sku) (float64, bool) {
 		return 0, false
 	}
 
-	return float64(rate.GetUnits()) + float64(rate.GetNanos())/1e9, true
+	price := float64(rate.GetUnits()) + float64(rate.GetNanos())/1e9
+	if component == localStorageComponent && isMonthlyUsage(expression) {
+		return price / utils.HoursInMonth, true
+	}
+
+	return price, true
 }
 
 func skuRegions(sku *billingpb.Sku) []string {
@@ -199,4 +215,18 @@ func skuRegions(sku *billingpb.Sku) []string {
 		return sku.GetGeoTaxonomy().GetRegions()
 	}
 	return nil
+}
+
+func isMonthlyUsage(expression *billingpb.PricingExpression) bool {
+	if expression == nil {
+		return false
+	}
+
+	usageUnitDescription := strings.ToLower(expression.GetUsageUnitDescription())
+	if strings.Contains(usageUnitDescription, monthlyUsageUnitDescription) {
+		return true
+	}
+
+	usageUnit := strings.ToLower(expression.GetUsageUnit())
+	return strings.Contains(usageUnit, monthlyUsageUnitSuffix)
 }

@@ -170,6 +170,44 @@ func TestCollectorCollectEmitsHourlyRateMetrics(t *testing.T) {
 	assert.InDelta(t, 0.1397262, storageMetric.Value, 0.0000001)
 }
 
+func TestCollectorCollectEmitsHourlyRateMetricsFromCurrentBillingCatalogSKUs(t *testing.T) {
+	gcpClient := &stubClient{
+		serviceName: "services/managed-kafka",
+		skus: []*billingpb.Sku{
+			newSKUWithUsage("Data Compute Units in us-central1", "us-central1", 0, 90000000, "h", "hour", ""),
+			newSKUWithUsage("Managed Kafka Connect Data Compute Units in us-central1", "us-central1", 0, 120000000, "h", "hour", ""),
+			newSKUWithUsage("Local Storage in us-central1", "us-central1", 0, 170000000, "GiBy.mo", "gibibyte month", ""),
+			newSKUWithUsage("Long Term Regional Storage in us-central1", "us-central1", 0, 100000000, "GiBy.mo", "gibibyte month", ""),
+		},
+		locations: map[string][]string{
+			"test-project": {"us-central1"},
+		},
+		clusters: map[string][]*managedkafkapb.Cluster{
+			clusterKey("test-project", "us-central1"): {
+				newCluster("projects/test-project/locations/us-central1/clusters/test-cluster", 6, 24),
+			},
+		},
+	}
+
+	collector, err := New(t.Context(), &Config{
+		Projects: "test-project",
+		Logger:   testLogger(),
+	}, gcpClient)
+	require.NoError(t, err)
+
+	results, err := collectMetricResults(t, collector)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+
+	computeMetric := metricByName(results, "cloudcost_gcp_managedkafka_compute_hourly_rate_usd_per_hour")
+	require.NotNil(t, computeMetric)
+	assert.InDelta(t, 0.54, computeMetric.Value, 0.000001)
+
+	storageMetric := metricByName(results, "cloudcost_gcp_managedkafka_storage_hourly_rate_usd_per_hour")
+	require.NotNil(t, storageMetric)
+	assert.InDelta(t, (0.17/utils.HoursInMonth)*600, storageMetric.Value, 0.0000001)
+}
+
 func TestCollectorCollectContinuesWhenLocationListingFails(t *testing.T) {
 	gcpClient := &stubClient{
 		serviceName: "services/managed-kafka",
@@ -284,6 +322,10 @@ func newCluster(name string, vcpuCount, memoryGiB int64) *managedkafkapb.Cluster
 }
 
 func newSKU(description, region string, units int64, nanos int32, summary string) *billingpb.Sku {
+	return newSKUWithUsage(description, region, units, nanos, "", "", summary)
+}
+
+func newSKUWithUsage(description, region string, units int64, nanos int32, usageUnit, usageUnitDescription, summary string) *billingpb.Sku {
 	return &billingpb.Sku{
 		Description:    description,
 		ServiceRegions: []string{region},
@@ -291,6 +333,8 @@ func newSKU(description, region string, units int64, nanos int32, summary string
 			{
 				Summary: summary,
 				PricingExpression: &billingpb.PricingExpression{
+					UsageUnit:            usageUnit,
+					UsageUnitDescription: usageUnitDescription,
 					TieredRates: []*billingpb.PricingExpression_TierRate{
 						{
 							UnitPrice: &money.Money{
