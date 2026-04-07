@@ -87,7 +87,7 @@ func TestManagedKafkaClientListLocations(t *testing.T) {
 		want    []string
 		wantErr bool
 	}{
-		"filters global locations": {
+		"returns listed locations": {
 			server: &fakeManagedKafkaServer{
 				locationsResponse: &locationpb.ListLocationsResponse{
 					Locations: []*locationpb.Location{
@@ -97,7 +97,7 @@ func TestManagedKafkaClientListLocations(t *testing.T) {
 					},
 				},
 			},
-			want:    []string{"us-central1", "europe-west1"},
+			want:    []string{"us-central1", "global", "europe-west1"},
 			wantErr: false,
 		},
 		"propagates api errors": {

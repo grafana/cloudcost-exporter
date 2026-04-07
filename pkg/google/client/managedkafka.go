@@ -46,11 +46,7 @@ func (m *ManagedKafka) listLocations(ctx context.Context, project string) ([]str
 			return nil, err
 		}
 
-		locationName := path.Base(location.GetName())
-		if locationName == "" || locationName == "global" {
-			continue
-		}
-		locations = append(locations, locationName)
+		locations = append(locations, path.Base(location.GetName()))
 	}
 
 	return locations, nil
