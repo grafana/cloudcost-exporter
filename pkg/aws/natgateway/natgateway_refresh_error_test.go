@@ -21,7 +21,7 @@ import (
 type stubPricingStore struct{}
 
 func (s *stubPricingStore) PopulatePricingMap(_ context.Context) error { return nil }
-func (s *stubPricingStore) Snapshot() pricingstore.Snapshot             { return pricingstore.Snapshot{} }
+func (s *stubPricingStore) Snapshot() pricingstore.Snapshot            { return pricingstore.Snapshot{} }
 
 func TestCollect_EmitsRefreshErrorGaugeAsOneAfterBackgroundFailure(t *testing.T) {
 	c := &Collector{
