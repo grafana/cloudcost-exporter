@@ -49,6 +49,7 @@ type Config struct {
 type AWS struct {
 	Config           *Config
 	collectors       []provider.Collector
+	failedCollectors []string
 	logger           *slog.Logger
 	ctx              context.Context
 	collectorTimeout time.Duration
@@ -70,6 +71,12 @@ var (
 	collectorLastScrapeTime = prometheus.NewDesc(
 		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "last_scrape_time"),
 		"Time of the last scrape.",
+		[]string{"provider", "collector"},
+		nil,
+	)
+	collectorInitErrorDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(cloudcost_exporter.ExporterName, "collector", "init_error"),
+		"1 if the collector failed to initialize, 0 otherwise.",
 		[]string{"provider", "collector"},
 		nil,
 	)
@@ -134,6 +141,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 // newWithDependencies creates an AWS provider with all dependencies injected as parameters
 func newWithDependencies(ctx context.Context, config *Config, awsClient client.Client, regionClients map[string]client.Client, regions []types.Region, awsConfig aws.Config) (*AWS, error) {
 	var collectors []provider.Collector
+	var failedCollectors []string
 	logger := config.Logger.With("provider", subsystem)
 
 	for _, service := range config.Services {
@@ -146,6 +154,7 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
 					slog.String("message", err.Error()))
+				failedCollectors = append(failedCollectors, service)
 				continue
 			}
 			collectors = append(collectors, collector)
@@ -160,6 +169,7 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
 					slog.String("message", err.Error()))
+				failedCollectors = append(failedCollectors, service)
 				continue
 			}
 			collectors = append(collectors, collector)
@@ -192,6 +202,7 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
 					slog.Any("error", err))
+				failedCollectors = append(failedCollectors, service)
 				continue
 			}
 			collectors = append(collectors, natGwCollector)
@@ -249,6 +260,7 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 	return &AWS{
 		Config:           config,
 		collectors:       collectors,
+		failedCollectors: failedCollectors,
 		logger:           logger,
 		ctx:              ctx,
 		collectorTimeout: config.CollectorTimeout,
@@ -271,6 +283,7 @@ func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collectorLastScrapeErrorDesc
 	ch <- collectorDurationDesc
 	ch <- collectorLastScrapeTime
+	ch <- collectorInitErrorDesc
 	for _, c := range a.collectors {
 		if err := c.Describe(ch); err != nil {
 			a.logger.LogAttrs(a.ctx, slog.LevelError, "failed to describe collector",
@@ -282,6 +295,10 @@ func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (a *AWS) Collect(ch chan<- prometheus.Metric) {
+	for _, name := range a.failedCollectors {
+		ch <- prometheus.MustNewConstMetric(collectorInitErrorDesc, prometheus.GaugeValue, 1.0, subsystem, name)
+	}
+
 	// Create a context with timeout for this collection cycle
 	collectCtx, cancel := context.WithTimeout(a.ctx, a.collectorTimeout)
 	defer cancel()
