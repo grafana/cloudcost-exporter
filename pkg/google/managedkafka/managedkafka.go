@@ -108,24 +108,24 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		return err
 	}
 
+	snap := c.pricingMap.Snapshot()
+
 	for _, cluster := range clusters {
-		computePrice, err := c.pricingMap.ComputePricePerDCUHour(cluster.region)
-		if err != nil {
+		computePrice, ok := snap.Price(cluster.region, computeComponent)
+		if !ok {
 			c.logger.Warn("skipping Managed Kafka cluster with unpriceable compute",
 				"project", cluster.project,
 				"region", cluster.region,
-				"cluster", cluster.cluster,
-				"error", err)
+				"cluster", cluster.cluster)
 			continue
 		}
 
-		storagePrice, err := c.pricingMap.LocalStoragePricePerGiBHour(cluster.region)
-		if err != nil {
+		storagePrice, ok := snap.Price(cluster.region, localStorageComponent)
+		if !ok {
 			c.logger.Warn("skipping Managed Kafka cluster with unpriceable storage",
 				"project", cluster.project,
 				"region", cluster.region,
-				"cluster", cluster.cluster,
-				"error", err)
+				"cluster", cluster.cluster)
 			continue
 		}
 

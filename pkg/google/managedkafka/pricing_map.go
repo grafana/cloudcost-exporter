@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
+	"sync/atomic"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
@@ -28,28 +28,48 @@ const (
 	monthlyUsageUnitSuffix      = ".mo"
 )
 
-type pricing struct {
-	compute      *priceEntry
-	localStorage *priceEntry
+type priceSnapshot struct {
+	byRegion map[string]map[string]float64
 }
 
-type priceEntry struct {
-	value  float64
-	source string
+// Snapshot is an immutable view of the pricing data published by the pricing map.
+type Snapshot struct {
+	ptr *priceSnapshot
+}
+
+// Price returns the hourly price for a component in a region.
+func (s Snapshot) Price(region, component string) (float64, bool) {
+	if s.ptr == nil {
+		return 0, false
+	}
+
+	prices, ok := s.ptr.byRegion[region]
+	if !ok {
+		return 0, false
+	}
+
+	price, ok := prices[component]
+	if !ok || price == 0 {
+		return 0, false
+	}
+
+	return price, true
 }
 
 type pricingMap struct {
 	logger    *slog.Logger
 	gcpClient client.Client
-	mu        sync.RWMutex
-	pricing   map[string]*pricing
+	current   atomic.Pointer[priceSnapshot]
+}
+
+func (pm *pricingMap) Snapshot() Snapshot {
+	return Snapshot{ptr: pm.current.Load()}
 }
 
 func newPricingMap(ctx context.Context, logger *slog.Logger, gcpClient client.Client) (*pricingMap, error) {
 	pm := &pricingMap{
 		logger:    logger,
 		gcpClient: gcpClient,
-		pricing:   make(map[string]*pricing),
 	}
 
 	if err := pm.populate(ctx); err != nil {
@@ -70,7 +90,9 @@ func (pm *pricingMap) populate(ctx context.Context) error {
 		return fmt.Errorf("no SKUs found for Managed Kafka service")
 	}
 
-	pricingByRegion := make(map[string]*pricing)
+	snapshot := &priceSnapshot{byRegion: make(map[string]map[string]float64)}
+	sources := make(map[string]map[string]string) // region → component → description (conflict detection only)
+
 	for _, sku := range skus {
 		component, ok := classifySKU(sku)
 		if !ok {
@@ -82,89 +104,41 @@ func (pm *pricingMap) populate(ctx context.Context) error {
 			continue
 		}
 
+		description := sku.GetDescription()
+
 		for _, region := range skuRegions(sku) {
 			if region == "" {
 				continue
 			}
 
-			if _, exists := pricingByRegion[region]; !exists {
-				pricingByRegion[region] = &pricing{}
+			if snapshot.byRegion[region] == nil {
+				snapshot.byRegion[region] = make(map[string]float64)
+				sources[region] = make(map[string]string)
 			}
 
-			if err := pricingByRegion[region].setPrice(component, sku.GetDescription(), price, region); err != nil {
-				return err
+			if existingSource, exists := sources[region][component]; exists {
+				if snapshot.byRegion[region][component] != price {
+					return fmt.Errorf(
+						"multiple %s prices found for region %s: %q=%v, %q=%v",
+						component, region,
+						existingSource, snapshot.byRegion[region][component],
+						description, price,
+					)
+				}
+				continue
 			}
+
+			snapshot.byRegion[region][component] = price
+			sources[region][component] = description
 		}
 	}
 
-	if len(pricingByRegion) == 0 {
+	if len(snapshot.byRegion) == 0 {
 		return fmt.Errorf("no Managed Kafka pricing entries were parsed")
 	}
 
-	pm.mu.Lock()
-	pm.pricing = pricingByRegion
-	pm.mu.Unlock()
-
+	pm.current.Store(snapshot)
 	return nil
-}
-
-func (p *pricing) setPrice(component, description string, price float64, region string) error {
-	switch component {
-	case computeComponent:
-		return setPriceEntry(&p.compute, "compute", description, price, region)
-	case localStorageComponent:
-		return setPriceEntry(&p.localStorage, "local storage", description, price, region)
-	}
-
-	return nil
-}
-
-func setPriceEntry(current **priceEntry, component, description string, price float64, region string) error {
-	if *current != nil {
-		if (*current).value != price {
-			return fmt.Errorf(
-				"multiple %s prices found for region %s: %q=%v, %q=%v",
-				component,
-				region,
-				(*current).source,
-				(*current).value,
-				description,
-				price,
-			)
-		}
-		return nil
-	}
-
-	*current = &priceEntry{
-		value:  price,
-		source: description,
-	}
-
-	return nil
-}
-
-func (pm *pricingMap) ComputePricePerDCUHour(region string) (float64, error) {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
-
-	pricing, ok := pm.pricing[region]
-	if !ok || pricing.compute == nil || pricing.compute.value == 0 {
-		return 0, fmt.Errorf("compute pricing not found for region %s", region)
-	}
-
-	return pricing.compute.value, nil
-}
-
-func (pm *pricingMap) LocalStoragePricePerGiBHour(region string) (float64, error) {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
-
-	pricing, ok := pm.pricing[region]
-	if !ok || pricing.localStorage == nil || pricing.localStorage.value == 0 {
-		return 0, fmt.Errorf("local storage pricing not found for region %s", region)
-	}
-
-	return pricing.localStorage.value, nil
 }
 
 func classifySKU(sku *billingpb.Sku) (string, bool) {
