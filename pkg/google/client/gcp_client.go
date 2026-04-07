@@ -57,9 +57,9 @@ func NewGCPClient(ctx context.Context, cfg Config) (*GCPClient, error) {
 		return nil, fmt.Errorf("could not create sql admin client: %w", err)
 	}
 
-	managedKafkaClient, managedKafkaInitErr := managedkafka.NewClient(ctx)
-	if managedKafkaInitErr != nil {
-		return nil, fmt.Errorf("could not create managed kafka client: %w", managedKafkaInitErr)
+	managedKafkaClient, err := managedkafka.NewClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not create managed kafka client: %w", err)
 	}
 
 	return &GCPClient{
