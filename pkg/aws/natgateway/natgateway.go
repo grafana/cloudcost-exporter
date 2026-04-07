@@ -119,8 +119,10 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
 
+	lastRefreshErr := c.lastRefreshErr.Load()
+
 	refreshErrVal := 0.0
-	if c.lastRefreshErr.Load() {
+	if lastRefreshErr {
 		refreshErrVal = 1.0
 	}
 	ch <- prometheus.MustNewConstMetric(PricingRefreshErrorDesc, prometheus.GaugeValue, refreshErrVal)
@@ -155,6 +157,9 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		}
 	}
 
+	if lastRefreshErr {
+		return fmt.Errorf("natgateway: last background pricing refresh failed")
+	}
 	return nil
 }
 

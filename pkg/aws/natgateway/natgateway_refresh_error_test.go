@@ -30,20 +30,19 @@ func TestCollect_EmitsRefreshErrorGaugeAsOneAfterBackgroundFailure(t *testing.T)
 	}
 	c.lastRefreshErr.Store(true)
 
-	// Empty snapshot means only the PricingRefreshErrorDesc gauge is emitted.
+	// Empty snapshot means only the PricingRefreshErrorDesc gauge is emitted before the error.
 	ch := make(chan prometheus.Metric, 1)
 	err := c.Collect(t.Context(), ch)
 	close(ch)
 
-	require.NoError(t, err)
-
-	expected := prometheus.MustNewConstMetric(PricingRefreshErrorDesc, prometheus.GaugeValue, 1.0)
+	require.Error(t, err)
 
 	var metrics []prometheus.Metric
 	for m := range ch {
 		metrics = append(metrics, m)
 	}
 
+	expected := prometheus.MustNewConstMetric(PricingRefreshErrorDesc, prometheus.GaugeValue, 1.0)
 	require.Len(t, metrics, 1)
 	assert.Equal(t, expected, metrics[0])
 }
