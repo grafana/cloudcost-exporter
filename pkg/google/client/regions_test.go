@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
+	managedkafkapb "cloud.google.com/go/managedkafka/apiv1/managedkafkapb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
 	"google.golang.org/api/compute/v1"
 	sqladmin "google.golang.org/api/sqladmin/v1beta4"
@@ -61,6 +62,12 @@ func (c *regionsStubClient) ListForwardingRules(_ context.Context, _, _ string) 
 	panic("not implemented")
 }
 func (c *regionsStubClient) ListSQLInstances(_ context.Context, _ string) ([]*sqladmin.DatabaseInstance, error) {
+	panic("not implemented")
+}
+func (c *regionsStubClient) ListManagedKafkaLocations(_ context.Context, _ string) ([]string, error) {
+	panic("not implemented")
+}
+func (c *regionsStubClient) ListManagedKafkaClusters(_ context.Context, _, _ string) ([]*managedkafkapb.Cluster, error) {
 	panic("not implemented")
 }
 

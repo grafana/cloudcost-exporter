@@ -9,6 +9,7 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/collectormetrics"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/google/cloudsql"
+	gcpmanagedkafka "github.com/grafana/cloudcost-exporter/pkg/google/managedkafka"
 	"github.com/grafana/cloudcost-exporter/pkg/google/networking"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
@@ -142,6 +143,18 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 			}
 		case "SQL":
 			collector, err = cloudsql.New(ctx, &cloudsql.Config{
+				Projects:       config.Projects,
+				ScrapeInterval: config.ScrapeInterval,
+				Logger:         config.Logger,
+			}, gcpClient)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
+		case "KAFKA", "MANAGEDKAFKA":
+			collector, err = gcpmanagedkafka.New(ctx, &gcpmanagedkafka.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         config.Logger,

@@ -59,7 +59,7 @@ func newTestGCPClient(t *testing.T, computeHandlers map[string]any, sqlAdminHand
 	sqlAdminService, err := sqladmin.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(sqlAdminSrv.URL))
 	require.NoError(t, err)
 
-	return client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService)
+	return client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService, nil)
 }
 
 type failingCatalogServer struct {
@@ -124,7 +124,7 @@ func TestNew_FailsIfInitialSKUFetchFails(t *testing.T) {
 	sqlAdminService, err := sqladmin.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(sqlAdminSrv.URL))
 	require.NoError(t, err)
 
-	gcpClient := client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService)
+	gcpClient := client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService, nil)
 	config := &Config{Projects: "test-project", Logger: slog.New(slog.NewTextHandler(os.Stdout, nil))}
 
 	_, err = New(context.Background(), config, gcpClient)
@@ -198,7 +198,7 @@ func TestCollect_UsesCachedSKUs(t *testing.T) {
 	sqlAdminService, err := sqladmin.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(sqlAdminSrv.URL))
 	require.NoError(t, err)
 
-	gcpClient := client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService)
+	gcpClient := client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService, nil)
 	config := &Config{Projects: "test-project", Logger: slog.New(slog.NewTextHandler(os.Stdout, nil))}
 
 	collector, err := New(context.Background(), config, gcpClient)
