@@ -191,7 +191,7 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
-					slog.String("message", err.Error()))
+					slog.Any("error", err))
 				continue
 			}
 			collectors = append(collectors, natGwCollector)
