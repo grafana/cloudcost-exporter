@@ -2,6 +2,7 @@ package pricingstore_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -134,6 +135,18 @@ func TestNewPricingStoreInvokesInjectedFetcher(t *testing.T) {
 
 	assertSnapshotPrice(t, store.Snapshot(), "us-east-1", "USE1-NatGateway-Hours", 0.004)
 	assertSnapshotPrice(t, store.Snapshot(), "us-west-2", "USW2-NatGateway-Hours", 0.005)
+}
+
+func TestNewPricingStore_ReturnsStoreAndErrorWhenFetchFails(t *testing.T) {
+	regions := []ec2Types.Region{{RegionName: aws.String("us-east-1")}}
+
+	store, err := pricingstore.NewPricingStore(t.Context(), testLogger, regions, func(context.Context, string) ([]string, error) {
+		return nil, errors.New("pricing API unavailable")
+	})
+
+	require.Error(t, err)
+	assert.NotNil(t, store, "store must be non-nil even when fetch fails")
+	assert.Equal(t, map[string]map[string]float64{}, snapshotToMap(store.Snapshot()), "snapshot must be empty when fetch fails")
 }
 
 func TestPopulatePricingMapPublishesNewSnapshotWithoutMutatingExistingOne(t *testing.T) {
