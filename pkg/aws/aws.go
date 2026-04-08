@@ -214,12 +214,18 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				PricingService: awsPricing.NewFromConfig(pricingConfig),
 				EC2Service:     ec2.NewFromConfig(pricingConfig),
 			})
-			collector := awsvpc.New(ctx, &awsvpc.Config{
+			collector, err := awsvpc.New(ctx, &awsvpc.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
 				Regions:        regions,
 				Client:         awsVPCClient,
 			})
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
 			collectors = append(collectors, collector)
 		case serviceMSK:
 			collector, err := mskCollector.New(ctx, &mskCollector.Config{

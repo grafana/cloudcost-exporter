@@ -126,13 +126,14 @@ func TestNew(t *testing.T) {
 		{RegionName: stringPtr("us-west-2")},
 	}
 
-	collector := New(t.Context(), &Config{
+	collector, err := New(t.Context(), &Config{
 		ScrapeInterval: 1 * time.Hour,
 		Regions:        regions,
 		Logger:         logger,
 		Client:         mockClient, // Add the dedicated client
 	})
 
+	assert.NoError(t, err)
 	assert.NotNil(t, collector)
 	assert.NotNil(t, collector.pricingMap)
 }
