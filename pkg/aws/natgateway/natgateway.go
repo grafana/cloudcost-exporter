@@ -41,13 +41,6 @@ var (
 		"Data processing cost of NAT Gateway by region. Cost represented in USD/GB",
 		[]string{"region"},
 	)
-	PricingRefreshErrorDesc = utils.GenerateDesc(
-		cloudcost_exporter.ExporterName,
-		subsystem,
-		"pricing_last_refresh_error",
-		"1 if the last background pricing data refresh failed, 0 otherwise.",
-		[]string{},
-	)
 )
 
 // Collector implements provider.Collector
@@ -111,7 +104,6 @@ func (c *Collector) Regions() []string { return c.regions }
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- HourlyGaugeDesc
 	ch <- DataProcessingGaugeDesc
-	ch <- PricingRefreshErrorDesc
 	return nil
 }
 
@@ -120,12 +112,6 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "calling collect")
 
 	lastRefreshErr := c.lastRefreshErr.Load()
-
-	refreshErrVal := 0.0
-	if lastRefreshErr {
-		refreshErrVal = 1.0
-	}
-	ch <- prometheus.MustNewConstMetric(PricingRefreshErrorDesc, prometheus.GaugeValue, refreshErrVal)
 
 	snapshot := c.PricingStore.Snapshot()
 

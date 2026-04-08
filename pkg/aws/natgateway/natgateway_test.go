@@ -103,11 +103,10 @@ func TestCollector_Describe(t *testing.T) {
 		expectedDescs     []string
 	}{
 		"expect correct descriptions": {
-			expectedDescCount: 3,
+			expectedDescCount: 2,
 			expectedDescs: []string{
 				natgateway.HourlyGaugeDesc.String(),
 				natgateway.DataProcessingGaugeDesc.String(),
-				natgateway.PricingRefreshErrorDesc.String(),
 			},
 		},
 	}
@@ -156,7 +155,6 @@ func TestCollector_Collect(t *testing.T) {
 				return m
 			}(),
 			expectedMetrics: []prometheus.Metric{
-				prometheus.MustNewConstMetric(natgateway.PricingRefreshErrorDesc, prometheus.GaugeValue, 0.0),
 				prometheus.MustNewConstMetric(natgateway.HourlyGaugeDesc, prometheus.GaugeValue, 0.045, "us-east-1"),
 				prometheus.MustNewConstMetric(natgateway.DataProcessingGaugeDesc, prometheus.GaugeValue, 0.045, "us-east-1"),
 			},
@@ -239,8 +237,7 @@ func TestCollector_CollectAggregatesMultipleUsageTypesPerRegion(t *testing.T) {
 		}
 	}
 
-	// We expect the refresh error gauge plus one hourly and one data-processing metric.
-	assert.Len(t, results, 3)
+	assert.Len(t, results, 2)
 
 	var (
 		hourlyMetric         *utils.MetricResult
