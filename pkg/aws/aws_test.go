@@ -149,6 +149,10 @@ func Test_NewWithDependencies(t *testing.T) {
 			regions: []types.Region{
 				{RegionName: stringPtr("us-east-1")},
 			},
+			setupMockClient: func(m *mock_client.MockClient) {
+				m.EXPECT().ListMSKServicePrices(gomock.Any(), "us-east-1", gomock.Any()).
+					Return([]string{}, nil).AnyTimes()
+			},
 			setupRegionClients: map[string]client.Client{
 				"us-east-1": &mockRegionClient{},
 			},

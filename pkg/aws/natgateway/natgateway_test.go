@@ -1,6 +1,7 @@
 package natgateway_test
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	aws "github.com/aws/aws-sdk-go-v2/aws"
@@ -62,7 +64,7 @@ func TestNew(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			collector := natgateway.New(t.Context(), &natgateway.Config{
+			collector, err := natgateway.New(t.Context(), &natgateway.Config{
 				ScrapeInterval: tt.ScrapeInterval,
 				Regions:        []ec2Types.Region{{RegionName: aws.String(tt.regionName)}},
 				Logger:         tt.Logger,
@@ -70,11 +72,34 @@ func TestNew(t *testing.T) {
 					tt.regionName: tt.regionClient,
 				},
 			})
+			require.NoError(t, err)
 			assert.NotNil(t, collector)
 			assert.NotNil(t, collector.PricingStore)
 			assert.Equal(t, tt.ScrapeInterval, utils.DefaultScrapeInterval)
 		})
 	}
+}
+
+func TestNew_ReturnsErrorWhenPricingAPIUnavailable(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	regionClient := mock_client.NewMockClient(ctrl)
+	regionClient.EXPECT().
+		ListEC2ServicePrices(gomock.Any(), "us-east-1", gomock.Any()).
+		Return(nil, fmt.Errorf("pricing API unavailable")).
+		Times(1)
+
+	collector, err := natgateway.New(t.Context(), &natgateway.Config{
+		Regions: []ec2Types.Region{{RegionName: aws.String("us-east-1")}},
+		Logger:  testLogger,
+		RegionMap: map[string]awsclient.Client{
+			"us-east-1": regionClient,
+		},
+	})
+
+	assert.Nil(t, collector)
+	assert.Error(t, err)
 }
 
 func TestCollector_Name(t *testing.T) {
@@ -161,7 +186,7 @@ func TestCollector_Collect(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			region := "us-east-1"
-			collector := natgateway.New(t.Context(), &natgateway.Config{
+			collector, err := natgateway.New(t.Context(), &natgateway.Config{
 				ScrapeInterval: 1 * time.Hour,
 				Regions:        []ec2Types.Region{{RegionName: aws.String(region)}},
 				Logger:         testLogger,
@@ -169,9 +194,10 @@ func TestCollector_Collect(t *testing.T) {
 					region: tt.regionClient,
 				},
 			})
+			require.NoError(t, err)
 
 			ch := make(chan prometheus.Metric, len(tt.expectedMetrics))
-			err := collector.Collect(t.Context(), ch)
+			err = collector.Collect(t.Context(), ch)
 			close(ch)
 
 			assert.NoError(t, err)
@@ -209,7 +235,7 @@ func TestCollector_CollectAggregatesMultipleUsageTypesPerRegion(t *testing.T) {
 		return m
 	}()
 
-	collector := natgateway.New(t.Context(), &natgateway.Config{
+	collector, err := natgateway.New(t.Context(), &natgateway.Config{
 		ScrapeInterval: 1 * time.Hour,
 		Regions:        []ec2Types.Region{{RegionName: aws.String(region)}},
 		Logger:         testLogger,
@@ -217,9 +243,10 @@ func TestCollector_CollectAggregatesMultipleUsageTypesPerRegion(t *testing.T) {
 			region: regionClient,
 		},
 	})
+	require.NoError(t, err)
 
 	ch := make(chan prometheus.Metric, 10)
-	err := collector.Collect(t.Context(), ch)
+	err = collector.Collect(t.Context(), ch)
 	close(ch)
 
 	assert.NoError(t, err)

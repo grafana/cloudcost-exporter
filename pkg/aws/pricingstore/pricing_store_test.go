@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	aws "github.com/aws/aws-sdk-go-v2/aws"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -88,8 +89,9 @@ func TestNewPricingStore(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			store := pricingstore.NewPricingStore(t.Context(), tt.logger, tt.regions, tt.fetchPrices)
+			store, err := pricingstore.NewPricingStore(t.Context(), tt.logger, tt.regions, tt.fetchPrices)
 
+			require.NoError(t, err)
 			assert.NotNil(t, store)
 			assert.Equal(t, tt.expectedPrices, snapshotToMap(store.Snapshot()))
 		})
@@ -104,7 +106,7 @@ func TestNewPricingStoreInvokesInjectedFetcher(t *testing.T) {
 
 	var mu sync.Mutex
 	calls := map[string]int{}
-	store := pricingstore.NewPricingStore(t.Context(), testLogger, regions, func(ctx context.Context, region string) ([]string, error) {
+	store, err := pricingstore.NewPricingStore(t.Context(), testLogger, regions, func(ctx context.Context, region string) ([]string, error) {
 		mu.Lock()
 		calls[region]++
 		mu.Unlock()
@@ -123,6 +125,7 @@ func TestNewPricingStoreInvokesInjectedFetcher(t *testing.T) {
 		}
 	})
 
+	require.NoError(t, err)
 	assert.NotNil(t, store)
 	assert.Equal(t, map[string]int{
 		"us-east-1": 1,
@@ -139,9 +142,10 @@ func TestPopulatePricingMapPublishesNewSnapshotWithoutMutatingExistingOne(t *tes
 	price := `{"product":{"attributes":{"usagetype":"USE1-NatGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":"%s"}}}}}}}`
 	currentPrice := "0.004"
 
-	store := pricingstore.NewPricingStore(t.Context(), testLogger, regions, func(context.Context, string) ([]string, error) {
+	store, err := pricingstore.NewPricingStore(t.Context(), testLogger, regions, func(context.Context, string) ([]string, error) {
 		return []string{fmt.Sprintf(price, currentPrice)}, nil
 	})
+	require.NoError(t, err)
 
 	before := store.Snapshot()
 
@@ -150,6 +154,18 @@ func TestPopulatePricingMapPublishesNewSnapshotWithoutMutatingExistingOne(t *tes
 
 	assertSnapshotPrice(t, before, "us-east-1", "USE1-NatGateway-Hours", 0.004)
 	assertSnapshotPrice(t, store.Snapshot(), "us-east-1", "USE1-NatGateway-Hours", 0.005)
+}
+
+func TestNewPricingStore_ReturnsErrorWhenFetchFails(t *testing.T) {
+	regions := []ec2Types.Region{{RegionName: aws.String("us-east-1")}}
+	fetchErr := fmt.Errorf("pricing API unavailable")
+
+	store, err := pricingstore.NewPricingStore(t.Context(), testLogger, regions, func(context.Context, string) ([]string, error) {
+		return nil, fetchErr
+	})
+
+	assert.Nil(t, store)
+	assert.Error(t, err)
 }
 
 func snapshotToMap(snapshot pricingstore.Snapshot) map[string]map[string]float64 {

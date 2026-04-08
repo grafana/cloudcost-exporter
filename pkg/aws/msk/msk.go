@@ -105,13 +105,16 @@ type clusterPricingData struct {
 	volumeSizeGiB int32
 }
 
-func New(ctx context.Context, config *Config) *Collector {
+func New(ctx context.Context, config *Config) (*Collector, error) {
 	logger := slog.Default()
 	if config.Logger != nil {
 		logger = config.Logger.With("logger", serviceName)
 	}
 
-	pricingStore := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.Client))
+	pricingStore, err := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.Client))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pricing store: %w", err)
+	}
 
 	go func(ctx context.Context) {
 		priceTicker := time.NewTicker(pricingstore.PriceRefreshInterval)
@@ -135,7 +138,7 @@ func New(ctx context.Context, config *Config) *Collector {
 		regionMap:    config.RegionMap,
 		pricingStore: pricingStore,
 		logger:       logger,
-	}
+	}, nil
 }
 
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
