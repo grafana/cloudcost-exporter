@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	AzurePriceSearchFilter = `serviceName eq 'Virtual Machines' and priceType eq 'Consumption'`
+	AzurePriceSearchFilter = `serviceName eq 'Virtual Machines' and priceType eq 'Consumption' and contains(productName, 'Virtual Machines') and contains(skuName, 'Low Priority') ne true`
 	AzureMeterRegion       = `'primary'`
 	DefaultInstanceFamily  = "General purpose"
 
