@@ -35,9 +35,10 @@ type Config struct {
 	}
 
 	Server struct {
-		Address string
-		Path    string
-		Timeout time.Duration
+		Address      string
+		Path         string
+		Timeout      time.Duration
+		DebugAddress string
 	}
 	LoggerOpts struct {
 		Level  string // Maps to slog levels: debug, info, warn, error
