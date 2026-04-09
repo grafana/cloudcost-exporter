@@ -102,6 +102,48 @@ func TestBuildClusterPricingData(t *testing.T) {
 	}
 }
 
+func TestNewReturnsErrorWhenPricingLoadFails(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	pricingClient := mockclient.NewMockClient(ctrl)
+	pricingClient.EXPECT().
+		ListMSKServicePrices(gomock.Any(), "us-east-1", gomock.Any()).
+		Return(nil, fmt.Errorf("pricing API unavailable")).
+		Times(1)
+
+	_, err := New(t.Context(), &Config{
+		Regions:   []ec2types.Region{{RegionName: aws.String("us-east-1")}},
+		RegionMap: map[string]client.Client{},
+		Client:    pricingClient,
+		Logger:    testLogger(),
+	})
+	require.Error(t, err)
+}
+
+func TestNewReturnsErrorWhenStoragePricingLoadFails(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	pricingClient := mockclient.NewMockClient(ctrl)
+	pricingClient.EXPECT().
+		ListMSKServicePrices(gomock.Any(), "us-east-1", gomock.Any()).
+		Return([]string{priceJSON("us-east-1", "USE1-Kafka.m5.large", "0.2100000000")}, nil).
+		Times(1)
+	pricingClient.EXPECT().
+		ListMSKServicePrices(gomock.Any(), "us-east-1", gomock.Any()).
+		Return(nil, fmt.Errorf("pricing API unavailable")).
+		Times(1)
+
+	_, err := New(t.Context(), &Config{
+		Regions:   []ec2types.Region{{RegionName: aws.String("us-east-1")}},
+		RegionMap: map[string]client.Client{},
+		Client:    pricingClient,
+		Logger:    testLogger(),
+	})
+	require.Error(t, err)
+}
+
 func TestCollectorCollectEmitsHourlyRateMetrics(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
