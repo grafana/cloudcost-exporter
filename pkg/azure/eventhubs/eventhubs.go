@@ -202,8 +202,8 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 
 		computeHourlyRate := throughputUnitHourly * float64(namespace.capacity)
 		computeHourlyRate += kafkaEndpointHourly
-		// TODO: split ingress into its own metric when the collector can expose a
-		// third Event Hubs pricing dimension without breaking current dashboards.
+		// TODO: Consider splitting ingress into its own metric so the collector as flattening
+		//       ingress events pricing into "compute" metric might be a little confusing.
 		computeHourlyRate += (usage.ingressBillableUnits * ingressPricePerMillion) / 1_000_000
 
 		allowanceGB := float64(namespace.capacity) * includedStorageGBPerThroughputUnit
