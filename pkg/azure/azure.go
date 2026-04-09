@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/azure/aks"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/blob"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
+	"github.com/grafana/cloudcost-exporter/pkg/azure/eventhubs"
 	"github.com/grafana/cloudcost-exporter/pkg/collectormetrics"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 
@@ -115,6 +116,17 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 				SubscriptionID: config.SubscriptionID,
 				ScrapeInterval: config.ScrapeInterval,
 			}, logger)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", svc),
+					slog.String("message", err.Error()))
+				continue
+			}
+			collectors = append(collectors, collector)
+		case strings.EqualFold(svc, "EVENTHUBS"), strings.EqualFold(svc, "EVENTHUB"):
+			collector, err := eventhubs.New(ctx, &eventhubs.Config{
+				Logger: logger,
+			}, azClientWrapper)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", svc),

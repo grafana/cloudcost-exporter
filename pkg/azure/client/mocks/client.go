@@ -13,8 +13,10 @@ import (
 	context "context"
 	reflect "reflect"
 
+	azmetrics "github.com/Azure/azure-sdk-for-go/sdk/monitor/query/azmetrics"
 	armcompute "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	armcontainerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	armeventhub "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/eventhub/armeventhub"
 	gomock "go.uber.org/mock/gomock"
 	sdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
@@ -71,6 +73,21 @@ func (m *MockAzureClient) ListDisksInSubscription(arg0 context.Context) ([]*armc
 func (mr *MockAzureClientMockRecorder) ListDisksInSubscription(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListDisksInSubscription", reflect.TypeOf((*MockAzureClient)(nil).ListDisksInSubscription), arg0)
+}
+
+// ListEventHubNamespaces mocks base method.
+func (m *MockAzureClient) ListEventHubNamespaces(arg0 context.Context) ([]*armeventhub.EHNamespace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListEventHubNamespaces", arg0)
+	ret0, _ := ret[0].([]*armeventhub.EHNamespace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListEventHubNamespaces indicates an expected call of ListEventHubNamespaces.
+func (mr *MockAzureClientMockRecorder) ListEventHubNamespaces(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEventHubNamespaces", reflect.TypeOf((*MockAzureClient)(nil).ListEventHubNamespaces), arg0)
 }
 
 // ListMachineTypesByLocation mocks base method.
@@ -131,4 +148,19 @@ func (m *MockAzureClient) ListVirtualMachineScaleSetsOwnedVms(arg0 context.Conte
 func (mr *MockAzureClientMockRecorder) ListVirtualMachineScaleSetsOwnedVms(arg0, arg1, arg2 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListVirtualMachineScaleSetsOwnedVms", reflect.TypeOf((*MockAzureClient)(nil).ListVirtualMachineScaleSetsOwnedVms), arg0, arg1, arg2)
+}
+
+// QueryResourceMetrics mocks base method.
+func (m *MockAzureClient) QueryResourceMetrics(arg0 context.Context, arg1, arg2 string, arg3, arg4 []string, arg5 *azmetrics.QueryResourcesOptions) (azmetrics.QueryResourcesResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "QueryResourceMetrics", arg0, arg1, arg2, arg3, arg4, arg5)
+	ret0, _ := ret[0].(azmetrics.QueryResourcesResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// QueryResourceMetrics indicates an expected call of QueryResourceMetrics.
+func (mr *MockAzureClientMockRecorder) QueryResourceMetrics(arg0, arg1, arg2, arg3, arg4, arg5 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueryResourceMetrics", reflect.TypeOf((*MockAzureClient)(nil).QueryResourceMetrics), arg0, arg1, arg2, arg3, arg4, arg5)
 }
