@@ -2,8 +2,8 @@
 
 | Metric name                                              | Metric type | Description                                                                          | Labels                                                                                                                                               |
 |----------------------------------------------------------|-------------|--------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| cloudcost_aws_msk_compute_hourly_rate_usd_per_hour       | Gauge       | Hourly broker compute cost for an AWS MSK cluster. Cost represented in USD/hour      | `region`=<AWS region> <br/> `cluster_name`=<MSK cluster name> <br/> `cluster_arn`=<MSK cluster ARN> <br/> `instance_type`=<broker instance type> |
-| cloudcost_aws_msk_storage_hourly_rate_usd_per_hour       | Gauge       | Hourly provisioned storage cost for an AWS MSK cluster. Cost represented in USD/hour | `region`=<AWS region> <br/> `cluster_name`=<MSK cluster name> <br/> `cluster_arn`=<MSK cluster ARN>                             |
+| cloudcost_aws_msk_compute_hourly_rate_usd_per_hour       | Gauge       | Hourly broker compute cost for an AWS MSK cluster. Cost represented in USD/hour      | `account_id`=<AWS account ID> <br/> `region`=<AWS region> <br/> `cluster_name`=<MSK cluster name> <br/> `cluster_arn`=<MSK cluster ARN> <br/> `instance_type`=<broker instance type> |
+| cloudcost_aws_msk_storage_hourly_rate_usd_per_hour       | Gauge       | Hourly provisioned storage cost for an AWS MSK cluster. Cost represented in USD/hour | `account_id`=<AWS account ID> <br/> `region`=<AWS region> <br/> `cluster_name`=<MSK cluster name> <br/> `cluster_arn`=<MSK cluster ARN>                             |
 
 ## Overview
 
@@ -28,6 +28,7 @@ Or via command line:
 
 ## Labels
 
+- **account_id**: The AWS account ID (12-digit), resolved via STS GetCallerIdentity
 - **region**: The AWS region where the MSK cluster is running
 - **cluster_name**: The name of the MSK cluster
 - **cluster_arn**: The Amazon Resource Name (ARN) of the MSK cluster

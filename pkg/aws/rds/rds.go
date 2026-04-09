@@ -25,7 +25,7 @@ var (
 		subsystem,
 		"hourly_rate_usd_per_hour",
 		"Hourly cost of AWS RDS instances by region, tier and id. Cost represented in USD/hour",
-		[]string{"region", "tier", "id", "arn_name"},
+		[]string{"account_id", "region", "tier", "id", "arn_name"},
 	)
 )
 
@@ -36,6 +36,7 @@ type Collector struct {
 	scrapeInterval time.Duration
 	Client         client.Client
 	pricingMap     *pricingMap
+	accountID      string
 }
 
 type Config struct {
@@ -43,6 +44,7 @@ type Config struct {
 	RegionMap      map[string]client.Client
 	Client         client.Client
 	ScrapeInterval time.Duration
+	AccountID      string
 }
 
 type listError struct {
@@ -63,6 +65,7 @@ func New(config *Config) *Collector {
 		regionMap:      config.RegionMap,
 		scrapeInterval: config.ScrapeInterval,
 		Client:         config.Client,
+		accountID:      config.AccountID,
 	}
 }
 
@@ -141,6 +144,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 			HourlyGaugeDesc,
 			prometheus.GaugeValue,
 			hourlyPrice,
+			c.accountID,
 			region,
 			*instance.DBInstanceClass,
 			*instance.DbiResourceId,

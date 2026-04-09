@@ -2,8 +2,8 @@
 
 | Metric name                                        | Metric type | Description                                                                                  | Labels                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 |----------------------------------------------------|-------------|----------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| cloudcost_aws_natgateway_hourly_rate_usd_per_hour   | Gauge       | The hourly cost of a NAT Gateway in USD/hour | `region`=&lt;AWS region code&gt; |
-| cloudcost_aws_natgateway_data_processing_usd_per_gb | Gauge       | The data processing cost of a NAT Gateway in USD/GB       | `region`=&lt;AWS region code&gt; |
+| cloudcost_aws_natgateway_hourly_rate_usd_per_hour   | Gauge       | The hourly cost of a NAT Gateway in USD/hour | `account_id`=&lt;AWS account ID&gt; <br/> `region`=&lt;AWS region code&gt; |
+| cloudcost_aws_natgateway_data_processing_usd_per_gb | Gauge       | The data processing cost of a NAT Gateway in USD/GB       | `account_id`=&lt;AWS account ID&gt; <br/> `region`=&lt;AWS region code&gt; |
 
 ## Overview
 

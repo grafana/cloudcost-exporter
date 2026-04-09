@@ -37,28 +37,28 @@ var (
 		subsystem,
 		utils.InstanceCPUCostSuffix,
 		"The cpu cost a ec2 instance in USD/(core*h)",
-		[]string{"instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier", "architecture"},
+		[]string{"account_id", "instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier", "architecture"},
 	)
 	InstanceMemoryHourlyCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		utils.InstanceMemoryCostSuffix,
 		"The memory cost of a ec2 instance in USD/(GiB*h)",
-		[]string{"instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier", "architecture"},
+		[]string{"account_id", "instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier", "architecture"},
 	)
 	InstanceTotalHourlyCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		utils.InstanceTotalCostSuffix,
 		"The total cost of the ec2 instance in USD/h",
-		[]string{"instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier", "architecture"},
+		[]string{"account_id", "instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier", "architecture"},
 	)
 	PersistentVolumeHourlyCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		utils.PersistentVolumeCostSuffix,
 		"The cost of an AWS EBS Volume in USD/h.",
-		[]string{"persistentvolume", "region", "availability_zone", "disk", "type", "size_gib", "state"},
+		[]string{"account_id", "persistentvolume", "region", "availability_zone", "disk", "type", "size_gib", "state"},
 	)
 )
 
@@ -70,6 +70,7 @@ type Collector struct {
 	storagePricingMap  *StoragePricingMap
 	awsRegionClientMap map[string]client.Client
 	logger             *slog.Logger
+	accountID          string
 }
 
 type Config struct {
@@ -77,6 +78,7 @@ type Config struct {
 	Regions        []ec2Types.Region
 	Logger         *slog.Logger
 	RegionMap      map[string]client.Client
+	AccountID      string
 }
 
 // New creates an ec2 collector
@@ -129,6 +131,7 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 		awsRegionClientMap: config.RegionMap,
 		computePricingMap:  computeMap,
 		storagePricingMap:  storageMap,
+		accountID:          config.AccountID,
 	}, nil
 }
 
@@ -280,6 +283,7 @@ func (c *Collector) processInstance(instance ec2Types.Instance, ch chan<- promet
 	}
 
 	labelValues := []string{
+		c.accountID,
 		*instance.PrivateDnsName,
 		*instance.InstanceId,
 		region,
@@ -350,6 +354,7 @@ func (c *Collector) processVolume(volume ec2Types.Volume, ch chan<- prometheus.M
 	}
 
 	labelValues := []string{
+		c.accountID,
 		client.NameFromVolume(volume),
 		region,
 		az,
