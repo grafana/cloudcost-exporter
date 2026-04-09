@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"math"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -18,7 +17,6 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
-	retailPriceSdk "gomodules.xyz/azure-retail-prices-sdk-for-go/sdk"
 )
 
 const (
@@ -44,15 +42,13 @@ const (
 	incomingMessagesMetric   = "IncomingMessages"
 	sizeMetricName           = "Size"
 
-	metricsLookback  = time.Hour
-	metricsInterval  = "PT1M"
-	priceRefreshTTL  = 24 * time.Hour
-	maxMetricsBatch  = 50
-	globalRegionName = "global"
+	metricsLookback = time.Hour
+	metricsInterval = "PT1M"
+	maxMetricsBatch = 50
 
-	billableIngressEventBytes         = 64 * 1000
+	billableIngressEventBytes          = 64 * 1000
 	includedStorageGBPerThroughputUnit = 84
-	bytesPerGB                        = 1000 * 1000 * 1000
+	bytesPerGB                         = 1000 * 1000 * 1000
 )
 
 var (
@@ -77,9 +73,9 @@ type Config struct {
 }
 
 type Collector struct {
-	logger       *slog.Logger
-	azureClient  client.AzureClient
-	pricingStore *pricingStore
+	logger      *slog.Logger
+	azureClient client.AzureClient
+	pricingMap  *pricingMap
 }
 
 type namespacePricingData struct {
@@ -100,22 +96,6 @@ type incomingBucket struct {
 	messages float64
 }
 
-type regionPricing struct {
-	throughputUnitHourly     float64
-	kafkaEndpointHourly      float64
-	ingressPricePerMillion   float64
-	blobStoragePricePerGBMonth float64
-}
-
-type pricingStore struct {
-	logger      *slog.Logger
-	azureClient client.AzureClient
-
-	mu         sync.RWMutex
-	byRegion   map[string]regionPricing
-	nextRefresh time.Time
-}
-
 func New(_ context.Context, cfg *Config, azureClient client.AzureClient) (*Collector, error) {
 	logger := slog.Default()
 	if cfg != nil && cfg.Logger != nil {
@@ -125,9 +105,9 @@ func New(_ context.Context, cfg *Config, azureClient client.AzureClient) (*Colle
 	logger = logger.With("collector", collectorName)
 
 	return &Collector{
-		logger:       logger,
-		azureClient:  azureClient,
-		pricingStore: newPricingStore(logger, azureClient),
+		logger:      logger,
+		azureClient: azureClient,
+		pricingMap:  newPricingMap(logger, azureClient),
 	}, nil
 }
 
@@ -162,9 +142,10 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		return nil
 	}
 
-	if err := c.pricingStore.RefreshIfNeeded(ctx, uniqueRegions(standardNamespaces)); err != nil {
+	if err := c.pricingMap.RefreshIfNeeded(ctx, uniqueRegions(standardNamespaces)); err != nil {
 		return fmt.Errorf("failed to refresh Event Hubs pricing: %w", err)
 	}
+	snapshot := c.pricingMap.Snapshot()
 
 	usageByNamespace, failedRegions := c.collectUsage(ctx, standardNamespaces)
 
@@ -180,10 +161,37 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 			continue
 		}
 
-		prices, ok := c.pricingStore.PricesFor(namespace.region)
+		throughputUnitHourly, ok := snapshot.Price(namespace.region, throughputUnitComponent)
 		if !ok {
 			c.logger.Warn(
-				"skipping Event Hubs namespace with missing pricing",
+				"skipping Event Hubs namespace with missing throughput unit pricing",
+				"region", namespace.region,
+				"namespace", namespace.namespace,
+			)
+			continue
+		}
+		kafkaEndpointHourly, ok := snapshot.Price(namespace.region, kafkaEndpointComponent)
+		if !ok {
+			c.logger.Warn(
+				"skipping Event Hubs namespace with missing Kafka endpoint pricing",
+				"region", namespace.region,
+				"namespace", namespace.namespace,
+			)
+			continue
+		}
+		ingressPricePerMillion, ok := snapshot.Price(namespace.region, ingressComponent)
+		if !ok {
+			c.logger.Warn(
+				"skipping Event Hubs namespace with missing ingress pricing",
+				"region", namespace.region,
+				"namespace", namespace.namespace,
+			)
+			continue
+		}
+		blobStoragePricePerGBMonth, ok := snapshot.Price(namespace.region, blobStorageComponent)
+		if !ok {
+			c.logger.Warn(
+				"skipping Event Hubs namespace with missing Blob Storage pricing",
 				"region", namespace.region,
 				"namespace", namespace.namespace,
 			)
@@ -192,16 +200,16 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 
 		usage := usageByNamespace[usageKey(namespace.namespace)]
 
-		computeHourlyRate := prices.throughputUnitHourly * float64(namespace.capacity)
-		computeHourlyRate += prices.kafkaEndpointHourly
+		computeHourlyRate := throughputUnitHourly * float64(namespace.capacity)
+		computeHourlyRate += kafkaEndpointHourly
 		// TODO: split ingress into its own metric when the collector can expose a
 		// third Event Hubs pricing dimension without breaking current dashboards.
-		computeHourlyRate += (usage.ingressBillableUnits * prices.ingressPricePerMillion) / 1_000_000
+		computeHourlyRate += (usage.ingressBillableUnits * ingressPricePerMillion) / 1_000_000
 
 		allowanceGB := float64(namespace.capacity) * includedStorageGBPerThroughputUnit
 		averageStoredGB := usage.averageSizeBytes / bytesPerGB
 		storageOverageGB := math.Max(0, averageStoredGB-allowanceGB)
-		storageHourlyRate := (storageOverageGB * prices.blobStoragePricePerGBMonth) / utils.HoursInMonth
+		storageHourlyRate := (storageOverageGB * blobStoragePricePerGBMonth) / utils.HoursInMonth
 
 		ch <- prometheus.MustNewConstMetric(
 			ComputeHourlyGaugeDesc,
@@ -494,219 +502,6 @@ func metricQueryOptions(aggregation string) *azmetrics.QueryResourcesOptions {
 
 func formatMetricTime(t time.Time) string {
 	return t.UTC().Format("2006-01-02T15:04:05.000Z")
-}
-
-func newPricingStore(logger *slog.Logger, azureClient client.AzureClient) *pricingStore {
-	return &pricingStore{
-		logger:      logger.With("store", "pricing"),
-		azureClient: azureClient,
-		byRegion:    make(map[string]regionPricing),
-	}
-}
-
-func (p *pricingStore) RefreshIfNeeded(ctx context.Context, regions []string) error {
-	regions = uniqueStrings(regions)
-	if len(regions) == 0 {
-		return nil
-	}
-
-	p.mu.RLock()
-	currentlyFresh := time.Now().Before(p.nextRefresh) && p.hasAllRegionsLocked(regions)
-	p.mu.RUnlock()
-	if currentlyFresh {
-		return nil
-	}
-
-	eventHubsPricing, err := p.fetchEventHubsPricing(ctx, regions)
-	if err != nil {
-		return err
-	}
-
-	blobStoragePricing, err := p.fetchBlobStoragePricing(ctx, regions)
-	if err != nil {
-		return err
-	}
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	next := make(map[string]regionPricing, len(p.byRegion))
-	for region, pricing := range p.byRegion {
-		next[region] = pricing
-	}
-
-	for region, pricing := range eventHubsPricing {
-		current := next[region]
-		current.throughputUnitHourly = pricing.throughputUnitHourly
-		current.kafkaEndpointHourly = pricing.kafkaEndpointHourly
-		current.ingressPricePerMillion = pricing.ingressPricePerMillion
-		next[region] = current
-	}
-
-	for region, price := range blobStoragePricing {
-		current := next[region]
-		current.blobStoragePricePerGBMonth = price
-		next[region] = current
-	}
-
-	p.byRegion = next
-	p.nextRefresh = time.Now().Add(priceRefreshTTL)
-
-	return nil
-}
-
-func (p *pricingStore) PricesFor(region string) (regionPricing, bool) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.pricesForRegionLocked(strings.ToLower(region))
-}
-
-func (p *pricingStore) hasAllRegionsLocked(regions []string) bool {
-	for _, region := range regions {
-		if _, ok := p.pricesForRegionLocked(region); !ok {
-			return false
-		}
-	}
-
-	return true
-}
-
-func (p *pricingStore) pricesForRegionLocked(region string) (regionPricing, bool) {
-	region = strings.ToLower(region)
-
-	pricing := p.byRegion[region]
-	globalPricing := p.byRegion[globalRegionName]
-
-	if pricing.throughputUnitHourly == 0 {
-		pricing.throughputUnitHourly = globalPricing.throughputUnitHourly
-	}
-	if pricing.kafkaEndpointHourly == 0 {
-		pricing.kafkaEndpointHourly = globalPricing.kafkaEndpointHourly
-	}
-	if pricing.ingressPricePerMillion == 0 {
-		pricing.ingressPricePerMillion = globalPricing.ingressPricePerMillion
-	}
-
-	if pricing.throughputUnitHourly == 0 ||
-		pricing.kafkaEndpointHourly == 0 ||
-		pricing.ingressPricePerMillion == 0 ||
-		pricing.blobStoragePricePerGBMonth == 0 {
-		return regionPricing{}, false
-	}
-
-	return pricing, true
-}
-
-func (p *pricingStore) fetchEventHubsPricing(ctx context.Context, regions []string) (map[string]regionPricing, error) {
-	filter := fmt.Sprintf(
-		"serviceName eq '%s' and priceType eq 'Consumption' and (%s)",
-		eventHubsServiceName,
-		armRegionFilter(regions, true),
-	)
-
-	prices, err := p.azureClient.ListPrices(ctx, &retailPriceSdk.RetailPricesClientListOptions{
-		APIVersion: to.Ptr(retailPriceAPIVersion),
-		Filter:     to.Ptr(filter),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list Event Hubs retail prices: %w", err)
-	}
-
-	pricingByRegion := make(map[string]regionPricing)
-	for _, price := range prices {
-		if price == nil {
-			continue
-		}
-
-		region := strings.ToLower(strings.TrimSpace(price.ArmRegionName))
-		if region == "" {
-			continue
-		}
-
-		current := pricingByRegion[region]
-
-		switch {
-		case price.ProductName == eventHubsServiceName &&
-			price.SkuName == standardSKUName &&
-			price.MeterName == standardThroughputMeter &&
-			strings.EqualFold(price.UnitOfMeasure, "1 Hour"):
-			current.throughputUnitHourly = maxFloat(current.throughputUnitHourly, price.RetailPrice)
-		case price.ProductName == eventHubsServiceName &&
-			price.SkuName == standardSKUName &&
-			price.MeterName == standardKafkaEndpointMeter &&
-			strings.EqualFold(price.UnitOfMeasure, "1 Hour"):
-			current.kafkaEndpointHourly = maxFloat(current.kafkaEndpointHourly, price.RetailPrice)
-		case price.ProductName == eventHubsServiceName &&
-			price.SkuName == standardSKUName &&
-			price.MeterName == standardIngressMeter &&
-			strings.EqualFold(price.UnitOfMeasure, "1M"):
-			current.ingressPricePerMillion = maxFloat(current.ingressPricePerMillion, price.RetailPrice)
-		default:
-			continue
-		}
-
-		pricingByRegion[region] = current
-	}
-
-	return pricingByRegion, nil
-}
-
-func (p *pricingStore) fetchBlobStoragePricing(ctx context.Context, regions []string) (map[string]float64, error) {
-	filter := fmt.Sprintf(
-		"serviceName eq '%s' and priceType eq 'Consumption' and skuName eq '%s' and meterName eq '%s' and (%s) and (productName eq '%s' or productName eq '%s' or productName eq '%s')",
-		storageServiceName,
-		hotLRSSKUName,
-		hotLRSDataStoredMeter,
-		armRegionFilter(regions, false),
-		blobStorageProductName,
-		generalBlockBlobProductV2,
-		generalBlockBlobProduct,
-	)
-
-	prices, err := p.azureClient.ListPrices(ctx, &retailPriceSdk.RetailPricesClientListOptions{
-		APIVersion: to.Ptr(retailPriceAPIVersion),
-		Filter:     to.Ptr(filter),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list Blob Storage retail prices: %w", err)
-	}
-
-	type candidate struct {
-		productPreference int
-		price             float64
-	}
-
-	selected := make(map[string]candidate)
-	for _, price := range prices {
-		if price == nil || !strings.EqualFold(price.UnitOfMeasure, "1 GB/Month") {
-			continue
-		}
-
-		region := strings.ToLower(strings.TrimSpace(price.ArmRegionName))
-		if region == "" {
-			continue
-		}
-
-		preference, ok := blobProductPreference(price.ProductName)
-		if !ok {
-			continue
-		}
-
-		current, exists := selected[region]
-		if !exists || preference < current.productPreference || (preference == current.productPreference && price.RetailPrice > current.price) {
-			selected[region] = candidate{
-				productPreference: preference,
-				price:             price.RetailPrice,
-			}
-		}
-	}
-
-	pricingByRegion := make(map[string]float64, len(selected))
-	for region, candidate := range selected {
-		pricingByRegion[region] = candidate.price
-	}
-
-	return pricingByRegion, nil
 }
 
 func blobProductPreference(productName string) (int, bool) {

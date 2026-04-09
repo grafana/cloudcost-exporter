@@ -24,7 +24,7 @@ import (
 func TestBuildNamespacePricingData(t *testing.T) {
 	tests := []struct {
 		name       string
-		namespace   *armeventhub.EHNamespace
+		namespace  *armeventhub.EHNamespace
 		want       namespacePricingData
 		wantErrMsg string
 	}{
@@ -175,7 +175,7 @@ func TestCollectorUsesGlobalEventHubsPricingFallback(t *testing.T) {
 		},
 		metricsResponses: map[string]azmetrics.QueryResourcesResponse{
 			metricsKey("eastus", []string{incomingBytesMetricName, incomingMessagesMetric}): incomingMetricsResponse(namespaceID, nil, nil),
-			metricsKey("eastus", []string{sizeMetricName}):                             sizeMetricsResponse(namespaceID, nil),
+			metricsKey("eastus", []string{sizeMetricName}):                                  sizeMetricsResponse(namespaceID, nil),
 		},
 	})
 	require.NoError(t, err)
@@ -189,13 +189,47 @@ func TestCollectorUsesGlobalEventHubsPricingFallback(t *testing.T) {
 	assert.InDelta(t, 0.12, computeMetric.Value, 0.0000001)
 }
 
+func TestPricingSnapshotUsesGlobalFallbackOnlyForEventHubsComponents(t *testing.T) {
+	snapshot := Snapshot{
+		ptr: &priceSnapshot{
+			byRegion: map[string]map[string]float64{
+				"eastus": {
+					blobStorageComponent: 0.02,
+				},
+				globalRegionName: {
+					throughputUnitComponent: 0.03,
+					kafkaEndpointComponent:  0.09,
+					ingressComponent:        0.028,
+					blobStorageComponent:    0.99,
+				},
+			},
+		},
+	}
+
+	price, ok := snapshot.Price("eastus", throughputUnitComponent)
+	require.True(t, ok)
+	assert.Equal(t, 0.03, price)
+
+	price, ok = snapshot.Price("eastus", kafkaEndpointComponent)
+	require.True(t, ok)
+	assert.Equal(t, 0.09, price)
+
+	price, ok = snapshot.Price("eastus", ingressComponent)
+	require.True(t, ok)
+	assert.Equal(t, 0.028, price)
+
+	price, ok = snapshot.Price("eastus", blobStorageComponent)
+	require.True(t, ok)
+	assert.Equal(t, 0.02, price)
+}
+
 type stubClient struct {
-	namespaces      []*armeventhub.EHNamespace
-	namespacesErr   error
-	prices          []*retailPriceSdk.ResourceSKU
-	pricesErr       error
+	namespaces       []*armeventhub.EHNamespace
+	namespacesErr    error
+	prices           []*retailPriceSdk.ResourceSKU
+	pricesErr        error
 	metricsResponses map[string]azmetrics.QueryResourcesResponse
-	metricsErrs     map[string]error
+	metricsErrs      map[string]error
 }
 
 func (s *stubClient) ListClustersInSubscription(context.Context) ([]*armcontainerservice.ManagedCluster, error) {
