@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -95,6 +96,7 @@ func operationalFlags(cfg *config.Config) {
 	flag.StringVar(&cfg.LoggerOpts.Level, "log.level", "info", "Log level: debug, info, warn, error")
 	flag.StringVar(&cfg.LoggerOpts.Output, "log.output", "stdout", "Log output stream: stdout, stderr, file")
 	flag.StringVar(&cfg.LoggerOpts.Type, "log.type", "text", "Log type: json, text")
+	flag.StringVar(&cfg.Server.DebugAddress, "debug.address", ":6060", "Address for the pprof debug server (e.g. :6060). Disabled when empty.")
 }
 
 // setupLogger is a helper method that is responsible for creating a structured logger that is used throughout the application.
@@ -104,8 +106,25 @@ func setupLogger(level string, output string, logtype string) *slog.Logger {
 	return slog.New(handler)
 }
 
+// startDebugServer starts a pprof HTTP server on cfg.Server.DebugAddress.
+// It is a no-op when DebugAddress is empty.
+func startDebugServer(ctx context.Context, cfg *config.Config, log *slog.Logger) {
+	if cfg.Server.DebugAddress == "" {
+		return
+	}
+	log.LogAttrs(ctx, slog.LevelInfo, "Starting pprof debug server", slog.String("address", cfg.Server.DebugAddress))
+	go func() {
+		// http.DefaultServeMux has pprof routes registered via the blank import.
+		if err := http.ListenAndServe(cfg.Server.DebugAddress, http.DefaultServeMux); err != nil {
+			log.LogAttrs(ctx, slog.LevelError, "pprof debug server stopped", slog.String("message", err.Error()))
+		}
+	}()
+}
+
 // runServer is a helper method that is responsible for starting the metrics server and handling shutdown signals.
 func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, log *slog.Logger) error {
+	startDebugServer(ctx, cfg, log)
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path)) // landing page
