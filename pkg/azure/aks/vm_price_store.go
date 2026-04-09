@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	AzurePriceSearchFilter = `serviceName eq 'Virtual Machines' and priceType eq 'Consumption'`
+	AzurePriceSearchFilter = `serviceName eq 'Virtual Machines' and priceType eq 'Consumption' and contains(productName, 'Virtual Machines') and contains(skuName, 'Low Priority') ne true`
 	AzureMeterRegion       = `'primary'`
 	DefaultInstanceFamily  = "General purpose"
 
@@ -166,22 +166,6 @@ func (p *VMPriceStore) getPriceInfoFromVmInfo(ctx context.Context, vmInfo *Virtu
 	return machineSku, nil
 }
 
-func (p *VMPriceStore) validateMachinePriceIsRelevantFromSku(ctx context.Context, sku *retailPriceSdk.ResourceSKU) bool {
-	productName := sku.ProductName
-	if len(productName) == 0 || !strings.Contains(productName, "Virtual Machines") {
-		p.logger.LogAttrs(ctx, slog.LevelDebug, "product is not a virtual machine", slog.String("sku", sku.SkuName))
-		return false
-	}
-
-	skuName := sku.SkuName
-	if len(skuName) == 0 || strings.Contains(skuName, "Low Priority") {
-		p.logger.LogAttrs(ctx, slog.LevelDebug, "disregarding low priority aka Spot machines", slog.String("sku", sku.SkuName))
-		return false
-	}
-
-	return true
-}
-
 // PopulateVMPriceStore loads VM retail prices for the given ARM regions into RegionMap.
 func (p *VMPriceStore) PopulateVMPriceStore(ctx context.Context, regions []string) bool {
 	if len(regions) == 0 {
@@ -239,10 +223,6 @@ func (p *VMPriceStore) PopulateVMPriceStore(ctx context.Context, regions []strin
 
 		// Track all regions we see in the data
 		regionsFound[regionName] = true
-
-		if !p.validateMachinePriceIsRelevantFromSku(ctx, price) {
-			continue
-		}
 
 		if _, ok := p.RegionMap[regionName]; !ok {
 			p.logger.LogAttrs(ctx, slog.LevelInfo, "populating machine prices for region", slog.String("region", regionName))
