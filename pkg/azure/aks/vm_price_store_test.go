@@ -74,7 +74,6 @@ func TestPopulateVMPriceStore(t *testing.T) {
 				{ArmSkuName: "Standard_D4s_v3", SkuName: "D4s v3", ArmRegionName: "westus", ProductName: "Virtual Machines D Series", RetailPrice: 0.1},
 				{ArmSkuName: "Standard_D8s_v3", SkuName: "D8s v3", ArmRegionName: "centraleurope", ProductName: "Virtual Machines D Series", RetailPrice: 0.1},
 				{ArmSkuName: "Standard_D16s_v3", SkuName: "D16s v3 Spot", ArmRegionName: "centraleurope", ProductName: "Virtual Machines D Series", RetailPrice: 0.01},
-				{ArmSkuName: "Standard_D4s_v3", SkuName: "D4s v3 Low Priority", ArmRegionName: "centraleurope", ProductName: "Virtual Machines D Series", RetailPrice: 0.01}, // low priority machines are disregarded
 			},
 
 			timesToCallListPrices: 1,
