@@ -229,14 +229,12 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			collectors = append(collectors, collector)
 		case serviceMSK:
 			// The AWS Pricing API is only available in us-east-1 and ap-south-1.
-			// Use a dedicated us-east-1 pricing client so MSK pricing lookups
-			// succeed regardless of which regions the collector is configured for.
-			pricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
-			if err != nil {
-				return nil, err
-			}
+			// Copy the already-loaded config and pin the region to us-east-1 so
+			// MSK pricing lookups succeed regardless of the collector's configured regions.
+			mskPricingConfig := awsConfig.Copy()
+			mskPricingConfig.Region = "us-east-1"
 			awsMSKClient := client.NewAWSClient(client.Config{
-				PricingService: awsPricing.NewFromConfig(pricingConfig),
+				PricingService: awsPricing.NewFromConfig(mskPricingConfig),
 			})
 			collector, err := mskCollector.New(ctx, &mskCollector.Config{
 				Regions:   regions,
