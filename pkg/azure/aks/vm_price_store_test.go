@@ -241,7 +241,7 @@ func TestDetermineMachinePriority(t *testing.T) {
 	}{
 		"OnDemand": {
 			sku: &retailPriceSdk.ResourceSKU{
-				SkuName: "Standard_E16pds_v5 Low Priority",
+				SkuName: "Standard_D16s_v5",
 			},
 			expectedPriority: OnDemand,
 		},
