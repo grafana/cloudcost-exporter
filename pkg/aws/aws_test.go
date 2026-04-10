@@ -158,7 +158,10 @@ func Test_NewWithDependencies(t *testing.T) {
 			setupRegionClients: map[string]client.Client{
 				"us-east-1": &mockRegionClient{},
 			},
-			expectedCollectors: 1,
+			// MSK uses its own dedicated pricing client (not the injected awsClient),
+			// so collector creation fails without real AWS credentials in tests.
+			// The collector is skipped gracefully; newWithDependencies still succeeds.
+			expectedCollectors: 0,
 		},
 	}
 

@@ -107,13 +107,16 @@ type clusterPricingData struct {
 	volumeSizeGiB int32
 }
 
-func New(ctx context.Context, config *Config) *Collector {
+func New(ctx context.Context, config *Config) (*Collector, error) {
 	logger := slog.Default()
 	if config.Logger != nil {
 		logger = config.Logger.With("logger", serviceName)
 	}
 
-	pricingStore := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.Client))
+	pricingStore, err := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.Client))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pricing store: %w", err)
+	}
 
 	go func(ctx context.Context) {
 		priceTicker := time.NewTicker(pricingstore.PriceRefreshInterval)
@@ -138,7 +141,7 @@ func New(ctx context.Context, config *Config) *Collector {
 		pricingStore: pricingStore,
 		logger:       logger,
 		accountID:    config.AccountID,
-	}
+	}, nil
 }
 
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
@@ -278,6 +281,10 @@ func buildClusterPricingData(cluster msktypes.Cluster) (clusterPricingData, erro
 	}, nil
 }
 
+// newPriceFetcher returns a PriceFetchFunc for MSK pricing lookups.
+// The AWS Price List API is served from a small set of endpoint regions.
+// We standardize on us-east-1 for pricing lookups; the actual priced
+// region is selected by the GetProducts filters.
 func newPriceFetcher(pricingClient client.Client) pricingstore.PriceFetchFunc {
 	return func(ctx context.Context, region string) ([]string, error) {
 		var prices []string

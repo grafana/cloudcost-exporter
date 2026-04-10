@@ -53,10 +53,13 @@ type Collector struct {
 	accountID string
 }
 
-func New(ctx context.Context, config *Config) *Collector {
+func New(ctx context.Context, config *Config) (*Collector, error) {
 	logger := config.Logger.With("logger", serviceName)
 
-	pricingStore := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.RegionMap))
+	pricingStore, err := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.RegionMap))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pricing store: %w", err)
+	}
 
 	go func(ctx context.Context) {
 		priceTicker := time.NewTicker(pricingstore.PriceRefreshInterval)
@@ -67,7 +70,9 @@ func New(ctx context.Context, config *Config) *Collector {
 				return
 			case <-priceTicker.C:
 				logger.LogAttrs(ctx, slog.LevelInfo, "refreshing pricing map")
-				pricingStore.PopulatePricingMap(ctx)
+				if err := pricingStore.PopulatePricingMap(ctx); err != nil {
+					logger.Error("error refreshing pricing map", "error", err)
+				}
 			}
 		}
 	}(ctx)
@@ -78,7 +83,7 @@ func New(ctx context.Context, config *Config) *Collector {
 		regions:        slices.Collect(maps.Keys(config.RegionMap)),
 		PricingStore:   pricingStore,
 		accountID:      config.AccountID,
-	}
+	}, nil
 }
 
 type Config struct {

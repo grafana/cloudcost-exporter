@@ -72,13 +72,13 @@ type Collector struct {
 	accountID      string
 }
 
-func New(ctx context.Context, config *Config) *Collector {
+func New(ctx context.Context, config *Config) (*Collector, error) {
 	logger := config.Logger.With("logger", serviceName)
 	pricingMap := NewVPCPricingMap(logger)
 
 	// Initial pricing data load using the dedicated us-east-1 pricing client
 	if err := pricingMap.Refresh(ctx, config.Regions, config.Client); err != nil {
-		logger.Error("Failed to load initial VPC pricing data", "error", err)
+		return nil, fmt.Errorf("failed to load initial VPC pricing data: %w", err)
 	}
 
 	// Set up periodic pricing refresh
@@ -106,7 +106,7 @@ func New(ctx context.Context, config *Config) *Collector {
 		logger:         logger,
 		ctx:            ctx, // Store the context for cancellation checks
 		accountID:      config.AccountID,
-	}
+	}, nil
 }
 
 type Config struct {

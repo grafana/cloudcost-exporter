@@ -102,6 +102,48 @@ func TestBuildClusterPricingData(t *testing.T) {
 	}
 }
 
+func TestNewReturnsErrorWhenPricingLoadFails(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	pricingClient := mockclient.NewMockClient(ctrl)
+	pricingClient.EXPECT().
+		ListMSKServicePrices(gomock.Any(), "us-east-1", gomock.Any()).
+		Return(nil, fmt.Errorf("pricing API unavailable")).
+		Times(1)
+
+	_, err := New(t.Context(), &Config{
+		Regions:   []ec2types.Region{{RegionName: aws.String("us-east-1")}},
+		RegionMap: map[string]client.Client{},
+		Client:    pricingClient,
+		Logger:    testLogger(),
+	})
+	require.Error(t, err)
+}
+
+func TestNewReturnsErrorWhenStoragePricingLoadFails(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	pricingClient := mockclient.NewMockClient(ctrl)
+	pricingClient.EXPECT().
+		ListMSKServicePrices(gomock.Any(), "us-east-1", gomock.Any()).
+		Return([]string{priceJSON("us-east-1", "USE1-Kafka.m5.large", "0.2100000000")}, nil).
+		Times(1)
+	pricingClient.EXPECT().
+		ListMSKServicePrices(gomock.Any(), "us-east-1", gomock.Any()).
+		Return(nil, fmt.Errorf("pricing API unavailable")).
+		Times(1)
+
+	_, err := New(t.Context(), &Config{
+		Regions:   []ec2types.Region{{RegionName: aws.String("us-east-1")}},
+		RegionMap: map[string]client.Client{},
+		Client:    pricingClient,
+		Logger:    testLogger(),
+	})
+	require.Error(t, err)
+}
+
 func TestCollectorCollectEmitsHourlyRateMetrics(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -120,13 +162,14 @@ func TestCollectorCollectEmitsHourlyRateMetrics(t *testing.T) {
 	regionClient.EXPECT().ListMSKClusters(gomock.Any()).Return([]msktypes.Cluster{cluster}, nil).Times(1)
 	expectPricingLoad(pricingClient, "us-east-1", "USE1", "0.2100000000", "0.1000000000")
 
-	collector := New(t.Context(), &Config{
+	collector, err := New(t.Context(), &Config{
 		Regions:   []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		RegionMap: map[string]client.Client{"us-east-1": regionClient},
 		Client:    pricingClient,
 		Logger:    testLogger(),
 		AccountID: "123456789012",
 	})
+	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
 	require.NoError(t, err)
@@ -163,13 +206,14 @@ func TestCollectorCollectCachesPricingLookups(t *testing.T) {
 	regionClient.EXPECT().ListMSKClusters(gomock.Any()).Return(clusters, nil).Times(1)
 	expectPricingLoad(pricingClient, "us-east-1", "USE1", "0.2100000000", "0.1000000000")
 
-	collector := New(t.Context(), &Config{
+	collector, err := New(t.Context(), &Config{
 		Regions:   []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		RegionMap: map[string]client.Client{"us-east-1": regionClient},
 		Client:    pricingClient,
 		Logger:    testLogger(),
 		AccountID: "123456789012",
 	})
+	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
 	require.NoError(t, err)
@@ -188,7 +232,7 @@ func TestCollectorCollectContinuesWhenRegionClientMissing(t *testing.T) {
 	expectPricingLoad(pricingClient, "us-east-1", "USE1", "0.2100000000", "0.1000000000")
 	expectPricingLoad(pricingClient, "us-west-2", "USW2", "0.2100000000", "0.1000000000")
 
-	collector := New(t.Context(), &Config{
+	collector, err := New(t.Context(), &Config{
 		Regions: []ec2types.Region{
 			{RegionName: aws.String("us-east-1")},
 			{RegionName: aws.String("us-west-2")},
@@ -200,6 +244,7 @@ func TestCollectorCollectContinuesWhenRegionClientMissing(t *testing.T) {
 		Logger:    testLogger(),
 		AccountID: "123456789012",
 	})
+	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
 	require.NoError(t, err)
@@ -220,7 +265,7 @@ func TestCollectorCollectContinuesWhenRegionListingFails(t *testing.T) {
 	expectPricingLoad(pricingClient, "us-east-1", "USE1", "0.2100000000", "0.1000000000")
 	expectPricingLoad(pricingClient, "us-west-2", "USW2", "0.2100000000", "0.1000000000")
 
-	collector := New(t.Context(), &Config{
+	collector, err := New(t.Context(), &Config{
 		Regions: []ec2types.Region{
 			{RegionName: aws.String("us-east-1")},
 			{RegionName: aws.String("us-west-2")},
@@ -233,6 +278,7 @@ func TestCollectorCollectContinuesWhenRegionListingFails(t *testing.T) {
 		Logger:    testLogger(),
 		AccountID: "123456789012",
 	})
+	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
 	require.NoError(t, err)

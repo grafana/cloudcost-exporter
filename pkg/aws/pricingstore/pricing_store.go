@@ -133,7 +133,7 @@ type PricingStoreRefresher interface {
 
 // NewPricingStore creates a new PricingStore.
 // It populates the store before it is used by the Collector.
-func NewPricingStore(ctx context.Context, logger *slog.Logger, regions []ec2Types.Region, fetchPrices PriceFetchFunc) *PricingStore {
+func NewPricingStore(ctx context.Context, logger *slog.Logger, regions []ec2Types.Region, fetchPrices PriceFetchFunc) (*PricingStore, error) {
 	store := &PricingStore{
 		logger:      logger,
 		regions:     regions,
@@ -141,12 +141,11 @@ func NewPricingStore(ctx context.Context, logger *slog.Logger, regions []ec2Type
 	}
 	store.current.Store(&priceSnapshot{byRegion: make(map[string]map[string]float64)})
 
-	err := store.PopulatePricingMap(ctx)
-	if err != nil {
-		store.logger.Error("error populating pricing map", "error", err)
+	if err := store.PopulatePricingMap(ctx); err != nil {
+		return nil, err
 	}
 
-	return store
+	return store, nil
 }
 
 // PopulatePricingMap fetches pricing information and publishes a new snapshot.

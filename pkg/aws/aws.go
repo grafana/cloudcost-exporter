@@ -193,14 +193,20 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			})
 			collectors = append(collectors, collector)
 		case serviceNATGW:
-			natGwCollector := awsgwnat.New(ctx, &awsgwnat.Config{
+			collector, err := awsgwnat.New(ctx, &awsgwnat.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
 				Regions:        regions,
 				RegionMap:      regionClients,
 				AccountID:      config.AccountID,
 			})
-			collectors = append(collectors, natGwCollector)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
+			collectors = append(collectors, collector)
 		case serviceELB:
 			collector := elb.New(&elb.Config{
 				Regions:        regions,
@@ -221,32 +227,42 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				PricingService: awsPricing.NewFromConfig(pricingConfig),
 				EC2Service:     ec2.NewFromConfig(pricingConfig),
 			})
-			collector := awsvpc.New(ctx, &awsvpc.Config{
+			collector, err := awsvpc.New(ctx, &awsvpc.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
 				Regions:        regions,
 				Client:         awsVPCClient,
 				AccountID:      config.AccountID,
 			})
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
 			collectors = append(collectors, collector)
 		case serviceMSK:
-			// The AWS Price List API is served from a small set of endpoint regions.
-			// We standardize on us-east-1 for pricing lookups; the actual priced
-			// region is selected by the GetProducts filters.
-			pricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
-			if err != nil {
-				return nil, err
-			}
+			// The AWS Pricing API is only available in us-east-1 and ap-south-1.
+			// Copy the already-loaded config and pin the region to us-east-1 so
+			// MSK pricing lookups succeed regardless of the collector's configured regions.
+			mskPricingConfig := awsConfig.Copy()
+			mskPricingConfig.Region = "us-east-1"
 			awsMSKClient := client.NewAWSClient(client.Config{
-				PricingService: awsPricing.NewFromConfig(pricingConfig),
+				PricingService: awsPricing.NewFromConfig(mskPricingConfig),
 			})
-			collector := mskCollector.New(ctx, &mskCollector.Config{
+			collector, err := mskCollector.New(ctx, &mskCollector.Config{
 				Regions:   regions,
 				RegionMap: regionClients,
 				Client:    awsMSKClient,
 				Logger:    logger,
 				AccountID: config.AccountID,
 			})
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
 			collectors = append(collectors, collector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",
