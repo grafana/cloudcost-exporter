@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -193,7 +194,7 @@ func (pm *pricingMap) fetchEventHubsPricing(ctx context.Context, regions []strin
 		if byRegion[region] == nil {
 			byRegion[region] = make(map[string]float64)
 		}
-		byRegion[region][component] = maxFloat(byRegion[region][component], unitPrice)
+		byRegion[region][component] = math.Max(byRegion[region][component], unitPrice)
 	}
 
 	return byRegion, nil

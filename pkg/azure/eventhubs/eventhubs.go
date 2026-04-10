@@ -553,13 +553,6 @@ func usageKey(resourceID string) string {
 	return normalizeKey(resourceID)
 }
 
-func maxFloat(current, candidate float64) float64 {
-	if candidate > current {
-		return candidate
-	}
-	return current
-}
-
 func normalizeKey(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
