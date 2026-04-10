@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -135,6 +136,27 @@ func Test_selectProvider(t *testing.T) {
 			}
 			if tc.wantCollectorTimeout != 0 && capturedTimeout != tc.wantCollectorTimeout {
 				t.Errorf("collectorTimeout = %v, want %v", capturedTimeout, tc.wantCollectorTimeout)
+			}
+		})
+	}
+}
+
+func Test_expandAzureServices(t *testing.T) {
+	tests := map[string]struct {
+		in   config.StringSliceFlag
+		want []string
+	}{
+		"empty":                       {in: nil, want: nil},
+		"single token":                {in: config.StringSliceFlag{"blob"}, want: []string{"blob"}},
+		"comma separated in one flag": {in: config.StringSliceFlag{"AKS, blob"}, want: []string{"AKS", "blob"}},
+		"repeat flag":                 {in: config.StringSliceFlag{"AKS", "blob"}, want: []string{"AKS", "blob"}},
+		"trims and skips empty":       {in: config.StringSliceFlag{" AKS , ", ""}, want: []string{"AKS"}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := expandAzureServices(tt.in)
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("expandAzureServices(%#v) = %#v, want %#v", tt.in, got, tt.want)
 			}
 		})
 	}

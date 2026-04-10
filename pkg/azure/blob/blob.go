@@ -25,7 +25,7 @@ func newMetrics() metrics {
 	m := metrics{
 		StorageGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "storage_by_location_usd_per_gibyte_hour"),
-			Help: "Storage cost of Blob objects by region and class. Cost represented in USD/(GiB*h). No samples until Cost Management is integrated.",
+			Help: "Storage cost of blob objects by region and class. Cost represented in USD/(GiB*h). No samples until Cost Management is integrated.",
 		},
 			[]string{"region", "class"},
 		),
@@ -34,7 +34,7 @@ func newMetrics() metrics {
 	// Planned future work: register operation cost per 1k requests (labels region, class, tier) when Cost Management dimensions support it.
 	// m.OperationsGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 	// 	Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "operation_by_location_usd_per_krequest"),
-	// 	Help: "Operation cost of Blob objects by region, class, and tier. Cost represented in USD/(1k req). No samples until Cost Management is integrated.",
+	// 	Help: "Operation cost of blob objects by region, class, and tier. Cost represented in USD/(1k req). No samples until Cost Management is integrated.",
 	// },
 	// 	[]string{"region", "class", "tier"},
 	// )

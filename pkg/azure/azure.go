@@ -92,10 +92,11 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 		return nil, err
 	}
 
-	// Collector Registration
+	// Collector Registration (--azure.services matching is case-insensitive).
 	for _, svc := range config.Services {
-		switch strings.ToUpper(svc) {
-		case "AKS":
+		svc = strings.TrimSpace(svc)
+		switch {
+		case strings.EqualFold(svc, "AKS"):
 			collector, err := aks.New(ctx, &aks.Config{
 				Logger: logger,
 			}, azClientWrapper)
@@ -103,7 +104,7 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 				return nil, err
 			}
 			collectors = append(collectors, collector)
-		case "BLOB":
+		case strings.EqualFold(svc, "blob"):
 			collector, err := blob.New(&blob.Config{
 				Logger:         logger,
 				SubscriptionId: config.SubscriptionId,

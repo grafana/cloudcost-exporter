@@ -75,7 +75,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	fs.Var(config.NewDeprecatedStringSliceFlag(&cfg.Providers.GCP.Projects, &cfg.Providers.GCP.BucketProjectsDeprecated), "gcp.bucket-projects", "GCP project(s). (deprecated: use --gcp.projects instead)")
 	fs.Var(&cfg.Providers.AWS.Services, "aws.services", "AWS service(s).")
 	fs.Var(&cfg.Providers.AWS.ExcludeRegions, "aws.exclude-regions", "AWS region(s) to exclude from cost collection.")
-	fs.Var(&cfg.Providers.Azure.Services, "azure.services", "Azure service(s).")
+	fs.Var(&cfg.Providers.Azure.Services, "azure.services", "Azure service(s): AKS, blob (comma-separated and/or repeat flag; case-insensitive).")
 	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s).")
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
 	flag.StringVar(&cfg.Providers.AWS.RoleARN, "aws.roleARN", "", "Optional AWS role ARN to assume for cross-account access.")
@@ -224,6 +224,19 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 
 type newProviderFunc[T any] func(context.Context, T) (provider.Provider, error)
 
+// expandAzureServices flattens repeated -azure.services values and comma-separated tokens (parity with AWS/GCP flags).
+func expandAzureServices(flags config.StringSliceFlag) []string {
+	var out []string
+	for _, s := range flags {
+		for _, part := range strings.Split(s, ",") {
+			if t := strings.TrimSpace(part); t != "" {
+				out = append(out, t)
+			}
+		}
+	}
+	return out
+}
+
 func selectProviderWith(
 	ctx context.Context,
 	cfg *config.Config,
@@ -243,7 +256,7 @@ func selectProviderWith(
 			Logger:           cfg.Logger,
 			SubscriptionId:   cfg.Providers.Azure.SubscriptionId,
 			ScrapeInterval:   cfg.Collector.ScrapeInterval,
-			Services:         cfg.Providers.Azure.Services,
+			Services:         expandAzureServices(cfg.Providers.Azure.Services),
 			CollectorTimeout: collectorTimeout,
 		})
 	case "aws":
