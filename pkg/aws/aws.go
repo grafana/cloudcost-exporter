@@ -129,7 +129,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolving AWS account ID: %w", err)
 	}
-	config.AccountID = *identity.Account
+	config.AccountID = aws.ToString(identity.Account)
 
 	// Create per-region clients
 	awsClientPerRegion, err := newRegionClientMap(ctx, ac, regions, config.Profile, config.RoleARN)
