@@ -101,7 +101,10 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 				Logger: logger,
 			}, azClientWrapper)
 			if err != nil {
-				return nil, err
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", svc),
+					slog.String("message", err.Error()))
+				continue
 			}
 			collectors = append(collectors, collector)
 		case strings.EqualFold(svc, "blob"):
@@ -111,7 +114,10 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 				ScrapeInterval: config.ScrapeInterval,
 			})
 			if err != nil {
-				return nil, err
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", svc),
+					slog.String("message", err.Error()))
+				continue
 			}
 			collectors = append(collectors, collector)
 		default:
