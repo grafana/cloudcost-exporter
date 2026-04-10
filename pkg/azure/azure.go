@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/cloudcost-exporter/pkg/azure/aks"
+	"github.com/grafana/cloudcost-exporter/pkg/azure/blob"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
 	"github.com/grafana/cloudcost-exporter/pkg/collectormetrics"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -97,6 +98,14 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 			collector, err := aks.New(ctx, &aks.Config{
 				Logger: logger,
 			}, azClientWrapper)
+			if err != nil {
+				return nil, err
+			}
+			collectors = append(collectors, collector)
+		case "BLOB":
+			collector, err := blob.New(&blob.Config{
+				Logger: logger,
+			})
 			if err != nil {
 				return nil, err
 			}
