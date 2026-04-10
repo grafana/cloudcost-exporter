@@ -13,7 +13,8 @@ import (
 
 const subsystem = "azure_blob"
 
-// metrics holds Prometheus collectors for blob cost rates. Vectors stay empty until Cost Management data exists (no Set calls yet).
+// metrics holds Prometheus collectors for blob cost rates. Vectors are not registered on the root registry;
+// Azure's top-level Collector gathers them via Collect → GaugeVec.Collect (same pattern as pkg/azure/aks).
 type metrics struct {
 	StorageGauge *prometheus.GaugeVec
 	// Planned future work: operation request rate (parity with S3/GCS cloudcost_*_operation_by_location_usd_per_krequest).
@@ -42,7 +43,7 @@ func newMetrics() metrics {
 }
 
 // Collector implements provider.Collector for Azure Blob Storage cost metrics.
-// Cost Management integration is not implemented yet; registered metrics emit no series until Collect sets label values.
+// Cost Management integration is not implemented yet; there are no labeled series until Collect calls Set on the vec.
 type Collector struct {
 	logger         *slog.Logger
 	metrics        metrics
@@ -71,9 +72,10 @@ func New(cfg *Config) (*Collector, error) {
 	}, nil
 }
 
-// Collect satisfies provider.Collector. Does not call Set on cost vectors yet (no labeled series).
-func (c *Collector) Collect(ctx context.Context, _ chan<- prometheus.Metric) error {
+// Collect satisfies provider.Collector. Does not call Set on cost vectors yet; still forwards the vec on ch for the parent gatherer.
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "collecting metrics")
+	c.metrics.StorageGauge.Collect(ch)
 	return nil
 }
 
@@ -89,10 +91,9 @@ func (c *Collector) Name() string {
 	return subsystem
 }
 
-// Register satisfies provider.Collector.
-func (c *Collector) Register(registry provider.Registry) error {
-	registry.MustRegister(c.metrics.StorageGauge)
-	// Planned future work: registry.MustRegister(c.metrics.OperationsGauge)
+// Register satisfies provider.Collector. Does not register cost metrics on the registry (avoids duplicate Desc
+// with Azure's Describe fan-out; metrics are collected via Collect → StorageGauge.Collect).
+func (c *Collector) Register(_ provider.Registry) error {
 	c.logger.LogAttrs(context.Background(), slog.LevelInfo, "registering collector")
 	return nil
 }

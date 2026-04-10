@@ -2,7 +2,7 @@
 
 ## Status
 
-The `BLOB` service is registered when you pass `BLOB` in `--azure.services`. The collector **does not query Azure Cost Management yet**. One storage cost `GaugeVec` is **registered** and appears in `Describe`, but **there are no samples** because **`Collect` does not call `Set`** until that integration exists.
+The `BLOB` service is registered when you pass `BLOB` in `--azure.services`. The collector **does not query Azure Cost Management yet**. The storage cost `GaugeVec` appears in `Describe` but is **not** `MustRegister`'d on the root registry (same pattern as `azure_aks`); **`Collect` forwards** `StorageGauge.Collect(ch)` to the parent Azure gatherer. **There are no samples** until **`Collect` calls `Set`** on label values (not implemented yet).
 
 ## Planned behavior (see issue #54):
 
@@ -20,6 +20,7 @@ The `BLOB` service is registered when you pass `BLOB` in `--azure.services`. The
 ### Provider operational metrics
 
 - **`cloudcost_exporter_collector_*` with `collector="azure_blob"`** — same mechanism as other Azure collectors (e.g. `azure_aks`) via `pkg/azure/azure.go` and the shared gatherer pattern.
+- **Registry:** Blob cost `GaugeVec`s are not registered separately on the Prometheus registry; `Describe` lists them for the parent Azure collector, and **`Collect` forwards** `StorageGauge.Collect(ch)` so metric descriptors are not duplicated.
 
 ## Cost metrics
 
