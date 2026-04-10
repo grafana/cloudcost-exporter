@@ -3,6 +3,7 @@ package blob
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 	"github.com/prometheus/client_golang/prometheus"
@@ -43,20 +44,30 @@ func newMetrics() metrics {
 // Collector implements provider.Collector for Azure Blob Storage cost metrics.
 // Cost Management integration is not implemented yet; registered metrics emit no series until Collect sets label values.
 type Collector struct {
-	logger  *slog.Logger
-	metrics metrics
+	logger         *slog.Logger
+	metrics        metrics
+	subscriptionID string
+	scrapeInterval time.Duration
 }
 
 // Config holds settings for the blob collector.
 type Config struct {
-	Logger *slog.Logger
+	Logger         *slog.Logger
+	SubscriptionId string
+	ScrapeInterval time.Duration
 }
 
-// New builds a blob collector. It does not call Azure APIs.
+// New builds a blob collector. It does not call Azure APIs yet; subscription and interval are stored for Cost Management integration.
 func New(cfg *Config) (*Collector, error) {
+	interval := cfg.ScrapeInterval
+	if interval <= 0 {
+		interval = time.Hour
+	}
 	return &Collector{
-		logger:  cfg.Logger.With("collector", "blob"),
-		metrics: newMetrics(),
+		logger:         cfg.Logger.With("collector", "blob"),
+		metrics:        newMetrics(),
+		subscriptionID: cfg.SubscriptionId,
+		scrapeInterval: interval,
 	}, nil
 }
 

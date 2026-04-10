@@ -66,6 +66,7 @@ type Config struct {
 	Region string
 
 	SubscriptionId string
+	ScrapeInterval time.Duration
 
 	CollectorTimeout time.Duration
 	Services         []string
@@ -104,7 +105,9 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 			collectors = append(collectors, collector)
 		case "BLOB":
 			collector, err := blob.New(&blob.Config{
-				Logger: logger,
+				Logger:         logger,
+				SubscriptionId: config.SubscriptionId,
+				ScrapeInterval: config.ScrapeInterval,
 			})
 			if err != nil {
 				return nil, err

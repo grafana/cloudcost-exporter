@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
 	"github.com/prometheus/client_golang/prometheus"
@@ -42,4 +43,36 @@ func TestCollector_Register(t *testing.T) {
 	c, err := New(&Config{Logger: testLogger})
 	assert.NoError(t, err)
 	assert.NoError(t, c.Register(reg))
+}
+
+func TestNew_configPlumbing(t *testing.T) {
+	const subUUID = "11111111-1111-1111-1111-111111111111"
+	tests := map[string]struct {
+		subscriptionID string
+		scrapeInterval time.Duration
+		wantInterval   time.Duration
+	}{
+		"zero scrape interval defaults to one hour": {
+			subscriptionID: "sub-1",
+			scrapeInterval: 0,
+			wantInterval:   time.Hour,
+		},
+		"explicit subscription and interval": {
+			subscriptionID: subUUID,
+			scrapeInterval: 30 * time.Minute,
+			wantInterval:   30 * time.Minute,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			c, err := New(&Config{
+				Logger:         testLogger,
+				SubscriptionId: tt.subscriptionID,
+				ScrapeInterval: tt.scrapeInterval,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tt.subscriptionID, c.subscriptionID)
+			assert.Equal(t, tt.wantInterval, c.scrapeInterval)
+		})
+	}
 }

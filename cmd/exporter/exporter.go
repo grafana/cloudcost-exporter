@@ -242,6 +242,7 @@ func selectProviderWith(
 		return newAzure(ctx, &azure.Config{
 			Logger:           cfg.Logger,
 			SubscriptionId:   cfg.Providers.Azure.SubscriptionId,
+			ScrapeInterval:   cfg.Collector.ScrapeInterval,
 			Services:         cfg.Providers.Azure.Services,
 			CollectorTimeout: collectorTimeout,
 		})
