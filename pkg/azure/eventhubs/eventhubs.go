@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"strings"
 	"time"
@@ -129,7 +130,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		if err != nil {
 			c.logger.Warn(
 				"skipping unsupported or incomplete Event Hubs namespace",
-				"namespace", armString(namespace.Name),
+				"namespace", utils.StringValue(namespace.Name),
 				"error", err,
 			)
 			continue
@@ -255,17 +256,17 @@ func buildNamespacePricingData(namespace *armeventhub.EHNamespace) (namespacePri
 		return namespacePricingData{}, fmt.Errorf("namespace is nil")
 	}
 
-	namespaceID := armString(namespace.ID)
+	namespaceID := utils.StringValue(namespace.ID)
 	if namespaceID == "" {
 		return namespacePricingData{}, fmt.Errorf("namespace ID is missing")
 	}
 
-	namespaceName := armString(namespace.Name)
+	namespaceName := utils.StringValue(namespace.Name)
 	if namespaceName == "" {
 		return namespacePricingData{}, fmt.Errorf("namespace name is missing")
 	}
 
-	region := strings.ToLower(strings.TrimSpace(armString(namespace.Location)))
+	region := strings.ToLower(strings.TrimSpace(utils.StringValue(namespace.Location)))
 	if region == "" {
 		return namespacePricingData{}, fmt.Errorf("namespace location is missing")
 	}
@@ -361,9 +362,7 @@ func (c *Collector) collectIncomingUsage(ctx context.Context, region string, res
 			return nil, err
 		}
 
-		for key, namespaceUsage := range batchUsage {
-			usage[key] = namespaceUsage
-		}
+		maps.Copy(usage, batchUsage)
 	}
 
 	return usage, nil
@@ -390,9 +389,7 @@ func (c *Collector) collectSizeUsage(ctx context.Context, region string, resourc
 			return nil, err
 		}
 
-		for key, averageSizeBytes := range batchUsage {
-			usage[key] = averageSizeBytes
-		}
+		maps.Copy(usage, batchUsage)
 	}
 
 	return usage, nil
@@ -563,10 +560,7 @@ func chunkStrings(values []string, size int) [][]string {
 
 	chunks := make([][]string, 0, (len(values)+size-1)/size)
 	for start := 0; start < len(values); start += size {
-		end := start + size
-		if end > len(values) {
-			end = len(values)
-		}
+		end := min(start+size, len(values))
 		chunks = append(chunks, values[start:end])
 	}
 	return chunks
@@ -581,13 +575,6 @@ func localizableValue(value *azmetrics.LocalizableString) string {
 
 func usageKey(resourceID string) string {
 	return strings.ToLower(strings.TrimSpace(resourceID))
-}
-
-func armString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
 }
 
 func maxFloat(current, candidate float64) float64 {

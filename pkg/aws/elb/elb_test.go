@@ -16,6 +16,7 @@ import (
 
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	mock_client "github.com/grafana/cloudcost-exporter/pkg/aws/client/mocks"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 func TestNew(t *testing.T) {
@@ -25,7 +26,7 @@ func TestNew(t *testing.T) {
 	config := &Config{
 		ScrapeInterval: time.Minute,
 		Regions: []ec2Types.Region{
-			{RegionName: stringPtr("us-east-1")},
+			{RegionName: utils.StringPtr("us-east-1")},
 		},
 		PricingClient: mockClient,
 		RegionMap: map[string]client.Client{
@@ -89,11 +90,11 @@ func TestCollectRegionLoadBalancers(t *testing.T) {
 	mockClient := mock_client.NewMockClient(ctrl)
 	mockClient.EXPECT().DescribeLoadBalancers(gomock.Any()).Return([]elbTypes.LoadBalancer{
 		{
-			LoadBalancerName: stringPtr("test-alb"),
+			LoadBalancerName: utils.StringPtr("test-alb"),
 			Type:             elbTypes.LoadBalancerTypeEnumApplication,
 		},
 		{
-			LoadBalancerName: stringPtr("test-nlb"),
+			LoadBalancerName: utils.StringPtr("test-nlb"),
 			Type:             elbTypes.LoadBalancerTypeEnumNetwork,
 		},
 	}, nil)
@@ -173,8 +174,8 @@ func TestRefresh(t *testing.T) {
 
 	pm := NewELBPricingMap(slog.Default())
 	regions := []ec2Types.Region{
-		{RegionName: stringPtr("us-east-1")},
-		{RegionName: stringPtr("us-west-2")},
+		{RegionName: utils.StringPtr("us-east-1")},
+		{RegionName: utils.StringPtr("us-west-2")},
 	}
 
 	err := pm.refresh(t.Context(), mockClient, regions)
@@ -185,8 +186,4 @@ func TestRefresh(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 0.0225, pricing.ALBHourlyRate[LoadBalancerUsage])
 	}
-}
-
-func stringPtr(s string) *string {
-	return &s
 }

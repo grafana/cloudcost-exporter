@@ -65,7 +65,7 @@ func Test_NewWithDependencies(t *testing.T) {
 			name:     "empty services list creates no collectors",
 			services: []string{},
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
 			},
 			setupRegionClients: map[string]client.Client{},
 			expectedCollectors: 0,
@@ -81,7 +81,7 @@ func Test_NewWithDependencies(t *testing.T) {
 			name:     "single S3 service creates S3 collector",
 			services: []string{"S3"},
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
 			},
 			setupMockClient: func(m *mock_client.MockClient) {
 				m.EXPECT().DescribeRegions(gomock.Any(), false).Return(nil, nil)
@@ -96,8 +96,8 @@ func Test_NewWithDependencies(t *testing.T) {
 			name:     "multiple services create multiple collectors",
 			services: []string{"S3", "EC2"},
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
-				{RegionName: stringPtr("us-west-2")},
+				{RegionName: utils.StringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("us-west-2")},
 			},
 			setupMockClient: func(m *mock_client.MockClient) {
 				m.EXPECT().DescribeRegions(gomock.Any(), false).Return(nil, nil)
@@ -115,7 +115,7 @@ func Test_NewWithDependencies(t *testing.T) {
 			name:     "unknown service is skipped",
 			services: []string{"UNKNOWN_SERVICE"},
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
 			},
 			setupRegionClients: map[string]client.Client{},
 			expectedCollectors: 0,
@@ -127,7 +127,7 @@ func Test_NewWithDependencies(t *testing.T) {
 			name:     "case insensitive service names",
 			services: []string{"s3", "S3"},
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
 			},
 			setupMockClient: func(m *mock_client.MockClient) {
 				m.EXPECT().DescribeRegions(gomock.Any(), false).Return(nil, nil).Times(2)
@@ -142,7 +142,7 @@ func Test_NewWithDependencies(t *testing.T) {
 			name:     "ELB service creates ELB collector",
 			services: []string{"ELB"},
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
 			},
 			setupRegionClients: map[string]client.Client{
 				"us-east-1": nil,
@@ -173,7 +173,7 @@ func Test_NewWithDependencies(t *testing.T) {
 			name:     "MSK service creates MSK collector",
 			services: []string{"MSK"},
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
 			},
 			setupRegionClients: map[string]client.Client{
 				"us-east-1": &mockRegionClient{},
@@ -262,11 +262,6 @@ func Test_NewWithDependencies(t *testing.T) {
 	}
 }
 
-// Helper function to create string pointers
-func stringPtr(s string) *string {
-	return &s
-}
-
 func Test_filterExcludedRegions(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -277,74 +272,74 @@ func Test_filterExcludedRegions(t *testing.T) {
 		{
 			name: "empty exclude list returns regions unchanged",
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
-				{RegionName: stringPtr("me-central-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("me-central-1")},
 			},
 			excludeList: nil,
 			want: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
-				{RegionName: stringPtr("me-central-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("me-central-1")},
 			},
 		},
 		{
 			name: "empty exclude list slice returns regions unchanged",
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
 			},
 			excludeList: []string{},
 			want: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
 			},
 		},
 		{
 			name: "one excluded region is removed",
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
-				{RegionName: stringPtr("me-central-1")},
-				{RegionName: stringPtr("eu-west-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("me-central-1")},
+				{RegionName: utils.StringPtr("eu-west-1")},
 			},
 			excludeList: []string{"me-central-1"},
 			want: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
-				{RegionName: stringPtr("eu-west-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("eu-west-1")},
 			},
 		},
 		{
 			name: "multiple excluded regions are removed",
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
-				{RegionName: stringPtr("me-central-1")},
-				{RegionName: stringPtr("me-south-1")},
-				{RegionName: stringPtr("eu-west-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("me-central-1")},
+				{RegionName: utils.StringPtr("me-south-1")},
+				{RegionName: utils.StringPtr("eu-west-1")},
 			},
 			excludeList: []string{"me-central-1", "me-south-1"},
 			want: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
-				{RegionName: stringPtr("eu-west-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("eu-west-1")},
 			},
 		},
 		{
 			name: "exclude list entries are trimmed of whitespace",
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
-				{RegionName: stringPtr("me-central-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("me-central-1")},
 			},
 			excludeList: []string{"  me-central-1  "},
 			want: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
 			},
 		},
 		{
 			name: "nil RegionName is omitted when filtering",
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
 				{RegionName: nil},
-				{RegionName: stringPtr("eu-west-1")},
+				{RegionName: utils.StringPtr("eu-west-1")},
 			},
 			excludeList: []string{"other"}, // non-empty so we run the filter loop; nil is skipped
 			want: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
-				{RegionName: stringPtr("eu-west-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("eu-west-1")},
 			},
 		},
 		{
@@ -356,8 +351,8 @@ func Test_filterExcludedRegions(t *testing.T) {
 		{
 			name: "all regions excluded returns empty",
 			regions: []types.Region{
-				{RegionName: stringPtr("me-central-1")},
-				{RegionName: stringPtr("me-south-1")},
+				{RegionName: utils.StringPtr("me-central-1")},
+				{RegionName: utils.StringPtr("me-south-1")},
 			},
 			excludeList: []string{"me-central-1", "me-south-1"},
 			want:        []types.Region{},
@@ -631,7 +626,7 @@ func Test_AllCostMetricDescsIncludeAccountID(t *testing.T) {
 		AccountID:      "123456789012",
 	}
 
-	regions := []types.Region{{RegionName: stringPtr("us-east-1")}}
+	regions := []types.Region{{RegionName: utils.StringPtr("us-east-1")}}
 	awsConfig := aws.Config{Region: "us-east-1"}
 	pricingConfig := aws.Config{Region: "us-east-1"}
 	a, err := newWithDependencies(t.Context(), config, mockClient, regionClients, regions, awsConfig, pricingConfig)
