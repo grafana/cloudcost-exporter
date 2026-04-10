@@ -31,14 +31,14 @@ var (
 		subsystem,
 		"hourly_rate_usd_per_hour",
 		"Hourly cost of NAT Gateway by region. Cost represented in USD/hour",
-		[]string{"region"},
+		[]string{"account_id", "region"},
 	)
 	DataProcessingGaugeDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
 		"data_processing_usd_per_gb",
 		"Data processing cost of NAT Gateway by region. Cost represented in USD/GB",
-		[]string{"region"},
+		[]string{"account_id", "region"},
 	)
 )
 
@@ -49,7 +49,8 @@ type Collector struct {
 	regions        []string
 	PricingStore   pricingstore.PricingStoreRefresher
 
-	logger *slog.Logger
+	logger    *slog.Logger
+	accountID string
 }
 
 func New(ctx context.Context, config *Config) *Collector {
@@ -76,6 +77,7 @@ func New(ctx context.Context, config *Config) *Collector {
 		scrapeInterval: config.ScrapeInterval,
 		regions:        slices.Collect(maps.Keys(config.RegionMap)),
 		PricingStore:   pricingStore,
+		accountID:      config.AccountID,
 	}
 }
 
@@ -84,6 +86,7 @@ type Config struct {
 	Regions        []ec2Types.Region
 	Logger         *slog.Logger
 	RegionMap      map[string]awsclient.Client
+	AccountID      string
 }
 
 func (c *Collector) Name() string { return strings.ToUpper(serviceName) }
@@ -122,10 +125,10 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 
 		// Emit at most one sample per metric/region to satisfy Prometheus uniqueness constraints
 		if hourlyPrice > 0 {
-			ch <- prometheus.MustNewConstMetric(HourlyGaugeDesc, prometheus.GaugeValue, hourlyPrice, region)
+			ch <- prometheus.MustNewConstMetric(HourlyGaugeDesc, prometheus.GaugeValue, hourlyPrice, c.accountID, region)
 		}
 		if dataProcessingPrice > 0 {
-			ch <- prometheus.MustNewConstMetric(DataProcessingGaugeDesc, prometheus.GaugeValue, dataProcessingPrice, region)
+			ch <- prometheus.MustNewConstMetric(DataProcessingGaugeDesc, prometheus.GaugeValue, dataProcessingPrice, c.accountID, region)
 		}
 	}
 

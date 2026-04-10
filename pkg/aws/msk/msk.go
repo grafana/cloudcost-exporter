@@ -33,14 +33,14 @@ var (
 		subsystem,
 		"compute_hourly_rate_usd_per_hour",
 		"Hourly cost of AWS MSK broker compute by cluster. Cost represented in USD/hour",
-		[]string{"region", "cluster_name", "cluster_arn", "instance_type"},
+		[]string{"account_id", "region", "cluster_name", "cluster_arn", "instance_type"},
 	)
 	StorageHourlyGaugeDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		"storage_hourly_rate_usd_per_hour",
 		"Hourly cost of AWS MSK provisioned storage by cluster. Cost represented in USD/hour",
-		[]string{"region", "cluster_name", "cluster_arn"},
+		[]string{"account_id", "region", "cluster_name", "cluster_arn"},
 	)
 	brokerPriceFilters = []pricingtypes.Filter{
 		{
@@ -88,6 +88,7 @@ type Collector struct {
 	regionMap    map[string]client.Client
 	pricingStore pricingstore.PricingStoreRefresher
 	logger       *slog.Logger
+	accountID    string
 }
 
 type Config struct {
@@ -95,6 +96,7 @@ type Config struct {
 	RegionMap map[string]client.Client
 	Client    client.Client
 	Logger    *slog.Logger
+	AccountID string
 }
 
 type clusterPricingData struct {
@@ -135,6 +137,7 @@ func New(ctx context.Context, config *Config) *Collector {
 		regionMap:    config.RegionMap,
 		pricingStore: pricingStore,
 		logger:       logger,
+		accountID:    config.AccountID,
 	}
 }
 
@@ -201,6 +204,7 @@ func (c *Collector) collectCluster(ch chan<- prometheus.Metric, snapshot pricing
 		ComputeHourlyGaugeDesc,
 		prometheus.GaugeValue,
 		computeHourlyRate,
+		c.accountID,
 		region,
 		clusterData.clusterName,
 		clusterData.clusterARN,
@@ -210,6 +214,7 @@ func (c *Collector) collectCluster(ch chan<- prometheus.Metric, snapshot pricing
 		StorageHourlyGaugeDesc,
 		prometheus.GaugeValue,
 		storageHourlyRate,
+		c.accountID,
 		region,
 		clusterData.clusterName,
 		clusterData.clusterARN,

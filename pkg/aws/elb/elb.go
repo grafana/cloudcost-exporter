@@ -28,14 +28,14 @@ var (
 		subsystem,
 		"loadbalancer_usage_total_usd_per_hour",
 		"The total cost of hourly usage of the load balancer in USD/h",
-		[]string{"name", "region", "type"},
+		[]string{"account_id", "name", "region", "type"},
 	)
 	LoadBalancerCapacityUnitsUsageHourlyCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		"loadbalancer_capacity_units_total_usd_per_hour",
 		"The total cost of Load Balancer Capacity units (LCU) used in USD/hour",
-		[]string{"name", "region", "type"},
+		[]string{"account_id", "name", "region", "type"},
 	)
 )
 
@@ -46,6 +46,7 @@ type Collector struct {
 	awsRegionClientMap map[string]client.Client
 	NextScrape         time.Time
 	logger             *slog.Logger
+	accountID          string
 }
 
 type Config struct {
@@ -53,6 +54,7 @@ type Config struct {
 	Regions        []ec2Types.Region
 	RegionClients  map[string]client.Client
 	Logger         *slog.Logger
+	AccountID      string
 }
 
 type LoadBalancerInfo struct {
@@ -87,6 +89,7 @@ func New(config *Config) *Collector {
 		awsRegionClientMap: config.RegionClients,
 		logger:             config.Logger,
 		pricingMap:         NewELBPricingMap(config.Logger),
+		accountID:          config.AccountID,
 	}
 }
 
@@ -123,6 +126,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				LoadBalancerUsageHourlyCostDesc,
 				prometheus.GaugeValue,
 				lb.LoadBalancerUsageCost,
+				c.accountID,
 				lb.Name,
 				lb.Region,
 				string(lb.Type),
@@ -136,6 +140,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				LoadBalancerCapacityUnitsUsageHourlyCostDesc,
 				prometheus.GaugeValue,
 				lb.LCUUsageCost,
+				c.accountID,
 				lb.Name,
 				lb.Region,
 				string(lb.Type),
