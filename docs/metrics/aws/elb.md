@@ -18,11 +18,12 @@ providers:
 
 | Metric Name | Type | Description | Labels |
 |-------------|------|-------------|--------|
-| `cloudcost_aws_elb_loadbalancer_usage_total_usd_per_hour` | Gauge | The total cost of hourly usage of the load balancer in USD/h | `name`, `region`, `type` |
-| `cloudcost_aws_elb_loadbalancer_capacity_units_total_usd_per_hour` | Gauge | The total cost of Load Balancer Capacity units (LCU) used in USD/hour | `name`, `region`, `type` |
+| `cloudcost_aws_elb_loadbalancer_usage_total_usd_per_hour` | Gauge | The total cost of hourly usage of the load balancer in USD/h | `account_id`, `name`, `region`, `type` |
+| `cloudcost_aws_elb_loadbalancer_capacity_units_total_usd_per_hour` | Gauge | The total cost of Load Balancer Capacity units (LCU) used in USD/hour | `account_id`, `name`, `region`, `type` |
 
 ### Labels
 
+- **account_id**: AWS account ID (12-digit), resolved via STS GetCallerIdentity
 - **name**: Load balancer name
 - **region**: AWS region (e.g., `us-east-1`)
 - **type**: Load balancer type (`application` or `network`)

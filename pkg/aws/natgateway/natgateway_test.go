@@ -71,6 +71,7 @@ func TestNew(t *testing.T) {
 				RegionMap: map[string]awsclient.Client{
 					tt.regionName: tt.regionClient,
 				},
+				AccountID: "123456789012",
 			})
 			require.NoError(t, err)
 			assert.NotNil(t, collector)
@@ -177,8 +178,8 @@ func TestCollector_Collect(t *testing.T) {
 				return m
 			}(),
 			expectedMetrics: []prometheus.Metric{
-				prometheus.MustNewConstMetric(natgateway.HourlyGaugeDesc, prometheus.GaugeValue, 0.045, "us-east-1"),
-				prometheus.MustNewConstMetric(natgateway.DataProcessingGaugeDesc, prometheus.GaugeValue, 0.045, "us-east-1"),
+				prometheus.MustNewConstMetric(natgateway.HourlyGaugeDesc, prometheus.GaugeValue, 0.045, "123456789012", "us-east-1"),
+				prometheus.MustNewConstMetric(natgateway.DataProcessingGaugeDesc, prometheus.GaugeValue, 0.045, "123456789012", "us-east-1"),
 			},
 		},
 	}
@@ -193,6 +194,7 @@ func TestCollector_Collect(t *testing.T) {
 				RegionMap: map[string]awsclient.Client{
 					region: tt.regionClient,
 				},
+				AccountID: "123456789012",
 			})
 			require.NoError(t, err)
 
@@ -242,6 +244,7 @@ func TestCollector_CollectAggregatesMultipleUsageTypesPerRegion(t *testing.T) {
 		RegionMap: map[string]awsclient.Client{
 			region: regionClient,
 		},
+		AccountID: "123456789012",
 	})
 	require.NoError(t, err)
 

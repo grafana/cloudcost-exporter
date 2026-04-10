@@ -30,6 +30,7 @@ func TestCollector_Name(t *testing.T) {
 		collector, err := New(context.Background(), &Config{
 			Logger:         logger,
 			ScrapeInterval: time.Minute,
+			AccountID:      "123456789012",
 		})
 		require.NoError(t, err)
 		assert.Equal(t, subsystem, collector.Name())
@@ -43,6 +44,7 @@ func TestNew(t *testing.T) {
 			Regions:        regions,
 			Logger:         logger,
 			ScrapeInterval: time.Minute,
+			AccountID:      "123456789012",
 			RegionMap:      map[string]client.Client{}, // Empty map - no client
 		})
 		assert.ErrorIs(t, err, ErrClientNotFound)
@@ -57,6 +59,7 @@ func TestNew(t *testing.T) {
 			Regions:        regions,
 			Logger:         logger,
 			ScrapeInterval: time.Minute,
+			AccountID:      "123456789012",
 			RegionMap: map[string]client.Client{
 				"us-east-1": mock,
 			},
@@ -78,6 +81,7 @@ func TestNew(t *testing.T) {
 			Regions:        regions,
 			Logger:         logger,
 			ScrapeInterval: time.Minute,
+			AccountID:      "123456789012",
 			RegionMap: map[string]client.Client{
 				"us-east-1": mock,
 			},
@@ -101,6 +105,7 @@ func TestNew(t *testing.T) {
 			Regions:        regions,
 			Logger:         logger,
 			ScrapeInterval: time.Minute,
+			AccountID:      "123456789012",
 			RegionMap: map[string]client.Client{
 				"us-east-1": mock,
 			},
@@ -125,6 +130,7 @@ func TestCollector_Collect(t *testing.T) {
 		collector, err := New(context.Background(), &Config{
 			Logger:         logger,
 			ScrapeInterval: time.Minute,
+			AccountID:      "123456789012",
 		})
 		require.NoError(t, err)
 		ch := make(chan prometheus.Metric)
@@ -230,6 +236,7 @@ func TestCollector_Collect(t *testing.T) {
 			Regions:        regions,
 			Logger:         logger,
 			ScrapeInterval: time.Minute,
+			AccountID:      "123456789012",
 			RegionMap: map[string]client.Client{
 				"us-east-1": c,
 			},
@@ -374,6 +381,7 @@ func Test_FetchVolumesData(t *testing.T) {
 			Regions:        []ec2Types.Region{region},
 			Logger:         logger,
 			ScrapeInterval: time.Minute,
+			AccountID:      "123456789012",
 			RegionMap: map[string]client.Client{
 				regionName: c,
 			},
@@ -428,6 +436,7 @@ func Test_EmitMetricsFromVolumesChannel(t *testing.T) {
 			Regions:        []ec2Types.Region{region},
 			Logger:         logger,
 			ScrapeInterval: time.Minute,
+			AccountID:      "123456789012",
 			RegionMap: map[string]client.Client{
 				regionName: c,
 			},

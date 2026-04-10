@@ -12,6 +12,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,6 +44,10 @@ func (m *mockRegionClient) ListStoragePrices(ctx context.Context, region string)
 	return []string{}, nil
 }
 
+func (m *mockRegionClient) ListEC2ServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
+	return []string{}, nil
+}
+
 // Test_NewWithDependencies tests the newWithDependencies function with mock clients.
 // This tests the core logic of New() without requiring AWS credentials or network access.
 func Test_NewWithDependencies(t *testing.T) {
@@ -69,6 +74,7 @@ func Test_NewWithDependencies(t *testing.T) {
 				assert.NotNil(t, aws.Config)
 				assert.NotNil(t, aws.logger)
 				assert.Equal(t, 0, len(aws.collectors))
+				assert.Equal(t, "123456789012", aws.Config.AccountID)
 			},
 		},
 		{
@@ -188,6 +194,7 @@ func Test_NewWithDependencies(t *testing.T) {
 				Region:         "us-east-1",
 				ScrapeInterval: 60 * time.Second,
 				Logger:         logger,
+				AccountID:      "123456789012",
 			}
 
 			// Call function
@@ -560,4 +567,53 @@ func Test_CollectMetrics(t *testing.T) {
 			assert.ElementsMatch(t, metrics, tt.expectedMetrics)
 		})
 	}
+}
+
+// Test_AllCostMetricDescsIncludeAccountID verifies that every cost metric
+// (cloudcost_aws_*) described by the AWS provider includes an "account_id"
+// variable label. This catches new collectors that forget to add it.
+func Test_AllCostMetricDescsIncludeAccountID(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockClient := mock_client.NewMockClient(ctrl)
+	mockClient.EXPECT().DescribeRegions(gomock.Any(), false).Return(nil, nil).AnyTimes()
+
+	regionClients := map[string]client.Client{
+		"us-east-1": &mockRegionClient{},
+	}
+
+	// Create provider with all services that implement Describe.
+	// S3 and RDS return nil from Describe, so they won't contribute Descs,
+	// but EC2, ELB, NATGATEWAY, VPC, and MSK all do.
+	allServices := []string{serviceEC2, serviceELB, serviceNATGW, serviceVPC, serviceMSK}
+	config := &Config{
+		Services:       allServices,
+		Region:         "us-east-1",
+		ScrapeInterval: 60 * time.Second,
+		Logger:         logger,
+		AccountID:      "123456789012",
+	}
+
+	regions := []types.Region{{RegionName: stringPtr("us-east-1")}}
+	awsConfig := aws.Config{Region: "us-east-1"}
+	a, err := newWithDependencies(t.Context(), config, mockClient, regionClients, regions, awsConfig)
+	require.NoError(t, err)
+
+	ch := make(chan *prometheus.Desc, 100)
+	a.Describe(ch)
+	close(ch)
+
+	var costDescs int
+	for desc := range ch {
+		s := desc.String()
+		// Only check cost metrics (cloudcost_aws_*), skip operational metrics (cloudcost_exporter_*).
+		if !strings.Contains(s, `fqName: "cloudcost_aws_`) {
+			continue
+		}
+		costDescs++
+		assert.Contains(t, s, "account_id",
+			"cost metric Desc must include account_id label: %s", s)
+	}
+	// Sanity check: we should have found at least one Desc per service that implements Describe.
+	assert.GreaterOrEqual(t, costDescs, len(allServices),
+		"expected at least %d cost metric Descs from %d services", len(allServices), len(allServices))
 }

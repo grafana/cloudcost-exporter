@@ -39,7 +39,7 @@ func TestNewCollector(t *testing.T) {
 			c := mock_client.NewMockClient(ctrl)
 			c.EXPECT().DescribeRegions(gomock.Any(), false).Return(nil, nil)
 
-			got, err := New(context.Background(), tt.args.interval, c)
+			got, err := New(context.Background(), tt.args.interval, c, "123456789012")
 			assert.NoError(t, err)
 			assert.NotNil(t, got)
 			assert.Equal(t, tt.args.interval, got.interval)
@@ -119,11 +119,11 @@ func TestCollector_Collect(t *testing.T) {
 			expectedExposition: `
 # HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
-cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
-cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
+cloudcost_aws_s3_operation_by_location_usd_per_krequest{account_id="123456789012",class="StandardStorage",region="ap-northeast-1",tier="1"} 0
+cloudcost_aws_s3_operation_by_location_usd_per_krequest{account_id="123456789012",class="StandardStorage",region="ap-northeast-2",tier="2"} 0
 # HELP cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour Storage cost of S3 objects by region, class, and tier. Cost represented in USD/(GiB*h)
 # TYPE cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour gauge
-cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage",region="ap-northeast-3"} 0
+cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{account_id="123456789012",class="StandardStorage",region="ap-northeast-3"} 0
 `,
 		},
 		{
@@ -150,8 +150,8 @@ cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage"
 			expectedExposition: `
 # HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
-cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
-cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-2",tier="2"} 0
+cloudcost_aws_s3_operation_by_location_usd_per_krequest{account_id="123456789012",class="StandardStorage",region="ap-northeast-1",tier="1"} 0
+cloudcost_aws_s3_operation_by_location_usd_per_krequest{account_id="123456789012",class="StandardStorage",region="ap-northeast-2",tier="2"} 0
 `,
 		},
 		{
@@ -173,7 +173,7 @@ cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",
 			expectedExposition: `
 # HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
-cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
+cloudcost_aws_s3_operation_by_location_usd_per_krequest{account_id="123456789012",class="StandardStorage",region="ap-northeast-1",tier="1"} 0
 `,
 		},
 		{
@@ -198,7 +198,7 @@ cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",
 			expectedExposition: `
 # HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
-cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 0
+cloudcost_aws_s3_operation_by_location_usd_per_krequest{account_id="123456789012",class="StandardStorage",region="ap-northeast-1",tier="1"} 0
 `,
 		},
 		{
@@ -222,7 +222,7 @@ cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",
 			expectedExposition: `
 # HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
-cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 1000
+cloudcost_aws_s3_operation_by_location_usd_per_krequest{account_id="123456789012",class="StandardStorage",region="ap-northeast-1",tier="1"} 1000
 `,
 		},
 		{
@@ -258,11 +258,11 @@ cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",
 			expectedExposition: `
 # HELP cloudcost_aws_s3_operation_by_location_usd_per_krequest Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)
 # TYPE cloudcost_aws_s3_operation_by_location_usd_per_krequest gauge
-cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="1"} 1000
-cloudcost_aws_s3_operation_by_location_usd_per_krequest{class="StandardStorage",region="ap-northeast-1",tier="2"} 1000
+cloudcost_aws_s3_operation_by_location_usd_per_krequest{account_id="123456789012",class="StandardStorage",region="ap-northeast-1",tier="1"} 1000
+cloudcost_aws_s3_operation_by_location_usd_per_krequest{account_id="123456789012",class="StandardStorage",region="ap-northeast-1",tier="2"} 1000
 # HELP cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour Storage cost of S3 objects by region, class, and tier. Cost represented in USD/(GiB*h)
 # TYPE cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour gauge
-cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage",region="ap-northeast-1"} 0.0013689253935660506
+cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{account_id="123456789012",class="StandardStorage",region="ap-northeast-1"} 0.0013689253935660506
 `,
 		},
 	} {
@@ -283,6 +283,7 @@ cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{class="StandardStorage"
 				client:     client,
 				nextScrape: tc.nextScrape,
 				metrics:    NewMetrics(),
+				accountID:  "123456789012",
 			}
 			err := c.Collect(context.Background(), nil)
 			if tc.expectedResponse == 0 {
@@ -310,9 +311,10 @@ func TestCollector_MultipleCalls(t *testing.T) {
 			Return(&client.BillingData{}, nil)
 
 		c := &Collector{
-			client:   ce,
-			metrics:  NewMetrics(),
-			interval: 1 * time.Hour,
+			client:    ce,
+			metrics:   NewMetrics(),
+			interval:  1 * time.Hour,
+			accountID: "123456789012",
 		}
 		err := c.Collect(context.Background(), nil)
 		require.NoError(t, err)
@@ -357,8 +359,9 @@ func TestCollector_MultipleCalls(t *testing.T) {
 			Times(goroutines * collectCalls)
 
 		c := &Collector{
-			client:  ce,
-			metrics: NewMetrics(),
+			client:    ce,
+			metrics:   NewMetrics(),
+			accountID: "123456789012",
 		}
 
 		for i := 0; i < goroutines; i++ {

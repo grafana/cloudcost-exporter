@@ -41,14 +41,14 @@ func NewMetrics() Metrics {
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "storage_by_location_usd_per_gibyte_hour"),
 			Help: "Storage cost of S3 objects by region, class, and tier. Cost represented in USD/(GiB*h)",
 		},
-			[]string{"region", "class"},
+			[]string{"account_id", "region", "class"},
 		),
 
 		OperationsGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "operation_by_location_usd_per_krequest"),
 			Help: "Operation cost of S3 objects by region, class, and tier. Cost represented in USD/(1k req)",
 		},
-			[]string{"region", "class", "tier"},
+			[]string{"account_id", "region", "class", "tier"},
 		),
 
 		NextScrapeGauge: prometheus.NewGauge(prometheus.GaugeOpts{
@@ -68,6 +68,7 @@ type Collector struct {
 	metrics     Metrics
 	billingData *client.BillingData
 	m           sync.RWMutex
+	accountID   string
 }
 
 // Describe is used to register the metrics with the Prometheus client
@@ -92,12 +93,12 @@ func (c *Collector) Collect(ctx context.Context, _ chan<- prometheus.Metric) err
 		c.nextScrape = time.Now().Add(c.interval)
 		c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
 	}
-	exportMetrics(c.billingData, c.metrics)
+	exportMetrics(c.billingData, c.metrics, c.accountID)
 	return nil
 }
 
 // New creates a new Collector with a client and scrape interval defined.
-func New(ctx context.Context, scrapeInterval time.Duration, client client.Client) (*Collector, error) {
+func New(ctx context.Context, scrapeInterval time.Duration, client client.Client, accountID string) (*Collector, error) {
 	awsRegions, err := client.DescribeRegions(ctx, false)
 	if err != nil {
 		slog.Warn("failed to describe regions for S3 collector", "error", err)
@@ -116,6 +117,7 @@ func New(ctx context.Context, scrapeInterval time.Duration, client client.Client
 		nextScrape: time.Now().Add(-scrapeInterval),
 		metrics:    NewMetrics(),
 		m:          sync.RWMutex{},
+		accountID:  accountID,
 	}, nil
 }
 
@@ -138,17 +140,17 @@ func (c *Collector) Register(registry provider.Registry) error {
 }
 
 // exportMetrics will iterate over the S3BillingData and export the metrics to prometheus
-func exportMetrics(s3BillingData *client.BillingData, m Metrics) {
+func exportMetrics(s3BillingData *client.BillingData, m Metrics, accountID string) {
 	slog.Info("Exporting metrics", "regions", len(s3BillingData.Regions))
 	for region, pricingModel := range s3BillingData.Regions {
 		for component, pricing := range pricingModel.Model {
 			switch component {
 			case "Requests-Tier1":
-				m.OperationsGauge.WithLabelValues(region, StandardLabel, "1").Set(pricing.UnitCost)
+				m.OperationsGauge.WithLabelValues(accountID, region, StandardLabel, "1").Set(pricing.UnitCost)
 			case "Requests-Tier2":
-				m.OperationsGauge.WithLabelValues(region, StandardLabel, "2").Set(pricing.UnitCost)
+				m.OperationsGauge.WithLabelValues(accountID, region, StandardLabel, "2").Set(pricing.UnitCost)
 			case "TimedStorage":
-				m.StorageGauge.WithLabelValues(region, StandardLabel).Set(pricing.UnitCost)
+				m.StorageGauge.WithLabelValues(accountID, region, StandardLabel).Set(pricing.UnitCost)
 			}
 		}
 	}

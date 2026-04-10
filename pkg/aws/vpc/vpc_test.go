@@ -131,6 +131,7 @@ func TestNew(t *testing.T) {
 		Regions:        regions,
 		Logger:         logger,
 		Client:         mockClient, // Add the dedicated client
+		AccountID:      "123456789012",
 	})
 
 	assert.NoError(t, err)

@@ -30,35 +30,35 @@ var (
 		subsystem,
 		"endpoint_hourly_rate_usd_per_hour",
 		"Hourly cost of VPC endpoints by region and type. Cost represented in USD/hour",
-		[]string{"region", "endpoint_type"},
+		[]string{"account_id", "region", "endpoint_type"},
 	)
 	VPCEndpointServiceHourlyGaugeDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
 		"endpoint_service_hourly_rate_usd_per_hour",
 		"Hourly cost of VPC service endpoints by region. Cost represented in USD/hour",
-		[]string{"region"},
+		[]string{"account_id", "region"},
 	)
 	TransitGatewayHourlyGaugeDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
 		"transit_gateway_hourly_rate_usd_per_hour",
 		"Hourly cost of Transit Gateway by region. Cost represented in USD/hour",
-		[]string{"region"},
+		[]string{"account_id", "region"},
 	)
 	ElasticIPInUseGaugeDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
 		"elastic_ip_in_use_hourly_rate_usd_per_hour",
 		"Hourly cost of in-use Elastic IPs by region. Cost represented in USD/hour",
-		[]string{"region"},
+		[]string{"account_id", "region"},
 	)
 	ElasticIPIdleGaugeDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
 		"elastic_ip_idle_hourly_rate_usd_per_hour",
 		"Hourly cost of idle Elastic IPs by region. Cost represented in USD/hour",
-		[]string{"region"},
+		[]string{"account_id", "region"},
 	)
 )
 
@@ -69,6 +69,7 @@ type Collector struct {
 	pricingMap     *VPCPricingMap
 	logger         *slog.Logger
 	ctx            context.Context
+	accountID      string
 }
 
 func New(ctx context.Context, config *Config) (*Collector, error) {
@@ -104,6 +105,7 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 		pricingMap:     pricingMap,
 		logger:         logger,
 		ctx:            ctx, // Store the context for cancellation checks
+		accountID:      config.AccountID,
 	}, nil
 }
 
@@ -112,6 +114,7 @@ type Config struct {
 	Regions        []ec2Types.Region
 	Logger         *slog.Logger
 	Client         awsclient.Client // Dedicated client with us-east-1 pricing service
+	AccountID      string
 }
 
 func (c *Collector) Name() string { return strings.ToUpper(serviceName) }
@@ -155,6 +158,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				VPCEndpointHourlyGaugeDesc,
 				prometheus.GaugeValue,
 				vpcEndpointRate,
+				c.accountID,
 				regionName,
 				"standard",
 			)
@@ -169,6 +173,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				VPCEndpointServiceHourlyGaugeDesc,
 				prometheus.GaugeValue,
 				vpcServiceEndpointRate,
+				c.accountID,
 				regionName,
 			)
 		}
@@ -182,6 +187,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				TransitGatewayHourlyGaugeDesc,
 				prometheus.GaugeValue,
 				transitGatewayRate,
+				c.accountID,
 				regionName,
 			)
 		}
@@ -195,6 +201,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				ElasticIPInUseGaugeDesc,
 				prometheus.GaugeValue,
 				elasticIPInUseRate,
+				c.accountID,
 				regionName,
 			)
 		}
@@ -208,6 +215,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				ElasticIPIdleGaugeDesc,
 				prometheus.GaugeValue,
 				elasticIPIdleRate,
+				c.accountID,
 				regionName,
 			)
 		}

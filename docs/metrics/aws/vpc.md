@@ -2,11 +2,11 @@
 
 | Metric name                                                     | Metric type | Description                                                                  | Labels                                                                       |
 |-----------------------------------------------------------------|-------------|------------------------------------------------------------------------------|------------------------------------------------------------------------------|
-| cloudcost_aws_vpc_endpoint_hourly_rate_usd_per_hour             | Gauge       | Hourly cost of standard VPC endpoints. Cost represented in USD/hour          | `region`=&lt;AWS region&gt; <br/> `endpoint_type`=&lt;endpoint type&gt;     |
-| cloudcost_aws_vpc_endpoint_service_hourly_rate_usd_per_hour     | Gauge       | Hourly cost of service-specific VPC endpoints. Cost represented in USD/hour  | `region`=&lt;AWS region&gt;                                                  |
-| cloudcost_aws_vpc_transit_gateway_hourly_rate_usd_per_hour      | Gauge       | Hourly cost of Transit Gateway attachments. Cost represented in USD/hour     | `region`=&lt;AWS region&gt;                                                  |
-| cloudcost_aws_vpc_elastic_ip_in_use_hourly_rate_usd_per_hour    | Gauge       | Hourly cost of in-use Elastic IP addresses. Cost represented in USD/hour     | `region`=&lt;AWS region&gt;                                                  |
-| cloudcost_aws_vpc_elastic_ip_idle_hourly_rate_usd_per_hour      | Gauge       | Hourly cost of idle Elastic IP addresses. Cost represented in USD/hour       | `region`=&lt;AWS region&gt;                                                  |
+| cloudcost_aws_vpc_endpoint_hourly_rate_usd_per_hour             | Gauge       | Hourly cost of standard VPC endpoints. Cost represented in USD/hour          | `account_id`=&lt;AWS account ID&gt; <br/> `region`=&lt;AWS region&gt; <br/> `endpoint_type`=&lt;endpoint type&gt;     |
+| cloudcost_aws_vpc_endpoint_service_hourly_rate_usd_per_hour     | Gauge       | Hourly cost of service-specific VPC endpoints. Cost represented in USD/hour  | `account_id`=&lt;AWS account ID&gt; <br/> `region`=&lt;AWS region&gt;                                                  |
+| cloudcost_aws_vpc_transit_gateway_hourly_rate_usd_per_hour      | Gauge       | Hourly cost of Transit Gateway attachments. Cost represented in USD/hour     | `account_id`=&lt;AWS account ID&gt; <br/> `region`=&lt;AWS region&gt;                                                  |
+| cloudcost_aws_vpc_elastic_ip_in_use_hourly_rate_usd_per_hour    | Gauge       | Hourly cost of in-use Elastic IP addresses. Cost represented in USD/hour     | `account_id`=&lt;AWS account ID&gt; <br/> `region`=&lt;AWS region&gt;                                                  |
+| cloudcost_aws_vpc_elastic_ip_idle_hourly_rate_usd_per_hour      | Gauge       | Hourly cost of idle Elastic IP addresses. Cost represented in USD/hour       | `account_id`=&lt;AWS account ID&gt; <br/> `region`=&lt;AWS region&gt;                                                  |
 
 ## Overview
 

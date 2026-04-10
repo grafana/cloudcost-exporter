@@ -167,6 +167,7 @@ func TestCollectorCollectEmitsHourlyRateMetrics(t *testing.T) {
 		RegionMap: map[string]client.Client{"us-east-1": regionClient},
 		Client:    pricingClient,
 		Logger:    testLogger(),
+		AccountID: "123456789012",
 	})
 	require.NoError(t, err)
 
@@ -210,6 +211,7 @@ func TestCollectorCollectCachesPricingLookups(t *testing.T) {
 		RegionMap: map[string]client.Client{"us-east-1": regionClient},
 		Client:    pricingClient,
 		Logger:    testLogger(),
+		AccountID: "123456789012",
 	})
 	require.NoError(t, err)
 
@@ -238,8 +240,9 @@ func TestCollectorCollectContinuesWhenRegionClientMissing(t *testing.T) {
 		RegionMap: map[string]client.Client{
 			"us-west-2": regionClient,
 		},
-		Client: pricingClient,
-		Logger: testLogger(),
+		Client:    pricingClient,
+		Logger:    testLogger(),
+		AccountID: "123456789012",
 	})
 	require.NoError(t, err)
 
@@ -271,8 +274,9 @@ func TestCollectorCollectContinuesWhenRegionListingFails(t *testing.T) {
 			"us-east-1": failingRegionClient,
 			"us-west-2": healthyRegionClient,
 		},
-		Client: pricingClient,
-		Logger: testLogger(),
+		Client:    pricingClient,
+		Logger:    testLogger(),
+		AccountID: "123456789012",
 	})
 	require.NoError(t, err)
 
