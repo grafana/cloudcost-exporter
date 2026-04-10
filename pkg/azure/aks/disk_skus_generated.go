@@ -5,7 +5,6 @@ package aks
 
 import "strings"
 
-
 // getPremiumSSDSKU returns the Azure disk SKU name for Premium SSD based on disk size.
 // Auto-generated from Azure Retail Prices API disk pricing tiers.
 func (ds *DiskStore) getPremiumSSDSKU(sizeGB int32) string {
@@ -101,7 +100,6 @@ func (ds *DiskStore) getStandardSSDSKU(sizeGB int32) string {
 		return "E80 LRS Disk" // Fallback for very large disks
 	}
 }
-
 
 // extractTierFromSKU extracts the pricing tier from a disk SKU name.
 // Auto-generated helper function.
