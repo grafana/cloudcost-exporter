@@ -25,7 +25,7 @@ func newMetrics() metrics {
 	m := metrics{
 		StorageGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "storage_by_location_usd_per_gibyte_hour"),
-			Help: "Storage cost of blob objects by region and class. Cost represented in USD/(GiB*h). No samples until Cost Management is integrated.",
+			Help: "Storage cost of blob objects by region and class. Cost represented in USD/(GiB*h). Populated when CostQuerier returns data.",
 		},
 			[]string{"region", "class"},
 		),
@@ -43,10 +43,10 @@ func newMetrics() metrics {
 }
 
 // Collector implements provider.Collector for Azure Blob Storage cost metrics.
-// Cost Management integration is not implemented yet; there are no labeled series until Collect calls Set on the vec.
 type Collector struct {
 	logger         *slog.Logger
 	metrics        metrics
+	querier        StorageCostQuerier
 	subscriptionID string
 	scrapeInterval time.Duration
 }
@@ -56,25 +56,39 @@ type Config struct {
 	Logger         *slog.Logger
 	SubscriptionId string
 	ScrapeInterval time.Duration
+	// CostQuerier optional; when nil a no-op is used until Azure Cost Management is wired (e.g. from pkg/azure).
+	CostQuerier StorageCostQuerier
 }
 
-// New builds a blob collector. It does not call Azure APIs yet; subscription and interval are stored for Cost Management integration.
+// New builds a blob collector. Subscription and scrape interval are stored for refresh logic; cost data comes from CostQuerier (default no-op).
 func New(cfg *Config) (*Collector, error) {
 	interval := cfg.ScrapeInterval
 	if interval <= 0 {
 		interval = time.Hour
 	}
+	q := cfg.CostQuerier
+	if q == nil {
+		q = noopStorageCostQuerier{}
+	}
 	return &Collector{
 		logger:         cfg.Logger.With("collector", "blob"),
 		metrics:        newMetrics(),
+		querier:        q,
 		subscriptionID: cfg.SubscriptionId,
 		scrapeInterval: interval,
 	}, nil
 }
 
-// Collect satisfies provider.Collector. Does not call Set on cost vectors yet; still forwards the vec on ch for the parent gatherer.
+// Collect queries cost rows, updates the storage vec, then forwards metrics on ch for the parent gatherer.
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "collecting metrics")
+	rows, err := c.querier.QueryBlobStorage(ctx, c.subscriptionID, defaultQueryLookback)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		c.metrics.StorageGauge.WithLabelValues(row.Region, row.Class).Set(row.Rate)
+	}
 	c.metrics.StorageGauge.Collect(ch)
 	return nil
 }

@@ -2,6 +2,7 @@ package blob
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -19,6 +21,43 @@ var testLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 func testCollectSink() chan prometheus.Metric {
 	return make(chan prometheus.Metric, 8)
+}
+
+type stubCostQuerier struct {
+	rows []StorageCostRow
+	err  error
+}
+
+func (s stubCostQuerier) QueryBlobStorage(context.Context, string, time.Duration) ([]StorageCostRow, error) {
+	return s.rows, s.err
+}
+
+func TestCollector_Collect_queryError(t *testing.T) {
+	c, err := New(&Config{
+		Logger:         testLogger,
+		SubscriptionId: "sub",
+		CostQuerier:    stubCostQuerier{err: errors.New("query failed")},
+	})
+	require.NoError(t, err)
+	assert.Error(t, c.Collect(t.Context(), testCollectSink()))
+}
+
+func TestCollector_Collect_setsGaugeFromQuerier(t *testing.T) {
+	c, err := New(&Config{
+		Logger:         testLogger,
+		SubscriptionId: "sub",
+		CostQuerier: stubCostQuerier{rows: []StorageCostRow{
+			{Region: "eastus", Class: "Hot", Rate: 0.002},
+		}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, c.Collect(t.Context(), testCollectSink()))
+	err = testutil.CollectAndCompare(c.metrics.StorageGauge, strings.NewReader(`
+# HELP cloudcost_azure_blob_storage_by_location_usd_per_gibyte_hour Storage cost of blob objects by region and class. Cost represented in USD/(GiB*h). Populated when CostQuerier returns data.
+# TYPE cloudcost_azure_blob_storage_by_location_usd_per_gibyte_hour gauge
+cloudcost_azure_blob_storage_by_location_usd_per_gibyte_hour{class="Hot",region="eastus"} 0.002
+`), "cloudcost_azure_blob_storage_by_location_usd_per_gibyte_hour")
+	require.NoError(t, err)
 }
 
 func TestCollector_Describe(t *testing.T) {
