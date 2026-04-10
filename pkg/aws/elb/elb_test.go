@@ -27,7 +27,8 @@ func TestNew(t *testing.T) {
 		RegionClients: map[string]client.Client{
 			"us-east-1": mockClient,
 		},
-		Logger: slog.Default(),
+		Logger:    slog.Default(),
+		AccountID: "123456789012",
 	}
 
 	collector := New(config)
@@ -98,7 +99,8 @@ func TestCollectRegionLoadBalancers(t *testing.T) {
 		RegionClients: map[string]client.Client{
 			"us-east-1": mockClient,
 		},
-		Logger: slog.Default(),
+		Logger:    slog.Default(),
+		AccountID: "123456789012",
 	}
 
 	collector := New(config)

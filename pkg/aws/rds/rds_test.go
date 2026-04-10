@@ -218,6 +218,7 @@ func TestCollector_Collect(t *testing.T) {
 				regionMap:      map[string]client.Client{"us-east-1": mockClient},
 				scrapeInterval: time.Minute,
 				Client:         mockClient,
+				accountID:      "123456789012",
 			}
 
 			ch := make(chan prometheus.Metric, 1)
