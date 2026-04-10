@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"maps"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -143,7 +144,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		return nil
 	}
 
-	if err := c.pricingMap.RefreshIfNeeded(ctx, uniqueRegions(standardNamespaces)); err != nil {
+	if err := c.pricingMap.RefreshIfNeeded(ctx, regionsFromNamespaces(standardNamespaces)); err != nil {
 		return fmt.Errorf("failed to refresh Event Hubs pricing: %w", err)
 	}
 	snapshot := c.pricingMap.Snapshot()
@@ -266,7 +267,7 @@ func buildNamespacePricingData(namespace *armeventhub.EHNamespace) (namespacePri
 		return namespacePricingData{}, fmt.Errorf("namespace name is missing")
 	}
 
-	region := strings.ToLower(strings.TrimSpace(utils.StringValue(namespace.Location)))
+	region := normalizeKey(utils.StringValue(namespace.Location))
 	if region == "" {
 		return namespacePricingData{}, fmt.Errorf("namespace location is missing")
 	}
@@ -344,7 +345,7 @@ func (c *Collector) collectUsage(ctx context.Context, namespaces []namespacePric
 func (c *Collector) collectIncomingUsage(ctx context.Context, region string, resourceIDs []string) (map[string]namespaceUsage, error) {
 	usage := make(map[string]namespaceUsage, len(resourceIDs))
 
-	for _, batch := range chunkStrings(resourceIDs, maxMetricsBatch) {
+	for batch := range slices.Chunk(resourceIDs, maxMetricsBatch) {
 		response, err := c.azureClient.QueryResourceMetrics(
 			ctx,
 			region,
@@ -371,7 +372,7 @@ func (c *Collector) collectIncomingUsage(ctx context.Context, region string, res
 func (c *Collector) collectSizeUsage(ctx context.Context, region string, resourceIDs []string) (map[string]float64, error) {
 	usage := make(map[string]float64, len(resourceIDs))
 
-	for _, batch := range chunkStrings(resourceIDs, maxMetricsBatch) {
+	for batch := range slices.Chunk(resourceIDs, maxMetricsBatch) {
 		response, err := c.azureClient.QueryResourceMetrics(
 			ctx,
 			region,
@@ -516,7 +517,7 @@ func blobProductPreference(productName string) (int, bool) {
 
 func armRegionFilter(regions []string, includeGlobal bool) string {
 	clauses := make([]string, 0, len(regions)+1)
-	for _, region := range uniqueStrings(regions) {
+	for _, region := range regions {
 		clauses = append(clauses, fmt.Sprintf("armRegionName eq '%s'", region))
 	}
 	if includeGlobal {
@@ -525,45 +526,20 @@ func armRegionFilter(regions []string, includeGlobal bool) string {
 	return strings.Join(clauses, " or ")
 }
 
-func uniqueRegions(namespaces []namespacePricingData) []string {
+func regionsFromNamespaces(namespaces []namespacePricingData) []string {
+	seen := make(map[string]struct{}, len(namespaces))
 	regions := make([]string, 0, len(namespaces))
 	for _, namespace := range namespaces {
+		if namespace.region == "" {
+			continue
+		}
+		if _, ok := seen[namespace.region]; ok {
+			continue
+		}
+		seen[namespace.region] = struct{}{}
 		regions = append(regions, namespace.region)
 	}
-	return uniqueStrings(regions)
-}
-
-func uniqueStrings(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	unique := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.ToLower(strings.TrimSpace(value))
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		unique = append(unique, value)
-	}
-	return unique
-}
-
-func chunkStrings(values []string, size int) [][]string {
-	if len(values) == 0 {
-		return nil
-	}
-	if size <= 0 || len(values) <= size {
-		return [][]string{values}
-	}
-
-	chunks := make([][]string, 0, (len(values)+size-1)/size)
-	for start := 0; start < len(values); start += size {
-		end := min(start+size, len(values))
-		chunks = append(chunks, values[start:end])
-	}
-	return chunks
+	return regions
 }
 
 func localizableValue(value *azmetrics.LocalizableString) string {
@@ -574,7 +550,7 @@ func localizableValue(value *azmetrics.LocalizableString) string {
 }
 
 func usageKey(resourceID string) string {
-	return strings.ToLower(strings.TrimSpace(resourceID))
+	return normalizeKey(resourceID)
 }
 
 func maxFloat(current, candidate float64) float64 {
@@ -582,4 +558,8 @@ func maxFloat(current, candidate float64) float64 {
 		return candidate
 	}
 	return current
+}
+
+func normalizeKey(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }

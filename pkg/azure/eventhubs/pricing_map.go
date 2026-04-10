@@ -41,7 +41,7 @@ func (s Snapshot) Price(region, component string) (float64, bool) {
 		return 0, false
 	}
 
-	region = strings.ToLower(strings.TrimSpace(region))
+	region = normalizeKey(region)
 	component = strings.ToLower(strings.TrimSpace(component))
 	if region == "" || component == "" {
 		return 0, false
@@ -90,7 +90,6 @@ func (pm *pricingMap) Snapshot() Snapshot {
 }
 
 func (pm *pricingMap) RefreshIfNeeded(ctx context.Context, regions []string) error {
-	regions = uniqueStrings(regions)
 	if len(regions) == 0 {
 		return nil
 	}
@@ -205,7 +204,7 @@ func classifyEventHubsPrice(price *retailPriceSdk.ResourceSKU) (string, string, 
 		return "", "", 0, false
 	}
 
-	region := strings.ToLower(strings.TrimSpace(price.ArmRegionName))
+	region := normalizeKey(price.ArmRegionName)
 	if region == "" {
 		return "", "", 0, false
 	}
@@ -262,7 +261,7 @@ func (pm *pricingMap) fetchBlobStoragePricing(ctx context.Context, regions []str
 			continue
 		}
 
-		region := strings.ToLower(strings.TrimSpace(price.ArmRegionName))
+		region := normalizeKey(price.ArmRegionName)
 		if region == "" {
 			continue
 		}
