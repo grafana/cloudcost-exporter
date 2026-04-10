@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,6 +33,39 @@ func (s stubCostQuerier) QueryBlobStorage(context.Context, string, time.Duration
 	return s.rows, s.err
 }
 
+type countingCostQuerier struct {
+	mu   sync.Mutex
+	n    int
+	rows []StorageCostRow
+	err  error
+}
+
+func (c *countingCostQuerier) QueryBlobStorage(context.Context, string, time.Duration) ([]StorageCostRow, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.n++
+	return c.rows, c.err
+}
+
+func (c *countingCostQuerier) calls() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.n
+}
+
+func newCollectorWithCountingQuerier(t *testing.T, rows []StorageCostRow, querierErr error) (*Collector, *countingCostQuerier) {
+	t.Helper()
+	q := &countingCostQuerier{rows: rows, err: querierErr}
+	c, err := New(&Config{
+		Logger:         testLogger,
+		SubscriptionId: "sub",
+		ScrapeInterval: time.Hour,
+		CostQuerier:    q,
+	})
+	require.NoError(t, err)
+	return c, q
+}
+
 func TestCollector_Collect_queryError(t *testing.T) {
 	c, err := New(&Config{
 		Logger:         testLogger,
@@ -40,6 +74,32 @@ func TestCollector_Collect_queryError(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Error(t, c.Collect(t.Context(), testCollectSink()))
+}
+
+func TestCollector_Collect_costQueryRefresh(t *testing.T) {
+	sampleRows := []StorageCostRow{{Region: "eastus", Class: "Hot", Rate: 0.001}}
+
+	t.Run("skips_until_interval", func(t *testing.T) {
+		c, q := newCollectorWithCountingQuerier(t, sampleRows, nil)
+		require.NoError(t, c.Collect(t.Context(), testCollectSink()))
+		require.NoError(t, c.Collect(t.Context(), testCollectSink()))
+		assert.Equal(t, 1, q.calls(), "second scrape within interval should not call querier")
+	})
+
+	t.Run("refetches_when_next_refresh_elapsed", func(t *testing.T) {
+		c, q := newCollectorWithCountingQuerier(t, sampleRows, nil)
+		require.NoError(t, c.Collect(t.Context(), testCollectSink()))
+		c.nextRefresh = time.Now().Add(-time.Second)
+		require.NoError(t, c.Collect(t.Context(), testCollectSink()))
+		assert.Equal(t, 2, q.calls())
+	})
+
+	t.Run("retries_after_error", func(t *testing.T) {
+		c, q := newCollectorWithCountingQuerier(t, nil, errors.New("query failed"))
+		assert.Error(t, c.Collect(t.Context(), testCollectSink()))
+		assert.Error(t, c.Collect(t.Context(), testCollectSink()))
+		assert.Equal(t, 2, q.calls(), "errors do not advance nextRefresh; querier should run again")
+	})
 }
 
 func TestCollector_Collect_setsGaugeFromQuerier(t *testing.T) {

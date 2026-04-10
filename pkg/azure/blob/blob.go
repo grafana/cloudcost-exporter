@@ -3,6 +3,7 @@ package blob
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -49,6 +50,10 @@ type Collector struct {
 	querier        StorageCostQuerier
 	subscriptionID string
 	scrapeInterval time.Duration
+
+	mu          sync.Mutex
+	cachedRows  []StorageCostRow
+	nextRefresh time.Time // QueryBlobStorage when time.Now is on or after this (S3 billing refresh pattern).
 }
 
 // Config holds settings for the blob collector.
@@ -76,21 +81,34 @@ func New(cfg *Config) (*Collector, error) {
 		querier:        q,
 		subscriptionID: cfg.SubscriptionId,
 		scrapeInterval: interval,
+		// First Collect runs a query immediately (same idea as pkg/aws/s3 nextScrape).
+		nextRefresh: time.Now().Add(-interval),
 	}, nil
 }
 
 // Collect queries cost rows, updates the storage vec, then forwards metrics on ch for the parent gatherer.
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "collecting metrics")
-	rows, err := c.querier.QueryBlobStorage(ctx, c.subscriptionID, defaultQueryLookback)
-	if err != nil {
-		return err
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := time.Now()
+	if !now.Before(c.nextRefresh) {
+		rows, err := c.querier.QueryBlobStorage(ctx, c.subscriptionID, defaultQueryLookback)
+		if err != nil {
+			return err
+		}
+		c.cachedRows = rows
+		c.nextRefresh = now.Add(c.scrapeInterval)
 	}
+	c.applyRowsToGauge(c.cachedRows)
+	c.metrics.StorageGauge.Collect(ch)
+	return nil
+}
+
+func (c *Collector) applyRowsToGauge(rows []StorageCostRow) {
 	for _, row := range rows {
 		c.metrics.StorageGauge.WithLabelValues(row.Region, row.Class).Set(row.Rate)
 	}
-	c.metrics.StorageGauge.Collect(ch)
-	return nil
 }
 
 // Describe satisfies provider.Collector.
