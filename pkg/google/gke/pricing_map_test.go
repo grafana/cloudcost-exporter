@@ -595,7 +595,7 @@ func TestPricingMapParseSkus(t *testing.T) {
 							"hyperdisk-balanced": {
 								ProvisionedSpaceGiB: float64(1e9) * 1e-9 / utils.HoursInMonth,
 								IOps:                float64(5e8) * 1e-9 / utils.HoursInMonth,
-								Throughput:           float64(7e8) * 1e-9 / utils.HoursInMonth,
+								Throughput:          float64(7e8) * 1e-9 / utils.HoursInMonth,
 							},
 						},
 					},

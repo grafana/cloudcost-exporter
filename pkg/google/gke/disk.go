@@ -22,11 +22,11 @@ const (
 type Disk struct {
 	Cluster string
 
-	Project     string
-	name        string // Name of the disk as it appears in the GCP console. Used as a backup if the name can't be extracted from the description
-	zone        string
-	labels      map[string]string
-	description map[string]string
+	Project               string
+	name                  string // Name of the disk as it appears in the GCP console. Used as a backup if the name can't be extracted from the description
+	zone                  string
+	labels                map[string]string
+	description           map[string]string
 	diskType              string // type is a reserved word, which is why we're using diskType
 	Size                  int64
 	ProvisionedIops       int64
@@ -37,10 +37,10 @@ type Disk struct {
 func NewDisk(disk *compute.Disk, project string) *Disk {
 	clusterName := disk.Labels[client.GkeClusterLabel]
 	d := &Disk{
-		Cluster:     clusterName,
-		Project:     project,
-		name:        disk.Name,
-		zone:        disk.Zone,
+		Cluster:               clusterName,
+		Project:               project,
+		name:                  disk.Name,
+		zone:                  disk.Zone,
 		diskType:              disk.Type,
 		labels:                disk.Labels,
 		description:           make(map[string]string),

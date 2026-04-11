@@ -211,12 +211,12 @@ func (pm *PricingMap) GetCostOfStorage(region, storageClass string) (*StoragePri
 
 var (
 	storageClasses = map[string]string{
-		"Storage PD Capacity":          "pd-standard",
-		"SSD backed PD Capacity":       "pd-ssd",
-		"Balanced PD Capacity":         "pd-balanced",
-		"Extreme PD Capacity":          "pd-extreme",
-		"Hyperdisk Balanced Capacity":  "hyperdisk-balanced",
-		"Hyperdisk Balanced IOPS":      "hyperdisk-balanced",
+		"Storage PD Capacity":           "pd-standard",
+		"SSD backed PD Capacity":        "pd-ssd",
+		"Balanced PD Capacity":          "pd-balanced",
+		"Extreme PD Capacity":           "pd-extreme",
+		"Hyperdisk Balanced Capacity":   "hyperdisk-balanced",
+		"Hyperdisk Balanced IOPS":       "hyperdisk-balanced",
 		"Hyperdisk Balanced Throughput": "hyperdisk-balanced",
 	}
 )
@@ -296,12 +296,12 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 						break
 					}
 				}
-				if storageClass == "" {
-					slog.Warn("Storage class not found, skipping", "description", data.Description)
+				if strings.Contains(data.Description, "Confidential") {
+					slog.Info("Storage class contains Confidential, skipping", "description", data.Description)
 					continue
 				}
-				if strings.Contains(data.Description, "Confidential") {
-					slog.Info("Storage class contains Confidential, skipping", "storageClass", storageClass, "description", data.Description)
+				if storageClass == "" {
+					slog.Warn("Storage class not found, skipping", "description", data.Description)
 					continue
 				}
 				// First time seen, need to initialize the StoragePrices for the storageClass
@@ -312,8 +312,16 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 				sp := pm.storage[data.Region].Storage[storageClass]
 				switch {
 				case strings.Contains(data.Description, "IOPS") || strings.Contains(data.Description, "Iops"):
+					if sp.IOps != 0.0 {
+						slog.Warn("IOps price already exists in region", "storageClass", storageClass, "region", data.Region)
+						continue
+					}
 					sp.IOps = hourlyRate
 				case strings.Contains(data.Description, "Throughput"):
+					if sp.Throughput != 0.0 {
+						slog.Warn("Throughput price already exists in region", "storageClass", storageClass, "region", data.Region)
+						continue
+					}
 					sp.Throughput = hourlyRate
 				default:
 					if sp.ProvisionedSpaceGiB != 0.0 {
