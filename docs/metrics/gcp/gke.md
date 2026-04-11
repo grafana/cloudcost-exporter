@@ -60,8 +60,10 @@ To map the sku to the disk type, we can use the following mapping:
 
 Cloudcost Exporter needs to support the following hyperdisk pricing dimensions:
 - [x] provisioned space
-- [ ] Network throughput
-- [ ] IOps
+- [x] Network throughput
+- [x] IOps
 - [ ] high availability
 
-[#344](https://github.com/grafana/cloudcost-exporter/pull/344) introduced experimental support for provisioned space for [hyperdisk class](https://cloud.google.com/compute/disks-image-pricing#persistentdisk) 
+[#344](https://github.com/grafana/cloudcost-exporter/pull/344) introduced experimental support for provisioned space for [hyperdisk class](https://cloud.google.com/compute/disks-image-pricing#persistentdisk).
+
+For Hyperdisk Balanced, `persistent_volume_usd_per_hour` includes all three cost dimensions (capacity + IOPS + throughput). The first 3000 IOPS and 140 MBps are free; only provisioned amounts above those baselines incur cost.

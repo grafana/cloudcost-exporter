@@ -27,9 +27,11 @@ type Disk struct {
 	zone        string
 	labels      map[string]string
 	description map[string]string
-	diskType    string // type is a reserved word, which is why we're using diskType
-	Size        int64
-	users       []string
+	diskType              string // type is a reserved word, which is why we're using diskType
+	Size                  int64
+	ProvisionedIops       int64
+	ProvisionedThroughput int64
+	users                 []string
 }
 
 func NewDisk(disk *compute.Disk, project string) *Disk {
@@ -39,11 +41,13 @@ func NewDisk(disk *compute.Disk, project string) *Disk {
 		Project:     project,
 		name:        disk.Name,
 		zone:        disk.Zone,
-		diskType:    disk.Type,
-		labels:      disk.Labels,
-		description: make(map[string]string),
-		Size:        disk.SizeGb,
-		users:       disk.Users,
+		diskType:              disk.Type,
+		labels:                disk.Labels,
+		description:           make(map[string]string),
+		Size:                  disk.SizeGb,
+		ProvisionedIops:       disk.ProvisionedIops,
+		ProvisionedThroughput: disk.ProvisionedThroughput,
+		users:                 disk.Users,
 	}
 	err := extractLabelsFromDesc(disk.Description, d.description)
 	if err != nil {
