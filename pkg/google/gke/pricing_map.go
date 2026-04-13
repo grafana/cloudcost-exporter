@@ -310,14 +310,15 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 				}
 				hourlyRate := float64(data.Price) * 1e-9 / utils.HoursInMonth
 				sp := pm.storage[data.Region].Storage[storageClass]
+				lowerDesc := strings.ToLower(data.Description)
 				switch {
-				case strings.Contains(data.Description, "IOPS") || strings.Contains(data.Description, "Iops"):
+				case strings.Contains(lowerDesc, "iops"):
 					if sp.IOps != 0.0 {
 						slog.Warn("IOps price already exists in region", "storageClass", storageClass, "region", data.Region)
 						continue
 					}
 					sp.IOps = hourlyRate
-				case strings.Contains(data.Description, "Throughput"):
+				case strings.Contains(lowerDesc, "throughput"):
 					if sp.Throughput != 0.0 {
 						slog.Warn("Throughput price already exists in region", "storageClass", storageClass, "region", data.Region)
 						continue
