@@ -75,7 +75,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	fs.Var(config.NewDeprecatedStringSliceFlag(&cfg.Providers.GCP.Projects, &cfg.Providers.GCP.BucketProjectsDeprecated), "gcp.bucket-projects", "GCP project(s). (deprecated: use --gcp.projects instead)")
 	fs.Var(&cfg.Providers.AWS.Services, "aws.services", "AWS service(s).")
 	fs.Var(&cfg.Providers.AWS.ExcludeRegions, "aws.exclude-regions", "AWS region(s) to exclude from cost collection.")
-	fs.Var(&cfg.Providers.Azure.Services, "azure.services", "Azure service(s).")
+	fs.Var(&cfg.Providers.Azure.Services, "azure.services", "Azure service(s): AKS, blob (comma-separated and/or repeat flag; case-insensitive).")
 	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s).")
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
 	flag.StringVar(&cfg.Providers.AWS.RoleARN, "aws.roleARN", "", "Optional AWS role ARN to assume for cross-account access.")
@@ -242,7 +242,8 @@ func selectProviderWith(
 		return newAzure(ctx, &azure.Config{
 			Logger:           cfg.Logger,
 			SubscriptionId:   cfg.Providers.Azure.SubscriptionId,
-			Services:         cfg.Providers.Azure.Services,
+			ScrapeInterval:   cfg.Collector.ScrapeInterval,
+			Services:         strings.Split(cfg.Providers.Azure.Services.String(), ","),
 			CollectorTimeout: collectorTimeout,
 		})
 	case "aws":

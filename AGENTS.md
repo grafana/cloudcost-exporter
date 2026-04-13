@@ -21,7 +21,7 @@ cmd/exporter/exporter.go             # Entrypoint: flags, provider selection, HT
 pkg/provider/provider.go             # Provider, Collector, Registry interfaces
 pkg/aws/aws.go                       # AWS: S3, EC2, RDS, NATGATEWAY, ELB, VPC
 pkg/google/gcp.go                    # GCP: GCS, GKE, CLB, SQL, VPC
-pkg/azure/azure.go                   # Azure: AKS
+pkg/azure/azure.go                   # Azure: AKS, blob
 pkg/gatherer/gatherer.go             # Wraps Collect(): duration, errors, metadata metrics
 pkg/utils/consts.go                  # Shared metric suffixes, HoursInMonth, GenerateDesc()
 cmd/dashboards/main.go               # Dashboard generation (grafana-foundation-sdk)
@@ -58,7 +58,8 @@ Rule: Never push to `main`.
 ```bash
 go run cmd/exporter/exporter.go -provider gcp -project-id=$GCP_PROJECT_ID -gcp.services GKE,GCS
 go run cmd/exporter/exporter.go -provider aws -aws.profile $AWS_PROFILE -aws.services EC2,S3
-go run cmd/exporter/exporter.go -provider azure -azure.subscription-id $AZ_SUBSCRIPTION_ID
+go run cmd/exporter/exporter.go -provider azure -azure.subscription-id $AZ_SUBSCRIPTION_ID -azure.services AKS
+go run cmd/exporter/exporter.go -provider azure -azure.subscription-id $AZ_SUBSCRIPTION_ID -azure.services blob
 ```
 
 ### Adding a collector
