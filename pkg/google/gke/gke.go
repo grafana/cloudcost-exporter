@@ -209,7 +209,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 					d.UseStatus(),
 				}
 
-				price, err := c.pricingMap.GetCostOfStorage(d.Region(), d.StorageClass())
+				prices, err := c.pricingMap.GetCostOfStorage(d.Region(), d.StorageClass())
 				if err != nil {
 					c.logger.LogAttrs(ctx,
 						slog.LevelError,
@@ -225,7 +225,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				ch <- prometheus.MustNewConstMetric(
 					persistentVolumeHourlyCostDesc,
 					prometheus.GaugeValue,
-					float64(d.Size)*price,
+					computeDiskCost(d, prices),
 					labelValues...,
 				)
 			}

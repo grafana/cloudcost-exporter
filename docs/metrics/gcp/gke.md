@@ -4,7 +4,7 @@
 |------------------------------------------------------------|-------------|---------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | cloudcost_gcp_gke_instance_cpu_usd_per_core_hour           | Gauge       | The processing cost of a GCP Compute Instance, associated to a GKE cluster, in USD/(core*h) | `cluster_name`=&lt;name of the cluster the instance is associated with&gt; <br/> `instance`=&lt;name of the compute instance&gt; <br/> `region`=&lt;GCP region code&gt; <br/> `family`=&lt;broader compute family (n1, n2, c3 ...) &gt; <br/> `machine_type`=&lt;specific machine type, e.g.: n2-standard-2&gt; <br/> `project`=&lt;GCP project, where the instance is provisioned&gt; <br/> `price_tier`=&lt;spot\|ondemand&gt;                                            |
 | cloudcost_gcp_gke_compute_instance_memory_usd_per_gib_hour | Gauge       | The memory cost of a GCP Compute Instance, associated to a GKE cluster, in USD/(GiB*h)      | `cluster_name`=&lt;name of the cluster the instance is associated with&gt; <br/> `instance`=&lt;name of the compute instance&gt; <br/> `region`=&lt;GCP region code&gt; <br/> `family`=&lt;broader compute family (n1, n2, c3 ...) &gt; <br/> `machine_type`=&lt;specific machine type, e.g.: n2-standard-2&gt; <br/> `project`=&lt;GCP project, where the instance is provisioned&gt; <br/> `price_tier`=&lt;spot\|ondemand&gt;                                            |
-| cloudcost_gcp_gke_persistent_volume_usd_per_hour       | Gauge       | The cost of a GKE Persistent Volume in USD/(GiB*h)                                          | `cluster_name`=&lt;name of the cluster the instance is associated with&gt; <br/> `namespace`=&lt;The namespace the pvc was created for&gt; <br/> `persistentvolume`=&lt;Name of the persistent volume&gt; <br/> `region`=&lt;The region the pvc was created in&gt; <br/> `project`=&lt;GCP project, where the instance is provisioned&gt; <br/> `storage_class`=&lt;pd-standard\|pd-ssd\|pd-balanced\|pd-extreme&gt; <br/> `disk_type`=&lt;boot_disk\|persistent_volume&gt; <br/> `use_status`=&lt;in-use\|idle&gt; |
+| cloudcost_gcp_gke_persistent_volume_usd_per_hour       | Gauge       | The total cost of a GCP Persistent Volume in USD/h. For Hyperdisk Balanced this includes capacity, IOPS, and throughput dimensions. | `cluster_name`=&lt;name of the cluster the instance is associated with&gt; <br/> `namespace`=&lt;The namespace the pvc was created for&gt; <br/> `persistentvolume`=&lt;Name of the persistent volume&gt; <br/> `region`=&lt;The region the pvc was created in&gt; <br/> `project`=&lt;GCP project, where the instance is provisioned&gt; <br/> `storage_class`=&lt;pd-standard\|pd-ssd\|pd-balanced\|pd-extreme\|hyperdisk-balanced&gt; <br/> `disk_type`=&lt;boot_disk\|persistent_volume&gt; <br/> `use_status`=&lt;in-use\|idle&gt; |
 
 ## Persistent Volumes
 
@@ -60,8 +60,10 @@ To map the sku to the disk type, we can use the following mapping:
 
 Cloudcost Exporter needs to support the following hyperdisk pricing dimensions:
 - [x] provisioned space
-- [ ] Network throughput
-- [ ] IOps
+- [x] Network throughput
+- [x] IOps
 - [ ] high availability
 
-[#344](https://github.com/grafana/cloudcost-exporter/pull/344) introduced experimental support for provisioned space for [hyperdisk class](https://cloud.google.com/compute/disks-image-pricing#persistentdisk) 
+[#344](https://github.com/grafana/cloudcost-exporter/pull/344) introduced experimental support for provisioned space for [hyperdisk class](https://cloud.google.com/compute/disks-image-pricing#persistentdisk).
+
+For Hyperdisk Balanced, `persistent_volume_usd_per_hour` includes all three cost dimensions (capacity + IOPS + throughput). The first 3000 IOPS and 140 MBps are free; only provisioned amounts above those baselines incur cost.

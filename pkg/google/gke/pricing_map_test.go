@@ -549,27 +549,53 @@ func TestPricingMapParseSkus(t *testing.T) {
 			},
 		},
 		{
-			name: "HyperDisk Pricing",
-			skus: []*billingpb.Sku{{
-				Description:    "Hyperdisk Balanced Capacity",
-				Category:       &billingpb.Category{ResourceFamily: "Storage"},
-				ServiceRegions: []string{"europe-west1"},
-				PricingInfo: []*billingpb.PricingInfo{{
-					PricingExpression: &billingpb.PricingExpression{
-						TieredRates: []*billingpb.PricingExpression_TierRate{{
-							UnitPrice: &money.Money{
-								Nanos: 1e9,
-							},
-						}},
-					},
-				}},
-			}},
+			name: "HyperDisk Pricing with all dimensions",
+			skus: []*billingpb.Sku{
+				{
+					Description:    "Hyperdisk Balanced Capacity",
+					Category:       &billingpb.Category{ResourceFamily: "Storage"},
+					ServiceRegions: []string{"europe-west1"},
+					PricingInfo: []*billingpb.PricingInfo{{
+						PricingExpression: &billingpb.PricingExpression{
+							TieredRates: []*billingpb.PricingExpression_TierRate{{
+								UnitPrice: &money.Money{Nanos: 1e9},
+							}},
+						},
+					}},
+				},
+				{
+					Description:    "Hyperdisk Balanced IOPS",
+					Category:       &billingpb.Category{ResourceFamily: "Storage"},
+					ServiceRegions: []string{"europe-west1"},
+					PricingInfo: []*billingpb.PricingInfo{{
+						PricingExpression: &billingpb.PricingExpression{
+							TieredRates: []*billingpb.PricingExpression_TierRate{{
+								UnitPrice: &money.Money{Nanos: 5e8},
+							}},
+						},
+					}},
+				},
+				{
+					Description:    "Hyperdisk Balanced Throughput",
+					Category:       &billingpb.Category{ResourceFamily: "Storage"},
+					ServiceRegions: []string{"europe-west1"},
+					PricingInfo: []*billingpb.PricingInfo{{
+						PricingExpression: &billingpb.PricingExpression{
+							TieredRates: []*billingpb.PricingExpression_TierRate{{
+								UnitPrice: &money.Money{Nanos: 7e8},
+							}},
+						},
+					}},
+				},
+			},
 			expectedPricingMap: &PricingMap{
 				storage: map[string]*StoragePricing{
 					"europe-west1": {
 						Storage: map[string]*StoragePrices{
 							"hyperdisk-balanced": {
-								ProvisionedSpaceGiB: 1.0 / utils.HoursInMonth,
+								ProvisionedSpaceGiB: float64(1e9) * 1e-9 / utils.HoursInMonth,
+								IOps:                float64(5e8) * 1e-9 / utils.HoursInMonth,
+								Throughput:          float64(7e8) * 1e-9 / utils.HoursInMonth,
 							},
 						},
 					},
@@ -856,4 +882,73 @@ func Test_parseAllProducts(t *testing.T) {
 		}
 	}
 	fmt.Printf("%v SKU weren't parsable", counter)
+}
+
+func Test_computeDiskCost(t *testing.T) {
+	tests := []struct {
+		name     string
+		disk     *Disk
+		prices   *StoragePrices
+		expected float64
+	}{
+		{
+			name: "non-hyperdisk: only capacity",
+			disk: &Disk{Size: 100},
+			prices: &StoragePrices{
+				ProvisionedSpaceGiB: 0.01,
+			},
+			expected: 100 * 0.01,
+		},
+		{
+			name: "hyperdisk below free tier",
+			disk: &Disk{
+				Size:                  100,
+				ProvisionedIops:       2000,
+				ProvisionedThroughput: 100,
+			},
+			prices: &StoragePrices{
+				ProvisionedSpaceGiB: 0.01,
+				IOps:                0.001,
+				Throughput:          0.005,
+			},
+			expected: 100 * 0.01, // no IOPS or throughput cost
+		},
+		{
+			name: "hyperdisk at exact free tier boundary",
+			disk: &Disk{
+				Size:                  100,
+				ProvisionedIops:       HyperdiskBalancedFreeIOPS,
+				ProvisionedThroughput: HyperdiskBalancedFreeThroughputMBps,
+			},
+			prices: &StoragePrices{
+				ProvisionedSpaceGiB: 0.01,
+				IOps:                0.001,
+				Throughput:          0.005,
+			},
+			expected: 100 * 0.01, // exactly at boundary, no extra cost
+		},
+		{
+			name: "hyperdisk above free tier",
+			disk: &Disk{
+				Size:                  200,
+				ProvisionedIops:       5000,
+				ProvisionedThroughput: 240,
+			},
+			prices: &StoragePrices{
+				ProvisionedSpaceGiB: 0.01,
+				IOps:                0.001,
+				Throughput:          0.005,
+			},
+			// capacity: 200 * 0.01 = 2.0
+			// iops: (5000-3000) * 0.001 = 2.0
+			// throughput: (240-140) * 0.005 = 0.5
+			expected: 2.0 + 2.0 + 0.5,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := computeDiskCost(tt.disk, tt.prices)
+			require.InDelta(t, tt.expected, got, 1e-9)
+		})
+	}
 }

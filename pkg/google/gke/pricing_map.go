@@ -134,10 +134,19 @@ func NewMachineTypePricing() *FamilyPricing {
 	}
 }
 
+const (
+	// HyperdiskBalancedFreeIOPS is the number of IOPS included at no charge with
+	// each Hyperdisk Balanced volume.
+	HyperdiskBalancedFreeIOPS = 3000
+	// HyperdiskBalancedFreeThroughputMBps is the throughput (in MBps) included at
+	// no charge with each Hyperdisk Balanced volume.
+	HyperdiskBalancedFreeThroughputMBps = 140
+)
+
 type StoragePrices struct {
 	ProvisionedSpaceGiB float64
 	Throughput          float64
-	IOops               float64
+	IOps                float64
 }
 
 // StoragePricing is a map where the key is the storage type and the value is the price
@@ -170,26 +179,45 @@ func (pm *PricingMap) GetCostOfInstance(instance *client.MachineSpec) (float64, 
 	return computePrices.Cpu, computePrices.Ram, nil
 }
 
-func (pm *PricingMap) GetCostOfStorage(region, storageClass string) (float64, error) {
+// computeDiskCost returns the total hourly cost for a disk given its pricing.
+// For non-hyperdisk types, IOps and Throughput rates are zero so only capacity
+// contributes. For Hyperdisk Balanced, IOPS and throughput above the free tier
+// are included.
+func computeDiskCost(d *Disk, p *StoragePrices) float64 {
+	cost := float64(d.Size) * p.ProvisionedSpaceGiB
+
+	if p.IOps > 0 && d.ProvisionedIops > HyperdiskBalancedFreeIOPS {
+		cost += float64(d.ProvisionedIops-HyperdiskBalancedFreeIOPS) * p.IOps
+	}
+	if p.Throughput > 0 && d.ProvisionedThroughput > HyperdiskBalancedFreeThroughputMBps {
+		cost += float64(d.ProvisionedThroughput-HyperdiskBalancedFreeThroughputMBps) * p.Throughput
+	}
+
+	return cost
+}
+
+func (pm *PricingMap) GetCostOfStorage(region, storageClass string) (*StoragePrices, error) {
 	if len(pm.storage) == 0 {
-		return 0, ErrRegionNotFound
+		return nil, ErrRegionNotFound
 	}
 	if _, ok := pm.storage[region]; !ok {
-		return 0, fmt.Errorf("%w: %s", ErrRegionNotFound, region)
+		return nil, fmt.Errorf("%w: %s", ErrRegionNotFound, region)
 	}
 	if _, ok := pm.storage[region].Storage[storageClass]; !ok {
-		return 0, fmt.Errorf("%w: %s", ErrFamilyTypeNotFound, storageClass)
+		return nil, fmt.Errorf("%w: %s", ErrFamilyTypeNotFound, storageClass)
 	}
-	return pm.storage[region].Storage[storageClass].ProvisionedSpaceGiB, nil
+	return pm.storage[region].Storage[storageClass], nil
 }
 
 var (
 	storageClasses = map[string]string{
-		"Storage PD Capacity":         "pd-standard",
-		"SSD backed PD Capacity":      "pd-ssd",
-		"Balanced PD Capacity":        "pd-balanced",
-		"Extreme PD Capacity":         "pd-extreme",
-		"Hyperdisk Balanced Capacity": "hyperdisk-balanced",
+		"Storage PD Capacity":           "pd-standard",
+		"SSD backed PD Capacity":        "pd-ssd",
+		"Balanced PD Capacity":          "pd-balanced",
+		"Extreme PD Capacity":           "pd-extreme",
+		"Hyperdisk Balanced Capacity":   "hyperdisk-balanced",
+		"Hyperdisk Balanced IOPS":       "hyperdisk-balanced",
+		"Hyperdisk Balanced Throughput": "hyperdisk-balanced",
 	}
 )
 
@@ -254,7 +282,6 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 				// In GKE you can only provision the following classes: https://cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/gce-pd-csi-driver#create_a_storageclass
 				// For extreme disks, we are ignoring the cost of IOPs, which would be a significant cost(could double cost of disk)
 				// TODO(pokom): Add support for other storage classes
-				// TODO(pokom): Add support for IOps operations
 				if _, ok := pm.storage[data.Region]; !ok {
 					pm.storage[data.Region] = NewStoragePricing()
 				}
@@ -269,32 +296,41 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 						break
 					}
 				}
-				if storageClass == "" {
-					slog.Warn("Storage class not found, skipping", "description", data.Description)
+				if strings.Contains(data.Description, "Confidential") {
+					slog.Info("Storage class contains Confidential, skipping", "description", data.Description)
 					continue
 				}
-				if strings.Contains(data.Description, "Confidential") {
-					slog.Info("Storage class contains Confidential, skipping", "storageClass", storageClass, "description", data.Description)
+				if storageClass == "" {
+					slog.Warn("Storage class not found, skipping", "description", data.Description)
 					continue
 				}
 				// First time seen, need to initialize the StoragePrices for the storageClass
 				if _, ok := pm.storage[data.Region].Storage[storageClass]; !ok {
 					pm.storage[data.Region].Storage[storageClass] = &StoragePrices{}
 				}
-				if pm.storage[data.Region].Storage[storageClass].ProvisionedSpaceGiB != 0.0 {
-					slog.Warn("Storage class already exists in region", "storageClass", storageClass, "region", data.Region)
-					continue
+				hourlyRate := float64(data.Price) * 1e-9 / utils.HoursInMonth
+				sp := pm.storage[data.Region].Storage[storageClass]
+				lowerDesc := strings.ToLower(data.Description)
+				switch {
+				case strings.Contains(lowerDesc, "iops"):
+					if sp.IOps != 0.0 {
+						slog.Warn("IOps price already exists in region", "storageClass", storageClass, "region", data.Region)
+						continue
+					}
+					sp.IOps = hourlyRate
+				case strings.Contains(lowerDesc, "throughput"):
+					if sp.Throughput != 0.0 {
+						slog.Warn("Throughput price already exists in region", "storageClass", storageClass, "region", data.Region)
+						continue
+					}
+					sp.Throughput = hourlyRate
+				default:
+					if sp.ProvisionedSpaceGiB != 0.0 {
+						slog.Warn("Storage class already exists in region", "storageClass", storageClass, "region", data.Region)
+						continue
+					}
+					sp.ProvisionedSpaceGiB = hourlyRate
 				}
-				// Switch statement must go here to handle hyperdisk cases, otherwise what's happening is
-				// The four dimensions get ignored. There is a sku for:
-				// 1. Standard IOPS( Hyperdisk Balanced Storage Pools Standard IOPS - Oregon)
-				// 2. Capacity (Hyperdisk Balanced Capacity in Milan)
-				// 3. Throughput (Hyperdisk Balanced Throughput in Columbus)
-				// 4. High Availability Iops(Hyperdisk Balanced High Availability Iops in Mexico)
-				// The current implementation specifically looks for `Hyperdisk Balanced Capacity` to avoid taking the last price that's found
-				// Then there is one variation of hyperdisks that are priced differently:
-				// 1. Storage Pools Advanced Capacity(Hyperdisk Balanced Storage Pools Advanced Capacity - Mexico)
-				pm.storage[data.Region].Storage[storageClass].ProvisionedSpaceGiB = float64(data.Price) * 1e-9 / utils.HoursInMonth
 			}
 		}
 	}
