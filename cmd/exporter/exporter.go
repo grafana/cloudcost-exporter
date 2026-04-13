@@ -224,19 +224,6 @@ func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider,
 
 type newProviderFunc[T any] func(context.Context, T) (provider.Provider, error)
 
-// expandAzureServices flattens repeated -azure.services values and comma-separated tokens (parity with AWS/GCP flags).
-func expandAzureServices(flags config.StringSliceFlag) []string {
-	var out []string
-	for _, s := range flags {
-		for _, part := range strings.Split(s, ",") {
-			if t := strings.TrimSpace(part); t != "" {
-				out = append(out, t)
-			}
-		}
-	}
-	return out
-}
-
 func selectProviderWith(
 	ctx context.Context,
 	cfg *config.Config,
@@ -256,7 +243,7 @@ func selectProviderWith(
 			Logger:           cfg.Logger,
 			SubscriptionId:   cfg.Providers.Azure.SubscriptionId,
 			ScrapeInterval:   cfg.Collector.ScrapeInterval,
-			Services:         expandAzureServices(cfg.Providers.Azure.Services),
+			Services:         strings.Split(cfg.Providers.Azure.Services.String(), ","),
 			CollectorTimeout: collectorTimeout,
 		})
 	case "aws":

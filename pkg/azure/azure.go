@@ -95,6 +95,9 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 	// Collector Registration (--azure.services matching is case-insensitive).
 	for _, svc := range config.Services {
 		svc = strings.TrimSpace(svc)
+		if svc == "" {
+			continue
+		}
 		switch {
 		case strings.EqualFold(svc, "AKS"):
 			collector, err := aks.New(ctx, &aks.Config{
