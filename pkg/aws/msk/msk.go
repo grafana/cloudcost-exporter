@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -147,13 +148,8 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	snapshot := c.pricingStore.Snapshot()
 
+	var wg sync.WaitGroup
 	for _, region := range c.regions {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
 		if region.RegionName == nil || *region.RegionName == "" {
 			c.logger.Warn("skipping region with empty name")
 			continue
@@ -166,18 +162,21 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 			continue
 		}
 
-		clusters, err := regionClient.ListMSKClusters(ctx)
-		if err != nil {
-			c.logger.Error("error listing MSK clusters", "region", regionName, "error", err)
-			continue
-		}
-
-		for _, cluster := range clusters {
-			c.collectCluster(ch, snapshot, regionName, cluster)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			clusters, err := regionClient.ListMSKClusters(ctx)
+			if err != nil {
+				c.logger.Error("error listing MSK clusters", "region", regionName, "error", err)
+				return
+			}
+			for _, cluster := range clusters {
+				c.collectCluster(ch, snapshot, regionName, cluster)
+			}
+		}()
 	}
-
-	return nil
+	wg.Wait()
+	return ctx.Err()
 }
 
 func (c *Collector) collectCluster(ch chan<- prometheus.Metric, snapshot pricingstore.Snapshot, region string, cluster msktypes.Cluster) {

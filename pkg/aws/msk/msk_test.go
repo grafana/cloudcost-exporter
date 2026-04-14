@@ -1,6 +1,7 @@
 package msk
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -283,6 +284,82 @@ func TestCollectorCollectContinuesWhenRegionListingFails(t *testing.T) {
 	results, err := collectMetricResults(t, collector)
 	require.NoError(t, err)
 	assert.Len(t, results, 2)
+}
+
+func TestCollectorCollectReturnsContextErrWhenContextCancelled(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	regionClient := mockclient.NewMockClient(ctrl)
+	pricingClient := mockclient.NewMockClient(ctrl)
+
+	regionClient.EXPECT().
+		ListMSKClusters(gomock.Any()).
+		Return(nil, context.Canceled).
+		AnyTimes()
+	expectPricingLoad(pricingClient, "us-east-1", "USE1", "0.2100000000", "0.1000000000")
+
+	collector, err := New(t.Context(), &Config{
+		Regions:   []ec2types.Region{{RegionName: aws.String("us-east-1")}},
+		RegionMap: map[string]client.Client{"us-east-1": regionClient},
+		Client:    pricingClient,
+		Logger:    testLogger(),
+		AccountID: "123456789012",
+	})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	ch := make(chan prometheus.Metric, 10)
+	err = collector.Collect(ctx, ch)
+	close(ch)
+
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestCollectorCollectContinuesOnContextDeadlineExceeded(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	failingClient := mockclient.NewMockClient(ctrl)
+	healthyClient := mockclient.NewMockClient(ctrl)
+	pricingClient := mockclient.NewMockClient(ctrl)
+	cluster := newProvisionedCluster(
+		"test-cluster",
+		"arn:aws:kafka:us-west-2:123456789012:cluster/test-cluster",
+		"kafka.m5.large", 3, 100,
+	)
+
+	failingClient.EXPECT().
+		ListMSKClusters(gomock.Any()).
+		Return(nil, context.DeadlineExceeded).
+		Times(1)
+	healthyClient.EXPECT().
+		ListMSKClusters(gomock.Any()).
+		Return([]msktypes.Cluster{cluster}, nil).
+		Times(1)
+	expectPricingLoad(pricingClient, "us-east-1", "USE1", "0.2100000000", "0.1000000000")
+	expectPricingLoad(pricingClient, "us-west-2", "USW2", "0.2100000000", "0.1000000000")
+
+	collector, err := New(t.Context(), &Config{
+		Regions: []ec2types.Region{
+			{RegionName: aws.String("us-east-1")},
+			{RegionName: aws.String("us-west-2")},
+		},
+		RegionMap: map[string]client.Client{
+			"us-east-1": failingClient,
+			"us-west-2": healthyClient,
+		},
+		Client:    pricingClient,
+		Logger:    testLogger(),
+		AccountID: "123456789012",
+	})
+	require.NoError(t, err)
+
+	results, err := collectMetricResults(t, collector)
+	require.NoError(t, err)
+	assert.Len(t, results, 2) // metrics from us-west-2 still collected
 }
 
 func newProvisionedCluster(name, arn, instanceType string, brokerCount, volumeSizeGiB int32) msktypes.Cluster {
