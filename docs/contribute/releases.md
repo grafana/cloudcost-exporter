@@ -91,7 +91,7 @@ The deployment happens in the `deploy` job, which runs after the Docker images a
 
 ## GitHub Actions
 
-When adding or upgrading a GitHub Actions `actions`, please set the full length commit SHA instead of the version:
+When adding or upgrading a GitHub Actions `actions`, please set the full length commit SHA instead of the short version:
 
 ```
 jobs:
