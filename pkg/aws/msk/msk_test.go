@@ -310,7 +310,7 @@ func TestCollectorCollectContinuesOnContextDeadlineExceeded(t *testing.T) {
 	expectPricingLoad(pricingClient, "us-east-1", "USE1", "0.2100000000", "0.1000000000")
 	expectPricingLoad(pricingClient, "us-west-2", "USW2", "0.2100000000", "0.1000000000")
 
-	collector := New(t.Context(), &Config{
+	collector, err := New(t.Context(), &Config{
 		Regions: []ec2types.Region{
 			{RegionName: aws.String("us-east-1")},
 			{RegionName: aws.String("us-west-2")},
@@ -319,9 +319,11 @@ func TestCollectorCollectContinuesOnContextDeadlineExceeded(t *testing.T) {
 			"us-east-1": failingClient,
 			"us-west-2": healthyClient,
 		},
-		Client: pricingClient,
-		Logger: testLogger(),
+		Client:    pricingClient,
+		Logger:    testLogger(),
+		AccountID: "123456789012",
 	})
+	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
 	require.NoError(t, err)
