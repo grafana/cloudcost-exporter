@@ -176,7 +176,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		}()
 	}
 	wg.Wait()
-	return nil
+	return ctx.Err()
 }
 
 func (c *Collector) collectCluster(ch chan<- prometheus.Metric, snapshot pricingstore.Snapshot, region string, cluster msktypes.Cluster) {

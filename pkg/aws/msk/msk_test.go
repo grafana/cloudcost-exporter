@@ -286,6 +286,38 @@ func TestCollectorCollectContinuesWhenRegionListingFails(t *testing.T) {
 	assert.Len(t, results, 2)
 }
 
+func TestCollectorCollectReturnsContextErrWhenContextCancelled(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	regionClient := mockclient.NewMockClient(ctrl)
+	pricingClient := mockclient.NewMockClient(ctrl)
+
+	regionClient.EXPECT().
+		ListMSKClusters(gomock.Any()).
+		Return(nil, context.Canceled).
+		AnyTimes()
+	expectPricingLoad(pricingClient, "us-east-1", "USE1", "0.2100000000", "0.1000000000")
+
+	collector, err := New(t.Context(), &Config{
+		Regions:   []ec2types.Region{{RegionName: aws.String("us-east-1")}},
+		RegionMap: map[string]client.Client{"us-east-1": regionClient},
+		Client:    pricingClient,
+		Logger:    testLogger(),
+		AccountID: "123456789012",
+	})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	ch := make(chan prometheus.Metric, 10)
+	err = collector.Collect(ctx, ch)
+	close(ch)
+
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
 func TestCollectorCollectContinuesOnContextDeadlineExceeded(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
