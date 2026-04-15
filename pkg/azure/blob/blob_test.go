@@ -37,7 +37,6 @@ func TestCollector_Describe(t *testing.T) {
 	assert.Contains(t, joined, prefix+"storage_by_location_usd_per_gibyte_hour")
 }
 
-// #TODO: remove when we have more functionality in place
 func TestCollector_Register(t *testing.T) {
 	c, err := New(&Config{Logger: testLogger})
 	require.NoError(t, err)
@@ -45,7 +44,6 @@ func TestCollector_Register(t *testing.T) {
 	require.NoError(t, c.Register(nil))
 }
 
-// #TODO: remove when we have more functionality in place
 func TestCollector_Collect_forwardsStorageGauge(t *testing.T) {
 	c, err := New(&Config{Logger: testLogger})
 	require.NoError(t, err)
