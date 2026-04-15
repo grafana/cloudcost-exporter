@@ -8,4 +8,4 @@ The collector defines a storage cost `GaugeVec` that the Azure provider includes
 
 | Metric name | Metric type | Description | Labels |
 |-------------|-------------|-------------|--------|
-| cloudcost_azure_blob_storage_by_location_usd_per_gibyte_hour | Gauge | Storage cost rate for Blob Storage by region and class. Cost represented in USD/(GiB*h) | |
+| cloudcost_azure_blob_storage_by_location_usd_per_gibyte_hour | Gauge | Storage cost rate for Blob Storage by region and class. Cost represented in USD/(GiB*h) | `region`=&lt;Azure region&gt; <br/> `class`=&lt;Azure Blob storage class or access tier&gt; |
