@@ -17,8 +17,6 @@ const subsystem = "azure_blob"
 // Azure's top-level Collector gathers them via Collect → GaugeVec.Collect (same pattern as pkg/azure/aks).
 type metrics struct {
 	StorageGauge *prometheus.GaugeVec
-	// Planned future work: operation request rate (parity with S3/GCS cloudcost_*_operation_by_location_usd_per_krequest).
-	// OperationsGauge *prometheus.GaugeVec
 }
 
 func newMetrics() metrics {
@@ -30,14 +28,6 @@ func newMetrics() metrics {
 			[]string{"region", "class"},
 		),
 	}
-
-	// Planned future work: register operation cost per 1k requests (labels region, class, tier) when Cost Management dimensions support it.
-	// m.OperationsGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-	// 	Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "operation_by_location_usd_per_krequest"),
-	// 	Help: "Operation cost of blob objects by region, class, and tier. Cost represented in USD/(1k req). No samples until Cost Management is integrated.",
-	// },
-	// 	[]string{"region", "class", "tier"},
-	// )
 
 	return m
 }
@@ -82,7 +72,6 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 // Describe satisfies provider.Collector.
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	c.metrics.StorageGauge.Describe(ch)
-	// Planned future work: c.metrics.OperationsGauge.Describe(ch)
 	return nil
 }
 
