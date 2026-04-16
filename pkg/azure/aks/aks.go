@@ -107,7 +107,8 @@ type Collector struct {
 }
 
 type Config struct {
-	Logger *slog.Logger
+	Logger         *slog.Logger
+	SubscriptionID string
 }
 
 func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (*Collector, error) {

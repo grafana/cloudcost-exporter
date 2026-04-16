@@ -101,7 +101,8 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 		switch {
 		case strings.EqualFold(svc, "AKS"):
 			collector, err := aks.New(ctx, &aks.Config{
-				Logger: logger,
+				Logger:         logger,
+				SubscriptionID: config.SubscriptionId,
 			}, azClientWrapper)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
