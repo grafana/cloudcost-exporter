@@ -52,3 +52,21 @@ jobs:
       ct_configfile: charts/cloudcost-exporter/ct.yaml
     secrets:
       vault_repo_secret_name: github-app
+
+  trigger-deployment-tools-update:
+    needs: release-chart
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Trigger chartfile version update in deployment-tools
+        uses: grafana/shared-workflows/actions/trigger-argo-workflow@b513eb1dfd9becfa671a41e55063cdd5c0a08031 # trigger-argo-workflow/v1.2.2
+        with:
+          namespace: platform-monitoring-cd
+          workflow_template: chartfile-version-update
+          parameters: |
+            chartfile_file=ksonnet/lib/cloudcost-exporter/chartfile.yaml
+            chart_name=grafana/cloudcost-exporter
+            workflow_name=cloudcost-exporter-gh-runners
+            workflow_namespace=platform-monitoring-cd
