@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/cloudcost-exporter/pkg/azure/aks"
+	"github.com/grafana/cloudcost-exporter/pkg/azure/blob"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
 	"github.com/grafana/cloudcost-exporter/pkg/collectormetrics"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -65,6 +66,7 @@ type Config struct {
 	Region string
 
 	SubscriptionId string
+	ScrapeInterval time.Duration
 
 	CollectorTimeout time.Duration
 	Services         []string
@@ -90,15 +92,35 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 		return nil, err
 	}
 
-	// Collector Registration
+	// Collector Registration (--azure.services matching is case-insensitive).
 	for _, svc := range config.Services {
-		switch strings.ToUpper(svc) {
-		case "AKS":
+		svc = strings.TrimSpace(svc)
+		if svc == "" {
+			continue
+		}
+		switch {
+		case strings.EqualFold(svc, "AKS"):
 			collector, err := aks.New(ctx, &aks.Config{
 				Logger: logger,
 			}, azClientWrapper)
 			if err != nil {
-				return nil, err
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", svc),
+					slog.String("message", err.Error()))
+				continue
+			}
+			collectors = append(collectors, collector)
+		case strings.EqualFold(svc, "blob"):
+			collector, err := blob.New(&blob.Config{
+				Logger:         logger,
+				SubscriptionId: config.SubscriptionId,
+				ScrapeInterval: config.ScrapeInterval,
+			})
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", svc),
+					slog.String("message", err.Error()))
+				continue
 			}
 			collectors = append(collectors, collector)
 		default:

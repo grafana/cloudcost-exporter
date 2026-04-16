@@ -22,3 +22,4 @@
 ## Azure Services
 
 - **[AKS](./azure/aks.md)** - Azure Kubernetes Service VM instances and managed disks
+- **[Blob](./azure/blob.md)** - Azure Blob Storage (cost metrics registered; no series until Cost Management)
