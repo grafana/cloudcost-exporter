@@ -112,9 +112,9 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 			}
 			collectors = append(collectors, collector)
 		case strings.EqualFold(svc, "blob"):
-			collector, err := blob.New(&blob.Config{
+			collector, err := blob.New(ctx, &blob.Config{
 				Logger:         logger,
-				SubscriptionId: config.SubscriptionId,
+				SubscriptionID: config.SubscriptionId,
 				ScrapeInterval: config.ScrapeInterval,
 			})
 			if err != nil {
