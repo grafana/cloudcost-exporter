@@ -54,7 +54,7 @@ type Azure struct {
 	context context.Context
 	logger  *slog.Logger
 
-	subscriptionId string
+	subscriptionID string
 	azCredentials  *azidentity.DefaultAzureCredential
 
 	collectorTimeout time.Duration
@@ -65,7 +65,7 @@ type Config struct {
 	Logger *slog.Logger
 	Region string
 
-	SubscriptionId string
+	SubscriptionID string
 	ScrapeInterval time.Duration
 
 	CollectorTimeout time.Duration
@@ -76,7 +76,7 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 	logger := config.Logger.With("provider", subsystem)
 	collectors := []provider.Collector{}
 
-	if config.SubscriptionId == "" {
+	if config.SubscriptionID == "" {
 		logger.LogAttrs(ctx, slog.LevelError, "subscription id was invalid")
 		return nil, errInvalidSubscriptionID
 	}
@@ -87,7 +87,7 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 		return nil, err
 	}
 
-	azClientWrapper, err := client.NewAzureClientWrapper(ctx, logger, config.SubscriptionId, creds)
+	azClientWrapper, err := client.NewAzureClientWrapper(ctx, logger, config.SubscriptionID, creds)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 		case strings.EqualFold(svc, "AKS"):
 			collector, err := aks.New(ctx, &aks.Config{
 				Logger:         logger,
-				SubscriptionID: config.SubscriptionId,
+				SubscriptionID: config.SubscriptionID,
 			}, azClientWrapper)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
@@ -114,7 +114,7 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 		case strings.EqualFold(svc, "blob"):
 			collector, err := blob.New(ctx, &blob.Config{
 				Logger:         logger,
-				SubscriptionID: config.SubscriptionId,
+				SubscriptionID: config.SubscriptionID,
 				ScrapeInterval: config.ScrapeInterval,
 			})
 			if err != nil {
@@ -133,7 +133,7 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 		context: ctx,
 		logger:  logger,
 
-		subscriptionId: config.SubscriptionId,
+		subscriptionID: config.SubscriptionID,
 		azCredentials:  creds,
 
 		collectorTimeout: config.CollectorTimeout,

@@ -56,7 +56,7 @@ type listError struct {
 }
 
 const (
-	serviceName = "rds"
+	serviceName = "RDS"
 )
 
 // New creates an rds collector

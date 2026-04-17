@@ -81,7 +81,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.StringVar(&cfg.Providers.AWS.RoleARN, "aws.roleARN", "", "Optional AWS role ARN to assume for cross-account access.")
 	// TODO - PUT PROJECT-ID UNDER GCP
 	flag.StringVar(&cfg.ProjectID, "project-id", "", "Project ID to target.")
-	flag.StringVar(&cfg.Providers.Azure.SubscriptionId, "azure.subscription-id", "", "Azure subscription ID to pull data from.")
+	flag.StringVar(&cfg.Providers.Azure.SubscriptionID, "azure.subscription-id", "", "Azure subscription ID to pull data from.")
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
 }
 
@@ -241,7 +241,7 @@ func selectProviderWith(
 	case "azure":
 		return newAzure(ctx, &azure.Config{
 			Logger:           cfg.Logger,
-			SubscriptionId:   cfg.Providers.Azure.SubscriptionId,
+			SubscriptionID:   cfg.Providers.Azure.SubscriptionID,
 			ScrapeInterval:   cfg.Collector.ScrapeInterval,
 			Services:         strings.Split(cfg.Providers.Azure.Services.String(), ","),
 			CollectorTimeout: collectorTimeout,
