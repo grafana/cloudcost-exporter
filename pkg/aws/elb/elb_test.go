@@ -1,6 +1,7 @@
 package elb
 
 import (
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ func TestNew(t *testing.T) {
 		Regions: []ec2Types.Region{
 			{RegionName: stringPtr("us-east-1")},
 		},
+		PricingClient: mockClient,
 		RegionClients: map[string]client.Client{
 			"us-east-1": mockClient,
 		},
@@ -36,6 +38,7 @@ func TestNew(t *testing.T) {
 	assert.NotNil(t, collector)
 	assert.Equal(t, config.ScrapeInterval, collector.ScrapeInterval)
 	assert.Equal(t, config.Regions, collector.regions)
+	assert.Equal(t, mockClient, collector.pricingClient)
 	assert.Equal(t, mockClient, collector.awsRegionClientMap["us-east-1"])
 	assert.NotNil(t, collector.pricingMap)
 }
@@ -128,6 +131,58 @@ func TestCollectRegionLoadBalancers(t *testing.T) {
 	assert.Equal(t, 0.008, loadBalancers[1].LCUUsageCost)
 	assert.Equal(t, 0.0225, loadBalancers[1].LoadBalancerUsageCost)
 
+}
+
+func TestFetchRegionPricing(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockClient := mock_client.NewMockClient(ctrl)
+
+	albProduct := `{"Product":{"Attributes":{"usageType":"USE1-LoadBalancerUsage","operation":"LoadBalancing:Application"}},"Terms":{"OnDemand":{"t1":{"PriceDimensions":{"d1":{"pricePerUnit":{"USD":"0.0225"}}}}}}}`
+	nlbProduct := `{"Product":{"Attributes":{"usageType":"USE1-LCUUsage","operation":"LoadBalancing:Network"}},"Terms":{"OnDemand":{"t1":{"PriceDimensions":{"d1":{"pricePerUnit":{"USD":"0.006"}}}}}}}`
+	mockClient.EXPECT().ListELBPrices(gomock.Any(), "us-east-1").Return([]string{albProduct, nlbProduct}, nil)
+
+	pm := NewELBPricingMap(slog.Default())
+	pricing, err := pm.FetchRegionPricing(mockClient, t.Context(), "us-east-1")
+
+	assert.NoError(t, err)
+	assert.Equal(t, 0.0225, pricing.ALBHourlyRate[LoadBalancerUsage])
+	assert.Equal(t, 0.006, pricing.NLBHourlyRate[LCUUsage])
+}
+
+func TestFetchRegionPricingError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockClient := mock_client.NewMockClient(ctrl)
+	mockClient.EXPECT().ListELBPrices(gomock.Any(), "us-east-1").Return(nil, errors.New("api error"))
+
+	pm := NewELBPricingMap(slog.Default())
+	pricing, err := pm.FetchRegionPricing(mockClient, t.Context(), "us-east-1")
+
+	assert.Error(t, err)
+	assert.Nil(t, pricing)
+}
+
+func TestRefresh(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockClient := mock_client.NewMockClient(ctrl)
+
+	albProduct := `{"Product":{"Attributes":{"usageType":"USE1-LoadBalancerUsage","operation":"LoadBalancing:Application"}},"Terms":{"OnDemand":{"t1":{"PriceDimensions":{"d1":{"pricePerUnit":{"USD":"0.0225"}}}}}}}`
+	mockClient.EXPECT().ListELBPrices(gomock.Any(), "us-east-1").Return([]string{albProduct}, nil)
+	mockClient.EXPECT().ListELBPrices(gomock.Any(), "us-west-2").Return([]string{albProduct}, nil)
+
+	pm := NewELBPricingMap(slog.Default())
+	regions := []ec2Types.Region{
+		{RegionName: stringPtr("us-east-1")},
+		{RegionName: stringPtr("us-west-2")},
+	}
+
+	err := pm.refresh(t.Context(), mockClient, regions)
+	assert.NoError(t, err)
+
+	for _, region := range []string{"us-east-1", "us-west-2"} {
+		pricing, err := pm.GetRegionPricing(region)
+		assert.NoError(t, err)
+		assert.Equal(t, 0.0225, pricing.ALBHourlyRate[LoadBalancerUsage])
+	}
 }
 
 func stringPtr(s string) *string {

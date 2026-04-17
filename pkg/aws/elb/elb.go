@@ -19,7 +19,8 @@ import (
 )
 
 const (
-	subsystem = "aws_elb"
+	serviceName = "elb"
+	subsystem   = "aws_" + serviceName
 )
 
 var (
@@ -43,6 +44,7 @@ type Collector struct {
 	regions            []ec2Types.Region
 	ScrapeInterval     time.Duration
 	pricingMap         *ELBPricingMap
+	pricingClient      client.Client
 	awsRegionClientMap map[string]client.Client
 	NextScrape         time.Time
 	logger             *slog.Logger
@@ -52,9 +54,12 @@ type Collector struct {
 type Config struct {
 	ScrapeInterval time.Duration
 	Regions        []ec2Types.Region
-	RegionClients  map[string]client.Client
-	Logger         *slog.Logger
-	AccountID      string
+	// PricingClient must be a client configured for us-east-1: the AWS Pricing API
+	// is only available in us-east-1 and ap-south-1.
+	PricingClient client.Client
+	RegionClients map[string]client.Client
+	Logger        *slog.Logger
+	AccountID     string
 }
 
 type LoadBalancerInfo struct {
@@ -83,12 +88,14 @@ type elbProduct struct {
 }
 
 func New(config *Config) *Collector {
+	logger := config.Logger.With("logger", serviceName)
 	return &Collector{
 		regions:            config.Regions,
 		ScrapeInterval:     config.ScrapeInterval,
+		pricingClient:      config.PricingClient,
 		awsRegionClientMap: config.RegionClients,
-		logger:             config.Logger,
-		pricingMap:         NewELBPricingMap(config.Logger),
+		logger:             logger,
+		pricingMap:         NewELBPricingMap(logger),
 		accountID:          config.AccountID,
 	}
 }
@@ -107,7 +114,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	c.logger.Info("Starting ELB collection")
 
 	if c.shouldScrape() {
-		if err := c.pricingMap.refresh(ctx, c.awsRegionClientMap, c.regions); err != nil {
+		if err := c.pricingMap.refresh(ctx, c.pricingClient, c.regions); err != nil {
 			c.logger.Error("Failed to refresh pricing", "error", err)
 			return err
 		}
