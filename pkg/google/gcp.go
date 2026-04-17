@@ -90,10 +90,11 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 		var collector provider.Collector
 		switch strings.ToUpper(service) {
 		case "GCS":
-			collector, err = gcs.New(&gcs.Config{
+			collector, err = gcs.New(ctx, &gcs.Config{
 				ProjectId:      config.ProjectId,
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
+				Logger:         config.Logger,
 			}, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",

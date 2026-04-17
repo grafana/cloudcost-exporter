@@ -86,6 +86,7 @@ type Collector struct {
 	nextScrape time.Time
 	metrics    *metrics.Metrics
 	gcpClient  client.Client
+	logger     *slog.Logger
 }
 
 func (c *Collector) Describe(_ chan<- *prometheus.Desc) error {
@@ -100,20 +101,23 @@ type Config struct {
 	ProjectId      string
 	Projects       string
 	ScrapeInterval time.Duration
+	Logger         *slog.Logger
 }
 
-func New(config *Config, gcpClient client.Client) (*Collector, error) {
+func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
 	if config.ProjectId == "" {
 		return nil, fmt.Errorf("projectID cannot be empty")
 	}
 
+	logger := config.Logger.With("collector", collectorName)
+
 	projects := strings.Split(config.Projects, ",")
 	if len(projects) == 1 && projects[0] == "" {
-		slog.Info("No bucket projects specified, defaulting to project", "projectId", config.ProjectId)
+		logger.LogAttrs(ctx, slog.LevelInfo, "no bucket projects specified, defaulting to project", slog.String("projectId", config.ProjectId))
 		projects = []string{config.ProjectId}
 	}
 
-	regions := client.RegionsForProjects(gcpClient, projects, slog.Default())
+	regions := client.RegionsForProjects(gcpClient, projects, logger)
 
 	return &Collector{
 		Projects: projects,
@@ -123,6 +127,7 @@ func New(config *Config, gcpClient client.Client) (*Collector, error) {
 		nextScrape: time.Now().Add(-config.ScrapeInterval),
 		metrics:    metrics.NewMetrics(),
 		gcpClient:  gcpClient,
+		logger:     logger,
 	}, nil
 }
 
@@ -136,7 +141,7 @@ func (c *Collector) Name() string {
 
 // Register is called when the collector is created and is responsible for registering the metrics with the registry
 func (c *Collector) Register(registry provider.Registry) error {
-	slog.Info("Registering GCS metrics")
+	c.logger.Info("Registering GCS metrics")
 	registry.MustRegister(c.metrics.StorageGauge)
 	registry.MustRegister(c.metrics.StorageDiscountGauge)
 	registry.MustRegister(c.metrics.OperationsDiscountGauge)
@@ -150,7 +155,7 @@ func (c *Collector) Register(registry provider.Registry) error {
 
 // collectMetrics performs the actual collection work
 func (c *Collector) collectMetrics(ctx context.Context) error {
-	slog.Info("Collecting GCS metrics")
+	c.logger.Info("Collecting GCS metrics")
 	now := time.Now()
 
 	// If the nextScrape time is in the future, return nil and do not scrape
@@ -163,16 +168,16 @@ func (c *Collector) collectMetrics(ctx context.Context) error {
 	c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
 	exporterOperationsDiscounts(c.metrics)
 	if err := c.gcpClient.ExportRegionalDiscounts(ctx, c.metrics); err != nil {
-		slog.Error("Error exporting regional discounts", "error", err)
+		c.logger.LogAttrs(ctx, slog.LevelError, "Error exporting regional discounts", slog.Any("error", err))
 	}
 
 	if err := c.gcpClient.ExportBucketInfo(ctx, c.Projects, c.metrics); err != nil {
-		slog.Error("Error exporting bucket info", "error", err)
+		c.logger.LogAttrs(ctx, slog.LevelError, "Error exporting bucket info", slog.Any("error", err))
 	}
 
 	serviceName, err := c.gcpClient.GetServiceName(ctx, "Cloud Storage")
 	if err != nil {
-		slog.Error("Error getting service name", "error", err)
+		c.logger.LogAttrs(ctx, slog.LevelError, "Error getting service name", slog.Any("error", err))
 		return err
 	}
 	c.gcpClient.ExportGCPCostData(ctx, serviceName, c.metrics)
