@@ -242,11 +242,12 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				PricingService: awsPricing.NewFromConfig(pricingConfig),
 			})
 			collector, err := elb.New(ctx, &elb.Config{
-				Regions:       regions,
-				PricingClient: awsELBPricingClient,
-				RegionMap:     regionClients,
-				Logger:        logger,
-				AccountID:     config.AccountID,
+				Regions:        regions,
+				PricingClient:  awsELBPricingClient,
+				RegionMap:      regionClients,
+				ScrapeInterval: config.ScrapeInterval,
+				Logger:         logger,
+				AccountID:      config.AccountID,
 			})
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
