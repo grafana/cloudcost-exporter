@@ -24,6 +24,7 @@ func TestNew(t *testing.T) {
 		Regions: []ec2Types.Region{
 			{RegionName: stringPtr("us-east-1")},
 		},
+		PricingClient: mockClient,
 		RegionClients: map[string]client.Client{
 			"us-east-1": mockClient,
 		},
@@ -36,6 +37,7 @@ func TestNew(t *testing.T) {
 	assert.NotNil(t, collector)
 	assert.Equal(t, config.ScrapeInterval, collector.ScrapeInterval)
 	assert.Equal(t, config.Regions, collector.regions)
+	assert.Equal(t, mockClient, collector.pricingClient)
 	assert.Equal(t, mockClient, collector.awsRegionClientMap["us-east-1"])
 	assert.NotNil(t, collector.pricingMap)
 }

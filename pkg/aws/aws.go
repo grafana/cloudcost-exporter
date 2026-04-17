@@ -208,8 +208,18 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			}
 			collectors = append(collectors, collector)
 		case serviceELB:
+			// pricing API for ELB client needs to use always the same region
+			// as the pricing data is only available in us-east-1
+			elbPricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
+			if err != nil {
+				return nil, err
+			}
+			awsELBPricingClient := client.NewAWSClient(client.Config{
+				PricingService: awsPricing.NewFromConfig(elbPricingConfig),
+			})
 			collector := elb.New(&elb.Config{
 				Regions:        regions,
+				PricingClient:  awsELBPricingClient,
 				RegionClients:  regionClients,
 				ScrapeInterval: config.ScrapeInterval,
 				Logger:         logger,
