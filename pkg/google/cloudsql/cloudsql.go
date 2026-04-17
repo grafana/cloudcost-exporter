@@ -88,7 +88,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 }
 
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
-	logger := c.logger.With("logger", "cloudsql")
+	logger := c.logger.With("collector", "cloudsql")
 
 	instances, err := c.getAllCloudSQL(ctx)
 	if err != nil {

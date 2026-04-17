@@ -83,7 +83,7 @@ type Config struct {
 
 // New creates an ec2 collector
 func New(ctx context.Context, config *Config) (*Collector, error) {
-	logger := config.Logger.With("logger", "ec2")
+	logger := config.Logger.With("collector", "ec2")
 	computeMap := NewComputePricingMap(logger, config)
 	storageMap := NewStoragePricingMap(logger, config)
 

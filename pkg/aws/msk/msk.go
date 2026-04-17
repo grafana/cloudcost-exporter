@@ -111,7 +111,7 @@ type clusterPricingData struct {
 func New(ctx context.Context, config *Config) (*Collector, error) {
 	logger := slog.Default()
 	if config.Logger != nil {
-		logger = config.Logger.With("logger", serviceName)
+		logger = config.Logger.With("collector", serviceName)
 	}
 
 	pricingStore, err := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.Client))

@@ -54,7 +54,7 @@ type Collector struct {
 }
 
 func New(ctx context.Context, config *Config) (*Collector, error) {
-	logger := config.Logger.With("logger", serviceName)
+	logger := config.Logger.With("collector", serviceName)
 
 	pricingStore, err := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.RegionMap))
 	if err != nil {

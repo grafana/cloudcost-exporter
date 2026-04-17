@@ -73,7 +73,7 @@ type Collector struct {
 }
 
 func New(ctx context.Context, config *Config) (*Collector, error) {
-	logger := config.Logger.With("logger", serviceName)
+	logger := config.Logger.With("collector", serviceName)
 	pricingMap := NewVPCPricingMap(logger)
 
 	// Initial pricing data load using the dedicated us-east-1 pricing client
