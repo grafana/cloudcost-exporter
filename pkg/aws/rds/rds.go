@@ -37,6 +37,7 @@ type Collector struct {
 	Client         client.Client
 	pricingMap     *pricingMap
 	accountID      string
+	logger         *slog.Logger
 }
 
 type Config struct {
@@ -45,6 +46,7 @@ type Config struct {
 	Client         client.Client
 	ScrapeInterval time.Duration
 	AccountID      string
+	Logger         *slog.Logger
 }
 
 type listError struct {
@@ -58,7 +60,7 @@ const (
 )
 
 // New creates an rds collector
-func New(config *Config) *Collector {
+func New(_ context.Context, config *Config) (*Collector, error) {
 	return &Collector{
 		pricingMap:     newPricingMap(),
 		regions:        config.Regions,
@@ -66,12 +68,13 @@ func New(config *Config) *Collector {
 		scrapeInterval: config.ScrapeInterval,
 		Client:         config.Client,
 		accountID:      config.AccountID,
-	}
+		logger:         config.Logger.With("collector", serviceName),
+	}, nil
 }
 
 // Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
-	logger := slog.With("logger", serviceName)
+	logger := c.logger
 	var instances = []rdsTypes.DBInstance{}
 	var regionErrors []listError
 	for _, region := range c.regions {

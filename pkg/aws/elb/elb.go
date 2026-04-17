@@ -57,7 +57,7 @@ type Config struct {
 	// PricingClient must be a client configured for us-east-1: the AWS Pricing API
 	// is only available in us-east-1 and ap-south-1.
 	PricingClient client.Client
-	RegionClients map[string]client.Client
+	RegionMap     map[string]client.Client
 	Logger        *slog.Logger
 	AccountID     string
 }
@@ -87,17 +87,17 @@ type elbProduct struct {
 	}
 }
 
-func New(config *Config) *Collector {
-	logger := config.Logger.With("logger", serviceName)
+func New(_ context.Context, config *Config) (*Collector, error) {
+	logger := config.Logger.With("collector", serviceName)
 	return &Collector{
 		regions:            config.Regions,
 		ScrapeInterval:     config.ScrapeInterval,
 		pricingClient:      config.PricingClient,
-		awsRegionClientMap: config.RegionClients,
+		awsRegionClientMap: config.RegionMap,
 		logger:             logger,
 		pricingMap:         NewELBPricingMap(logger),
 		accountID:          config.AccountID,
-	}
+	}, nil
 }
 
 func (c *Collector) Register(_ provider.Registry) error {

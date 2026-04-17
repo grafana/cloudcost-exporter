@@ -1,6 +1,7 @@
 package rds
 
 import (
+	"log/slog"
 	"testing"
 	"time"
 
@@ -219,6 +220,7 @@ func TestCollector_Collect(t *testing.T) {
 				scrapeInterval: time.Minute,
 				Client:         mockClient,
 				accountID:      "123456789012",
+				logger:         slog.Default(),
 			}
 
 			ch := make(chan prometheus.Metric, 1)
