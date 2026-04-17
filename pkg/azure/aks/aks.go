@@ -99,7 +99,8 @@ var (
 // Collector is a prometheus collector that collects cost metrics from AKS clusters.
 // Provides comprehensive cost tracking for both virtual machines and persistent volumes.
 type Collector struct {
-	logger *slog.Logger
+	logger         *slog.Logger
+	subscriptionID string
 
 	VMPriceStore *VMPriceStore // Azure VM retail prices (not disk)
 	MachineStore *MachineStore // VM inventory store
@@ -174,7 +175,8 @@ func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (
 	}(ctx)
 
 	return &Collector{
-		logger: logger,
+		logger:         logger,
+		subscriptionID: cfg.SubscriptionID,
 
 		VMPriceStore: vmPriceStore,
 		MachineStore: machineStore,
