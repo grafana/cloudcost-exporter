@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/cloudcost-exporter/pkg/aws/bedrock"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/elb"
@@ -90,10 +91,11 @@ const (
 	serviceS3    = "S3"
 	serviceEC2   = "EC2"
 	serviceRDS   = "RDS"
-	serviceNATGW = "NATGATEWAY"
-	serviceELB   = "ELB"
-	serviceVPC   = "VPC"
-	serviceMSK   = "MSK"
+	serviceNATGW   = "NATGATEWAY"
+	serviceELB     = "ELB"
+	serviceVPC     = "VPC"
+	serviceMSK     = "MSK"
+	serviceBedrock = "BEDROCK"
 )
 
 func New(ctx context.Context, config *Config) (*AWS, error) {
@@ -266,6 +268,28 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				Client:    awsMSKClient,
 				Logger:    logger,
 				AccountID: config.AccountID,
+			})
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
+			collectors = append(collectors, collector)
+		case serviceBedrock:
+			// The AWS Pricing API is only available in us-east-1 and ap-south-1.
+			// Copy the already-loaded config and pin the region to us-east-1 so
+			// Bedrock pricing lookups succeed regardless of the collector's configured regions.
+			bedrockPricingConfig := awsConfig.Copy()
+			bedrockPricingConfig.Region = "us-east-1"
+			awsBedrockClient := client.NewAWSClient(client.Config{
+				PricingService: awsPricing.NewFromConfig(bedrockPricingConfig),
+			})
+			collector, err := bedrock.New(ctx, &bedrock.Config{
+				Regions:       regions,
+				PricingClient: awsBedrockClient,
+				Logger:        logger,
+				AccountID:     config.AccountID,
 			})
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",

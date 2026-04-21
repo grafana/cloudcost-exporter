@@ -113,3 +113,7 @@ func (c *AWSClient) ListMSKClusters(ctx context.Context) ([]msktypes.Cluster, er
 func (c *AWSClient) ListMSKServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
 	return c.priceService.listMSKServicePrices(ctx, region, filters)
 }
+
+func (c *AWSClient) ListBedrockPrices(ctx context.Context, region string) ([]string, error) {
+	return c.priceService.listBedrockPrices(ctx, region)
+}

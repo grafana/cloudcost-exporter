@@ -163,6 +163,18 @@ func Test_NewWithDependencies(t *testing.T) {
 			// The collector is skipped gracefully; newWithDependencies still succeeds.
 			expectedCollectors: 0,
 		},
+		{
+			name:     "Bedrock service is skipped gracefully when pricing API unavailable",
+			services: []string{"BEDROCK"},
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+			},
+			setupRegionClients: map[string]client.Client{},
+			// Bedrock uses its own dedicated pricing client (not the injected awsClient),
+			// so collector creation fails without real AWS credentials in tests.
+			// The collector is skipped gracefully; newWithDependencies still succeeds.
+			expectedCollectors: 0,
+		},
 	}
 
 	for _, tt := range tests {
@@ -583,8 +595,12 @@ func Test_AllCostMetricDescsIncludeAccountID(t *testing.T) {
 
 	// Create provider with all services that implement Describe.
 	// S3 and RDS return nil from Describe, so they won't contribute Descs,
-	// but EC2, ELB, NATGATEWAY, VPC, and MSK all do.
-	allServices := []string{serviceEC2, serviceELB, serviceNATGW, serviceVPC, serviceMSK}
+	// but EC2, ELB, NATGATEWAY, VPC, MSK, and Bedrock all do.
+	// Note: ELB, VPC, and NATGATEWAY call createAWSConfig which requires real credentials;
+	// Bedrock and MSK create their own pricing clients that also need credentials.
+	// Without credentials these collectors are skipped, but the test still verifies
+	// that any collector which does initialize exposes account_id on all its Descs.
+	allServices := []string{serviceEC2, serviceELB, serviceNATGW, serviceVPC, serviceMSK, serviceBedrock}
 	config := &Config{
 		Services:       allServices,
 		Region:         "us-east-1",

@@ -85,6 +85,10 @@ func (m *mockClient) ListMSKServicePrices(ctx context.Context, region string, fi
 	panic("not implemented")
 }
 
+func (m *mockClient) ListBedrockPrices(ctx context.Context, region string) ([]string, error) {
+	panic("not implemented")
+}
+
 func (m *mockClient) Metrics() []prometheus.Collector {
 	panic("not implemented")
 }

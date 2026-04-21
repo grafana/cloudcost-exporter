@@ -101,6 +101,11 @@ func (m *MockClient) ListMSKServicePrices(ctx context.Context, region string, fi
 	return args.Get(0).([]string), args.Error(1)
 }
 
+func (m *MockClient) ListBedrockPrices(ctx context.Context, region string) ([]string, error) {
+	args := m.Called(ctx, region)
+	return args.Get(0).([]string), args.Error(1)
+}
+
 func (m *MockClient) Metrics() []prometheus.Collector {
 	args := m.Called()
 	return args.Get(0).([]prometheus.Collector)
