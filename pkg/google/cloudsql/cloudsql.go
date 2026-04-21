@@ -45,6 +45,7 @@ var (
 )
 
 func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient client.Client) (*Collector, error) {
+	logger = logger.With("collector", "cloudsql")
 	pm := newPricingMap(logger, gcpClient)
 	projects := strings.Split(config.Projects, ",")
 	regions := client.RegionsForProjects(gcpClient, projects, logger)
@@ -87,8 +88,6 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 }
 
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
-	logger := c.logger.With("collector", "cloudsql")
-
 	instances, err := c.getAllCloudSQL(ctx)
 	if err != nil {
 		return err
@@ -97,7 +96,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	for _, instance := range instances {
 		price, err := c.pricingMap.matchInstancePrice(instance)
 		if err != nil {
-			logger.Warn("failed to match price for instance",
+			c.logger.Warn("failed to match price for instance",
 				"name", instance.Name,
 				"region", instance.Region,
 				"tier", instance.Settings.Tier,
