@@ -31,11 +31,10 @@ func TestNew(t *testing.T) {
 		RegionMap: map[string]client.Client{
 			"us-east-1": mockClient,
 		},
-		Logger:    slog.Default(),
 		AccountID: "123456789012",
 	}
 
-	collector, err := New(context.Background(), config)
+	collector, err := New(context.Background(), config, slog.Default())
 	require.NoError(t, err)
 
 	assert.NotNil(t, collector)
@@ -51,10 +50,9 @@ func TestCollectorName(t *testing.T) {
 		ScrapeInterval: time.Minute,
 		Regions:        []ec2Types.Region{},
 		RegionMap:      map[string]client.Client{},
-		Logger:         slog.Default(),
 	}
 
-	collector, err := New(context.Background(), config)
+	collector, err := New(context.Background(), config, slog.Default())
 	require.NoError(t, err)
 	assert.Equal(t, subsystem, collector.Name())
 }
@@ -64,13 +62,12 @@ func TestCollectorDescribe(t *testing.T) {
 		ScrapeInterval: time.Minute,
 		Regions:        []ec2Types.Region{},
 		RegionMap:      map[string]client.Client{},
-		Logger:         slog.Default(),
 	}
 	expectedDescs := []string{
 		LoadBalancerUsageHourlyCostDesc.String(),
 		LoadBalancerCapacityUnitsUsageHourlyCostDesc.String(),
 	}
-	collector, err := New(context.Background(), config)
+	collector, err := New(context.Background(), config, slog.Default())
 	require.NoError(t, err)
 	ch := make(chan *prometheus.Desc, len(expectedDescs))
 
@@ -107,11 +104,10 @@ func TestCollectRegionLoadBalancers(t *testing.T) {
 		RegionMap: map[string]client.Client{
 			"us-east-1": mockClient,
 		},
-		Logger:    slog.Default(),
 		AccountID: "123456789012",
 	}
 
-	collector, err := New(context.Background(), config)
+	collector, err := New(context.Background(), config, slog.Default())
 	require.NoError(t, err)
 
 	// Set up mock pricing data

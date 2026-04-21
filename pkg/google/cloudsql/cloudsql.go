@@ -18,7 +18,6 @@ import (
 type Config struct {
 	Projects       string
 	ScrapeInterval time.Duration
-	Logger         *slog.Logger
 }
 
 type Collector struct {
@@ -45,10 +44,10 @@ var (
 	)
 )
 
-func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
-	pm := newPricingMap(config.Logger, gcpClient)
+func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient client.Client) (*Collector, error) {
+	pm := newPricingMap(logger, gcpClient)
 	projects := strings.Split(config.Projects, ",")
-	regions := client.RegionsForProjects(gcpClient, projects, config.Logger)
+	regions := client.RegionsForProjects(gcpClient, projects, logger)
 
 	if err := pm.getSKus(ctx); err != nil {
 		return nil, fmt.Errorf("failed to initialise Cloud SQL pricing: %w", err)
@@ -63,7 +62,7 @@ func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collect
 				return
 			case <-ticker.C:
 				if err := pm.getSKus(ctx); err != nil {
-					config.Logger.Error("failed to refresh Cloud SQL pricing SKUs", "error", err)
+					logger.Error("failed to refresh Cloud SQL pricing SKUs", "error", err)
 				}
 			}
 		}
@@ -75,7 +74,7 @@ func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collect
 		pricingMap: pm,
 		projects:   projects,
 		regions:    regions,
-		logger:     config.Logger,
+		logger:     logger,
 	}, nil
 }
 

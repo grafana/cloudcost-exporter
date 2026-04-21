@@ -72,8 +72,8 @@ type Collector struct {
 	accountID      string
 }
 
-func New(ctx context.Context, config *Config) (*Collector, error) {
-	logger := config.Logger.With("collector", serviceName)
+func New(ctx context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
+	logger = logger.With("collector", serviceName)
 	pricingMap := NewVPCPricingMap(logger)
 
 	// Initial pricing data load using the dedicated us-east-1 pricing client
@@ -112,7 +112,6 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 type Config struct {
 	ScrapeInterval time.Duration
 	Regions        []ec2Types.Region
-	Logger         *slog.Logger
 	Client         awsclient.Client // Dedicated client with us-east-1 pricing service
 	AccountID      string
 }

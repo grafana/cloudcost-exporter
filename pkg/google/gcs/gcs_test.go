@@ -42,8 +42,7 @@ func TestNew(t *testing.T) {
 	t.Run("should return a non-nil client", func(t *testing.T) {
 		gcsCollector, err := New(context.Background(), &Config{
 			ProjectId: "project-1",
-			Logger:    slog.Default(),
-		}, gcpClient)
+		}, slog.Default(), gcpClient)
 		assert.NoError(t, err)
 		assert.NotNil(t, gcsCollector)
 	})
@@ -51,8 +50,7 @@ func TestNew(t *testing.T) {
 	t.Run("collectorName should be GCS", func(t *testing.T) {
 		gcsCollector, _ := New(context.Background(), &Config{
 			ProjectId: "project-1",
-			Logger:    slog.Default(),
-		}, gcpClient)
+		}, slog.Default(), gcpClient)
 		assert.Equal(t, "GCS", gcsCollector.Name())
 	})
 }
@@ -269,8 +267,7 @@ func TestCollector_Collect(t *testing.T) {
 	assert.NoError(t, err)
 	collector, err := New(context.Background(), &Config{
 		ProjectId: "project-1",
-		Logger:    slog.Default(),
-	}, gcpClient)
+	}, slog.Default(), gcpClient)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, collector)

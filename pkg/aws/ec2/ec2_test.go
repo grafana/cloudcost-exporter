@@ -28,10 +28,9 @@ var (
 func TestCollector_Name(t *testing.T) {
 	t.Run("Name should return the same name as the subsystem const", func(t *testing.T) {
 		collector, err := New(context.Background(), &Config{
-			Logger:         logger,
 			ScrapeInterval: time.Minute,
 			AccountID:      "123456789012",
-		})
+		}, logger)
 		require.NoError(t, err)
 		assert.Equal(t, subsystem, collector.Name())
 	})
@@ -42,11 +41,10 @@ func TestNew(t *testing.T) {
 	t.Run("New should return ClientNotFound error when RegionMap is empty", func(t *testing.T) {
 		_, err := New(context.Background(), &Config{
 			Regions:        regions,
-			Logger:         logger,
 			ScrapeInterval: time.Minute,
 			AccountID:      "123456789012",
 			RegionMap:      map[string]client.Client{}, // Empty map - no client
-		})
+		}, logger)
 		assert.ErrorIs(t, err, ErrClientNotFound)
 	})
 
@@ -57,13 +55,12 @@ func TestNew(t *testing.T) {
 
 		_, err := New(context.Background(), &Config{
 			Regions:        regions,
-			Logger:         logger,
 			ScrapeInterval: time.Minute,
 			AccountID:      "123456789012",
 			RegionMap: map[string]client.Client{
 				"us-east-1": mock,
 			},
-		})
+		}, logger)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrListOnDemandPrices)
 	})
@@ -79,13 +76,12 @@ func TestNew(t *testing.T) {
 
 		_, err := New(context.Background(), &Config{
 			Regions:        regions,
-			Logger:         logger,
 			ScrapeInterval: time.Minute,
 			AccountID:      "123456789012",
 			RegionMap: map[string]client.Client{
 				"us-east-1": mock,
 			},
-		})
+		}, logger)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrListStoragePrices)
 	})
@@ -103,13 +99,12 @@ func TestNew(t *testing.T) {
 
 		collector, err := New(context.Background(), &Config{
 			Regions:        regions,
-			Logger:         logger,
 			ScrapeInterval: time.Minute,
 			AccountID:      "123456789012",
 			RegionMap: map[string]client.Client{
 				"us-east-1": mock,
 			},
-		})
+		}, logger)
 		require.NoError(t, err)
 		assert.NotNil(t, collector)
 
@@ -128,10 +123,9 @@ func TestCollector_Collect(t *testing.T) {
 	}
 	t.Run("Collect should return no error", func(t *testing.T) {
 		collector, err := New(context.Background(), &Config{
-			Logger:         logger,
 			ScrapeInterval: time.Minute,
 			AccountID:      "123456789012",
-		})
+		}, logger)
 		require.NoError(t, err)
 		ch := make(chan prometheus.Metric)
 		go func() {
@@ -234,13 +228,12 @@ func TestCollector_Collect(t *testing.T) {
 
 		collector, err := New(ctx, &Config{
 			Regions:        regions,
-			Logger:         logger,
 			ScrapeInterval: time.Minute,
 			AccountID:      "123456789012",
 			RegionMap: map[string]client.Client{
 				"us-east-1": c,
 			},
-		})
+		}, logger)
 		require.NoError(t, err)
 
 		ch := make(chan prometheus.Metric)
@@ -379,13 +372,12 @@ func Test_FetchVolumesData(t *testing.T) {
 
 		collector, err := New(context.Background(), &Config{
 			Regions:        []ec2Types.Region{region},
-			Logger:         logger,
 			ScrapeInterval: time.Minute,
 			AccountID:      "123456789012",
 			RegionMap: map[string]client.Client{
 				regionName: c,
 			},
-		})
+		}, logger)
 		require.NoError(t, err)
 
 		c.EXPECT().
@@ -434,13 +426,12 @@ func Test_EmitMetricsFromVolumesChannel(t *testing.T) {
 
 		collector, err := New(context.Background(), &Config{
 			Regions:        []ec2Types.Region{region},
-			Logger:         logger,
 			ScrapeInterval: time.Minute,
 			AccountID:      "123456789012",
 			RegionMap: map[string]client.Client{
 				regionName: c,
 			},
-		})
+		}, logger)
 		require.NoError(t, err)
 
 		collector.storagePricingMap = &StoragePricingMap{

@@ -43,7 +43,6 @@ type Collector struct {
 
 // Config holds settings for the blob collector.
 type Config struct {
-	Logger         *slog.Logger
 	SubscriptionID string
 	ScrapeInterval time.Duration
 }
@@ -51,13 +50,13 @@ type Config struct {
 // New builds a blob collector. It does not call Azure APIs yet; subscription and interval are stored for Cost Management integration.
 // TODO: Add a provider client parameter (e.g. azClientWrapper) once Cost Management integration is implemented,
 // to match the standard Azure constructor signature: New(ctx, cfg, client).
-func New(ctx context.Context, cfg *Config) (*Collector, error) {
+func New(ctx context.Context, cfg *Config, logger *slog.Logger) (*Collector, error) {
 	interval := cfg.ScrapeInterval
 	if interval <= 0 {
 		interval = time.Hour
 	}
 	return &Collector{
-		logger:         cfg.Logger.With("collector", "blob"),
+		logger:         logger.With("collector", "blob"),
 		metrics:        newMetrics(),
 		subscriptionID: cfg.SubscriptionID,
 		scrapeInterval: interval,

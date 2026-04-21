@@ -58,7 +58,6 @@ type Config struct {
 	// is only available in us-east-1 and ap-south-1.
 	PricingClient client.Client
 	RegionMap     map[string]client.Client
-	Logger        *slog.Logger
 	AccountID     string
 }
 
@@ -87,8 +86,8 @@ type elbProduct struct {
 	}
 }
 
-func New(_ context.Context, config *Config) (*Collector, error) {
-	logger := config.Logger.With("collector", serviceName)
+func New(_ context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
+	logger = logger.With("collector", serviceName)
 	return &Collector{
 		regions:            config.Regions,
 		ScrapeInterval:     config.ScrapeInterval,

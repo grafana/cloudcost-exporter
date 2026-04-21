@@ -46,7 +46,6 @@ var (
 type Config struct {
 	Projects       string
 	ScrapeInterval time.Duration
-	Logger         *slog.Logger
 }
 
 type Collector struct {
@@ -65,8 +64,8 @@ type clusterPricingData struct {
 	memoryGiB   float64
 }
 
-func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
-	logger := config.Logger.With("collector", collectorName)
+func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient client.Client) (*Collector, error) {
+	logger = logger.With("collector", collectorName)
 
 	pm, err := newPricingMap(ctx, logger, gcpClient)
 	if err != nil {

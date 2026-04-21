@@ -160,8 +160,7 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			collector, err := s3.New(ctx, &s3.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				AccountID:      config.AccountID,
-				Logger:         logger,
-			}, awsClient)
+			}, logger, awsClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -172,11 +171,10 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 		case serviceEC2:
 			collector, err := ec2Collector.New(ctx, &ec2Collector.Config{
 				Regions:        regions,
-				Logger:         logger,
 				ScrapeInterval: config.ScrapeInterval,
 				RegionMap:      regionClients,
 				AccountID:      config.AccountID,
-			})
+			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -204,8 +202,7 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				RegionMap:      regionClients,
 				Client:         awsRDSClient,
 				AccountID:      config.AccountID,
-				Logger:         logger,
-			})
+			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -216,11 +213,10 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 		case serviceNATGW:
 			collector, err := awsgwnat.New(ctx, &awsgwnat.Config{
 				ScrapeInterval: config.ScrapeInterval,
-				Logger:         logger,
 				Regions:        regions,
 				RegionMap:      regionClients,
 				AccountID:      config.AccountID,
-			})
+			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -246,9 +242,8 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				PricingClient:  awsELBPricingClient,
 				RegionMap:      regionClients,
 				ScrapeInterval: config.ScrapeInterval,
-				Logger:         logger,
 				AccountID:      config.AccountID,
-			})
+			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -272,11 +267,10 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			})
 			collector, err := awsvpc.New(ctx, &awsvpc.Config{
 				ScrapeInterval: config.ScrapeInterval,
-				Logger:         logger,
 				Regions:        regions,
 				Client:         awsVPCClient,
 				AccountID:      config.AccountID,
-			})
+			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -292,9 +286,8 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				Regions:   regions,
 				RegionMap: regionClients,
 				Client:    awsMSKClient,
-				Logger:    logger,
 				AccountID: config.AccountID,
-			})
+			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),

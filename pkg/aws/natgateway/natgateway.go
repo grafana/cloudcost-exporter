@@ -53,8 +53,8 @@ type Collector struct {
 	accountID string
 }
 
-func New(ctx context.Context, config *Config) (*Collector, error) {
-	logger := config.Logger.With("collector", serviceName)
+func New(ctx context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
+	logger = logger.With("collector", serviceName)
 
 	pricingStore, err := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.RegionMap))
 	if err != nil {
@@ -89,7 +89,6 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 type Config struct {
 	ScrapeInterval time.Duration
 	Regions        []ec2Types.Region
-	Logger         *slog.Logger
 	RegionMap      map[string]awsclient.Client
 	AccountID      string
 }

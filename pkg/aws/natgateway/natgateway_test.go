@@ -67,12 +67,11 @@ func TestNew(t *testing.T) {
 			collector, err := natgateway.New(t.Context(), &natgateway.Config{
 				ScrapeInterval: tt.ScrapeInterval,
 				Regions:        []ec2Types.Region{{RegionName: aws.String(tt.regionName)}},
-				Logger:         tt.Logger,
 				RegionMap: map[string]awsclient.Client{
 					tt.regionName: tt.regionClient,
 				},
 				AccountID: "123456789012",
-			})
+			}, tt.Logger)
 			require.NoError(t, err)
 			assert.NotNil(t, collector)
 			assert.NotNil(t, collector.PricingStore)
@@ -93,11 +92,10 @@ func TestNew_ReturnsErrorWhenPricingAPIUnavailable(t *testing.T) {
 
 	collector, err := natgateway.New(t.Context(), &natgateway.Config{
 		Regions: []ec2Types.Region{{RegionName: aws.String("us-east-1")}},
-		Logger:  testLogger,
 		RegionMap: map[string]awsclient.Client{
 			"us-east-1": regionClient,
 		},
-	})
+	}, testLogger)
 
 	assert.Nil(t, collector)
 	assert.Error(t, err)
@@ -190,12 +188,11 @@ func TestCollector_Collect(t *testing.T) {
 			collector, err := natgateway.New(t.Context(), &natgateway.Config{
 				ScrapeInterval: 1 * time.Hour,
 				Regions:        []ec2Types.Region{{RegionName: aws.String(region)}},
-				Logger:         testLogger,
 				RegionMap: map[string]awsclient.Client{
 					region: tt.regionClient,
 				},
 				AccountID: "123456789012",
-			})
+			}, testLogger)
 			require.NoError(t, err)
 
 			ch := make(chan prometheus.Metric, len(tt.expectedMetrics))
@@ -240,12 +237,11 @@ func TestCollector_CollectAggregatesMultipleUsageTypesPerRegion(t *testing.T) {
 	collector, err := natgateway.New(t.Context(), &natgateway.Config{
 		ScrapeInterval: 1 * time.Hour,
 		Regions:        []ec2Types.Region{{RegionName: aws.String(region)}},
-		Logger:         testLogger,
 		RegionMap: map[string]awsclient.Client{
 			region: regionClient,
 		},
 		AccountID: "123456789012",
-	})
+	}, testLogger)
 	require.NoError(t, err)
 
 	ch := make(chan prometheus.Metric, 10)

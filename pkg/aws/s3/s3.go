@@ -75,7 +75,6 @@ type Collector struct {
 type Config struct {
 	ScrapeInterval time.Duration
 	AccountID      string
-	Logger         *slog.Logger
 }
 
 // Describe is used to register the metrics with the Prometheus client
@@ -105,8 +104,8 @@ func (c *Collector) Collect(ctx context.Context, _ chan<- prometheus.Metric) err
 }
 
 // New creates a new Collector with a client and scrape interval defined.
-func New(ctx context.Context, cfg *Config, client client.Client) (*Collector, error) {
-	logger := cfg.Logger.With("collector", "S3")
+func New(ctx context.Context, cfg *Config, logger *slog.Logger, client client.Client) (*Collector, error) {
+	logger = logger.With("collector", "S3")
 	awsRegions, err := client.DescribeRegions(ctx, false)
 	if err != nil {
 		logger.Warn("failed to describe regions for S3 collector", "error", err)

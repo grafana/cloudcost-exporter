@@ -108,12 +108,11 @@ type Collector struct {
 }
 
 type Config struct {
-	Logger         *slog.Logger
 	SubscriptionID string
 }
 
-func New(ctx context.Context, cfg *Config, azClientWrapper client.AzureClient) (*Collector, error) {
-	logger := cfg.Logger.With("collector", "aks")
+func New(ctx context.Context, cfg *Config, logger *slog.Logger, azClientWrapper client.AzureClient) (*Collector, error) {
+	logger = logger.With("collector", "aks")
 	vmPriceStore := NewVMPriceStore(logger, azClientWrapper)
 	machineStore, err := NewMachineStore(ctx, logger, azClientWrapper)
 	if err != nil {

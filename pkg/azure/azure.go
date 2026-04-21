@@ -101,9 +101,8 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 		switch {
 		case strings.EqualFold(svc, "AKS"):
 			collector, err := aks.New(ctx, &aks.Config{
-				Logger:         logger,
 				SubscriptionID: config.SubscriptionID,
-			}, azClientWrapper)
+			}, logger, azClientWrapper)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", svc),
@@ -113,10 +112,9 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 			collectors = append(collectors, collector)
 		case strings.EqualFold(svc, "blob"):
 			collector, err := blob.New(ctx, &blob.Config{
-				Logger:         logger,
 				SubscriptionID: config.SubscriptionID,
 				ScrapeInterval: config.ScrapeInterval,
-			})
+			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", svc),

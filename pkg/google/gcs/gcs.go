@@ -101,15 +101,14 @@ type Config struct {
 	ProjectId      string
 	Projects       string
 	ScrapeInterval time.Duration
-	Logger         *slog.Logger
 }
 
-func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
+func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient client.Client) (*Collector, error) {
 	if config.ProjectId == "" {
 		return nil, fmt.Errorf("projectID cannot be empty")
 	}
 
-	logger := config.Logger.With("collector", collectorName)
+	logger = logger.With("collector", collectorName)
 
 	projects := strings.Split(config.Projects, ",")
 	if len(projects) == 1 && projects[0] == "" {

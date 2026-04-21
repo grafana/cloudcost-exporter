@@ -117,8 +117,7 @@ func TestNewReturnsErrorWhenPricingLoadFails(t *testing.T) {
 		Regions:   []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		RegionMap: map[string]client.Client{},
 		Client:    pricingClient,
-		Logger:    testLogger(),
-	})
+	}, testLogger())
 	require.Error(t, err)
 }
 
@@ -140,8 +139,7 @@ func TestNewReturnsErrorWhenStoragePricingLoadFails(t *testing.T) {
 		Regions:   []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		RegionMap: map[string]client.Client{},
 		Client:    pricingClient,
-		Logger:    testLogger(),
-	})
+	}, testLogger())
 	require.Error(t, err)
 }
 
@@ -167,9 +165,8 @@ func TestCollectorCollectEmitsHourlyRateMetrics(t *testing.T) {
 		Regions:   []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		RegionMap: map[string]client.Client{"us-east-1": regionClient},
 		Client:    pricingClient,
-		Logger:    testLogger(),
 		AccountID: "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -211,9 +208,8 @@ func TestCollectorCollectCachesPricingLookups(t *testing.T) {
 		Regions:   []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		RegionMap: map[string]client.Client{"us-east-1": regionClient},
 		Client:    pricingClient,
-		Logger:    testLogger(),
 		AccountID: "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -242,9 +238,8 @@ func TestCollectorCollectContinuesWhenRegionClientMissing(t *testing.T) {
 			"us-west-2": regionClient,
 		},
 		Client:    pricingClient,
-		Logger:    testLogger(),
 		AccountID: "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -276,9 +271,8 @@ func TestCollectorCollectContinuesWhenRegionListingFails(t *testing.T) {
 			"us-west-2": healthyRegionClient,
 		},
 		Client:    pricingClient,
-		Logger:    testLogger(),
 		AccountID: "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -303,9 +297,8 @@ func TestCollectorCollectReturnsContextErrWhenContextCancelled(t *testing.T) {
 		Regions:   []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		RegionMap: map[string]client.Client{"us-east-1": regionClient},
 		Client:    pricingClient,
-		Logger:    testLogger(),
 		AccountID: "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -352,9 +345,8 @@ func TestCollectorCollectContinuesOnContextDeadlineExceeded(t *testing.T) {
 			"us-west-2": healthyClient,
 		},
 		Client:    pricingClient,
-		Logger:    testLogger(),
 		AccountID: "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)

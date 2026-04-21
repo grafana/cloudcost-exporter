@@ -134,10 +134,9 @@ func TestNew(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		ScrapeInterval: 1 * time.Hour,
 		Regions:        regions,
-		Logger:         logger,
 		Client:         mockClient, // Add the dedicated client
 		AccountID:      "123456789012",
-	})
+	}, logger)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, collector)

@@ -43,8 +43,7 @@ func TestNewCollector(t *testing.T) {
 			got, err := New(context.Background(), &Config{
 				ScrapeInterval: tt.args.interval,
 				AccountID:      "123456789012",
-				Logger:         slog.Default(),
-			}, c)
+			}, slog.Default(), c)
 			assert.NoError(t, err)
 			assert.NotNil(t, got)
 			assert.Equal(t, tt.args.interval, got.interval)

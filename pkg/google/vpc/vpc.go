@@ -67,7 +67,6 @@ var (
 type Config struct {
 	Projects       string
 	ScrapeInterval time.Duration
-	Logger         *slog.Logger
 }
 
 // Collector implements provider.Collector for GCP VPC metrics
@@ -81,8 +80,8 @@ type Collector struct {
 }
 
 // New creates a new VPC collector and starts periodic pricing refresh
-func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
-	logger := config.Logger.With("collector", "vpc")
+func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient client.Client) (*Collector, error) {
+	logger = logger.With("collector", "vpc")
 
 	pricingMap := NewVPCPricingMap(logger, gcpClient)
 

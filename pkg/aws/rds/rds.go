@@ -46,7 +46,6 @@ type Config struct {
 	Client         client.Client
 	ScrapeInterval time.Duration
 	AccountID      string
-	Logger         *slog.Logger
 }
 
 type listError struct {
@@ -60,7 +59,7 @@ const (
 )
 
 // New creates an rds collector
-func New(_ context.Context, config *Config) (*Collector, error) {
+func New(_ context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
 	return &Collector{
 		pricingMap:     newPricingMap(),
 		regions:        config.Regions,
@@ -68,7 +67,7 @@ func New(_ context.Context, config *Config) (*Collector, error) {
 		scrapeInterval: config.ScrapeInterval,
 		Client:         config.Client,
 		accountID:      config.AccountID,
-		logger:         config.Logger.With("collector", serviceName),
+		logger:         logger.With("collector", serviceName),
 	}, nil
 }
 
