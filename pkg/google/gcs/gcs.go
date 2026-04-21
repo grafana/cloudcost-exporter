@@ -140,7 +140,7 @@ func (c *Collector) Name() string {
 
 // Register is called when the collector is created and is responsible for registering the metrics with the registry
 func (c *Collector) Register(registry provider.Registry) error {
-	c.logger.Info("Registering GCS metrics")
+	c.logger.Info("registering GCS metrics")
 	registry.MustRegister(c.metrics.StorageGauge)
 	registry.MustRegister(c.metrics.StorageDiscountGauge)
 	registry.MustRegister(c.metrics.OperationsDiscountGauge)
@@ -154,7 +154,7 @@ func (c *Collector) Register(registry provider.Registry) error {
 
 // collectMetrics performs the actual collection work
 func (c *Collector) collectMetrics(ctx context.Context) error {
-	c.logger.Info("Collecting GCS metrics")
+	c.logger.Info("collecting GCS metrics")
 	now := time.Now()
 
 	// If the nextScrape time is in the future, return nil and do not scrape
@@ -167,16 +167,16 @@ func (c *Collector) collectMetrics(ctx context.Context) error {
 	c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
 	exporterOperationsDiscounts(c.metrics)
 	if err := c.gcpClient.ExportRegionalDiscounts(ctx, c.metrics); err != nil {
-		c.logger.LogAttrs(ctx, slog.LevelError, "Error exporting regional discounts", slog.Any("error", err))
+		c.logger.LogAttrs(ctx, slog.LevelError, "error exporting regional discounts", slog.Any("error", err))
 	}
 
 	if err := c.gcpClient.ExportBucketInfo(ctx, c.Projects, c.metrics); err != nil {
-		c.logger.LogAttrs(ctx, slog.LevelError, "Error exporting bucket info", slog.Any("error", err))
+		c.logger.LogAttrs(ctx, slog.LevelError, "error exporting bucket info", slog.Any("error", err))
 	}
 
 	serviceName, err := c.gcpClient.GetServiceName(ctx, "Cloud Storage")
 	if err != nil {
-		c.logger.LogAttrs(ctx, slog.LevelError, "Error getting service name", slog.Any("error", err))
+		c.logger.LogAttrs(ctx, slog.LevelError, "error getting service name", slog.Any("error", err))
 		return err
 	}
 	c.gcpClient.ExportGCPCostData(ctx, serviceName, c.metrics)
