@@ -48,8 +48,6 @@ type Config struct {
 }
 
 // New builds a blob collector. It does not call Azure APIs yet; subscription and interval are stored for Cost Management integration.
-// TODO: Add a provider client parameter (e.g. azClientWrapper) once Cost Management integration is implemented,
-// to match the standard Azure constructor signature: New(ctx, cfg, client).
 func New(ctx context.Context, cfg *Config, logger *slog.Logger) (*Collector, error) {
 	interval := cfg.ScrapeInterval
 	if interval <= 0 {
