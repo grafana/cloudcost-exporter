@@ -51,7 +51,6 @@ func TestCollector_Collect(t *testing.T) {
 		"Parse our regular response": {
 			config: &Config{
 				Projects: "testing,testing-1",
-
 			},
 			collectResponse: 1.0,
 			expectedMetrics: []*utils.MetricResult{
