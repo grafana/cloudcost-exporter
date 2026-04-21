@@ -25,9 +25,7 @@ const (
 	subsystem = "azure"
 )
 
-var (
-	errInvalidSubscriptionID = errors.New("subscription id was invalid")
-)
+var errInvalidSubscriptionID = errors.New("subscription id was invalid")
 
 var (
 	collectorDurationDesc = prometheus.NewDesc(
@@ -51,11 +49,10 @@ var (
 )
 
 type Azure struct {
-	config  *Config
 	context context.Context
 	logger  *slog.Logger
 
-	subscriptionID string
+	subscriptionId string
 	azCredentials  *azidentity.DefaultAzureCredential
 
 	collectorTimeout time.Duration
@@ -143,7 +140,7 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 		context: ctx,
 		logger:  logger,
 
-		subscriptionID: config.SubscriptionID,
+		subscriptionId: config.SubscriptionId,
 		azCredentials:  creds,
 
 		collectorTimeout: config.CollectorTimeout,
@@ -188,7 +185,7 @@ func (a *Azure) Collect(ch chan<- prometheus.Metric) {
 
 			duration, hasError := collectormetrics.Collect(collectCtx, c, ch, a.logger, subsystem)
 
-			//TODO: remove collectorErrors once we have the new metrics
+			// TODO: remove collectorErrors once we have the new metrics
 			collectorErrors := 0.0
 			if hasError {
 				collectorErrors = 1.0
