@@ -326,9 +326,9 @@ func (c *Collector) collectUsage(ctx context.Context, namespaces []namespacePric
 			continue
 		}
 
-		for key, usage := range incomingUsage {
+		for key, units := range incomingUsage {
 			current := usageByNamespace[key]
-			current.ingressBillableUnits = usage.ingressBillableUnits
+			current.ingressBillableUnits = units
 			usageByNamespace[key] = current
 		}
 
@@ -342,8 +342,8 @@ func (c *Collector) collectUsage(ctx context.Context, namespaces []namespacePric
 	return usageByNamespace, failedRegions
 }
 
-func (c *Collector) collectIncomingUsage(ctx context.Context, region string, resourceIDs []string) (map[string]namespaceUsage, error) {
-	usage := make(map[string]namespaceUsage, len(resourceIDs))
+func (c *Collector) collectIncomingUsage(ctx context.Context, region string, resourceIDs []string) (map[string]float64, error) {
+	usage := make(map[string]float64, len(resourceIDs))
 
 	for batch := range slices.Chunk(resourceIDs, maxMetricsBatch) {
 		response, err := c.azureClient.QueryResourceMetrics(
@@ -396,8 +396,8 @@ func (c *Collector) collectSizeUsage(ctx context.Context, region string, resourc
 	return usage, nil
 }
 
-func parseIncomingUsage(response azmetrics.QueryResourcesResponse) (map[string]namespaceUsage, error) {
-	usageByNamespace := make(map[string]namespaceUsage, len(response.Values))
+func parseIncomingUsage(response azmetrics.QueryResourcesResponse) (map[string]float64, error) {
+	usageByNamespace := make(map[string]float64, len(response.Values))
 
 	for _, metricData := range response.Values {
 		if metricData.ResourceID == nil || *metricData.ResourceID == "" {
@@ -415,13 +415,13 @@ func parseIncomingUsage(response azmetrics.QueryResourcesResponse) (map[string]n
 			}
 		}
 
-		namespaceUsage := namespaceUsage{}
+		var ingressBillableUnits float64
 		for _, bucket := range buckets {
 			billableByBytes := math.Ceil(bucket.bytes / billableIngressEventBytes)
-			namespaceUsage.ingressBillableUnits += math.Max(bucket.messages, billableByBytes)
+			ingressBillableUnits += math.Max(bucket.messages, billableByBytes)
 		}
 
-		usageByNamespace[usageKey(*metricData.ResourceID)] = namespaceUsage
+		usageByNamespace[usageKey(*metricData.ResourceID)] = ingressBillableUnits
 	}
 
 	return usageByNamespace, nil
