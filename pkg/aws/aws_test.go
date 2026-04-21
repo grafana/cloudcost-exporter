@@ -150,6 +150,26 @@ func Test_NewWithDependencies(t *testing.T) {
 			expectedCollectors: 1,
 		},
 		{
+			name:     "RDS service creates RDS collector",
+			services: []string{"RDS"},
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+			},
+			setupRegionClients: map[string]client.Client{
+				"us-east-1": nil,
+			},
+			expectedCollectors: 1,
+		},
+		{
+			name:     "VPC service creates VPC collector",
+			services: []string{"VPC"},
+			regions: []types.Region{
+				{RegionName: stringPtr("us-east-1")},
+			},
+			setupRegionClients: map[string]client.Client{},
+			expectedCollectors: 0,
+		},
+		{
 			name:     "MSK service creates MSK collector",
 			services: []string{"MSK"},
 			regions: []types.Region{
@@ -199,6 +219,7 @@ func Test_NewWithDependencies(t *testing.T) {
 
 			// Call function
 			awsConfig := aws.Config{Region: "us-east-1"}
+			pricingConfig := aws.Config{Region: "us-east-1"}
 			aws, err := newWithDependencies(
 				t.Context(),
 				config,
@@ -206,6 +227,7 @@ func Test_NewWithDependencies(t *testing.T) {
 				regionClients,
 				tt.regions,
 				awsConfig,
+				pricingConfig,
 			)
 
 			// Validate results
@@ -595,7 +617,8 @@ func Test_AllCostMetricDescsIncludeAccountID(t *testing.T) {
 
 	regions := []types.Region{{RegionName: stringPtr("us-east-1")}}
 	awsConfig := aws.Config{Region: "us-east-1"}
-	a, err := newWithDependencies(t.Context(), config, mockClient, regionClients, regions, awsConfig)
+	pricingConfig := aws.Config{Region: "us-east-1"}
+	a, err := newWithDependencies(t.Context(), config, mockClient, regionClients, regions, awsConfig, pricingConfig)
 	require.NoError(t, err)
 
 	ch := make(chan *prometheus.Desc, 100)
