@@ -175,7 +175,7 @@ func (a *Azure) Collect(ch chan<- prometheus.Metric) {
 		go func(c provider.Collector) {
 			defer wg.Done()
 
-			duration, hasError := collectormetrics.Collect(collectCtx, c, ch, a.logger)
+			duration, hasError := collectormetrics.Collect(collectCtx, c, ch, a.logger, subsystem)
 
 			//TODO: remove collectorErrors once we have the new metrics
 			collectorErrors := 0.0

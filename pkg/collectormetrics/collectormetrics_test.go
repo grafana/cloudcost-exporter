@@ -42,7 +42,7 @@ func TestCollect(t *testing.T) {
 				c.EXPECT().Collect(gomock.Any(), ch).DoAndReturn(tt.collect).AnyTimes()
 			}
 
-			duration, hasError := Collect(context.Background(), c, ch, slog.Default())
+			duration, hasError := Collect(context.Background(), c, ch, slog.Default(), "test_provider")
 
 			close(ch)
 
@@ -64,7 +64,8 @@ func TestCollect_ErrorCounterEmitted(t *testing.T) {
 	c.EXPECT().Name().Return(collectorName).AnyTimes()
 	c.EXPECT().Collect(gomock.Any(), ch).Return(assert.AnError)
 
-	_, hasError := Collect(context.Background(), c, ch, slog.Default())
+	const providerName = "test_provider"
+	_, hasError := Collect(context.Background(), c, ch, slog.Default(), providerName)
 	close(ch)
 
 	assert.True(t, hasError, "hasError should be true when Collect fails")
@@ -82,7 +83,7 @@ func TestCollect_ErrorCounterEmitted(t *testing.T) {
 		}
 		var dtoMetric dto.Metric
 		require.NoError(t, m.Write(&dtoMetric))
-		if labels := dtoMetric.GetLabel(); len(labels) == 2 && labels[0].GetValue() == collectorName && labels[1].GetValue() == utils.RegionUnknown {
+		if labels := dtoMetric.GetLabel(); len(labels) == 3 && labels[0].GetValue() == collectorName && labels[1].GetValue() == providerName && labels[2].GetValue() == utils.RegionUnknown {
 			counterValue = dtoMetric.GetCounter().GetValue()
 			found = true
 		}
@@ -143,7 +144,7 @@ func TestCollect_MultipleCollectors(t *testing.T) {
 			}
 
 			for i, c := range collectors {
-				duration, hasError := Collect(context.Background(), c, ch, slog.Default())
+				duration, hasError := Collect(context.Background(), c, ch, slog.Default(), "test_provider")
 				assert.GreaterOrEqual(t, duration, 0.0, "collector %d duration should be >= 0", i)
 				assert.Equal(t, tt.expectedErrors[i], hasError, "collector %d error status mismatch", i)
 			}

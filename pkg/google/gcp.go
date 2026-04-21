@@ -215,7 +215,7 @@ func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 	eg.SetLimit(collectConcurrencyLimit)
 	for _, c := range g.collectors {
 		eg.Go(func() error {
-			duration, hasError := collectormetrics.Collect(collectCtx, c, ch, g.logger)
+			duration, hasError := collectormetrics.Collect(collectCtx, c, ch, g.logger, subsystem)
 
 			if !hasError {
 				g.logger.LogAttrs(collectCtx, slog.LevelInfo, "Collect successful",
