@@ -37,15 +37,16 @@ import (
 )
 
 type Config struct {
-	Services         []string
-	Region           string
-	Profile          string
-	RoleARN          string
-	ExcludeRegions   []string // AWS region names to skip (e.g. me-central-1)
-	ScrapeInterval   time.Duration
-	CollectorTimeout time.Duration
-	Logger           *slog.Logger
-	AccountID        string
+	Services             []string
+	Region               string
+	Profile              string
+	RoleARN              string
+	ExcludeRegions       []string // AWS region names to skip (e.g. me-central-1)
+	ScrapeInterval       time.Duration
+	CollectorTimeout     time.Duration
+	Logger               *slog.Logger
+	AccountID            string
+	BedrockFamilyFilter  string // regex matched against family label; default "anthropic|amazon"
 }
 
 type AWS struct {
@@ -273,6 +274,7 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				PricingClient: awsBedrockClient,
 				Logger:        logger,
 				AccountID:     config.AccountID,
+				FamilyFilter:  config.BedrockFamilyFilter,
 			})
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",

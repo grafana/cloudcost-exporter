@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
@@ -71,11 +72,14 @@ type bedrockProductInfo struct {
 	} `json:"terms"`
 }
 
+const defaultFamilyFilter = "anthropic|amazon"
+
 type Config struct {
 	Regions       []ec2types.Region
 	PricingClient client.Client
 	Logger        *slog.Logger
 	AccountID     string
+	FamilyFilter  string // regex matched against the family label; defaults to "anthropic|amazon"
 }
 
 type Collector struct {
@@ -83,6 +87,7 @@ type Collector struct {
 	regions      []string
 	logger       *slog.Logger
 	accountID    string
+	familyFilter *regexp.Regexp
 }
 
 func New(ctx context.Context, config *Config) (*Collector, error) {
@@ -91,7 +96,16 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 		logger = config.Logger.With("collector", serviceName)
 	}
 
-	pricingStore, err := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.PricingClient))
+	familyPattern := config.FamilyFilter
+	if familyPattern == "" {
+		familyPattern = defaultFamilyFilter
+	}
+	familyFilter, err := regexp.Compile(familyPattern)
+	if err != nil {
+		return nil, fmt.Errorf("invalid bedrock family filter %q: %w", familyPattern, err)
+	}
+
+	pricingStore, err := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.PricingClient, familyFilter))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pricing store: %w", err)
 	}
@@ -125,6 +139,7 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 		regions:      regions,
 		logger:       logger,
 		accountID:    config.AccountID,
+		familyFilter: familyFilter,
 	}, nil
 }
 
@@ -189,28 +204,29 @@ func (c *Collector) Register(_ provider.Registry) error {
 // TermMatch filter on GetProducts, so each invocation returns only that region's SKUs.
 // The pricingstore fans out one call per configured region; do NOT replace this with a
 // single call, or the resulting snapshot will lose regional separation.
-func newPriceFetcher(pricingClient client.Client) pricingstore.PriceFetchFunc {
+func newPriceFetcher(pricingClient client.Client, familyFilter *regexp.Regexp) pricingstore.PriceFetchFunc {
 	return func(ctx context.Context, region string) ([]string, error) {
 		rawItems, err := pricingClient.ListBedrockPrices(ctx, region)
 		if err != nil {
 			return nil, err
 		}
-		return preprocessBedrockPrices(rawItems), nil
+		return preprocessBedrockPrices(rawItems, familyFilter), nil
 	}
 }
 
-func preprocessBedrockPrices(rawItems []string) []string {
+func preprocessBedrockPrices(rawItems []string, familyFilter *regexp.Regexp) []string {
 	result := make([]string, 0, len(rawItems))
 	for _, raw := range rawItems {
-		if processed, ok := encodeBedrockPriceJSON(raw); ok {
+		if processed, ok := encodeBedrockPriceJSON(raw, familyFilter); ok {
 			result = append(result, processed)
 		}
 	}
 	return result
 }
 
-// Returns ok=false for non-text-token types, parse failures, or unrecognized usagetype formats.
-func encodeBedrockPriceJSON(raw string) (string, bool) {
+// Returns ok=false for non-text-token types, parse failures, unrecognized usagetype formats,
+// or families not matched by familyFilter.
+func encodeBedrockPriceJSON(raw string, familyFilter *regexp.Regexp) (string, bool) {
 	var info bedrockProductInfo
 	if err := json.Unmarshal([]byte(raw), &info); err != nil {
 		return "", false
@@ -228,8 +244,7 @@ func encodeBedrockPriceJSON(raw string) (string, bool) {
 	}
 
 	family := normalizeProvider(attrs.Provider)
-	// remove this filter to emit all model families
-	if family != "anthropic" && family != "amazon" {
+	if !familyFilter.MatchString(family) {
 		return "", false
 	}
 	attrs.UsageType = strings.Join([]string{family, direction, modelID, priceTier}, compositeKeySep)

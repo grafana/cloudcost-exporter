@@ -79,6 +79,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s).")
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
 	flag.StringVar(&cfg.Providers.AWS.RoleARN, "aws.roleARN", "", "Optional AWS role ARN to assume for cross-account access.")
+	fs.StringVar(&cfg.Providers.AWS.BedrockFamilyFilter, "aws.bedrock.families", "anthropic|amazon", "Regex matched against the Bedrock model family label. Only matching families are emitted.")
 	// TODO - PUT PROJECT-ID UNDER GCP
 	flag.StringVar(&cfg.ProjectID, "project-id", "", "Project ID to target.")
 	flag.StringVar(&cfg.Providers.Azure.SubscriptionId, "azure.subscription-id", "", "Azure subscription ID to pull data from.")
@@ -248,14 +249,15 @@ func selectProviderWith(
 		})
 	case "aws":
 		return newAWS(ctx, &aws.Config{
-			Logger:           cfg.Logger,
-			Region:           cfg.Providers.AWS.Region,
-			Profile:          cfg.Providers.AWS.Profile,
-			RoleARN:          cfg.Providers.AWS.RoleARN,
-			ScrapeInterval:   cfg.Collector.ScrapeInterval,
-			Services:         strings.Split(cfg.Providers.AWS.Services.String(), ","),
-			ExcludeRegions:   strings.Split(cfg.Providers.AWS.ExcludeRegions.String(), ","),
-			CollectorTimeout: collectorTimeout,
+			Logger:              cfg.Logger,
+			Region:              cfg.Providers.AWS.Region,
+			Profile:             cfg.Providers.AWS.Profile,
+			RoleARN:             cfg.Providers.AWS.RoleARN,
+			ScrapeInterval:      cfg.Collector.ScrapeInterval,
+			Services:            strings.Split(cfg.Providers.AWS.Services.String(), ","),
+			ExcludeRegions:      strings.Split(cfg.Providers.AWS.ExcludeRegions.String(), ","),
+			CollectorTimeout:    collectorTimeout,
+			BedrockFamilyFilter: cfg.Providers.AWS.BedrockFamilyFilter,
 		})
 
 	case "gcp":
