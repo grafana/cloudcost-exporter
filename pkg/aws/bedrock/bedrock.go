@@ -72,14 +72,12 @@ type bedrockProductInfo struct {
 	} `json:"terms"`
 }
 
-const defaultFamilyFilter = ".*"
-
 type Config struct {
 	Regions       []ec2types.Region
 	PricingClient client.Client
 	Logger        *slog.Logger
 	AccountID     string
-	FamilyFilter  string // regex matched against the family label; defaults to "anthropic|amazon"
+	FamilyFilter  string // regex matched against the family label; see --aws.bedrock.families flag
 }
 
 type Collector struct {
@@ -96,13 +94,9 @@ func New(ctx context.Context, config *Config) (*Collector, error) {
 		logger = config.Logger.With("collector", serviceName)
 	}
 
-	familyPattern := config.FamilyFilter
-	if familyPattern == "" {
-		familyPattern = defaultFamilyFilter
-	}
-	familyFilter, err := regexp.Compile(familyPattern)
+	familyFilter, err := regexp.Compile(config.FamilyFilter)
 	if err != nil {
-		return nil, fmt.Errorf("invalid bedrock family filter %q: %w", familyPattern, err)
+		return nil, fmt.Errorf("invalid bedrock family filter %q: %w", config.FamilyFilter, err)
 	}
 
 	pricingStore, err := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.PricingClient, familyFilter))
