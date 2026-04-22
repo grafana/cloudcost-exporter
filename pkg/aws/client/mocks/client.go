@@ -16,9 +16,9 @@ import (
 
 	types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	types0 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
-	types3 "github.com/aws/aws-sdk-go-v2/service/kafka/types"
-	types1 "github.com/aws/aws-sdk-go-v2/service/pricing/types"
-	types2 "github.com/aws/aws-sdk-go-v2/service/rds/types"
+	types1 "github.com/aws/aws-sdk-go-v2/service/kafka/types"
+	types2 "github.com/aws/aws-sdk-go-v2/service/pricing/types"
+	types3 "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	client "github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	prometheus "github.com/prometheus/client_golang/prometheus"
 	gomock "go.uber.org/mock/gomock"
@@ -108,6 +108,21 @@ func (mr *MockClientMockRecorder) GetRDSUnitData(ctx, instType, region, deployme
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRDSUnitData", reflect.TypeOf((*MockClient)(nil).GetRDSUnitData), ctx, instType, region, deploymentOption, engineCode, isOutpost)
 }
 
+// ListBedrockPrices mocks base method.
+func (m *MockClient) ListBedrockPrices(ctx context.Context, region string) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListBedrockPrices", ctx, region)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListBedrockPrices indicates an expected call of ListBedrockPrices.
+func (mr *MockClientMockRecorder) ListBedrockPrices(ctx, region any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBedrockPrices", reflect.TypeOf((*MockClient)(nil).ListBedrockPrices), ctx, region)
+}
+
 // ListComputeInstances mocks base method.
 func (m *MockClient) ListComputeInstances(ctx context.Context) ([]types.Reservation, error) {
 	m.ctrl.T.Helper()
@@ -139,7 +154,7 @@ func (mr *MockClientMockRecorder) ListEBSVolumes(ctx any) *gomock.Call {
 }
 
 // ListEC2ServicePrices mocks base method.
-func (m *MockClient) ListEC2ServicePrices(ctx context.Context, region string, filters []types1.Filter) ([]string, error) {
+func (m *MockClient) ListEC2ServicePrices(ctx context.Context, region string, filters []types2.Filter) ([]string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListEC2ServicePrices", ctx, region, filters)
 	ret0, _ := ret[0].([]string)
@@ -169,10 +184,10 @@ func (mr *MockClientMockRecorder) ListELBPrices(ctx, region any) *gomock.Call {
 }
 
 // ListMSKClusters mocks base method.
-func (m *MockClient) ListMSKClusters(ctx context.Context) ([]types3.Cluster, error) {
+func (m *MockClient) ListMSKClusters(ctx context.Context) ([]types1.Cluster, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListMSKClusters", ctx)
-	ret0, _ := ret[0].([]types3.Cluster)
+	ret0, _ := ret[0].([]types1.Cluster)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -184,7 +199,7 @@ func (mr *MockClientMockRecorder) ListMSKClusters(ctx any) *gomock.Call {
 }
 
 // ListMSKServicePrices mocks base method.
-func (m *MockClient) ListMSKServicePrices(ctx context.Context, region string, filters []types1.Filter) ([]string, error) {
+func (m *MockClient) ListMSKServicePrices(ctx context.Context, region string, filters []types2.Filter) ([]string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListMSKServicePrices", ctx, region, filters)
 	ret0, _ := ret[0].([]string)
@@ -214,10 +229,10 @@ func (mr *MockClientMockRecorder) ListOnDemandPrices(ctx, region any) *gomock.Ca
 }
 
 // ListRDSInstances mocks base method.
-func (m *MockClient) ListRDSInstances(ctx context.Context) ([]types2.DBInstance, error) {
+func (m *MockClient) ListRDSInstances(ctx context.Context) ([]types3.DBInstance, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListRDSInstances", ctx)
-	ret0, _ := ret[0].([]types2.DBInstance)
+	ret0, _ := ret[0].([]types3.DBInstance)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -259,7 +274,7 @@ func (mr *MockClientMockRecorder) ListStoragePrices(ctx, region any) *gomock.Cal
 }
 
 // ListVPCServicePrices mocks base method.
-func (m *MockClient) ListVPCServicePrices(ctx context.Context, region string, filters []types1.Filter) ([]string, error) {
+func (m *MockClient) ListVPCServicePrices(ctx context.Context, region string, filters []types2.Filter) ([]string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListVPCServicePrices", ctx, region, filters)
 	ret0, _ := ret[0].([]string)

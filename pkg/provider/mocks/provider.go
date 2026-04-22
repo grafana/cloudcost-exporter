@@ -206,6 +206,44 @@ func (mr *MockCollectorMockRecorder) Register(r any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Register", reflect.TypeOf((*MockCollector)(nil).Register), r)
 }
 
+// MockRegionsProvider is a mock of RegionsProvider interface.
+type MockRegionsProvider struct {
+	ctrl     *gomock.Controller
+	recorder *MockRegionsProviderMockRecorder
+	isgomock struct{}
+}
+
+// MockRegionsProviderMockRecorder is the mock recorder for MockRegionsProvider.
+type MockRegionsProviderMockRecorder struct {
+	mock *MockRegionsProvider
+}
+
+// NewMockRegionsProvider creates a new mock instance.
+func NewMockRegionsProvider(ctrl *gomock.Controller) *MockRegionsProvider {
+	mock := &MockRegionsProvider{ctrl: ctrl}
+	mock.recorder = &MockRegionsProviderMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockRegionsProvider) EXPECT() *MockRegionsProviderMockRecorder {
+	return m.recorder
+}
+
+// Regions mocks base method.
+func (m *MockRegionsProvider) Regions() []string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Regions")
+	ret0, _ := ret[0].([]string)
+	return ret0
+}
+
+// Regions indicates an expected call of Regions.
+func (mr *MockRegionsProviderMockRecorder) Regions() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Regions", reflect.TypeOf((*MockRegionsProvider)(nil).Regions))
+}
+
 // MockProvider is a mock of Provider interface.
 type MockProvider struct {
 	ctrl     *gomock.Controller

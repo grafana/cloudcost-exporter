@@ -30,6 +30,7 @@ type Client interface {
 	GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, engineCode, isOutpost string) (string, error)
 	ListMSKClusters(ctx context.Context) ([]msktypes.Cluster, error)
 	ListMSKServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error)
+	ListBedrockPrices(ctx context.Context, region string) ([]string, error)
 
 	// TODO: Break out Metrics into an independent interface
 	Metrics() []prometheus.Collector

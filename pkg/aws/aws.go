@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/cloudcost-exporter/pkg/aws/bedrock"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	ec2Collector "github.com/grafana/cloudcost-exporter/pkg/aws/ec2"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/elb"
@@ -87,13 +88,14 @@ const (
 	collectConcurrencyLimit = 10
 
 	// AWS service names used across the AWS provider.
-	serviceS3    = "S3"
-	serviceEC2   = "EC2"
-	serviceRDS   = "RDS"
-	serviceNATGW = "NATGATEWAY"
-	serviceELB   = "ELB"
-	serviceVPC   = "VPC"
-	serviceMSK   = "MSK"
+	serviceS3      = "S3"
+	serviceEC2     = "EC2"
+	serviceRDS     = "RDS"
+	serviceNATGW   = "NATGATEWAY"
+	serviceELB     = "ELB"
+	serviceVPC     = "VPC"
+	serviceMSK     = "MSK"
+	serviceBedrock = "BEDROCK"
 )
 
 func New(ctx context.Context, config *Config) (*AWS, error) {
@@ -248,6 +250,29 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				Client:    awsMSKClient,
 				Logger:    logger,
 				AccountID: config.AccountID,
+			})
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
+			collectors = append(collectors, collector)
+		case serviceBedrock:
+			// Bedrock pricing lookups succeed regardless of the collector's configured regions.
+			// Note: this pins the *endpoint*, not the queried region — the collector still
+			// fetches prices per configured region via a regionCode filter. See
+			// pkg/aws/bedrock.go newPriceFetcher().
+			bedrockPricingConfig := awsConfig.Copy()
+			bedrockPricingConfig.Region = "us-east-1"
+			awsBedrockClient := client.NewAWSClient(client.Config{
+				PricingService: awsPricing.NewFromConfig(bedrockPricingConfig),
+			})
+			collector, err := bedrock.New(ctx, &bedrock.Config{
+				Regions:       regions,
+				PricingClient: awsBedrockClient,
+				Logger:        logger,
+				AccountID:     config.AccountID,
 			})
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",

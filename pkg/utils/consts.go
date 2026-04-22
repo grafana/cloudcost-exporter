@@ -27,6 +27,12 @@ const (
 	PersistentVolumeCostPerGiBSuffix = "persistent_volume_usd_per_gib_hour"
 	// RegionUnknown is used as a label value when a region or other attribute cannot be determined.
 	RegionUnknown = "unknown"
+	// TokenInputCostSuffix is the suffix for per-1k-input-token cost metrics.
+	TokenInputCostSuffix = "token_input_usd_per_1k_tokens"
+	// TokenOutputCostSuffix is the suffix for per-1k-output-token cost metrics.
+	TokenOutputCostSuffix = "token_output_usd_per_1k_tokens"
+	// SearchUnitCostSuffix is the suffix for per-1k-search-unit cost metrics (e.g. Cohere Rerank).
+	SearchUnitCostSuffix = "search_unit_usd_per_1k_search_units"
 )
 
 // RegionsFromMap returns the keys of a map as a slice of strings.
