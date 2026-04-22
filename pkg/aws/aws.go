@@ -88,9 +88,9 @@ const (
 	collectConcurrencyLimit = 10
 
 	// AWS service names used across the AWS provider.
-	serviceS3    = "S3"
-	serviceEC2   = "EC2"
-	serviceRDS   = "RDS"
+	serviceS3      = "S3"
+	serviceEC2     = "EC2"
+	serviceRDS     = "RDS"
 	serviceNATGW   = "NATGATEWAY"
 	serviceELB     = "ELB"
 	serviceVPC     = "VPC"
