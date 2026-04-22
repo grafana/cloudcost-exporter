@@ -37,16 +37,16 @@ import (
 )
 
 type Config struct {
-	Services             []string
-	Region               string
-	Profile              string
-	RoleARN              string
-	ExcludeRegions       []string // AWS region names to skip (e.g. me-central-1)
-	ScrapeInterval       time.Duration
-	CollectorTimeout     time.Duration
-	Logger               *slog.Logger
-	AccountID            string
-	BedrockFamilyFilter  string // regex matched against family label; default "anthropic|amazon"
+	Services            []string
+	Region              string
+	Profile             string
+	RoleARN             string
+	ExcludeRegions      []string // AWS region names to skip (e.g. me-central-1)
+	ScrapeInterval      time.Duration
+	CollectorTimeout    time.Duration
+	Logger              *slog.Logger
+	AccountID           string
+	BedrockFamilyFilter string // regex matched against family label; default "anthropic|amazon"
 }
 
 type AWS struct {
