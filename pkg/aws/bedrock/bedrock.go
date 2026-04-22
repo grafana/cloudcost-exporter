@@ -72,7 +72,7 @@ type bedrockProductInfo struct {
 	} `json:"terms"`
 }
 
-const defaultFamilyFilter = "anthropic|amazon"
+const defaultFamilyFilter = ".*"
 
 type Config struct {
 	Regions       []ec2types.Region

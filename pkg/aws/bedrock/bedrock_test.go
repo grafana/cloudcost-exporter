@@ -189,7 +189,7 @@ func TestCollect_LabelsBatchPriceTier(t *testing.T) {
 	assert.Equal(t, "Claude3Sonnet", m.Labels["model_id"])
 }
 
-func TestCollect_SkipsNonAnthropicAmazonFamilies(t *testing.T) {
+func TestCollect_FamilyFilterRegexFiltersOtherFamilies(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -206,6 +206,7 @@ func TestCollect_SkipsNonAnthropicAmazonFamilies(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
+		FamilyFilter:  "anthropic|amazon",
 		Logger:        testLogger(),
 		AccountID:     "123456789012",
 	})
@@ -218,6 +219,49 @@ func TestCollect_SkipsNonAnthropicAmazonFamilies(t *testing.T) {
 	m := results[0]
 	assert.Equal(t, "anthropic", m.Labels["family"])
 	assert.Equal(t, "Claude3Sonnet", m.Labels["model_id"])
+}
+
+func TestCollect_FamilyFilterDefaultEmitsAllFamilies(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	pricingClient := mockclient.NewMockClient(ctrl)
+	pricingClient.EXPECT().
+		ListBedrockPrices(gomock.Any(), "us-east-1").
+		Return([]string{
+			inputPriceJSON("us-east-1", "USE1", "Claude3Sonnet", "Anthropic", "0.00300"),
+			inputPriceJSON("us-east-1", "USE1", "Llama4-Scout-17B", "Meta", "0.00017"),
+			inputPriceJSON("us-east-1", "USE1", "NovaPro", "", "0.00080"),
+		}, nil).
+		Times(1)
+
+	collector, err := New(t.Context(), &Config{
+		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
+		PricingClient: pricingClient,
+		Logger:        testLogger(),
+		AccountID:     "123456789012",
+	})
+	require.NoError(t, err)
+
+	results, err := collectMetricResults(t, collector)
+	require.NoError(t, err)
+	require.Len(t, results, 3)
+}
+
+func TestNew_ReturnsErrorForInvalidFamilyFilterRegex(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	pricingClient := mockclient.NewMockClient(ctrl)
+
+	_, err := New(t.Context(), &Config{
+		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
+		PricingClient: pricingClient,
+		FamilyFilter:  "[invalid",
+		Logger:        testLogger(),
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid bedrock family filter")
 }
 
 func TestCollect_SkipsNonTextTokenSKUs(t *testing.T) {
