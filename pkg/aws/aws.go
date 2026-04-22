@@ -277,9 +277,10 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			}
 			collectors = append(collectors, collector)
 		case serviceBedrock:
-			// The AWS Pricing API is only available in us-east-1 and ap-south-1.
-			// Copy the already-loaded config and pin the region to us-east-1 so
 			// Bedrock pricing lookups succeed regardless of the collector's configured regions.
+			// Note: this pins the *endpoint*, not the queried region — the collector still
+			// fetches prices per configured region via a regionCode filter. See
+			// pkg/aws/bedrock.go newPriceFetcher().
 			bedrockPricingConfig := awsConfig.Copy()
 			bedrockPricingConfig.Region = "us-east-1"
 			awsBedrockClient := client.NewAWSClient(client.Config{

@@ -88,7 +88,7 @@ type Collector struct {
 func New(ctx context.Context, config *Config) (*Collector, error) {
 	logger := slog.Default()
 	if config.Logger != nil {
-		logger = config.Logger.With("logger", serviceName)
+		logger = config.Logger.With("collector", serviceName)
 	}
 
 	pricingStore, err := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.PricingClient))
@@ -180,7 +180,15 @@ func (c *Collector) Register(_ provider.Registry) error {
 	return nil
 }
 
-// The AWS Pricing API is only available in us-east-1; callers must pin the client there.
+// Endpoint vs. filter region. The AWS Pricing API is only served from us-east-1 and
+// ap-south-1, so the *client* passed in must be pinned to one of those regions (see
+// pkg/aws/aws.go where the Bedrock pricing client is created against us-east-1).
+//
+// The `region` argument passed into the returned PriceFetchFunc is a different thing:
+// pkg/aws/client.listBedrockPrices -> listServicePrices applies it as a `regionCode`
+// TermMatch filter on GetProducts, so each invocation returns only that region's SKUs.
+// The pricingstore fans out one call per configured region; do NOT replace this with a
+// single call, or the resulting snapshot will lose regional separation.
 func newPriceFetcher(pricingClient client.Client) pricingstore.PriceFetchFunc {
 	return func(ctx context.Context, region string) ([]string, error) {
 		rawItems, err := pricingClient.ListBedrockPrices(ctx, region)
