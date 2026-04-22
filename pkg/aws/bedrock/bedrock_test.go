@@ -111,8 +111,8 @@ func TestCollect_EmitsMetricsForMultipleModels(t *testing.T) {
 		Return([]string{
 			inputPriceJSON("us-east-1", "USE1", "Claude3Sonnet", "Anthropic", "0.00300"),
 			outputPriceJSON("us-east-1", "USE1", "Claude3Sonnet", "Anthropic", "0.01500"),
-			inputPriceJSON("us-east-1", "USE1", "Llama4-Scout-17B", "Meta", "0.00017"),
-			outputPriceJSON("us-east-1", "USE1", "Llama4-Scout-17B", "Meta", "0.00065"),
+			inputPriceJSON("us-east-1", "USE1", "NovaPro", "", "0.00080"),
+			outputPriceJSON("us-east-1", "USE1", "NovaPro", "", "0.00320"),
 		}, nil).
 		Times(1)
 
@@ -167,7 +167,7 @@ func TestCollect_LabelsBatchPriceTier(t *testing.T) {
 	pricingClient.EXPECT().
 		ListBedrockPrices(gomock.Any(), "us-east-1").
 		Return([]string{
-			batchInputPriceJSON("us-east-1", "USE1", "Llama4-Maverick-17B", "Meta", "0.00012"),
+			batchInputPriceJSON("us-east-1", "USE1", "Claude3Sonnet", "Anthropic", "0.00150"),
 		}, nil).
 		Times(1)
 
@@ -185,11 +185,11 @@ func TestCollect_LabelsBatchPriceTier(t *testing.T) {
 
 	m := results[0]
 	assert.Equal(t, "on_demand_batch", m.Labels["price_tier"])
-	assert.Equal(t, "meta", m.Labels["family"])
-	assert.Equal(t, "Llama4-Maverick-17B", m.Labels["model_id"])
+	assert.Equal(t, "anthropic", m.Labels["family"])
+	assert.Equal(t, "Claude3Sonnet", m.Labels["model_id"])
 }
 
-func TestCollect_EmitsCohereSearchUnitMetrics(t *testing.T) {
+func TestCollect_SkipsNonAnthropicAmazonFamilies(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -197,7 +197,8 @@ func TestCollect_EmitsCohereSearchUnitMetrics(t *testing.T) {
 	pricingClient.EXPECT().
 		ListBedrockPrices(gomock.Any(), "us-east-1").
 		Return([]string{
-			inputPriceJSON("us-east-1", "USE1", "cohere.embed-english-v3", "Cohere", "0.00010"),
+			inputPriceJSON("us-east-1", "USE1", "Claude3Sonnet", "Anthropic", "0.00300"),
+			inputPriceJSON("us-east-1", "USE1", "Llama4-Scout-17B", "Meta", "0.00017"),
 			searchUnitPriceJSON("us-east-1", "USE1", "cohere.rerank-english-v3", "Cohere", "0.00200"),
 		}, nil).
 		Times(1)
@@ -212,19 +213,11 @@ func TestCollect_EmitsCohereSearchUnitMetrics(t *testing.T) {
 
 	results, err := collectMetricResults(t, collector)
 	require.NoError(t, err)
-	require.Len(t, results, 2)
+	require.Len(t, results, 1)
 
-	embedMetric := metricByName(results, "cloudcost_aws_bedrock_token_input_usd_per_1k_tokens")
-	require.NotNil(t, embedMetric)
-	assert.Equal(t, "cohere.embed-english-v3", embedMetric.Labels["model_id"])
-	assert.Equal(t, "cohere", embedMetric.Labels["family"])
-	assert.InDelta(t, 0.0001, embedMetric.Value, 1e-9)
-
-	rerankMetric := metricByName(results, "cloudcost_aws_bedrock_search_unit_usd_per_1k_search_units")
-	require.NotNil(t, rerankMetric)
-	assert.Equal(t, "cohere.rerank-english-v3", rerankMetric.Labels["model_id"])
-	assert.Equal(t, "cohere", rerankMetric.Labels["family"])
-	assert.InDelta(t, 0.002, rerankMetric.Value, 1e-9)
+	m := results[0]
+	assert.Equal(t, "anthropic", m.Labels["family"])
+	assert.Equal(t, "Claude3Sonnet", m.Labels["model_id"])
 }
 
 func TestCollect_SkipsNonTextTokenSKUs(t *testing.T) {

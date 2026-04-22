@@ -30,7 +30,7 @@ Or via command line:
 - **`account_id`**: AWS account ID (12-digit), resolved via STS `GetCallerIdentity`
 - **`region`**: AWS region for which the price applies
 - **`model_id`**: Model slug from the AWS Pricing API `usagetype` field (e.g. `Claude3Sonnet`, `Llama4-Scout-17B`, `Nova2.0Pro`)
-- **`family`**: Model provider, lowercased with spaces replaced by underscores (e.g. `anthropic`, `amazon`, `meta`, `mistral_ai`). Models with no provider attribute use `amazon`.
+- **`family`**: Model provider — `anthropic` (Claude models) or `amazon` (Nova, Titan). Models with no provider attribute use `amazon`. Only these two families are emitted; remove the family filter in `encodeBedrockPriceJSON` to include all providers.
 - **`price_tier`**: Inference tier: `on_demand`, `on_demand_batch`, `on_demand_flex`, `on_demand_priority`, or `cross_region`
 
 ## Notes

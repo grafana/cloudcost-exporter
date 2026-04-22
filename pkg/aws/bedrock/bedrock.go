@@ -228,6 +228,10 @@ func encodeBedrockPriceJSON(raw string) (string, bool) {
 	}
 
 	family := normalizeProvider(attrs.Provider)
+	// remove this filter to emit all model families
+	if family != "anthropic" && family != "amazon" {
+		return "", false
+	}
 	attrs.UsageType = strings.Join([]string{family, direction, modelID, priceTier}, compositeKeySep)
 
 	modified, err := json.Marshal(&info)
