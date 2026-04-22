@@ -184,7 +184,7 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			collectors = append(collectors, collector)
 		case serviceRDS:
 			// pricing API for RDS client needs to use always the same region
-			// as for RDS , the pricing data is only available in the us-east-1
+			// as for RDS, the pricing data is only available in the us-east-1
 			pricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
