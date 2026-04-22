@@ -137,11 +137,16 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 		return nil, err
 	}
 
-	return newWithDependencies(ctx, config, awsClient, awsClientPerRegion, regions, ac)
+	pricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
+	if err != nil {
+		return nil, err
+	}
+
+	return newWithDependencies(ctx, config, awsClient, awsClientPerRegion, regions, ac, pricingConfig)
 }
 
 // newWithDependencies creates an AWS provider with all dependencies injected as parameters
-func newWithDependencies(ctx context.Context, config *Config, awsClient client.Client, regionClients map[string]client.Client, regions []types.Region, awsConfig aws.Config) (*AWS, error) {
+func newWithDependencies(ctx context.Context, config *Config, awsClient client.Client, regionClients map[string]client.Client, regions []types.Region, awsConfig aws.Config, pricingConfig aws.Config) (*AWS, error) {
 	var collectors []provider.Collector
 	logger := config.Logger.With("provider", subsystem)
 
@@ -174,12 +179,6 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			}
 			collectors = append(collectors, collector)
 		case serviceRDS:
-			// pricing API for RDS client needs to use always the same region
-			// as for RDS , the pricing data is only available in the us-east-1
-			pricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
-			if err != nil {
-				return nil, err
-			}
 			awsRDSClient := client.NewAWSClient(client.Config{
 				PricingService: awsPricing.NewFromConfig(pricingConfig),
 				RDSService:     rds.NewFromConfig(awsConfig),
@@ -208,14 +207,8 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			}
 			collectors = append(collectors, collector)
 		case serviceELB:
-			// pricing API for ELB client needs to use always the same region
-			// as the pricing data is only available in us-east-1
-			elbPricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
-			if err != nil {
-				return nil, err
-			}
 			awsELBPricingClient := client.NewAWSClient(client.Config{
-				PricingService: awsPricing.NewFromConfig(elbPricingConfig),
+				PricingService: awsPricing.NewFromConfig(pricingConfig),
 			})
 			collector := elb.New(&elb.Config{
 				Regions:        regions,
@@ -227,12 +220,6 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			})
 			collectors = append(collectors, collector)
 		case serviceVPC:
-			// pricing API for VPC client needs to use always the same region
-			// as for VPC, the pricing data is only available in the us-east-1
-			pricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
-			if err != nil {
-				return nil, err
-			}
 			awsVPCClient := client.NewAWSClient(client.Config{
 				PricingService: awsPricing.NewFromConfig(pricingConfig),
 				EC2Service:     ec2.NewFromConfig(pricingConfig),
@@ -252,13 +239,8 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			}
 			collectors = append(collectors, collector)
 		case serviceMSK:
-			// The AWS Pricing API is only available in us-east-1 and ap-south-1.
-			// Copy the already-loaded config and pin the region to us-east-1 so
-			// MSK pricing lookups succeed regardless of the collector's configured regions.
-			mskPricingConfig := awsConfig.Copy()
-			mskPricingConfig.Region = "us-east-1"
 			awsMSKClient := client.NewAWSClient(client.Config{
-				PricingService: awsPricing.NewFromConfig(mskPricingConfig),
+				PricingService: awsPricing.NewFromConfig(pricingConfig),
 			})
 			collector, err := mskCollector.New(ctx, &mskCollector.Config{
 				Regions:   regions,
@@ -325,7 +307,7 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	g.SetLimit(collectConcurrencyLimit)
 	for _, c := range a.collectors {
 		g.Go(func() error {
-			duration, hasError := collectormetrics.Collect(collectCtx, c, ch, a.logger)
+			duration, hasError := collectormetrics.Collect(collectCtx, c, ch, a.logger, subsystem)
 
 			//TODO: remove collectorErrors once we have the new metrics
 			collectorErrors := 0.0
