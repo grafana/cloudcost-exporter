@@ -90,11 +90,11 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 		var collector provider.Collector
 		switch strings.ToUpper(service) {
 		case "GCS":
-			collector, err = gcs.New(&gcs.Config{
+			collector, err = gcs.New(ctx, &gcs.Config{
 				ProjectId:      config.ProjectId,
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
-			}, gcpClient)
+			}, logger, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -104,9 +104,8 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 		case "GKE":
 			collector, err = gke.New(ctx, &gke.Config{
 				Projects:       config.Projects,
-				Logger:         config.Logger,
 				ScrapeInterval: config.ScrapeInterval,
-			}, gcpClient)
+			}, logger, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -117,9 +116,8 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 			// CLB = Cloud Load Balancer, but we use forwarding rules to calculate price
 			collector, err = networking.New(ctx, &networking.Config{
 				ScrapeInterval: config.ScrapeInterval,
-				Logger:         config.Logger,
 				Projects:       config.Projects,
-			}, gcpClient)
+			}, logger, gcpClient)
 			logger.LogAttrs(ctx, slog.LevelInfo, "Creating collector",
 				slog.String("service", service),
 				slog.String("projects", config.Projects))
@@ -132,9 +130,8 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 		case "VPC":
 			collector, err = vpc.New(ctx, &vpc.Config{
 				Projects:       config.Projects,
-				Logger:         config.Logger,
 				ScrapeInterval: config.ScrapeInterval,
-			}, gcpClient)
+			}, logger, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -145,8 +142,7 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 			collector, err = cloudsql.New(ctx, &cloudsql.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
-				Logger:         config.Logger,
-			}, gcpClient)
+			}, logger, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -157,8 +153,7 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 			collector, err = gcpmanagedkafka.New(ctx, &gcpmanagedkafka.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
-				Logger:         config.Logger,
-			}, gcpClient)
+			}, logger, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),

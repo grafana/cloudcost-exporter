@@ -96,7 +96,6 @@ type Config struct {
 	Regions   []ec2types.Region
 	RegionMap map[string]client.Client
 	Client    client.Client
-	Logger    *slog.Logger
 	AccountID string
 }
 
@@ -108,11 +107,8 @@ type clusterPricingData struct {
 	volumeSizeGiB int32
 }
 
-func New(ctx context.Context, config *Config) (*Collector, error) {
-	logger := slog.Default()
-	if config.Logger != nil {
-		logger = config.Logger.With("logger", serviceName)
-	}
+func New(ctx context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
+	logger = logger.With("collector", serviceName)
 
 	pricingStore, err := pricingstore.NewPricingStore(ctx, logger, config.Regions, newPriceFetcher(config.Client))
 	if err != nil {

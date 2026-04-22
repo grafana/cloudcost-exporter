@@ -3,6 +3,7 @@ package gcs
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -39,17 +40,17 @@ func TestNew(t *testing.T) {
 	)
 
 	t.Run("should return a non-nil client", func(t *testing.T) {
-		gcsCollector, err := New(&Config{
+		gcsCollector, err := New(context.Background(), &Config{
 			ProjectId: "project-1",
-		}, gcpClient)
+		}, slog.Default(), gcpClient)
 		assert.NoError(t, err)
 		assert.NotNil(t, gcsCollector)
 	})
 
 	t.Run("collectorName should be GCS", func(t *testing.T) {
-		gcsCollector, _ := New(&Config{
+		gcsCollector, _ := New(context.Background(), &Config{
 			ProjectId: "project-1",
-		}, gcpClient)
+		}, slog.Default(), gcpClient)
 		assert.Equal(t, "GCS", gcsCollector.Name())
 	})
 }
@@ -197,6 +198,7 @@ func TestGetServiceNameByReadableName(t *testing.T) {
 			l, err := net.Listen("tcp", "localhost:0")
 			assert.NoError(t, err)
 			gsrv := grpc.NewServer()
+			billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudBillingServer{})
 			defer gsrv.Stop()
 			go func() {
 				if err = gsrv.Serve(l); err != nil {
@@ -204,7 +206,6 @@ func TestGetServiceNameByReadableName(t *testing.T) {
 				}
 			}()
 
-			billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudBillingServer{})
 			catalogClient, err := billingv1.NewCloudCatalogClient(t.Context(),
 				option.WithEndpoint(l.Addr().String()),
 				option.WithoutAuthentication(),
@@ -249,13 +250,13 @@ func TestCollector_Collect(t *testing.T) {
 	assert.NoError(t, err)
 
 	gsrv := grpc.NewServer()
+	billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudBillingServer{})
 	defer gsrv.Stop()
 	go func() {
 		if err = gsrv.Serve(l); err != nil {
 			t.Errorf("failed to serve: %v", err)
 		}
 	}()
-	billingpb.RegisterCloudCatalogServer(gsrv, &fakeCloudBillingServer{})
 	cloudCatalogClient, err := billingv1.NewCloudCatalogClient(t.Context(),
 		option.WithEndpoint(l.Addr().String()),
 		option.WithoutAuthentication(),
@@ -264,9 +265,9 @@ func TestCollector_Collect(t *testing.T) {
 	gcpClient := client.NewMock("project-1", 0, regionsClient, storageClient, cloudCatalogClient, nil, nil, nil)
 
 	assert.NoError(t, err)
-	collector, err := New(&Config{
+	collector, err := New(context.Background(), &Config{
 		ProjectId: "project-1",
-	}, gcpClient)
+	}, slog.Default(), gcpClient)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, collector)

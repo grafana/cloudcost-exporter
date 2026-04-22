@@ -76,14 +76,13 @@ type Collector struct {
 type Config struct {
 	ScrapeInterval time.Duration
 	Regions        []ec2Types.Region
-	Logger         *slog.Logger
 	RegionMap      map[string]client.Client
 	AccountID      string
 }
 
 // New creates an ec2 collector
-func New(ctx context.Context, config *Config) (*Collector, error) {
-	logger := config.Logger.With("logger", "ec2")
+func New(ctx context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
+	logger = logger.With("collector", "ec2")
 	computeMap := NewComputePricingMap(logger, config)
 	storageMap := NewStoragePricingMap(logger, config)
 

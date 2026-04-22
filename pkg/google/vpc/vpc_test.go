@@ -24,10 +24,9 @@ func TestNew(t *testing.T) {
 	config := &Config{
 		Projects:       "test-project-1,test-project-2",
 		ScrapeInterval: 5 * time.Minute,
-		Logger:         logger,
 	}
 
-	collector, err := New(t.Context(), config, mockClient)
+	collector, err := New(t.Context(), config, logger, mockClient)
 	if err != nil {
 		t.Fatalf("Failed to create VPC collector: %v", err)
 	}

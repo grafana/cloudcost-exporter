@@ -22,7 +22,7 @@ func testCollectSink() chan prometheus.Metric {
 }
 
 func TestCollector_Describe(t *testing.T) {
-	c, err := New(&Config{Logger: testLogger})
+	c, err := New(context.Background(), &Config{}, testLogger)
 	require.NoError(t, err)
 	ch := make(chan *prometheus.Desc, 4)
 	require.NoError(t, c.Describe(ch))
@@ -38,14 +38,14 @@ func TestCollector_Describe(t *testing.T) {
 }
 
 func TestCollector_Register(t *testing.T) {
-	c, err := New(&Config{Logger: testLogger})
+	c, err := New(context.Background(), &Config{}, testLogger)
 	require.NoError(t, err)
 	// Register does not call registry.MustRegister on cost metrics (AKS pattern).
 	require.NoError(t, c.Register(nil))
 }
 
 func TestCollector_Collect_forwardsStorageGauge(t *testing.T) {
-	c, err := New(&Config{Logger: testLogger})
+	c, err := New(context.Background(), &Config{}, testLogger)
 	require.NoError(t, err)
 	ctx := context.Background()
 	require.NoError(t, c.Collect(ctx, testCollectSink()))
@@ -71,11 +71,10 @@ func TestNew_configPlumbing(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			c, err := New(&Config{
-				Logger:         testLogger,
-				SubscriptionId: tt.subscriptionID,
+			c, err := New(context.Background(), &Config{
+				SubscriptionID: tt.subscriptionID,
 				ScrapeInterval: tt.scrapeInterval,
-			})
+			}, testLogger)
 			require.NoError(t, err)
 			assert.Equal(t, tt.subscriptionID, c.subscriptionID)
 			assert.Equal(t, tt.wantInterval, c.scrapeInterval)

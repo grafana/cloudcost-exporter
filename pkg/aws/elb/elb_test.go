@@ -1,6 +1,7 @@
 package elb
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	elbTypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/grafana/cloudcost-exporter/pkg/aws/client"
@@ -26,14 +28,14 @@ func TestNew(t *testing.T) {
 			{RegionName: stringPtr("us-east-1")},
 		},
 		PricingClient: mockClient,
-		RegionClients: map[string]client.Client{
+		RegionMap: map[string]client.Client{
 			"us-east-1": mockClient,
 		},
-		Logger:    slog.Default(),
 		AccountID: "123456789012",
 	}
 
-	collector := New(config)
+	collector, err := New(context.Background(), config, slog.Default())
+	require.NoError(t, err)
 
 	assert.NotNil(t, collector)
 	assert.Equal(t, config.ScrapeInterval, collector.ScrapeInterval)
@@ -47,11 +49,11 @@ func TestCollectorName(t *testing.T) {
 	config := &Config{
 		ScrapeInterval: time.Minute,
 		Regions:        []ec2Types.Region{},
-		RegionClients:  map[string]client.Client{},
-		Logger:         slog.Default(),
+		RegionMap:      map[string]client.Client{},
 	}
 
-	collector := New(config)
+	collector, err := New(context.Background(), config, slog.Default())
+	require.NoError(t, err)
 	assert.Equal(t, subsystem, collector.Name())
 }
 
@@ -59,17 +61,17 @@ func TestCollectorDescribe(t *testing.T) {
 	config := &Config{
 		ScrapeInterval: time.Minute,
 		Regions:        []ec2Types.Region{},
-		RegionClients:  map[string]client.Client{},
-		Logger:         slog.Default(),
+		RegionMap:      map[string]client.Client{},
 	}
 	expectedDescs := []string{
 		LoadBalancerUsageHourlyCostDesc.String(),
 		LoadBalancerCapacityUnitsUsageHourlyCostDesc.String(),
 	}
-	collector := New(config)
+	collector, err := New(context.Background(), config, slog.Default())
+	require.NoError(t, err)
 	ch := make(chan *prometheus.Desc, len(expectedDescs))
 
-	err := collector.Describe(ch)
+	err = collector.Describe(ch)
 	close(ch)
 
 	assert.NoError(t, err)
@@ -99,14 +101,14 @@ func TestCollectRegionLoadBalancers(t *testing.T) {
 	config := &Config{
 		ScrapeInterval: time.Minute,
 		Regions:        []ec2Types.Region{},
-		RegionClients: map[string]client.Client{
+		RegionMap: map[string]client.Client{
 			"us-east-1": mockClient,
 		},
-		Logger:    slog.Default(),
 		AccountID: "123456789012",
 	}
 
-	collector := New(config)
+	collector, err := New(context.Background(), config, slog.Default())
+	require.NoError(t, err)
 
 	// Set up mock pricing data
 	collector.pricingMap.SetRegionPricing("us-east-1", &RegionPricing{

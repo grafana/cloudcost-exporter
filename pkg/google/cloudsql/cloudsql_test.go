@@ -125,9 +125,9 @@ func TestNew_FailsIfInitialSKUFetchFails(t *testing.T) {
 	require.NoError(t, err)
 
 	gcpClient := client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService, nil)
-	config := &Config{Projects: "test-project", Logger: slog.New(slog.NewTextHandler(os.Stdout, nil))}
+	config := &Config{Projects: "test-project"}
 
-	_, err = New(context.Background(), config, gcpClient)
+	_, err = New(context.Background(), config, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "failed to initialise Cloud SQL pricing")
 }
@@ -199,9 +199,9 @@ func TestCollect_UsesCachedSKUs(t *testing.T) {
 	require.NoError(t, err)
 
 	gcpClient := client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService, nil)
-	config := &Config{Projects: "test-project", Logger: slog.New(slog.NewTextHandler(os.Stdout, nil))}
+	config := &Config{Projects: "test-project"}
 
-	collector, err := New(context.Background(), config, gcpClient)
+	collector, err := New(context.Background(), config, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
 	require.NoError(t, err)
 
 	// Disable the billing backend — Collect() must use SKUs cached at init
@@ -363,8 +363,8 @@ func TestCollector(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gcpClient := newTestGCPClient(t, tt.regionsHandlers, tt.sqlAdminHandlers, tt.skus)
-			config := &Config{Projects: "test-project", Logger: slog.New(slog.NewTextHandler(os.Stdout, nil))}
-			collector, err := New(context.Background(), config, gcpClient)
+			config := &Config{Projects: "test-project"}
+			collector, err := New(context.Background(), config, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
 			require.NoError(t, err)
 
 			ch := make(chan prometheus.Metric, 1)
@@ -442,8 +442,8 @@ func TestGetAllCloudSQL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gcpClient := newTestGCPClient(t, tt.regionsHandlers, tt.sqlAdminHandlers, nil)
-			config := &Config{Projects: "test-project", Logger: slog.New(slog.NewTextHandler(os.Stdout, nil))}
-			collector, err := New(context.Background(), config, gcpClient)
+			config := &Config{Projects: "test-project"}
+			collector, err := New(context.Background(), config, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
 			require.NoError(t, err)
 
 			instances, err := collector.getAllCloudSQL(context.Background())

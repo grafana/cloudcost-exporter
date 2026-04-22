@@ -114,8 +114,7 @@ func TestBuildClusterPricingData(t *testing.T) {
 func TestNewFailsIfInitialPricingFetchFails(t *testing.T) {
 	_, err := New(t.Context(), &Config{
 		Projects: "test-project",
-		Logger:   testLogger(),
-	}, &stubClient{
+	}, testLogger(), &stubClient{
 		serviceNameErr: fmt.Errorf("billing API unavailable"),
 	})
 
@@ -126,8 +125,7 @@ func TestNewFailsIfInitialPricingFetchFails(t *testing.T) {
 func TestNewFailsIfPricingContainsMultipleComputePricesForRegion(t *testing.T) {
 	_, err := New(t.Context(), &Config{
 		Projects: "test-project",
-		Logger:   testLogger(),
-	}, &stubClient{
+	}, testLogger(), &stubClient{
 		serviceName: "services/managed-kafka",
 		skus: []*billingpb.Sku{
 			newSKU("Managed Service for Apache Kafka CPU+RAM", "us-central1", 0, 90000000, ""),
@@ -142,8 +140,7 @@ func TestNewFailsIfPricingContainsMultipleComputePricesForRegion(t *testing.T) {
 func TestNewAllowsDuplicateComputePriceForRegionWhenValuesMatch(t *testing.T) {
 	_, err := New(t.Context(), &Config{
 		Projects: "test-project",
-		Logger:   testLogger(),
-	}, &stubClient{
+	}, testLogger(), &stubClient{
 		serviceName: "services/managed-kafka",
 		skus: []*billingpb.Sku{
 			newSKU("Managed Service for Apache Kafka CPU+RAM", "us-central1", 0, 90000000, ""),
@@ -177,8 +174,7 @@ func TestCollectorCollectEmitsHourlyRateMetrics(t *testing.T) {
 
 	collector, err := New(t.Context(), &Config{
 		Projects: "test-project",
-		Logger:   testLogger(),
-	}, gcpClient)
+	}, testLogger(), gcpClient)
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -223,8 +219,7 @@ func TestCollectorCollectEmitsHourlyRateMetricsFromCurrentBillingCatalogSKUs(t *
 
 	collector, err := New(t.Context(), &Config{
 		Projects: "test-project",
-		Logger:   testLogger(),
-	}, gcpClient)
+	}, testLogger(), gcpClient)
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -262,8 +257,7 @@ func TestCollectorCollectContinuesWhenLocationListingFails(t *testing.T) {
 
 	collector, err := New(t.Context(), &Config{
 		Projects: "test-project",
-		Logger:   testLogger(),
-	}, gcpClient)
+	}, testLogger(), gcpClient)
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)

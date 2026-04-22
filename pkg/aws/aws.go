@@ -157,7 +157,10 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 
 		switch service {
 		case serviceS3:
-			collector, err := s3.New(ctx, config.ScrapeInterval, awsClient, config.AccountID)
+			collector, err := s3.New(ctx, &s3.Config{
+				ScrapeInterval: config.ScrapeInterval,
+				AccountID:      config.AccountID,
+			}, logger, awsClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -168,11 +171,10 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 		case serviceEC2:
 			collector, err := ec2Collector.New(ctx, &ec2Collector.Config{
 				Regions:        regions,
-				Logger:         logger,
 				ScrapeInterval: config.ScrapeInterval,
 				RegionMap:      regionClients,
 				AccountID:      config.AccountID,
-			})
+			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -181,26 +183,40 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			}
 			collectors = append(collectors, collector)
 		case serviceRDS:
+			// pricing API for RDS client needs to use always the same region
+			// as for RDS, the pricing data is only available in the us-east-1
+			pricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
 			awsRDSClient := client.NewAWSClient(client.Config{
 				PricingService: awsPricing.NewFromConfig(pricingConfig),
 				RDSService:     rds.NewFromConfig(awsConfig),
 			})
-			collector := rdsCollector.New(&rdsCollector.Config{
+			collector, err := rdsCollector.New(ctx, &rdsCollector.Config{
 				ScrapeInterval: config.ScrapeInterval,
 				Regions:        regions,
 				RegionMap:      regionClients,
 				Client:         awsRDSClient,
 				AccountID:      config.AccountID,
-			})
+			}, logger)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
 			collectors = append(collectors, collector)
 		case serviceNATGW:
 			collector, err := awsgwnat.New(ctx, &awsgwnat.Config{
 				ScrapeInterval: config.ScrapeInterval,
-				Logger:         logger,
 				Regions:        regions,
 				RegionMap:      regionClients,
 				AccountID:      config.AccountID,
-			})
+			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -209,30 +225,52 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			}
 			collectors = append(collectors, collector)
 		case serviceELB:
+			// pricing API for ELB client needs to use always the same region
+			// as the pricing data is only available in us-east-1
+			elbPricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
 			awsELBPricingClient := client.NewAWSClient(client.Config{
-				PricingService: awsPricing.NewFromConfig(pricingConfig),
+				PricingService: awsPricing.NewFromConfig(elbPricingConfig),
 			})
-			collector := elb.New(&elb.Config{
+			collector, err := elb.New(ctx, &elb.Config{
 				Regions:        regions,
 				PricingClient:  awsELBPricingClient,
-				RegionClients:  regionClients,
+				RegionMap:      regionClients,
 				ScrapeInterval: config.ScrapeInterval,
-				Logger:         logger,
 				AccountID:      config.AccountID,
-			})
+			}, logger)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
 			collectors = append(collectors, collector)
 		case serviceVPC:
+			// pricing API for VPC client needs to use always the same region
+			// as for VPC, the pricing data is only available in the us-east-1
+			pricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
 			awsVPCClient := client.NewAWSClient(client.Config{
 				PricingService: awsPricing.NewFromConfig(pricingConfig),
 				EC2Service:     ec2.NewFromConfig(pricingConfig),
 			})
 			collector, err := awsvpc.New(ctx, &awsvpc.Config{
 				ScrapeInterval: config.ScrapeInterval,
-				Logger:         logger,
 				Regions:        regions,
 				Client:         awsVPCClient,
 				AccountID:      config.AccountID,
-			})
+			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
@@ -248,9 +286,8 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				Regions:   regions,
 				RegionMap: regionClients,
 				Client:    awsMSKClient,
-				Logger:    logger,
 				AccountID: config.AccountID,
-			})
+			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),

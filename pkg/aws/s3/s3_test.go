@@ -3,6 +3,7 @@ package s3
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -39,7 +40,10 @@ func TestNewCollector(t *testing.T) {
 			c := mock_client.NewMockClient(ctrl)
 			c.EXPECT().DescribeRegions(gomock.Any(), false).Return(nil, nil)
 
-			got, err := New(context.Background(), tt.args.interval, c, "123456789012")
+			got, err := New(context.Background(), &Config{
+				ScrapeInterval: tt.args.interval,
+				AccountID:      "123456789012",
+			}, slog.Default(), c)
 			assert.NoError(t, err)
 			assert.NotNil(t, got)
 			assert.Equal(t, tt.args.interval, got.interval)
@@ -284,6 +288,7 @@ cloudcost_aws_s3_storage_by_location_usd_per_gibyte_hour{account_id="12345678901
 				nextScrape: tc.nextScrape,
 				metrics:    NewMetrics(),
 				accountID:  "123456789012",
+				logger:     slog.Default(),
 			}
 			err := c.Collect(context.Background(), nil)
 			if tc.expectedResponse == 0 {
@@ -315,6 +320,7 @@ func TestCollector_MultipleCalls(t *testing.T) {
 			metrics:   NewMetrics(),
 			interval:  1 * time.Hour,
 			accountID: "123456789012",
+			logger:    slog.Default(),
 		}
 		err := c.Collect(context.Background(), nil)
 		require.NoError(t, err)
@@ -362,6 +368,7 @@ func TestCollector_MultipleCalls(t *testing.T) {
 			client:    ce,
 			metrics:   NewMetrics(),
 			accountID: "123456789012",
+			logger:    slog.Default(),
 		}
 
 		for i := 0; i < goroutines; i++ {

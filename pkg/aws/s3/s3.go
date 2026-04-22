@@ -69,6 +69,12 @@ type Collector struct {
 	billingData *client.BillingData
 	m           sync.RWMutex
 	accountID   string
+	logger      *slog.Logger
+}
+
+type Config struct {
+	ScrapeInterval time.Duration
+	AccountID      string
 }
 
 // Describe is used to register the metrics with the Prometheus client
@@ -86,22 +92,23 @@ func (c *Collector) Collect(ctx context.Context, _ chan<- prometheus.Metric) err
 		startDate := endDate.AddDate(0, 0, -30)
 		billingData, err := c.client.GetBillingData(ctx, startDate, endDate)
 		if err != nil {
-			slog.Error("Error getting billing data", "error", err)
+			c.logger.Error("Error getting billing data", "error", err)
 			return err
 		}
 		c.billingData = billingData
 		c.nextScrape = time.Now().Add(c.interval)
 		c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
 	}
-	exportMetrics(c.billingData, c.metrics, c.accountID)
+	exportMetrics(c.billingData, c.metrics, c.accountID, c.logger)
 	return nil
 }
 
 // New creates a new Collector with a client and scrape interval defined.
-func New(ctx context.Context, scrapeInterval time.Duration, client client.Client, accountID string) (*Collector, error) {
+func New(ctx context.Context, cfg *Config, logger *slog.Logger, client client.Client) (*Collector, error) {
+	logger = logger.With("collector", "S3")
 	awsRegions, err := client.DescribeRegions(ctx, false)
 	if err != nil {
-		slog.Warn("failed to describe regions for S3 collector", "error", err)
+		logger.Warn("failed to describe regions for S3 collector", "error", err)
 	}
 	regions := make([]string, 0, len(awsRegions))
 	for _, r := range awsRegions {
@@ -112,12 +119,13 @@ func New(ctx context.Context, scrapeInterval time.Duration, client client.Client
 	return &Collector{
 		client:   client,
 		regions:  regions,
-		interval: scrapeInterval,
+		interval: cfg.ScrapeInterval,
 		// Initially Set nextScrape to the current time minus the scrape interval so that the first scrape will run immediately
-		nextScrape: time.Now().Add(-scrapeInterval),
+		nextScrape: time.Now().Add(-cfg.ScrapeInterval),
 		metrics:    NewMetrics(),
 		m:          sync.RWMutex{},
-		accountID:  accountID,
+		accountID:  cfg.AccountID,
+		logger:     logger,
 	}, nil
 }
 
@@ -140,8 +148,8 @@ func (c *Collector) Register(registry provider.Registry) error {
 }
 
 // exportMetrics will iterate over the S3BillingData and export the metrics to prometheus
-func exportMetrics(s3BillingData *client.BillingData, m Metrics, accountID string) {
-	slog.Info("Exporting metrics", "regions", len(s3BillingData.Regions))
+func exportMetrics(s3BillingData *client.BillingData, m Metrics, accountID string, logger *slog.Logger) {
+	logger.Info("Exporting metrics", "regions", len(s3BillingData.Regions))
 	for region, pricingModel := range s3BillingData.Regions {
 		for component, pricing := range pricingModel.Model {
 			switch component {

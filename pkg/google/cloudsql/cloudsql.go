@@ -18,7 +18,6 @@ import (
 type Config struct {
 	Projects       string
 	ScrapeInterval time.Duration
-	Logger         *slog.Logger
 }
 
 type Collector struct {
@@ -45,10 +44,11 @@ var (
 	)
 )
 
-func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
-	pm := newPricingMap(config.Logger, gcpClient)
+func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient client.Client) (*Collector, error) {
+	logger = logger.With("collector", "cloudsql")
+	pm := newPricingMap(logger, gcpClient)
 	projects := strings.Split(config.Projects, ",")
-	regions := client.RegionsForProjects(gcpClient, projects, config.Logger)
+	regions := client.RegionsForProjects(gcpClient, projects, logger)
 
 	if err := pm.getSKus(ctx); err != nil {
 		return nil, fmt.Errorf("failed to initialise Cloud SQL pricing: %w", err)
@@ -63,7 +63,7 @@ func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collect
 				return
 			case <-ticker.C:
 				if err := pm.getSKus(ctx); err != nil {
-					config.Logger.Error("failed to refresh Cloud SQL pricing SKUs", "error", err)
+					logger.Error("failed to refresh Cloud SQL pricing SKUs", "error", err)
 				}
 			}
 		}
@@ -75,7 +75,7 @@ func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collect
 		pricingMap: pm,
 		projects:   projects,
 		regions:    regions,
-		logger:     config.Logger,
+		logger:     logger,
 	}, nil
 }
 
@@ -88,8 +88,6 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 }
 
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
-	logger := c.logger.With("logger", "cloudsql")
-
 	instances, err := c.getAllCloudSQL(ctx)
 	if err != nil {
 		return err
@@ -98,7 +96,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	for _, instance := range instances {
 		price, err := c.pricingMap.matchInstancePrice(instance)
 		if err != nil {
-			logger.Warn("failed to match price for instance",
+			c.logger.Warn("failed to match price for instance",
 				"name", instance.Name,
 				"region", instance.Region,
 				"tier", instance.Settings.Tier,

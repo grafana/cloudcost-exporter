@@ -42,7 +42,7 @@ func Test_New(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			a, err := New(t.Context(), &Config{
 				Logger:         testLogger,
-				SubscriptionId: tc.subId,
+				SubscriptionID: tc.subId,
 			})
 			if tc.expectedErr != nil {
 				assert.ErrorIs(t, err, tc.expectedErr)

@@ -49,7 +49,6 @@ var (
 )
 
 type Config struct {
-	Logger         *slog.Logger
 	ScrapeInterval time.Duration
 	Projects       string
 }
@@ -80,8 +79,8 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	return nil
 }
 
-func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
-	logger := config.Logger.With("collector", "forwarding_rule")
+func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient client.Client) (*Collector, error) {
+	logger = logger.With("collector", "forwarding_rule")
 
 	pm, err := newPricingMap(ctx, logger, gcpClient)
 	if err != nil {

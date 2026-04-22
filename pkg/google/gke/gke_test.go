@@ -40,7 +40,6 @@ func TestCollector_Collect(t *testing.T) {
 		"Handle http error": {
 			config: &Config{
 				Projects: "testing",
-				Logger:   logger,
 			},
 			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -52,8 +51,6 @@ func TestCollector_Collect(t *testing.T) {
 		"Parse our regular response": {
 			config: &Config{
 				Projects: "testing,testing-1",
-
-				Logger: logger,
 			},
 			collectResponse: 1.0,
 			expectedMetrics: []*utils.MetricResult{
@@ -485,7 +482,7 @@ func TestCollector_Collect(t *testing.T) {
 			require.NoError(t, err)
 
 			gcpClient := client.NewMock("testing", 0, nil, nil, cloudCatalogClient, computeService, nil, nil)
-			collector, _ := New(t.Context(), test.config, gcpClient)
+			collector, _ := New(t.Context(), test.config, logger, gcpClient)
 			require.NotNil(t, collector)
 			ch := make(chan prometheus.Metric)
 			go func() {
@@ -574,7 +571,7 @@ func TestCollector_ZoneConcurrencyLimit(t *testing.T) {
 	// that New() performs — it is irrelevant for a concurrency test.
 	collector := &Collector{
 		gcpClient: fakeClient,
-		config:    &Config{Logger: logger},
+		config:    &Config{},
 		projects:  []string{"proj1"},
 		pricingMap: &PricingMap{
 			compute: map[string]*FamilyPricing{},

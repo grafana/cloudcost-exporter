@@ -57,7 +57,6 @@ var (
 type Config struct {
 	Projects       string
 	ScrapeInterval time.Duration
-	Logger         *slog.Logger
 }
 
 type Collector struct {
@@ -234,8 +233,8 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	return nil
 }
 
-func New(ctx context.Context, config *Config, gcpClient client.Client) (*Collector, error) {
-	logger := config.Logger.With("collector", "gke")
+func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient client.Client) (*Collector, error) {
+	logger = logger.With("collector", "gke")
 
 	pm, err := NewPricingMap(ctx, gcpClient)
 	if err != nil {
