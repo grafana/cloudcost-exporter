@@ -180,9 +180,7 @@ func (c *Collector) Register(_ provider.Registry) error {
 	return nil
 }
 
-// newPriceFetcher returns a PriceFetchFunc that fetches and preprocesses Bedrock pricing data.
-// The AWS Pricing API is only available in us-east-1 and ap-south-1; callers must pin the
-// client to us-east-1 before passing it here.
+// The AWS Pricing API is only available in us-east-1; callers must pin the client there.
 func newPriceFetcher(pricingClient client.Client) pricingstore.PriceFetchFunc {
 	return func(ctx context.Context, region string) ([]string, error) {
 		rawItems, err := pricingClient.ListBedrockPrices(ctx, region)
@@ -193,9 +191,6 @@ func newPriceFetcher(pricingClient client.Client) pricingstore.PriceFetchFunc {
 	}
 }
 
-// preprocessBedrockPrices filters and transforms raw Pricing API JSON strings. Each item's
-// usagetype field is replaced with a composite key encoding family, direction, model ID, and
-// price tier. Non-text-token SKUs (image, video, audio, cache, guardrail) are dropped.
 func preprocessBedrockPrices(rawItems []string) []string {
 	result := make([]string, 0, len(rawItems))
 	for _, raw := range rawItems {
@@ -206,10 +201,7 @@ func preprocessBedrockPrices(rawItems []string) []string {
 	return result
 }
 
-// encodeBedrockPriceJSON parses one raw Pricing API JSON string and returns a modified copy
-// with the usagetype replaced by a composite key: "<family>|<direction>|<modelID>|<priceTier>".
-// Returns ok=false if the entry should be skipped (non-text-token inferenceType, parse failure,
-// or unrecognized usagetype format).
+// Returns ok=false for non-text-token types, parse failures, or unrecognized usagetype formats.
 func encodeBedrockPriceJSON(raw string) (string, bool) {
 	var info bedrockProductInfo
 	if err := json.Unmarshal([]byte(raw), &info); err != nil {
@@ -237,9 +229,6 @@ func encodeBedrockPriceJSON(raw string) (string, bool) {
 	return string(modified), true
 }
 
-// classifyInferenceType maps the Bedrock Pricing API inferenceType attribute to a direction
-// string ("input", "output", "search"). Returns ok=false for non-text-token types (image,
-// video, audio, cache, guardrail) that should not be emitted as pricing metrics.
 func classifyInferenceType(inferenceType string) (direction string, ok bool) {
 	lower := strings.ToLower(inferenceType)
 	if strings.HasPrefix(lower, "prompt cache") {
@@ -271,9 +260,6 @@ var tokenTypeMarkers = []string{
 	"-search-units",
 }
 
-// parseBedrockModelID extracts the model ID slug and price tier from a Bedrock usagetype string.
-// It strips the leading region prefix (e.g. "USE1-") and the trailing token-type suffix, then
-// maps the remaining suffix to a price tier label.
 func parseBedrockModelID(usagetype string) (modelID, priceTier string) {
 	slug := usagetype
 	if i := strings.Index(usagetype, "-"); i >= 0 {
@@ -289,8 +275,6 @@ func parseBedrockModelID(usagetype string) (modelID, priceTier string) {
 	return "", priceTierOnDemand
 }
 
-// extractPriceTier maps the token-type suffix remainder (everything after the marker such as
-// "-input-tokens") to a price_tier label value.
 func extractPriceTier(suffix string) string {
 	lower := strings.ToLower(suffix)
 	if strings.Contains(lower, "cross-region") {
@@ -308,9 +292,7 @@ func extractPriceTier(suffix string) string {
 	}
 }
 
-// normalizeProvider lowercases the provider attribute and replaces spaces with underscores
-// for use as the family label. Amazon-developed models (Nova, Titan, etc.) have an empty
-// provider attribute and are mapped to "amazon".
+// Empty provider maps to "amazon" (Nova, Titan, and other Amazon-developed models).
 func normalizeProvider(provider string) string {
 	if provider == "" {
 		return "amazon"

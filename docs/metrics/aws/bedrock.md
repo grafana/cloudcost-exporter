@@ -1,10 +1,10 @@
 # AWS Bedrock Metrics
 
-| Metric name                                               | Metric type | Description                                                        | Labels                                                                                                                                                                |
-|-----------------------------------------------------------|-------------|--------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| cloudcost_aws_bedrock_token_input_usd_per_1k_tokens       | Gauge       | List price for AWS Bedrock input tokens in USD per 1000 tokens     | `account_id`=<AWS account ID> <br/> `region`=<AWS region> <br/> `model_id`=<model slug> <br/> `family`=<model provider> <br/> `price_tier`=<on_demand\|on_demand_batch\|on_demand_flex\|on_demand_priority\|cross_region> |
-| cloudcost_aws_bedrock_token_output_usd_per_1k_tokens      | Gauge       | List price for AWS Bedrock output tokens in USD per 1000 tokens    | `account_id`=<AWS account ID> <br/> `region`=<AWS region> <br/> `model_id`=<model slug> <br/> `family`=<model provider> <br/> `price_tier`=<on_demand\|on_demand_batch\|on_demand_flex\|on_demand_priority\|cross_region> |
-| cloudcost_aws_bedrock_search_unit_usd_per_1k_search_units | Gauge       | List price for AWS Bedrock search units in USD per 1000 search units (e.g. Cohere Rerank) | `account_id`=<AWS account ID> <br/> `region`=<AWS region> <br/> `model_id`=<model slug> <br/> `family`=<model provider> <br/> `price_tier`=<on_demand\|cross_region> |
+| Metric name                                               | Metric type | Description                                                   | Labels                                                                                                                                                                |
+|-----------------------------------------------------------|-------------|---------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `cloudcost_aws_bedrock_token_input_usd_per_1k_tokens`     | Gauge       | AWS Bedrock input token price in USD per 1000 tokens          | `account_id`=<AWS account ID> <br/> `region`=<AWS region> <br/> `model_id`=<model slug> <br/> `family`=<model provider> <br/> `price_tier`=<on_demand\|on_demand_batch\|on_demand_flex\|on_demand_priority\|cross_region> |
+| `cloudcost_aws_bedrock_token_output_usd_per_1k_tokens`    | Gauge       | AWS Bedrock output token price in USD per 1000 tokens         | `account_id`=<AWS account ID> <br/> `region`=<AWS region> <br/> `model_id`=<model slug> <br/> `family`=<model provider> <br/> `price_tier`=<on_demand\|on_demand_batch\|on_demand_flex\|on_demand_priority\|cross_region> |
+| `cloudcost_aws_bedrock_search_unit_usd_per_1k_search_units` | Gauge     | AWS Bedrock search unit price in USD per 1000 search units (e.g. Cohere Rerank) | `account_id`=<AWS account ID> <br/> `region`=<AWS region> <br/> `model_id`=<model slug> <br/> `family`=<model provider> <br/> `price_tier`=<on_demand\|cross_region> |
 
 ## Overview
 
@@ -12,7 +12,7 @@ The Bedrock collector exports list-price token cost metrics for AWS Bedrock foun
 
 ## Configuration
 
-Enable the Bedrock collector by adding `bedrock` to your AWS services configuration:
+Add `bedrock` to your AWS services configuration:
 
 ```yaml
 aws:
@@ -27,18 +27,17 @@ Or via command line:
 
 ## Labels
 
-- **account_id**: The AWS account ID (12-digit), resolved via STS GetCallerIdentity
-- **region**: The AWS region for which the price applies
-- **model_id**: The model slug from the AWS Pricing API `usagetype` field (e.g. `Claude3Sonnet`, `Llama4-Scout-17B`, `Nova2.0Pro`)
-- **family**: The model provider, lowercased with spaces replaced by underscores (e.g. `anthropic`, `amazon`, `meta`, `mistral_ai`). Amazon-developed models with no provider attribute use `amazon`.
-- **price_tier**: The inference tier: `on_demand`, `on_demand_batch`, `on_demand_flex`, `on_demand_priority`, or `cross_region`
+- **`account_id`**: AWS account ID (12-digit), resolved via STS `GetCallerIdentity`
+- **`region`**: AWS region for which the price applies
+- **`model_id`**: Model slug from the AWS Pricing API `usagetype` field (e.g. `Claude3Sonnet`, `Llama4-Scout-17B`, `Nova2.0Pro`)
+- **`family`**: Model provider, lowercased with spaces replaced by underscores (e.g. `anthropic`, `amazon`, `meta`, `mistral_ai`). Models with no provider attribute use `amazon`.
+- **`price_tier`**: Inference tier: `on_demand`, `on_demand_batch`, `on_demand_flex`, `on_demand_priority`, or `cross_region`
 
 ## Notes
 
-- Pricing data is fetched from the AWS Pricing API (us-east-1 endpoint)
-- Prices are refreshed every 24 hours
-- Only text token SKUs are emitted (image, video, audio, cache, and guardrail SKUs are silently skipped)
-- The `model_id` label is the pricing SKU slug, not the canonical Bedrock model ARN
+- Pricing data is fetched from the AWS Pricing API (`us-east-1` endpoint) and refreshed every 24 hours
+- Image, video, audio, cache, and guardrail SKUs are skipped; only text token SKUs are emitted
+- `model_id` is the pricing SKU slug, not the canonical Bedrock model ARN
 
 ## IAM Permissions
 
