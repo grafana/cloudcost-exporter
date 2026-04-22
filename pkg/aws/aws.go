@@ -235,7 +235,7 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				continue
 			}
 			awsELBPricingClient := client.NewAWSClient(client.Config{
-				PricingService: awsPricing.NewFromConfig(pricingConfig),
+				PricingService: awsPricing.NewFromConfig(elbPricingConfig),
 			})
 			collector, err := elb.New(ctx, &elb.Config{
 				Regions:        regions,
