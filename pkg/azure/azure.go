@@ -49,12 +49,8 @@ var (
 )
 
 type Azure struct {
-	context context.Context
-	logger  *slog.Logger
-
-	subscriptionId string
-	azCredentials  *azidentity.DefaultAzureCredential
-
+	context          context.Context
+	logger           *slog.Logger
 	collectorTimeout time.Duration
 	collectors       []provider.Collector
 }
@@ -137,12 +133,8 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 	}
 
 	return &Azure{
-		context: ctx,
-		logger:  logger,
-
-		subscriptionId: config.SubscriptionId,
-		azCredentials:  creds,
-
+		context:          ctx,
+		logger:           logger,
 		collectorTimeout: config.CollectorTimeout,
 		collectors:       collectors,
 	}, nil
