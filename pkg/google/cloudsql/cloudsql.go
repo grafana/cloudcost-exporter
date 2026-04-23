@@ -35,6 +35,12 @@ const (
 )
 
 var (
+	initRetryAttempts     = 3
+	initRetryInitialDelay = 1 * time.Second
+	initRetryMaxDelay     = 30 * time.Second
+)
+
+var (
 	HourlyGaugeDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
@@ -50,7 +56,9 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 	projects := strings.Split(config.Projects, ",")
 	regions := client.RegionsForProjects(gcpClient, projects, logger)
 
-	if err := pm.getSKus(ctx); err != nil {
+	if err := utils.Retry(initRetryAttempts, initRetryInitialDelay, initRetryMaxDelay, client.IsRetryableError, func() error {
+		return pm.getSKus(ctx)
+	}); err != nil {
 		return nil, fmt.Errorf("failed to initialise Cloud SQL pricing: %w", err)
 	}
 
