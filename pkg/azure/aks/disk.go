@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 const aksPVTagName = "kubernetes.io-created-for-pv-name"
@@ -35,9 +36,9 @@ func NewDisk(disk *armcompute.Disk) *Disk {
 	}
 
 	d := &Disk{
-		Name:          getStringValue(disk.Name),
-		ResourceGroup: extractResourceGroupFromID(getStringValue(disk.ID)),
-		Location:      getStringValue(disk.Location),
+		Name:          utils.StringValue(disk.Name),
+		ResourceGroup: extractResourceGroupFromID(utils.StringValue(disk.ID)),
+		Location:      utils.StringValue(disk.Location),
 		Tags:          disk.Tags,
 	}
 
@@ -169,14 +170,6 @@ func (d *Disk) GetPriceTier(ds *DiskStore) string {
 	default:
 		return "Unknown"
 	}
-}
-
-// getStringValue safely dereferences a string pointer, returning empty string if nil.
-func getStringValue(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }
 
 // extractResourceGroupFromID parses an Azure resource ID to extract the resource group name.

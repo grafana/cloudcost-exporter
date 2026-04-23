@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/azure/aks"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/blob"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
+	"github.com/grafana/cloudcost-exporter/pkg/azure/eventhubs"
 	"github.com/grafana/cloudcost-exporter/pkg/collectormetrics"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 
@@ -24,9 +25,7 @@ const (
 	subsystem = "azure"
 )
 
-var (
-	errInvalidSubscriptionID = errors.New("subscription id was invalid")
-)
+var errInvalidSubscriptionID = errors.New("subscription id was invalid")
 
 var (
 	collectorDurationDesc = prometheus.NewDesc(
@@ -50,13 +49,8 @@ var (
 )
 
 type Azure struct {
-	config  *Config
-	context context.Context
-	logger  *slog.Logger
-
-	subscriptionID string
-	azCredentials  *azidentity.DefaultAzureCredential
-
+	context          context.Context
+	logger           *slog.Logger
 	collectorTimeout time.Duration
 	collectors       []provider.Collector
 }
@@ -122,18 +116,25 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 				continue
 			}
 			collectors = append(collectors, collector)
+		case strings.EqualFold(svc, "EVENTHUBS"), strings.EqualFold(svc, "EVENTHUB"):
+			collector, err := eventhubs.New(ctx, &eventhubs.Config{
+				Logger: logger,
+			}, azClientWrapper)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", svc),
+					slog.String("message", err.Error()))
+				continue
+			}
+			collectors = append(collectors, collector)
 		default:
 			logger.LogAttrs(ctx, slog.LevelInfo, "unknown service", slog.String("service", svc))
 		}
 	}
 
 	return &Azure{
-		context: ctx,
-		logger:  logger,
-
-		subscriptionID: config.SubscriptionID,
-		azCredentials:  creds,
-
+		context:          ctx,
+		logger:           logger,
 		collectorTimeout: config.CollectorTimeout,
 		collectors:       collectors,
 	}, nil
@@ -176,7 +177,7 @@ func (a *Azure) Collect(ch chan<- prometheus.Metric) {
 
 			duration, hasError := collectormetrics.Collect(collectCtx, c, ch, a.logger, subsystem)
 
-			//TODO: remove collectorErrors once we have the new metrics
+			// TODO: remove collectorErrors once we have the new metrics
 			collectorErrors := 0.0
 			if hasError {
 				collectorErrors = 1.0

@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/mock"
 
 	awsclient "github.com/grafana/cloudcost-exporter/pkg/aws/client"
+	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
 
 // MockClient for testing
@@ -111,10 +112,6 @@ func (m *MockClient) Metrics() []prometheus.Collector {
 	return args.Get(0).([]prometheus.Collector)
 }
 
-func stringPtr(s string) *string {
-	return &s
-}
-
 func TestNew(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	mockClient := &MockClient{}
@@ -127,8 +124,8 @@ func TestNew(t *testing.T) {
 	}, nil)
 
 	regions := []ec2Types.Region{
-		{RegionName: stringPtr("us-east-1")},
-		{RegionName: stringPtr("us-west-2")},
+		{RegionName: utils.StringPtr("us-east-1")},
+		{RegionName: utils.StringPtr("us-west-2")},
 	}
 
 	collector, err := New(t.Context(), &Config{
