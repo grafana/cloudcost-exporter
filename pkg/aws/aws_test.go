@@ -153,7 +153,7 @@ func Test_NewWithDependencies(t *testing.T) {
 			name:     "RDS service creates RDS collector",
 			services: []string{"RDS"},
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
 			},
 			setupRegionClients: map[string]client.Client{
 				"us-east-1": nil,
@@ -164,7 +164,7 @@ func Test_NewWithDependencies(t *testing.T) {
 			name:     "VPC service creates VPC collector",
 			services: []string{"VPC"},
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
 			},
 			setupRegionClients: map[string]client.Client{},
 			expectedCollectors: 0,
@@ -187,7 +187,7 @@ func Test_NewWithDependencies(t *testing.T) {
 			name:     "Bedrock service is skipped gracefully when pricing API unavailable",
 			services: []string{"BEDROCK"},
 			regions: []types.Region{
-				{RegionName: stringPtr("us-east-1")},
+				{RegionName: utils.StringPtr("us-east-1")},
 			},
 			setupRegionClients: map[string]client.Client{},
 			// Bedrock uses its own dedicated pricing client (not the injected awsClient),
@@ -568,7 +568,7 @@ func Test_CollectMetrics(t *testing.T) {
 
 			wg.Wait()
 			var metrics []*utils.MetricResult
-			var ignoreMetric = func(metricName string) bool {
+			ignoreMetric := func(metricName string) bool {
 				ignoredMetricSuffix := []string{
 					"duration_seconds",
 					"last_scrape_time",
