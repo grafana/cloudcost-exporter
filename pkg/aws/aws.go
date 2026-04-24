@@ -384,6 +384,7 @@ func filterExcludedRegions(regions []types.Region, excludeList []string) []types
 
 func newRegionClientMap(ctx context.Context, globalConfig aws.Config, pricingConfig aws.Config, regions []types.Region, profile string, roleARN string) (map[string]client.Client, error) {
 	awsClientPerRegion := make(map[string]client.Client)
+	pricingAPI := awsPricing.NewFromConfig(pricingConfig)
 	for _, region := range regions {
 		ac, err := createAWSConfig(ctx, *region.RegionName, profile, roleARN)
 		if err != nil {
@@ -391,7 +392,7 @@ func newRegionClientMap(ctx context.Context, globalConfig aws.Config, pricingCon
 		}
 		awsClientPerRegion[*region.RegionName] = client.NewAWSClient(
 			client.Config{
-				PricingService: awsPricing.NewFromConfig(pricingConfig),
+				PricingService: pricingAPI,
 				EC2Service:     ec2.NewFromConfig(ac),
 				BillingService: costexplorer.NewFromConfig(globalConfig),
 				RDSService:     rds.NewFromConfig(ac),
