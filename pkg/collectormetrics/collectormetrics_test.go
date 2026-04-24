@@ -109,7 +109,7 @@ func TestCollect_EscapesLineBreaksInLoggedErrorMessage(t *testing.T) {
 	Collect(context.Background(), c, ch, logger, "test_provider")
 
 	got := logOutput.String()
-	assert.Contains(t, got, `message="first line\\nsecond line\\rthird line"`)
+	assert.Contains(t, got, `error="first line\\nsecond line\\rthird line"`)
 	assert.NotContains(t, got, "first line\nsecond line")
 	assert.NotContains(t, got, "second line\rthird line")
 }
