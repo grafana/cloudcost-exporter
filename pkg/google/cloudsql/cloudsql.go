@@ -38,9 +38,7 @@ var (
 	initRetryAttempts     = 3
 	initRetryInitialDelay = 1 * time.Second
 	initRetryMaxDelay     = 30 * time.Second
-)
 
-var (
 	HourlyGaugeDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,

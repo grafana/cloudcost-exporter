@@ -242,6 +242,39 @@ func TestNew_DoesNotRetryOnAuthError(t *testing.T) {
 	assert.Equal(t, 1, srv.callCount, "expected exactly 1 ListServices call — PermissionDenied must not be retried")
 }
 
+func TestNew_DoesNotRetryOnEmptySKUResponse(t *testing.T) {
+	zeroRetryDelays(t)
+
+	// ListServices succeeds but ListSkus returns no SKUs — ErrNoSKUsFound must not be retried.
+	srv := &failAfterNCatalogServer{
+		failCount: 0, // always succeeds on ListServices
+		skus:      nil,
+	}
+	catalogClient := client.NewTestBillingClient(t, srv)
+
+	computeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(struct{}{})
+	}))
+	t.Cleanup(computeSrv.Close)
+
+	sqlAdminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(struct{}{})
+	}))
+	t.Cleanup(sqlAdminSrv.Close)
+
+	computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(computeSrv.URL))
+	require.NoError(t, err)
+
+	sqlAdminService, err := sqladmin.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(sqlAdminSrv.URL))
+	require.NoError(t, err)
+
+	gcpClient := client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService, nil)
+	_, err = New(context.Background(), &Config{Projects: "test-project"}, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrNoSKUsFound)
+	assert.Equal(t, 1, srv.callCount, "expected exactly 1 ListServices call — empty SKU response must not be retried")
+}
+
 // minimalSKUs returns a single valid Cloud SQL SKU sufficient for New() to succeed.
 func minimalSKUs() []*billingpb.Sku {
 	return []*billingpb.Sku{
