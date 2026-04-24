@@ -134,13 +134,13 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 	}
 	config.AccountID = aws.ToString(identity.Account)
 
-	// Create per-region clients
-	awsClientPerRegion, err := newRegionClientMap(ctx, ac, regions, config.Profile, config.RoleARN)
+	pricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
 	if err != nil {
 		return nil, err
 	}
 
-	pricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
+	// Create per-region clients
+	awsClientPerRegion, err := newRegionClientMap(ctx, ac, pricingConfig, regions, config.Profile, config.RoleARN)
 	if err != nil {
 		return nil, err
 	}
@@ -152,6 +152,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 func newWithDependencies(ctx context.Context, config *Config, awsClient client.Client, regionClients map[string]client.Client, regions []types.Region, awsConfig aws.Config, pricingConfig aws.Config) (*AWS, error) {
 	var collectors []provider.Collector
 	logger := config.Logger.With("provider", subsystem)
+	pricingAPI := awsPricing.NewFromConfig(pricingConfig)
 
 	for _, service := range config.Services {
 		service = strings.ToUpper(service)
@@ -184,17 +185,8 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			}
 			collectors = append(collectors, collector)
 		case serviceRDS:
-			// pricing API for RDS client needs to use always the same region
-			// as for RDS, the pricing data is only available in the us-east-1
-			pricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
 			awsRDSClient := client.NewAWSClient(client.Config{
-				PricingService: awsPricing.NewFromConfig(pricingConfig),
+				PricingService: pricingAPI,
 				RDSService:     rds.NewFromConfig(awsConfig),
 			})
 			collector, err := rdsCollector.New(ctx, &rdsCollector.Config{
@@ -226,17 +218,8 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			}
 			collectors = append(collectors, collector)
 		case serviceELB:
-			// pricing API for ELB client needs to use always the same region
-			// as the pricing data is only available in us-east-1
-			elbPricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
 			awsELBPricingClient := client.NewAWSClient(client.Config{
-				PricingService: awsPricing.NewFromConfig(elbPricingConfig),
+				PricingService: pricingAPI,
 			})
 			collector, err := elb.New(ctx, &elb.Config{
 				Regions:        regions,
@@ -253,17 +236,8 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			}
 			collectors = append(collectors, collector)
 		case serviceVPC:
-			// pricing API for VPC client needs to use always the same region
-			// as for VPC, the pricing data is only available in the us-east-1
-			pricingConfig, err := createAWSConfig(ctx, "us-east-1", config.Profile, config.RoleARN)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
 			awsVPCClient := client.NewAWSClient(client.Config{
-				PricingService: awsPricing.NewFromConfig(pricingConfig),
+				PricingService: pricingAPI,
 				EC2Service:     ec2.NewFromConfig(pricingConfig),
 			})
 			collector, err := awsvpc.New(ctx, &awsvpc.Config{
@@ -281,7 +255,7 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			collectors = append(collectors, collector)
 		case serviceMSK:
 			awsMSKClient := client.NewAWSClient(client.Config{
-				PricingService: awsPricing.NewFromConfig(pricingConfig),
+				PricingService: pricingAPI,
 			})
 			collector, err := mskCollector.New(ctx, &mskCollector.Config{
 				Regions:   regions,
@@ -301,10 +275,8 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			// Note: this pins the *endpoint*, not the queried region — the collector still
 			// fetches prices per configured region via a regionCode filter. See
 			// pkg/aws/bedrock.go newPriceFetcher().
-			bedrockPricingConfig := awsConfig.Copy()
-			bedrockPricingConfig.Region = "us-east-1"
 			awsBedrockClient := client.NewAWSClient(client.Config{
-				PricingService: awsPricing.NewFromConfig(bedrockPricingConfig),
+				PricingService: pricingAPI,
 			})
 			collector, err := bedrock.New(ctx, &bedrock.Config{
 				Regions:       regions,
@@ -410,8 +382,9 @@ func filterExcludedRegions(regions []types.Region, excludeList []string) []types
 	return filtered
 }
 
-func newRegionClientMap(ctx context.Context, globalConfig aws.Config, regions []types.Region, profile string, roleARN string) (map[string]client.Client, error) {
+func newRegionClientMap(ctx context.Context, globalConfig aws.Config, pricingConfig aws.Config, regions []types.Region, profile string, roleARN string) (map[string]client.Client, error) {
 	awsClientPerRegion := make(map[string]client.Client)
+	pricingAPI := awsPricing.NewFromConfig(pricingConfig)
 	for _, region := range regions {
 		ac, err := createAWSConfig(ctx, *region.RegionName, profile, roleARN)
 		if err != nil {
@@ -419,7 +392,7 @@ func newRegionClientMap(ctx context.Context, globalConfig aws.Config, regions []
 		}
 		awsClientPerRegion[*region.RegionName] = client.NewAWSClient(
 			client.Config{
-				PricingService: awsPricing.NewFromConfig(globalConfig),
+				PricingService: pricingAPI,
 				EC2Service:     ec2.NewFromConfig(ac),
 				BillingService: costexplorer.NewFromConfig(globalConfig),
 				RDSService:     rds.NewFromConfig(ac),

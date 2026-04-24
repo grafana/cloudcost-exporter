@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	awsclient "github.com/grafana/cloudcost-exporter/pkg/aws/client"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
@@ -153,6 +154,41 @@ func TestDescribe(t *testing.T) {
 
 	err := collector.Describe(ch)
 	assert.NoError(t, err)
+}
+
+func TestCollect_EmitsMetrics(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	mockClient := &MockClient{}
+
+	products := []string{
+		`{"product":{"attributes":{"usageType":"USE1-VpcEndpoint-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"t1":{"priceDimensions":{"d1":{"pricePerUnit":{"USD":"0.01"}}}}}}}`,
+		`{"product":{"attributes":{"usageType":"USE1-VpcEndpoint-Service-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"t1":{"priceDimensions":{"d1":{"pricePerUnit":{"USD":"0.01"}}}}}}}`,
+		`{"product":{"attributes":{"usageType":"USE1-TransitGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"t1":{"priceDimensions":{"d1":{"pricePerUnit":{"USD":"0.05"}}}}}}}`,
+		`{"product":{"attributes":{"usageType":"USE1-PublicIPv4:InUseAddress","regionCode":"us-east-1"}},"terms":{"OnDemand":{"t1":{"priceDimensions":{"d1":{"pricePerUnit":{"USD":"0.005"}}}}}}}`,
+		`{"product":{"attributes":{"usageType":"USE1-PublicIPv4:IdleAddress","regionCode":"us-east-1"}},"terms":{"OnDemand":{"t1":{"priceDimensions":{"d1":{"pricePerUnit":{"USD":"0.003"}}}}}}}`,
+	}
+	mockClient.On("ListVPCServicePrices", mock.Anything, mock.AnythingOfType("string"), mock.Anything).Return(products, nil)
+
+	collector, err := New(t.Context(), &Config{
+		ScrapeInterval: time.Hour,
+		Regions:        []ec2Types.Region{{RegionName: utils.StringPtr("us-east-1")}},
+		Client:         mockClient,
+		AccountID:      "123456789012",
+	}, logger)
+	require.NoError(t, err)
+
+	ch := make(chan prometheus.Metric, 10)
+	err = collector.Collect(t.Context(), ch)
+	close(ch)
+
+	require.NoError(t, err)
+
+	var metrics []prometheus.Metric
+	for m := range ch {
+		metrics = append(metrics, m)
+	}
+	// One metric per rate type: VPC endpoint, VPC service endpoint, Transit Gateway, EIP in-use, EIP idle
+	assert.Len(t, metrics, 5)
 }
 
 // Test that VPC pricing map methods return errors when no data is available
