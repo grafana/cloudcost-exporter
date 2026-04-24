@@ -68,7 +68,7 @@ func Collect(ctx context.Context, c provider.Collector, ch chan<- prometheus.Met
 		hasError = true
 		logger.LogAttrs(ctx, slog.LevelError, "could not collect metrics",
 			slog.String("collector", c.Name()),
-			slog.String("message", escapeLineBreaks(collectErr.Error())),
+			slog.String("error", escapeLineBreaks(collectErr.Error())),
 		)
 		for _, region := range regions {
 			errorCounter := errorCounterVec.WithLabelValues(c.Name(), providerName, region)
