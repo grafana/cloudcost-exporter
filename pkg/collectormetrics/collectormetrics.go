@@ -3,6 +3,7 @@ package collectormetrics
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
@@ -67,7 +68,7 @@ func Collect(ctx context.Context, c provider.Collector, ch chan<- prometheus.Met
 		hasError = true
 		logger.LogAttrs(ctx, slog.LevelError, "could not collect metrics",
 			slog.String("collector", c.Name()),
-			slog.String("message", collectErr.Error()),
+			slog.String("message", escapeLineBreaks(collectErr.Error())),
 		)
 		for _, region := range regions {
 			errorCounter := errorCounterVec.WithLabelValues(c.Name(), providerName, region)
@@ -81,4 +82,12 @@ func Collect(ctx context.Context, c provider.Collector, ch chan<- prometheus.Met
 	}
 
 	return duration, hasError
+}
+
+func escapeLineBreaks(message string) string {
+	replacer := strings.NewReplacer(
+		"\n", "\\n",
+		"\r", "\\r",
+	)
+	return replacer.Replace(message)
 }
