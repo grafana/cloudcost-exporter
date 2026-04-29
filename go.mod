@@ -38,7 +38,7 @@ require (
 )
 
 require (
-	cloud.google.com/go/managedkafka v0.10.0
+	cloud.google.com/go/managedkafka v0.11.0
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0
 	github.com/Azure/azure-sdk-for-go/sdk/monitor/query/azmetrics v1.3.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/eventhub/armeventhub v1.3.0
