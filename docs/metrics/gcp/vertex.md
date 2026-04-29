@@ -6,14 +6,14 @@ Metrics exported for the GCP Vertex AI service.
 
 | Metric | Labels | Description |
 |--------|--------|-------------|
-| `cloudcost_gcp_vertex_token_input_usd_per_1k_tokens` | `model`, `family`, `region` | Input token/character cost in USD per 1k tokens (covers Gemini, Claude, and embedding models) |
-| `cloudcost_gcp_vertex_token_output_usd_per_1k_tokens` | `model`, `family`, `region` | Output token/character cost in USD per 1k tokens (covers Gemini and Claude models) |
+| `cloudcost_gcp_vertex_token_input_usd_per_1k_tokens` | `model_id`, `family`, `region` | Input token/character cost in USD per 1k tokens (covers Gemini, Claude, and embedding models) |
+| `cloudcost_gcp_vertex_token_output_usd_per_1k_tokens` | `model_id`, `family`, `region` | Output token/character cost in USD per 1k tokens (covers Gemini and Claude models) |
 
 ### Labels
 
 | Label | Values | Description |
 |-------|--------|-------------|
-| `model` | e.g. `gemini-1.5-flash`, `claude-3.5-sonnet`, `gemini-embedding-001` | Model name, normalised to lowercase with spaces replaced by hyphens |
+| `model_id` | e.g. `gemini-1.5-flash`, `claude-3.5-sonnet`, `gemini-embedding-001` | Model name, normalised to lowercase with spaces replaced by hyphens |
 | `family` | `google`, `anthropic`, `unknown` | Model provider family; `unknown` for unrecognised model prefixes |
 | `region` | e.g. `us-central1` | GCP region |
 
@@ -36,7 +36,7 @@ Metrics exported for the GCP Vertex AI service.
 
 | Metric | Labels | Description |
 |--------|--------|-------------|
-| `cloudcost_gcp_vertex_search_unit_usd_per_1k_search_units` | `model`, `family`, `region` | Vertex AI reranking cost in USD per 1k ranking requests |
+| `cloudcost_gcp_vertex_search_unit_usd_per_1k_search_units` | `model_id`, `family`, `region` | Vertex AI reranking cost in USD per 1k ranking requests |
 
 Reranking SKUs are fetched from the Cloud Discovery Engine billing service. If that service is unavailable at startup, reranking metrics are omitted and a warning is logged.
 
@@ -44,7 +44,7 @@ Reranking SKUs are fetched from the Cloud Discovery Engine billing service. If t
 
 | Label | Values | Description |
 |-------|--------|-------------|
-| `model` | e.g. `semantic-ranker-api` | Ranker model name, normalised to lowercase with spaces replaced by hyphens |
+| `model_id` | e.g. `semantic-ranker-api` | Ranker model name, normalised to lowercase with spaces replaced by hyphens |
 | `family` | `google` | Model provider family; Discovery Engine reranking models are Google's |
 | `region` | e.g. `global` | GCP region |
 
