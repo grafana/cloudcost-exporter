@@ -1,7 +1,9 @@
 package collectormetrics
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 
@@ -90,6 +92,26 @@ func TestCollect_ErrorCounterEmitted(t *testing.T) {
 	}
 	assert.True(t, found, "error counter metric should be emitted to channel when Collect fails")
 	assert.Equal(t, 1.0, counterValue, "error counter should be incremented by 1")
+}
+
+func TestCollect_EscapesLineBreaksInLoggedErrorMessage(t *testing.T) {
+	ch := make(chan prometheus.Metric, 10)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mock_provider.NewMockCollector(ctrl)
+	c.EXPECT().Name().Return("collector_with_multiline_error").AnyTimes()
+	c.EXPECT().Collect(gomock.Any(), ch).Return(errors.New("first line\nsecond line\rthird line"))
+
+	var logOutput bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logOutput, nil))
+
+	Collect(context.Background(), c, ch, logger, "test_provider")
+
+	got := logOutput.String()
+	assert.Contains(t, got, `error="first line\\nsecond line\\rthird line"`)
+	assert.NotContains(t, got, "first line\nsecond line")
+	assert.NotContains(t, got, "second line\rthird line")
 }
 
 type collectorConfig struct {
