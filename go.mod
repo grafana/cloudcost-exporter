@@ -30,7 +30,7 @@ require (
 	go.uber.org/mock v0.6.0
 	golang.org/x/sync v0.20.0
 	gomodules.xyz/azure-retail-prices-sdk-for-go v0.0.3
-	google.golang.org/api v0.275.0
+	google.golang.org/api v0.276.0
 	google.golang.org/genproto v0.0.0-20260401024825-9d38bb4040a9
 	google.golang.org/grpc v1.80.0
 	google.golang.org/protobuf v1.36.11 // indirect
