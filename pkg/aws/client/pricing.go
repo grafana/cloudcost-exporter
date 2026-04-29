@@ -163,6 +163,10 @@ func (p *pricing) listBedrockPrices(ctx context.Context, region string) ([]strin
 	return p.listServicePrices(ctx, "AmazonBedrock", region, nil)
 }
 
+func (p *pricing) listBedrockMarketplacePrices(ctx context.Context, region string) ([]string, error) {
+	return p.listServicePrices(ctx, "AmazonBedrockFoundationModels", region, nil)
+}
+
 func (p *pricing) listELBPrices(ctx context.Context, region string) ([]string, error) {
 	// Fetch ELB pricing from AWS Pricing API
 	input := &awsPricing.GetProductsInput{
