@@ -23,12 +23,12 @@ var (
 	vertexTokenInputDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.TokenInputCostSuffix,
 		"Vertex AI input token cost in USD per 1k tokens.",
-		[]string{"model", "family", "region"},
+		[]string{"model_id", "family", "region"},
 	)
 	vertexTokenOutputDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.TokenOutputCostSuffix,
 		"Vertex AI output token cost in USD per 1k tokens.",
-		[]string{"model", "family", "region"},
+		[]string{"model_id", "family", "region"},
 	)
 	vertexComputeCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.InstanceTotalCostSuffix,
@@ -38,7 +38,7 @@ var (
 	vertexRerankCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.SearchUnitCostSuffix,
 		"Vertex AI reranking cost in USD per 1k ranking requests.",
-		[]string{"model", "family", "region"},
+		[]string{"model_id", "family", "region"},
 	)
 )
 
