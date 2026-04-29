@@ -51,14 +51,54 @@ func TestCollect_EmitsTokenMetrics(t *testing.T) {
 	inputMetric := metricByName(results, "cloudcost_gcp_vertex_token_input_usd_per_1k_tokens")
 	require.NotNil(t, inputMetric)
 	assert.Equal(t, "gemini-1.5-flash", inputMetric.Labels["model"])
+	assert.Equal(t, "google", inputMetric.Labels["family"])
 	assert.Equal(t, "us-central1", inputMetric.Labels["region"])
 	assert.InDelta(t, 0.00125, inputMetric.Value, 1e-9)
 
 	outputMetric := metricByName(results, "cloudcost_gcp_vertex_token_output_usd_per_1k_tokens")
 	require.NotNil(t, outputMetric)
 	assert.Equal(t, "gemini-1.5-flash", outputMetric.Labels["model"])
+	assert.Equal(t, "google", outputMetric.Labels["family"])
 	assert.Equal(t, "us-central1", outputMetric.Labels["region"])
 	assert.InDelta(t, 0.005, outputMetric.Value, 1e-9)
+}
+
+func TestFamilyFromModelID(t *testing.T) {
+	cases := []struct {
+		model  string
+		family string
+	}{
+		{"gemini-1.5-flash", "google"},
+		{"gemini-embedding-001", "google"},
+		{"claude-3.5-sonnet", "anthropic"},
+		{"semantic-ranker-api", "google"},
+		{"llama-3-70b", "unknown"},
+		{"mistral-large", "unknown"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.model, func(t *testing.T) {
+			assert.Equal(t, tc.family, familyFromModelID(tc.model))
+		})
+	}
+}
+
+func TestCollect_EmitsAnthropicFamilyForClaudeTokens(t *testing.T) {
+	c, err := New(t.Context(), &Config{Projects: "test-project"}, testLogger(),
+		&stubVertexClient{
+			serviceName: "services/vertex-ai",
+			skus: []*billingpb.Sku{
+				newTokenSKU("Claude 3.5 Sonnet Input tokens", "us-east5", "k{char}", 0, 3000000),
+			},
+		})
+	require.NoError(t, err)
+
+	results, err := collectVertexMetrics(t, c)
+	require.NoError(t, err)
+
+	inputMetric := metricByName(results, "cloudcost_gcp_vertex_token_input_usd_per_1k_tokens")
+	require.NotNil(t, inputMetric)
+	assert.Equal(t, "claude-3.5-sonnet", inputMetric.Labels["model"])
+	assert.Equal(t, "anthropic", inputMetric.Labels["family"])
 }
 
 func TestCollect_EmitsComputeMetrics(t *testing.T) {
@@ -107,6 +147,7 @@ func TestCollect_EmitsRerankingMetrics(t *testing.T) {
 	rerank := metricByName(results, "cloudcost_gcp_vertex_search_unit_usd_per_1k_search_units")
 	require.NotNil(t, rerank)
 	assert.Equal(t, "semantic-ranker-api", rerank.Labels["model"])
+	assert.Equal(t, "google", rerank.Labels["family"]) // "semantic" prefix maps to google
 	assert.Equal(t, "global", rerank.Labels["region"])
 	assert.InDelta(t, 0.001, rerank.Value, 1e-9)
 }

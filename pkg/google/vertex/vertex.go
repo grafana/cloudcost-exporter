@@ -23,12 +23,12 @@ var (
 	vertexTokenInputDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.TokenInputCostSuffix,
 		"Vertex AI input token cost in USD per 1k tokens.",
-		[]string{"model", "region"},
+		[]string{"model", "family", "region"},
 	)
 	vertexTokenOutputDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.TokenOutputCostSuffix,
 		"Vertex AI output token cost in USD per 1k tokens.",
-		[]string{"model", "region"},
+		[]string{"model", "family", "region"},
 	)
 	vertexComputeCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.InstanceTotalCostSuffix,
@@ -38,7 +38,7 @@ var (
 	vertexRerankCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.SearchUnitCostSuffix,
 		"Vertex AI reranking cost in USD per 1k ranking requests.",
-		[]string{"model", "region"},
+		[]string{"model", "family", "region"},
 	)
 )
 
@@ -115,20 +115,16 @@ func (c *Collector) Name() string {
 	return subsystem
 }
 
-// Regions returns the list of GCP regions this collector covers.
-func (c *Collector) Regions() []string {
-	return c.regions
-}
-
 // Collect emits Vertex AI pricing metrics.
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	snapshot := c.pricingMap.Snapshot()
 	for region, models := range snapshot.tokens {
 		for model, pricing := range models {
+			family := familyFromModelID(model)
 			ch <- prometheus.MustNewConstMetric(vertexTokenInputDesc, prometheus.GaugeValue,
-				pricing.InputPer1kTokens, model, region)
+				pricing.InputPer1kTokens, model, family, region)
 			ch <- prometheus.MustNewConstMetric(vertexTokenOutputDesc, prometheus.GaugeValue,
-				pricing.OutputPer1kTokens, model, region)
+				pricing.OutputPer1kTokens, model, family, region)
 		}
 	}
 	for region, machines := range snapshot.compute {
@@ -146,8 +142,24 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	for region, models := range snapshot.reranking {
 		for model, price := range models {
 			ch <- prometheus.MustNewConstMetric(vertexRerankCostDesc, prometheus.GaugeValue,
-				price, model, region)
+				price, model, familyFromModelID(model), region)
 		}
 	}
 	return ctx.Err()
+}
+
+// familyFromModelID derives the model provider family from a normalised model ID.
+// Gemini and Discovery Engine reranking models are Google's; Claude models are Anthropic's.
+// Unknown prefixes return "unknown" rather than assuming a provider.
+func familyFromModelID(model string) string {
+	switch {
+	case strings.HasPrefix(model, "gemini"):
+		return "google"
+	case strings.HasPrefix(model, "claude"):
+		return "anthropic"
+	case strings.HasPrefix(model, "semantic"):
+		return "google" // Discovery Engine reranking is a Google service
+	default:
+		return "unknown"
+	}
 }
