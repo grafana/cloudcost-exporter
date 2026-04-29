@@ -210,6 +210,10 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 }
 
 // priceFromSku extracts the unit price from a SKU's last tiered rate.
+// GCP tiered rates are ordered ascending by start usage amount. The first tier
+// typically has a start amount of 0 and a unit price of $0 (free tier). Paid
+// pricing begins at the next tier. Taking the last rate gives the steady-state
+// paid price, which is what this exporter reports.
 func priceFromSku(sku *billingpb.Sku) float64 {
 	if sku == nil || len(sku.GetPricingInfo()) == 0 {
 		return 0
