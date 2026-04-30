@@ -48,6 +48,7 @@ type instanceTraits struct {
 }
 
 var (
+	ErrNoSKUsFound        = errors.New("no SKUs found for Cloud SQL service")
 	ErrInstanceNotFound   = errors.New("instance not found")
 	ErrPriceNotFound      = errors.New("price not found for instance")
 	ErrInvalidTier        = errors.New("invalid tier format")
@@ -95,8 +96,7 @@ func (pm *pricingMap) getSKus(ctx context.Context) error {
 
 	skus := pm.gcpClient.GetPricing(ctx, serviceFullName)
 	if len(skus) == 0 {
-		pm.logger.Warn("no SKUs found for Cloud SQL service", "serviceName", serviceFullName)
-		return nil
+		return ErrNoSKUsFound
 	}
 
 	pm.skus = skus
