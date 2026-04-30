@@ -14,10 +14,9 @@ import (
 
 const (
 	vertexAIServiceName = "Vertex AI"
-	// discoveryEngineServiceName is the GCP Billing API service name for Discovery Engine,
+	// discoveryEngineServiceName is the GCP Billing API service name for Vertex AI Search,
 	// which hosts the Ranking API used for reranking.
-	// NOTE: Must be verified against the live GCP Billing API.
-	discoveryEngineServiceName = "Cloud Discovery Engine"
+	discoveryEngineServiceName = "Vertex AI Search"
 )
 
 var (
