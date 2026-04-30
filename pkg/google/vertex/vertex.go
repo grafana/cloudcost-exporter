@@ -149,16 +149,31 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 }
 
 // familyFromModelID derives the model provider family from a normalised model ID.
-// Gemini and Discovery Engine reranking models are Google's; Claude models are Anthropic's.
-// Unknown prefixes return "unknown" rather than assuming a provider.
+// Gemini, Gemma, and Discovery Engine reranking models are Google's; Claude models are
+// Anthropic's. Some Claude SKUs carry a billing-category prefix (e.g. "ai-dev-tools:-claude-*"),
+// so the check uses Contains rather than HasPrefix. Model Garden 3rd-party models embed the
+// model name inside a long prefix, so Contains is used throughout. Unknown prefixes return
+// "unknown" rather than assuming a provider.
 func familyFromModelID(model string) string {
 	switch {
 	case strings.HasPrefix(model, "gemini"):
 		return "google"
-	case strings.HasPrefix(model, "claude"):
+	case strings.Contains(model, "gemma"):
+		return "google" // Gemma is Google DeepMind's open model family
+	case strings.Contains(model, "claude"):
 		return "anthropic"
 	case strings.HasPrefix(model, "semantic"):
 		return "google" // Discovery Engine reranking is a Google service
+	case strings.Contains(model, "deepseek"):
+		return "deepseek"
+	case strings.Contains(model, "llama"):
+		return "meta"
+	case strings.Contains(model, "qwen"):
+		return "alibaba"
+	case strings.Contains(model, "minimax"):
+		return "minimax"
+	case strings.Contains(model, "kimi"):
+		return "moonshot"
 	default:
 		return "unknown"
 	}

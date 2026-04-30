@@ -70,9 +70,19 @@ func TestFamilyFromModelID(t *testing.T) {
 	}{
 		{"gemini-1.5-flash", "google"},
 		{"gemini-embedding-001", "google"},
+		{"gemma-4", "google"},
+		{"cloud-vertex-ai-model-garden-model-as-a-service-gemma-4", "google"},
 		{"claude-3.5-sonnet", "anthropic"},
+		{"ai-dev-tools:-claude-opus-4.6", "anthropic"},
+		{"ai-dev-tools:-claude-sonnet-4.6", "anthropic"},
 		{"semantic-ranker-api", "google"},
-		{"llama-3-70b", "unknown"},
+		{"cloud-vertex-ai-model-garden-model-as-a-service-deepseek-r1-0528", "deepseek"},
+		{"cloud-vertex-ai-model-garden-model-as-a-service-llama-4-maverick", "meta"},
+		{"llama-4-maverick", "meta"},
+		{"cloud-vertex-ai-model-garden-model-as-a-service-qwen3-235b-a22b-instruct-2507", "alibaba"},
+		{"cloud-vertex-ai-model-garden-model-as-a-service-glm-5", "unknown"},
+		{"cloud-vertex-ai-model-garden-model-as-a-service-minimax-m2", "minimax"},
+		{"cloud-vertex-ai-model-garden-model-as-a-service-kimi-k2-thinking", "moonshot"},
 		{"mistral-large", "unknown"},
 	}
 	for _, tc := range cases {
