@@ -68,7 +68,9 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := pm.getSKus(ctx); err != nil {
+				if err := utils.Retry(initRetryAttempts, initRetryInitialDelay, initRetryMaxDelay, client.IsRetryableError, func() error {
+					return pm.getSKus(ctx)
+				}); err != nil {
 					logger.Error("failed to refresh Cloud SQL pricing SKUs", "error", err)
 				}
 			}
