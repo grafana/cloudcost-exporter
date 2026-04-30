@@ -17,6 +17,7 @@ import (
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
+	"github.com/grafana/cloudcost-exporter/pkg/google/vertex"
 	"github.com/grafana/cloudcost-exporter/pkg/google/vpc"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
@@ -151,6 +152,17 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 			}
 		case "KAFKA", "MANAGEDKAFKA":
 			collector, err = gcpmanagedkafka.New(ctx, &gcpmanagedkafka.Config{
+				Projects:       config.Projects,
+				ScrapeInterval: config.ScrapeInterval,
+			}, logger, gcpClient)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
+		case "VERTEX":
+			collector, err = vertex.New(ctx, &vertex.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
 			}, logger, gcpClient)
