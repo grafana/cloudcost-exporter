@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
@@ -133,6 +134,31 @@ func (s *failAfterNCatalogServer) ListSkus(_ context.Context, _ *billingpb.ListS
 	return &billingpb.ListSkusResponse{Skus: s.skus}, nil
 }
 
+// newTestGCPClientWithCatalog wires up stub compute and sqladmin HTTP servers and returns a
+// Mock GCP client that uses the provided billing catalog client. Use this in tests that need
+// a custom catalog server (e.g. one that fails or retries).
+func newTestGCPClientWithCatalog(t *testing.T, catalogClient *billingv1.CloudCatalogClient) *client.Mock {
+	t.Helper()
+
+	computeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(struct{}{})
+	}))
+	t.Cleanup(computeSrv.Close)
+
+	sqlAdminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(struct{}{})
+	}))
+	t.Cleanup(sqlAdminSrv.Close)
+
+	computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(computeSrv.URL))
+	require.NoError(t, err)
+
+	sqlAdminService, err := sqladmin.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(sqlAdminSrv.URL))
+	require.NoError(t, err)
+
+	return client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService, nil)
+}
+
 func zeroRetryDelays(t *testing.T) {
 	t.Helper()
 	origAttempts := initRetryAttempts
@@ -151,28 +177,8 @@ func zeroRetryDelays(t *testing.T) {
 func TestNew_FailsIfInitialSKUFetchFails(t *testing.T) {
 	zeroRetryDelays(t)
 
-	catalogClient := client.NewTestBillingClient(t, &failingCatalogServer{})
-
-	computeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(struct{}{})
-	}))
-	t.Cleanup(computeSrv.Close)
-
-	sqlAdminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(struct{}{})
-	}))
-	t.Cleanup(sqlAdminSrv.Close)
-
-	computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(computeSrv.URL))
-	require.NoError(t, err)
-
-	sqlAdminService, err := sqladmin.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(sqlAdminSrv.URL))
-	require.NoError(t, err)
-
-	gcpClient := client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService, nil)
-	config := &Config{Projects: "test-project"}
-
-	_, err = New(context.Background(), config, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
+	gcpClient := newTestGCPClientWithCatalog(t, client.NewTestBillingClient(t, &failingCatalogServer{}))
+	_, err := New(context.Background(), &Config{Projects: "test-project"}, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "failed to initialise Cloud SQL pricing")
 }
@@ -186,26 +192,8 @@ func TestNew_RetriesOnTransientError(t *testing.T) {
 		code:      codes.Unavailable,
 		skus:      minimalSKUs(),
 	}
-	catalogClient := client.NewTestBillingClient(t, srv)
-
-	computeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(struct{}{})
-	}))
-	t.Cleanup(computeSrv.Close)
-
-	sqlAdminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(struct{}{})
-	}))
-	t.Cleanup(sqlAdminSrv.Close)
-
-	computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(computeSrv.URL))
-	require.NoError(t, err)
-
-	sqlAdminService, err := sqladmin.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(sqlAdminSrv.URL))
-	require.NoError(t, err)
-
-	gcpClient := client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService, nil)
-	_, err = New(context.Background(), &Config{Projects: "test-project"}, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
+	gcpClient := newTestGCPClientWithCatalog(t, client.NewTestBillingClient(t, srv))
+	_, err := New(context.Background(), &Config{Projects: "test-project"}, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
 	require.NoError(t, err)
 	assert.Equal(t, 3, srv.callCount, "expected 3 ListServices calls (2 failures + 1 success)")
 }
@@ -218,26 +206,8 @@ func TestNew_DoesNotRetryOnAuthError(t *testing.T) {
 		failCount: initRetryAttempts + 1, // would succeed eventually if retried
 		code:      codes.PermissionDenied,
 	}
-	catalogClient := client.NewTestBillingClient(t, srv)
-
-	computeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(struct{}{})
-	}))
-	t.Cleanup(computeSrv.Close)
-
-	sqlAdminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(struct{}{})
-	}))
-	t.Cleanup(sqlAdminSrv.Close)
-
-	computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(computeSrv.URL))
-	require.NoError(t, err)
-
-	sqlAdminService, err := sqladmin.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(sqlAdminSrv.URL))
-	require.NoError(t, err)
-
-	gcpClient := client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService, nil)
-	_, err = New(context.Background(), &Config{Projects: "test-project"}, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
+	gcpClient := newTestGCPClientWithCatalog(t, client.NewTestBillingClient(t, srv))
+	_, err := New(context.Background(), &Config{Projects: "test-project"}, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
 	require.Error(t, err)
 	assert.Equal(t, 1, srv.callCount, "expected exactly 1 ListServices call — PermissionDenied must not be retried")
 }
@@ -250,26 +220,8 @@ func TestNew_DoesNotRetryOnEmptySKUResponse(t *testing.T) {
 		failCount: 0, // always succeeds on ListServices
 		skus:      nil,
 	}
-	catalogClient := client.NewTestBillingClient(t, srv)
-
-	computeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(struct{}{})
-	}))
-	t.Cleanup(computeSrv.Close)
-
-	sqlAdminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(struct{}{})
-	}))
-	t.Cleanup(sqlAdminSrv.Close)
-
-	computeService, err := computev1.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(computeSrv.URL))
-	require.NoError(t, err)
-
-	sqlAdminService, err := sqladmin.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(sqlAdminSrv.URL))
-	require.NoError(t, err)
-
-	gcpClient := client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService, nil)
-	_, err = New(context.Background(), &Config{Projects: "test-project"}, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
+	gcpClient := newTestGCPClientWithCatalog(t, client.NewTestBillingClient(t, srv))
+	_, err := New(context.Background(), &Config{Projects: "test-project"}, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrNoSKUsFound)
 	assert.Equal(t, 1, srv.callCount, "expected exactly 1 ListServices call — empty SKU response must not be retried")
