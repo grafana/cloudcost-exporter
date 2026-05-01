@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
@@ -105,8 +106,39 @@ func (s *switchableCatalogServer) ListSkus(_ context.Context, _ *billingpb.ListS
 	return &billingpb.ListSkusResponse{Skus: s.skus}, nil
 }
 
-func TestNew_FailsIfInitialSKUFetchFails(t *testing.T) {
-	catalogClient := client.NewTestBillingClient(t, &failingCatalogServer{})
+// failAfterNCatalogServer fails the first failCount ListServices calls then succeeds.
+type failAfterNCatalogServer struct {
+	billingpb.UnimplementedCloudCatalogServer
+	mu        sync.Mutex
+	callCount int
+	failCount int
+	code      codes.Code
+	skus      []*billingpb.Sku
+}
+
+func (s *failAfterNCatalogServer) ListServices(_ context.Context, _ *billingpb.ListServicesRequest) (*billingpb.ListServicesResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.callCount++
+	if s.callCount <= s.failCount {
+		return nil, status.Errorf(s.code, "transient error (call %d)", s.callCount)
+	}
+	return &billingpb.ListServicesResponse{
+		Services: []*billingpb.Service{
+			{Name: "services/cloud-sql", DisplayName: "Cloud SQL"},
+		},
+	}, nil
+}
+
+func (s *failAfterNCatalogServer) ListSkus(_ context.Context, _ *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
+	return &billingpb.ListSkusResponse{Skus: s.skus}, nil
+}
+
+// newTestGCPClientWithCatalog wires up stub compute and sqladmin HTTP servers and returns a
+// Mock GCP client that uses the provided billing catalog client. Use this in tests that need
+// a custom catalog server (e.g. one that fails or retries).
+func newTestGCPClientWithCatalog(t *testing.T, catalogClient *billingv1.CloudCatalogClient) *client.Mock {
+	t.Helper()
 
 	computeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(struct{}{})
@@ -124,12 +156,100 @@ func TestNew_FailsIfInitialSKUFetchFails(t *testing.T) {
 	sqlAdminService, err := sqladmin.NewService(context.Background(), option.WithoutAuthentication(), option.WithEndpoint(sqlAdminSrv.URL))
 	require.NoError(t, err)
 
-	gcpClient := client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService, nil)
-	config := &Config{Projects: "test-project"}
+	return client.NewMock("test-project", 0, nil, nil, catalogClient, computeService, sqlAdminService, nil)
+}
 
-	_, err = New(context.Background(), config, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
+func zeroRetryDelays(t *testing.T) {
+	t.Helper()
+	origAttempts := initRetryAttempts
+	origInitial := initRetryInitialDelay
+	origMax := initRetryMaxDelay
+	initRetryAttempts = 3
+	initRetryInitialDelay = 0
+	initRetryMaxDelay = 0
+	t.Cleanup(func() {
+		initRetryAttempts = origAttempts
+		initRetryInitialDelay = origInitial
+		initRetryMaxDelay = origMax
+	})
+}
+
+func TestNew_FailsIfInitialSKUFetchFails(t *testing.T) {
+	zeroRetryDelays(t)
+
+	gcpClient := newTestGCPClientWithCatalog(t, client.NewTestBillingClient(t, &failingCatalogServer{}))
+	_, err := New(context.Background(), &Config{Projects: "test-project"}, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "failed to initialise Cloud SQL pricing")
+}
+
+func TestNew_RetriesOnTransientError(t *testing.T) {
+	zeroRetryDelays(t)
+
+	// Fail the first 2 attempts with a retryable error, succeed on the 3rd.
+	srv := &failAfterNCatalogServer{
+		failCount: 2,
+		code:      codes.Unavailable,
+		skus:      minimalSKUs(),
+	}
+	gcpClient := newTestGCPClientWithCatalog(t, client.NewTestBillingClient(t, srv))
+	_, err := New(context.Background(), &Config{Projects: "test-project"}, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
+	require.NoError(t, err)
+	assert.Equal(t, 3, srv.callCount, "expected 3 ListServices calls (2 failures + 1 success)")
+}
+
+func TestNew_DoesNotRetryOnAuthError(t *testing.T) {
+	zeroRetryDelays(t)
+
+	// PermissionDenied is a non-retryable error — New() should fail after a single attempt.
+	srv := &failAfterNCatalogServer{
+		failCount: initRetryAttempts + 1, // would succeed eventually if retried
+		code:      codes.PermissionDenied,
+	}
+	gcpClient := newTestGCPClientWithCatalog(t, client.NewTestBillingClient(t, srv))
+	_, err := New(context.Background(), &Config{Projects: "test-project"}, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
+	require.Error(t, err)
+	assert.Equal(t, 1, srv.callCount, "expected exactly 1 ListServices call — PermissionDenied must not be retried")
+}
+
+func TestNew_DoesNotRetryOnEmptySKUResponse(t *testing.T) {
+	zeroRetryDelays(t)
+
+	// ListServices succeeds but ListSkus returns no SKUs — ErrNoSKUsFound must not be retried.
+	srv := &failAfterNCatalogServer{
+		failCount: 0, // always succeeds on ListServices
+		skus:      nil,
+	}
+	gcpClient := newTestGCPClientWithCatalog(t, client.NewTestBillingClient(t, srv))
+	_, err := New(context.Background(), &Config{Projects: "test-project"}, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrNoSKUsFound)
+	assert.Equal(t, 1, srv.callCount, "expected exactly 1 ListServices call — empty SKU response must not be retried")
+}
+
+// minimalSKUs returns a single valid Cloud SQL SKU sufficient for New() to succeed.
+func minimalSKUs() []*billingpb.Sku {
+	return []*billingpb.Sku{
+		{
+			SkuId: "minimal-sku",
+			Category: &billingpb.Category{
+				ServiceDisplayName: "Cloud SQL",
+			},
+			Description: "Cloud SQL: MYSQL db-f1-micro ZONAL instance running in us-central1",
+			GeoTaxonomy: &billingpb.GeoTaxonomy{
+				Regions: []string{"us-central1"},
+			},
+			PricingInfo: []*billingpb.PricingInfo{
+				{
+					PricingExpression: &billingpb.PricingExpression{
+						TieredRates: []*billingpb.PricingExpression_TierRate{
+							{UnitPrice: &money.Money{Nanos: 10000000}},
+						},
+					},
+				},
+			},
+		},
+	}
 }
 
 func TestCollect_UsesCachedSKUs(t *testing.T) {
@@ -441,7 +561,11 @@ func TestGetAllCloudSQL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gcpClient := newTestGCPClient(t, tt.regionsHandlers, tt.sqlAdminHandlers, nil)
+			skus := tt.skus
+			if len(skus) == 0 {
+				skus = minimalSKUs()
+			}
+			gcpClient := newTestGCPClient(t, tt.regionsHandlers, tt.sqlAdminHandlers, skus)
 			config := &Config{Projects: "test-project"}
 			collector, err := New(context.Background(), config, slog.New(slog.NewTextHandler(os.Stdout, nil)), gcpClient)
 			require.NoError(t, err)
