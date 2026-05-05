@@ -151,13 +151,28 @@ jobs:
           go-version: '1.25.0'
           cache: false
 
+      - name: Generate changelog
+        if: needs.check-release-label.outputs.should-release == 'true'
+        id: changelog
+        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4.7.1
+        with:
+          args: --latest --strip header
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare release notes for GoReleaser
+        if: needs.check-release-label.outputs.should-release == 'true'
+        run: |
+          cp "${{ steps.changelog.outputs.changelog }}" /tmp/goreleaser-release-notes.md
+          rm -rf git-cliff/
+
       - name: Run GoReleaser
         if: needs.check-release-label.outputs.should-release == 'true'
         uses: goreleaser/goreleaser-action@e24998b8b67b290c2fa8b7c14fcfa7de2c5c9b8c # v7.1.0
         with:
           distribution: goreleaser
           version: 2
-          args: release --clean
+          args: release --clean --release-notes=/tmp/goreleaser-release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
