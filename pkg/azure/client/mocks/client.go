@@ -14,7 +14,7 @@ import (
 	reflect "reflect"
 
 	azmetrics "github.com/Azure/azure-sdk-for-go/sdk/monitor/query/azmetrics"
-	armcompute "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	armcompute "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v8"
 	armcontainerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	armeventhub "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/eventhub/armeventhub"
 	gomock "go.uber.org/mock/gomock"

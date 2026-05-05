@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v8"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/grafana/cloudcost-exporter/pkg/azure/client"
 	"golang.org/x/sync/errgroup"
