@@ -1,0 +1,80 @@
+name: Suggest Release Label
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions:
+  pull-requests: write
+
+jobs:
+  suggest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compute bumped version
+        id: cliff_bump
+        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4.7.1
+        with:
+          args: --bumped-version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build comment
+        run: |
+          LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+          LATEST="${LATEST:-v0.0.0}"
+          CLIFF="${{ steps.cliff_bump.outputs.content }}"
+
+          IFS='.' read -r cur_major cur_minor _ <<< "${LATEST#v}"
+          IFS='.' read -r cliff_major cliff_minor _ <<< "${CLIFF#v}"
+
+          if [ "$cliff_major" -gt "$cur_major" ]; then
+            LABEL="release:major"
+            REASON="\`feat!\` or breaking change detected"
+          elif [ "$cliff_minor" -gt "$cur_minor" ]; then
+            LABEL="release:minor"
+            REASON="\`feat\`, \`refactor\`, or \`perf\` commit detected"
+          elif [ "$CLIFF" != "$LATEST" ]; then
+            LABEL="release:patch"
+            REASON="\`fix\` commit detected"
+          else
+            LABEL="none"
+            REASON="only non-binary commits detected (\`chore\`, \`ci\`, \`docs\`, etc.)"
+          fi
+
+          if [ "$LABEL" = "none" ]; then
+            cat > /tmp/comment.md << EOF
+          ## Release Label Suggestion
+
+          Based on commits since \`$LATEST\`, git-cliff detects no release-triggering commits ($REASON).
+
+          **No release label needed** unless this PR introduces \`feat\`, \`fix\`, \`refactor\`, \`perf\`, or a breaking change.
+
+          > This is informational only — the label choice is yours.
+          EOF
+          else
+            cat > /tmp/comment.md << EOF
+          ## Release Label Suggestion
+
+          Based on commits since \`$LATEST\`, git-cliff recommends:
+
+          **\`$LABEL\`** — next version would be \`$CLIFF\` ($REASON)
+
+          > This is informational only — the label choice is yours.
+          EOF
+          fi
+
+      - name: Post comment
+        uses: marocchino/sticky-pull-request-comment@773744901bac0e8cbb5a0dc842800d45e9b2b405 # v2.9.4
+        with:
+          header: release-label-suggestion
+          path: /tmp/comment.md
