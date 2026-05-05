@@ -33,6 +33,8 @@ Releases are now automated! When you merge a PR with a release label, the workfl
    - `release:patch` - For bug fixes and dependency updates (e.g., `v1.2.3` → `v1.2.4`)
 3. Merge the PR - The [release-on-pr-merge.yml](../../.github/workflows/release-on-pr-merge.yml) workflow will run automatically
 
+When you open or update a PR, the [suggest-release-label.yml](../../.github/workflows/suggest-release-label.yml) workflow will post a comment with a label recommendation based on all commits since the last release. This is informational — the final label choice is yours.
+
 ### Release Label Guidelines
 
 | Change Type | Label | Example |
@@ -42,6 +44,42 @@ Releases are now automated! When you merge a PR with a release label, the workfl
 | Bug fixes, dependency updates, documentation | `release:patch` | `v1.2.3` → `v1.2.4` |
 
 **Important**: Only use **ONE** release label per PR. If multiple labels are present, the workflow will fail with an error.
+
+### Commit types and release labels
+
+This repo enforces [Conventional Commits](https://www.conventionalcommits.org/) on PR titles (since the repo uses squash merges, the PR title becomes the commit message). Use the following table to choose the right release label based on your commit type:
+
+| Commit type | Affects binary? | Suggested label |
+|-------------|-----------------|-----------------|
+| `feat`      | yes             | `release:minor` |
+| `fix`       | yes             | `release:patch` |
+| `refactor`  | yes             | `release:minor` |
+| `perf`      | yes             | `release:minor` |
+| `docs`      | no              | no label needed |
+| `ci`        | no              | no label needed |
+| `test`      | no              | no label needed |
+| `build`     | no              | no label needed |
+| `style`     | no              | no label needed |
+| `chore`     | no              | no label needed |
+
+For breaking changes, append `!` to the type (e.g. `feat!:`) and use `release:major`.
+
+### Checking the minimum required bump
+
+To see what label the commits since the last release would require, run [git-cliff](https://git-cliff.org) locally:
+
+```sh
+git cliff --bumped-version
+```
+
+This uses `cliff.toml` at the repo root and computes the minimum next version based on Conventional Commit types since the last tag.
+
+### Dependency updates
+
+Renovate manages dependency updates automatically and uses the correct commit type by convention:
+
+- **Go module updates** use `fix(deps)` — these affect the compiled binary and should use `release:patch`
+- **Non-Go updates** (GitHub Actions, linters, etc.) use `chore(deps)` — these don't affect the binary and need no release label
 
 ### What Happens When You Merge a PR
 
