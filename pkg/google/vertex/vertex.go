@@ -22,12 +22,12 @@ const (
 var (
 	vertexTokenInputDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.InputTokenCostSuffix,
-		"Vertex AI input token cost in USD per 1k tokens.",
+		"Vertex AI input cost in USD per 1k tokens, for models billed by token. Character-billed models use the character metric.",
 		[]string{"model_id", "family", "region"},
 	)
 	vertexTokenOutputDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.OutputTokenCostSuffix,
-		"Vertex AI output token cost in USD per 1k tokens.",
+		"Vertex AI output cost in USD per 1k tokens, for models billed by token. Character-billed models use the character metric.",
 		[]string{"model_id", "family", "region"},
 	)
 	vertexCharacterInputDesc = utils.GenerateDesc(

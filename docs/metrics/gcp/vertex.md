@@ -6,8 +6,8 @@ Metrics exported for the GCP Vertex AI service.
 
 | Metric | Labels | Description |
 |--------|--------|-------------|
-| `cloudcost_gcp_vertex_token_input_usd_per_1k_tokens` | `model_id`, `family`, `region` | Input token/character cost in USD per 1k tokens (covers Gemini, Claude, and embedding models) |
-| `cloudcost_gcp_vertex_token_output_usd_per_1k_tokens` | `model_id`, `family`, `region` | Output token/character cost in USD per 1k tokens (covers Gemini and Claude models) |
+| `cloudcost_gcp_vertex_token_input_usd_per_1k_tokens` | `model_id`, `family`, `region` | Input cost in USD per 1k tokens, for models billed by token. Character-billed models use the character metric. |
+| `cloudcost_gcp_vertex_token_output_usd_per_1k_tokens` | `model_id`, `family`, `region` | Output cost in USD per 1k tokens, for models billed by token. Character-billed models use the character metric. |
 
 ### Labels
 
