@@ -114,6 +114,24 @@ func TestParseSkus_RerankingSKU(t *testing.T) {
 	assert.InDelta(t, 0.001, snap.reranking["global"]["semantic-ranker-api"], 1e-9)
 }
 
+func TestParseSkus_ModelGardenMaaSPrefixStripped(t *testing.T) {
+	// GCP sometimes prefixes Model Garden MaaS output SKUs with a long billing path
+	// while the input SKU uses the short name. Both should normalize to the same model ID.
+	pm := &PricingMap{}
+	err := pm.ParseSkus([]*billingpb.Sku{
+		newTokenSKU("Llama 4 Maverick Input tokens", "global", "k{char}", 0, 350000),
+		newTokenSKU("Cloud Vertex AI Model Garden Model as a Service Llama 4 Maverick Output tokens", "global", "k{char}", 0, 1150000),
+	})
+	require.NoError(t, err)
+
+	snap := pm.Snapshot()
+	require.NotNil(t, snap.tokens["global"]["llama-4-maverick"])
+	assert.InDelta(t, 0.00035, snap.tokens["global"]["llama-4-maverick"].InputPer1kTokens, 1e-9)
+	assert.InDelta(t, 0.00115, snap.tokens["global"]["llama-4-maverick"].OutputPer1kTokens, 1e-9)
+	// The long-prefix key must not exist as a separate entry.
+	assert.Nil(t, snap.tokens["global"]["cloud-vertex-ai-model-garden-model-as-a-service-llama-4-maverick"])
+}
+
 func TestParseSkus_UnknownSKUsIgnored(t *testing.T) {
 	pm := &PricingMap{}
 	err := pm.ParseSkus([]*billingpb.Sku{

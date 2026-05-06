@@ -261,8 +261,17 @@ func skuRegions(sku *billingpb.Sku) []string {
 	return []string{"global"}
 }
 
+// modelGardenMaaSPrefix is the billing prefix GCP prepends to some Model Garden
+// Model-as-a-Service SKUs. It appears on one token direction (input or output) but
+// not the other, causing the same model to normalize to two different IDs.
+const modelGardenMaaSPrefix = "Cloud Vertex AI Model Garden Model as a Service "
+
 // normalizeModelName converts a model name from a SKU description to a canonical slug.
+// The Model Garden MaaS prefix is stripped first so that input and output SKUs for
+// the same model share the same ID.
 // Example: "1.5 Flash" → "1.5-flash"
+// Example: "Cloud Vertex AI Model Garden Model as a Service Llama 4 Maverick" → "llama-4-maverick"
 func normalizeModelName(raw string) string {
-	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(raw), " ", "-"))
+	stripped := strings.TrimPrefix(raw, modelGardenMaaSPrefix)
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(stripped), " ", "-"))
 }
