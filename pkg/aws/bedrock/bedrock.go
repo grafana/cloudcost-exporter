@@ -34,14 +34,14 @@ var (
 	InputTokenCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
-		utils.TokenInputCostSuffix,
+		utils.InputTokenCostSuffix,
 		"The cost of AWS Bedrock input tokens in USD per 1000 tokens",
 		[]string{"account_id", "region", "model_id", "family", "price_tier"},
 	)
 	OutputTokenCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
-		utils.TokenOutputCostSuffix,
+		utils.OutputTokenCostSuffix,
 		"The cost of AWS Bedrock output tokens in USD per 1000 tokens",
 		[]string{"account_id", "region", "model_id", "family", "price_tier"},
 	)

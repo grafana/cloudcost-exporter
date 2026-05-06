@@ -83,7 +83,7 @@ func TestCollect_EmitsInputAndOutputTokenMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 
-	inputMetric := metricByName(results, "cloudcost_aws_bedrock_token_input_usd_per_1k_tokens")
+	inputMetric := metricByName(results, "cloudcost_aws_bedrock_input_usd_per_1k_tokens")
 	require.NotNil(t, inputMetric)
 	assert.Equal(t, "us-east-1", inputMetric.Labels["region"])
 	assert.Equal(t, "Claude3Sonnet", inputMetric.Labels["model_id"])
@@ -92,7 +92,7 @@ func TestCollect_EmitsInputAndOutputTokenMetrics(t *testing.T) {
 	assert.Equal(t, "123456789012", inputMetric.Labels["account_id"])
 	assert.InDelta(t, 0.003, inputMetric.Value, 1e-9)
 
-	outputMetric := metricByName(results, "cloudcost_aws_bedrock_token_output_usd_per_1k_tokens")
+	outputMetric := metricByName(results, "cloudcost_aws_bedrock_output_usd_per_1k_tokens")
 	require.NotNil(t, outputMetric)
 	assert.Equal(t, "us-east-1", outputMetric.Labels["region"])
 	assert.Equal(t, "Claude3Sonnet", outputMetric.Labels["model_id"])
