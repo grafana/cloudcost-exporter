@@ -208,7 +208,7 @@ func TestRegexPatterns(t *testing.T) {
 			match bool
 		}{
 			{"Gemini 1.5 Flash Input tokens", true},
-			{"Gemini 1.5 Flash Input token", true},   // singular
+			{"Gemini 1.5 Flash Input token", true}, // singular
 			{"Gemini Embedding 001 Input characters", true},
 			{"Gemini Embedding 001 Input character", true}, // singular
 			{"GEMINI 1.5 FLASH INPUT TOKENS", true},        // case insensitive
@@ -228,13 +228,13 @@ func TestRegexPatterns(t *testing.T) {
 			match bool
 		}{
 			{"Gemini 1.5 Flash Output tokens", true},
-			{"Gemini 1.5 Flash Output token", true},   // singular
+			{"Gemini 1.5 Flash Output token", true}, // singular
 			{"Gemini 1.5 Flash Output characters", true},
 			{"Cloud Vertex AI Model Garden Model as a Service Llama 4 Maverick Output tokens", true}, // long prefix
-			{"GEMINI 1.5 FLASH OUTPUT TOKENS", true},  // case insensitive
-			{"Gemini 1.5 Flash Input tokens", false},  // wrong direction
-			{"Gemini 1.5 Flash Output", false},        // missing unit
-			{"Output tokens", false},                  // no model prefix
+			{"GEMINI 1.5 FLASH OUTPUT TOKENS", true},                                                 // case insensitive
+			{"Gemini 1.5 Flash Input tokens", false},                                                 // wrong direction
+			{"Gemini 1.5 Flash Output", false},                                                       // missing unit
+			{"Output tokens", false},                                                                 // no model prefix
 		}
 		for _, tc := range cases {
 			assert.Equal(t, tc.match, tokenOutputRegex.MatchString(tc.input), "input: %q", tc.input)
@@ -249,8 +249,8 @@ func TestRegexPatterns(t *testing.T) {
 			{"Custom Training n1-standard-4 running in us-central1", true},
 			{"Spot Custom Prediction n1-highmem-8 running in europe-west1", true},
 			{"Custom Prediction n2-standard-8 running in asia-east1", true},
-			{"SPOT CUSTOM TRAINING n1-standard-4 RUNNING IN us-central1", true}, // case insensitive
-			{"Custom n1-standard-4 running in us-central1", false},              // missing Training/Prediction
+			{"SPOT CUSTOM TRAINING n1-standard-4 RUNNING IN us-central1", true},         // case insensitive
+			{"Custom n1-standard-4 running in us-central1", false},                      // missing Training/Prediction
 			{"Preemptible Custom Training n1-standard-4 running in us-central1", false}, // wrong preemptible prefix
 			{"Gemini 1.5 Flash Input tokens", false},
 		}

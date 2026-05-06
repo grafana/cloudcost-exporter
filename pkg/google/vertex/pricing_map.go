@@ -133,28 +133,10 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 			model := normalizeModelName(matches[1])
 			price := normalizeToPerK(priceFromSku(sku), sku)
 			isChar := strings.HasPrefix(strings.ToLower(matches[2]), "char")
-			for _, region := range regions {
-				if region == "" {
-					continue
-				}
-				if isChar {
-					if snap.characters[region] == nil {
-						snap.characters[region] = make(map[string]*CharacterPricing)
-					}
-					if snap.characters[region][model] == nil {
-						snap.characters[region][model] = &CharacterPricing{}
-					}
-					snap.characters[region][model].InputPer1kChars = price
-				} else {
-					if snap.tokens[region] == nil {
-						snap.tokens[region] = make(map[string]*TokenPricing)
-					}
-					if snap.tokens[region][model] == nil {
-						snap.tokens[region][model] = &TokenPricing{}
-					}
-					snap.tokens[region][model].InputPer1kTokens = price
-				}
-			}
+			applyPrice(snap, model, price, regions, isChar,
+				func(tp *TokenPricing, p float64) { tp.InputPer1kTokens = p },
+				func(cp *CharacterPricing, p float64) { cp.InputPer1kChars = p },
+			)
 			continue
 		}
 
@@ -162,28 +144,10 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 			model := normalizeModelName(matches[1])
 			price := normalizeToPerK(priceFromSku(sku), sku)
 			isChar := strings.HasPrefix(strings.ToLower(matches[2]), "char")
-			for _, region := range regions {
-				if region == "" {
-					continue
-				}
-				if isChar {
-					if snap.characters[region] == nil {
-						snap.characters[region] = make(map[string]*CharacterPricing)
-					}
-					if snap.characters[region][model] == nil {
-						snap.characters[region][model] = &CharacterPricing{}
-					}
-					snap.characters[region][model].OutputPer1kChars = price
-				} else {
-					if snap.tokens[region] == nil {
-						snap.tokens[region] = make(map[string]*TokenPricing)
-					}
-					if snap.tokens[region][model] == nil {
-						snap.tokens[region][model] = &TokenPricing{}
-					}
-					snap.tokens[region][model].OutputPer1kTokens = price
-				}
-			}
+			applyPrice(snap, model, price, regions, isChar,
+				func(tp *TokenPricing, p float64) { tp.OutputPer1kTokens = p },
+				func(cp *CharacterPricing, p float64) { cp.OutputPer1kChars = p },
+			)
 			continue
 		}
 
@@ -235,6 +199,42 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 
 	pm.current.Store(snap)
 	return nil
+}
+
+// applyPrice routes a parsed SKU price into the correct region/model entry
+// of the snapshot. setToken and setChar assign the price to the appropriate field on
+// TokenPricing and CharacterPricing respectively.
+func applyPrice(
+	snap *Snapshot,
+	model string,
+	price float64,
+	regions []string,
+	isChar bool,
+	setToken func(*TokenPricing, float64),
+	setChar func(*CharacterPricing, float64),
+) {
+	for _, region := range regions {
+		if region == "" {
+			continue
+		}
+		if isChar {
+			if snap.characters[region] == nil {
+				snap.characters[region] = make(map[string]*CharacterPricing)
+			}
+			if snap.characters[region][model] == nil {
+				snap.characters[region][model] = &CharacterPricing{}
+			}
+			setChar(snap.characters[region][model], price)
+		} else {
+			if snap.tokens[region] == nil {
+				snap.tokens[region] = make(map[string]*TokenPricing)
+			}
+			if snap.tokens[region][model] == nil {
+				snap.tokens[region][model] = &TokenPricing{}
+			}
+			setToken(snap.tokens[region][model], price)
+		}
+	}
 }
 
 // priceFromSku extracts the unit price from a SKU's last tiered rate.
