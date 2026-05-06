@@ -17,6 +17,21 @@ Metrics exported for the GCP Vertex AI service.
 | `family` | `google`, `meta`, `alibaba`, `deepseek`, `minimax`, `moonshot`, `unknown` | Model provider family; `unknown` for unrecognised model prefixes |
 | `region` | e.g. `us-central1` | GCP region |
 
+## Character Pricing
+
+| Metric | Labels | Description |
+|--------|--------|-------------|
+| `cloudcost_gcp_vertex_input_usd_per_1k_characters` | `model_id`, `family`, `region` | Input cost in USD per 1k characters, for models billed by character (e.g. translation models). |
+| `cloudcost_gcp_vertex_output_usd_per_1k_characters` | `model_id`, `family`, `region` | Output cost in USD per 1k characters, for models billed by character (e.g. translation models). |
+
+### Labels
+
+| Label | Values | Description |
+|-------|--------|-------------|
+| `model_id` | e.g. `translation-llm` | Model name, normalised to lowercase with spaces replaced by hyphens |
+| `family` | `google`, `unknown` | Model provider family |
+| `region` | e.g. `global` | GCP region |
+
 ## Compute Pricing
 
 | Metric | Labels | Description |
