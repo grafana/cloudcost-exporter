@@ -89,7 +89,6 @@ func TestFamilyFromModelID(t *testing.T) {
 	}
 }
 
-
 func TestCollect_EmitsComputeMetrics(t *testing.T) {
 	c, err := New(t.Context(), testLogger(),
 		&stubVertexClient{

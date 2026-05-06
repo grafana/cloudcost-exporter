@@ -34,7 +34,6 @@ func TestParseSkus_TokenOutputSKU(t *testing.T) {
 	assert.InDelta(t, 0.005, snap.tokens["us-central1"]["gemini-1.5-flash"].OutputPer1kTokens, 1e-9)
 }
 
-
 func TestParseSkus_TokenSKUNormalizesPerUnitPrice(t *testing.T) {
 	// A SKU with no "k" prefix in UsageUnit should be multiplied by 1000.
 	pm := &PricingMap{}
