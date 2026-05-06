@@ -34,19 +34,6 @@ func TestParseSkus_TokenOutputSKU(t *testing.T) {
 	assert.InDelta(t, 0.005, snap.tokens["us-central1"]["gemini-1.5-flash"].OutputPer1kTokens, 1e-9)
 }
 
-func TestParseSkus_ClaudeTokenSKU(t *testing.T) {
-	pm := &PricingMap{}
-	err := pm.ParseSkus([]*billingpb.Sku{
-		newTokenSKU("Claude 3.5 Sonnet Input tokens", "global", "k{char}", 0, 3000000),
-		newTokenSKU("Claude 3.5 Sonnet Output tokens", "global", "k{char}", 0, 15000000),
-	})
-	require.NoError(t, err)
-
-	snap := pm.Snapshot()
-	require.NotNil(t, snap.tokens["global"]["claude-3.5-sonnet"])
-	assert.InDelta(t, 0.003, snap.tokens["global"]["claude-3.5-sonnet"].InputPer1kTokens, 1e-9)
-	assert.InDelta(t, 0.015, snap.tokens["global"]["claude-3.5-sonnet"].OutputPer1kTokens, 1e-9)
-}
 
 func TestParseSkus_TokenSKUNormalizesPerUnitPrice(t *testing.T) {
 	// A SKU with no "k" prefix in UsageUnit should be multiplied by 1000.

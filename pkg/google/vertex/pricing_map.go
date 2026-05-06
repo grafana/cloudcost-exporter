@@ -20,13 +20,12 @@ const (
 )
 
 var (
-	// tokenInputRegex matches Vertex AI input token/character SKU descriptions for any model family.
-	// Examples: "Gemini 1.5 Flash Input tokens", "Claude 3.5 Sonnet Input tokens",
-	//           "Gemini Embedding 001 Input characters"
+	// tokenInputRegex matches Vertex AI input token/character SKU descriptions.
+	// Examples: "Gemini 1.5 Flash Input tokens", "Gemini Embedding 001 Input characters"
 	// NOTE: Exact SKU description strings must be verified against the live GCP Billing API.
 	tokenInputRegex = regexp.MustCompile(`(?i)^(.+?)\s+Input\s+(tokens?|characters?)$`)
-	// tokenOutputRegex matches Vertex AI output token/character SKU descriptions for any model family.
-	// Examples: "Gemini 1.5 Flash Output tokens", "Claude 3.5 Sonnet Output tokens"
+	// tokenOutputRegex matches Vertex AI output token/character SKU descriptions.
+	// Example: "Gemini 1.5 Flash Output tokens"
 	tokenOutputRegex = regexp.MustCompile(`(?i)^(.+?)\s+Output\s+(tokens?|characters?)$`)
 	// computeRegex matches custom training/prediction compute SKU descriptions.
 	// Example: "Custom Training n1-standard-4 running in us-central1"

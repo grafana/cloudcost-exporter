@@ -13,8 +13,8 @@ Metrics exported for the GCP Vertex AI service.
 
 | Label | Values | Description |
 |-------|--------|-------------|
-| `model_id` | e.g. `gemini-1.5-flash`, `claude-3.5-sonnet`, `gemini-embedding-001` | Model name, normalised to lowercase with spaces replaced by hyphens |
-| `family` | `google`, `anthropic`, `unknown` | Model provider family; `unknown` for unrecognised model prefixes |
+| `model_id` | e.g. `gemini-1.5-flash`, `gemma-4`, `llama-4-maverick` | Model name, normalised to lowercase with spaces replaced by hyphens |
+| `family` | `google`, `meta`, `alibaba`, `deepseek`, `minimax`, `moonshot`, `unknown` | Model provider family; `unknown` for unrecognised model prefixes |
 | `region` | e.g. `us-central1` | GCP region |
 
 ## Compute Pricing

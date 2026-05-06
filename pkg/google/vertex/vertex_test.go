@@ -72,9 +72,6 @@ func TestFamilyFromModelID(t *testing.T) {
 		{"gemini-embedding-001", "google"},
 		{"gemma-4", "google"},
 		{"cloud-vertex-ai-model-garden-model-as-a-service-gemma-4", "google"},
-		{"claude-3.5-sonnet", "anthropic"},
-		{"ai-dev-tools:-claude-opus-4.6", "anthropic"},
-		{"ai-dev-tools:-claude-sonnet-4.6", "anthropic"},
 		{"semantic-ranker-api", "google"},
 		{"cloud-vertex-ai-model-garden-model-as-a-service-deepseek-r1-0528", "deepseek"},
 		{"cloud-vertex-ai-model-garden-model-as-a-service-llama-4-maverick", "meta"},
@@ -92,24 +89,6 @@ func TestFamilyFromModelID(t *testing.T) {
 	}
 }
 
-func TestCollect_EmitsAnthropicFamilyForClaudeTokens(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
-		&stubVertexClient{
-			serviceName: "services/vertex-ai",
-			skus: []*billingpb.Sku{
-				newTokenSKU("Claude 3.5 Sonnet Input tokens", "us-east5", "k{char}", 0, 3000000),
-			},
-		})
-	require.NoError(t, err)
-
-	results, err := collectVertexMetrics(t, c)
-	require.NoError(t, err)
-
-	inputMetric := metricByName(results, "cloudcost_gcp_vertex_input_usd_per_1k_tokens")
-	require.NotNil(t, inputMetric)
-	assert.Equal(t, "claude-3.5-sonnet", inputMetric.Labels["model_id"])
-	assert.Equal(t, "anthropic", inputMetric.Labels["family"])
-}
 
 func TestCollect_EmitsComputeMetrics(t *testing.T) {
 	c, err := New(t.Context(), testLogger(),
