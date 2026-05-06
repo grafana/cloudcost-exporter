@@ -42,23 +42,16 @@ var (
 	)
 )
 
-// Config holds configuration for the Vertex AI collector.
-type Config struct {
-	Projects       string
-	ScrapeInterval time.Duration
-}
-
 // Collector collects Vertex AI pricing metrics.
 type Collector struct {
 	gcpClient  client.Client
-	config     *Config
 	pricingMap *PricingMap
 	logger     *slog.Logger
 }
 
 // New creates and initialises a Vertex AI Collector.
 // Pricing is fetched at construction time; an error means the collector cannot be used.
-func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient client.Client) (*Collector, error) {
+func New(ctx context.Context, logger *slog.Logger, gcpClient client.Client) (*Collector, error) {
 	logger = logger.With("collector", subsystem)
 
 	pm, err := NewPricingMap(ctx, gcpClient)
@@ -83,7 +76,6 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 
 	return &Collector{
 		gcpClient:  gcpClient,
-		config:     config,
 		pricingMap: pm,
 		logger:     logger,
 	}, nil
