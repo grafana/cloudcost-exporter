@@ -21,13 +21,23 @@ const (
 
 var (
 	vertexTokenInputDesc = utils.GenerateDesc(
-		cloudcostexporter.MetricPrefix, subsystem, utils.TokenInputCostSuffix,
+		cloudcostexporter.MetricPrefix, subsystem, utils.InputTokenCostSuffix,
 		"Vertex AI input token cost in USD per 1k tokens.",
 		[]string{"model_id", "family", "region"},
 	)
 	vertexTokenOutputDesc = utils.GenerateDesc(
-		cloudcostexporter.MetricPrefix, subsystem, utils.TokenOutputCostSuffix,
+		cloudcostexporter.MetricPrefix, subsystem, utils.OutputTokenCostSuffix,
 		"Vertex AI output token cost in USD per 1k tokens.",
+		[]string{"model_id", "family", "region"},
+	)
+	vertexCharacterInputDesc = utils.GenerateDesc(
+		cloudcostexporter.MetricPrefix, subsystem, utils.CharacterInputCostSuffix,
+		"Vertex AI input character cost in USD per 1k characters (models billed per character, e.g. translation models).",
+		[]string{"model_id", "family", "region"},
+	)
+	vertexCharacterOutputDesc = utils.GenerateDesc(
+		cloudcostexporter.MetricPrefix, subsystem, utils.CharacterOutputCostSuffix,
+		"Vertex AI output character cost in USD per 1k characters (models billed per character, e.g. translation models).",
 		[]string{"model_id", "family", "region"},
 	)
 	vertexComputeCostDesc = utils.GenerateDesc(
@@ -90,6 +100,8 @@ func (c *Collector) Register(_ provider.Registry) error {
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- vertexTokenInputDesc
 	ch <- vertexTokenOutputDesc
+	ch <- vertexCharacterInputDesc
+	ch <- vertexCharacterOutputDesc
 	ch <- vertexComputeCostDesc
 	ch <- vertexRerankCostDesc
 	return nil
@@ -110,6 +122,15 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				pricing.InputPer1kTokens, model, family, region)
 			ch <- prometheus.MustNewConstMetric(vertexTokenOutputDesc, prometheus.GaugeValue,
 				pricing.OutputPer1kTokens, model, family, region)
+		}
+	}
+	for region, models := range snapshot.characters {
+		for model, pricing := range models {
+			family := familyFromModelID(model)
+			ch <- prometheus.MustNewConstMetric(vertexCharacterInputDesc, prometheus.GaugeValue,
+				pricing.InputPer1kChars, model, family, region)
+			ch <- prometheus.MustNewConstMetric(vertexCharacterOutputDesc, prometheus.GaugeValue,
+				pricing.OutputPer1kChars, model, family, region)
 		}
 	}
 	for region, machines := range snapshot.compute {

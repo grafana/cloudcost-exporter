@@ -88,17 +88,29 @@ func TestParseSkus_ComputeSpot(t *testing.T) {
 	assert.Equal(t, 0.0, snap.compute["europe-west1"]["n1-highmem-8"]["prediction"].OnDemandPerHour)
 }
 
-func TestParseSkus_EmbeddingCharactersSKU(t *testing.T) {
+func TestParseSkus_CharacterSKUsRoutedSeparately(t *testing.T) {
+	// Character-priced models must land in snap.characters, not snap.tokens.
 	pm := &PricingMap{}
 	err := pm.ParseSkus([]*billingpb.Sku{
-		newTokenSKU("Gemini Embedding 001 Input characters", "us-central1", "k{char}", 0, 25000),
-		newTokenSKU("Gemini Embedding 001 Output characters", "us-central1", "k{char}", 0, 0),
+		newTokenSKU("Translation LLM Input Characters", "global", "count", 0, 50000),
+		newTokenSKU("Translation LLM Output Characters", "global", "count", 0, 150000),
+		newTokenSKU("Llama 4 Scout Input Tokens", "global", "count", 0, 170000),
 	})
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
-	require.NotNil(t, snap.tokens["us-central1"]["gemini-embedding-001"])
-	assert.InDelta(t, 0.000025, snap.tokens["us-central1"]["gemini-embedding-001"].InputPer1kTokens, 1e-9)
+
+	// Character-priced SKUs go to characters map.
+	require.NotNil(t, snap.characters["global"]["translation-llm"])
+	assert.InDelta(t, 0.05, snap.characters["global"]["translation-llm"].InputPer1kChars, 1e-9)
+	assert.InDelta(t, 0.15, snap.characters["global"]["translation-llm"].OutputPer1kChars, 1e-9)
+
+	// Token-priced SKUs still go to tokens map.
+	require.NotNil(t, snap.tokens["global"]["llama-4-scout"])
+	assert.InDelta(t, 0.17, snap.tokens["global"]["llama-4-scout"].InputPer1kTokens, 1e-9)
+
+	// Character-priced model must not appear in tokens map.
+	assert.Nil(t, snap.tokens["global"]["translation-llm"])
 }
 
 func TestParseSkus_RerankingSKU(t *testing.T) {

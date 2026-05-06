@@ -39,10 +39,16 @@ var (
 	rerankRegex = regexp.MustCompile(`(?i)^(.+?)\s+[Rr]anking\s+[Rr]equests?$`)
 )
 
-// TokenPricing holds per-1k-token prices for a Gemini model.
+// TokenPricing holds per-1k-token prices for a model billed by token.
 type TokenPricing struct {
 	InputPer1kTokens  float64
 	OutputPer1kTokens float64
+}
+
+// CharacterPricing holds per-1k-character prices for a model billed by character.
+type CharacterPricing struct {
+	InputPer1kChars  float64
+	OutputPer1kChars float64
 }
 
 // ComputePricing holds per-hour prices for a Vertex AI compute node.
@@ -53,8 +59,10 @@ type ComputePricing struct {
 
 // Snapshot is an immutable view of the Vertex AI pricing data.
 type Snapshot struct {
-	// tokens[region][model] = TokenPricing
+	// tokens[region][model] = TokenPricing (models billed per token)
 	tokens map[string]map[string]*TokenPricing
+	// characters[region][model] = CharacterPricing (models billed per character, e.g. translation models)
+	characters map[string]map[string]*CharacterPricing
 	// compute[region][machineType][useCase] = ComputePricing
 	compute map[string]map[string]map[string]*ComputePricing
 	// reranking[region][model] = price per 1k ranking requests (USD)
@@ -110,9 +118,10 @@ func (pm *PricingMap) Populate(ctx context.Context) error {
 // Unknown SKUs are logged at debug level and skipped.
 func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 	snap := &Snapshot{
-		tokens:    make(map[string]map[string]*TokenPricing),
-		compute:   make(map[string]map[string]map[string]*ComputePricing),
-		reranking: make(map[string]map[string]float64),
+		tokens:     make(map[string]map[string]*TokenPricing),
+		characters: make(map[string]map[string]*CharacterPricing),
+		compute:    make(map[string]map[string]map[string]*ComputePricing),
+		reranking:  make(map[string]map[string]float64),
 	}
 
 	for _, sku := range skus {
@@ -125,17 +134,28 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 		if matches := tokenInputRegex.FindStringSubmatch(desc); len(matches) > 0 {
 			model := normalizeModelName(matches[1])
 			price := normalizeToPerK(priceFromSku(sku), sku)
+			isChar := strings.HasPrefix(strings.ToLower(matches[2]), "char")
 			for _, region := range regions {
 				if region == "" {
 					continue
 				}
-				if snap.tokens[region] == nil {
-					snap.tokens[region] = make(map[string]*TokenPricing)
+				if isChar {
+					if snap.characters[region] == nil {
+						snap.characters[region] = make(map[string]*CharacterPricing)
+					}
+					if snap.characters[region][model] == nil {
+						snap.characters[region][model] = &CharacterPricing{}
+					}
+					snap.characters[region][model].InputPer1kChars = price
+				} else {
+					if snap.tokens[region] == nil {
+						snap.tokens[region] = make(map[string]*TokenPricing)
+					}
+					if snap.tokens[region][model] == nil {
+						snap.tokens[region][model] = &TokenPricing{}
+					}
+					snap.tokens[region][model].InputPer1kTokens = price
 				}
-				if snap.tokens[region][model] == nil {
-					snap.tokens[region][model] = &TokenPricing{}
-				}
-				snap.tokens[region][model].InputPer1kTokens = price
 			}
 			continue
 		}
@@ -143,17 +163,28 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 		if matches := tokenOutputRegex.FindStringSubmatch(desc); len(matches) > 0 {
 			model := normalizeModelName(matches[1])
 			price := normalizeToPerK(priceFromSku(sku), sku)
+			isChar := strings.HasPrefix(strings.ToLower(matches[2]), "char")
 			for _, region := range regions {
 				if region == "" {
 					continue
 				}
-				if snap.tokens[region] == nil {
-					snap.tokens[region] = make(map[string]*TokenPricing)
+				if isChar {
+					if snap.characters[region] == nil {
+						snap.characters[region] = make(map[string]*CharacterPricing)
+					}
+					if snap.characters[region][model] == nil {
+						snap.characters[region][model] = &CharacterPricing{}
+					}
+					snap.characters[region][model].OutputPer1kChars = price
+				} else {
+					if snap.tokens[region] == nil {
+						snap.tokens[region] = make(map[string]*TokenPricing)
+					}
+					if snap.tokens[region][model] == nil {
+						snap.tokens[region][model] = &TokenPricing{}
+					}
+					snap.tokens[region][model].OutputPer1kTokens = price
 				}
-				if snap.tokens[region][model] == nil {
-					snap.tokens[region][model] = &TokenPricing{}
-				}
-				snap.tokens[region][model].OutputPer1kTokens = price
 			}
 			continue
 		}
