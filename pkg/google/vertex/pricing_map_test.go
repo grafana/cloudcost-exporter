@@ -201,6 +201,81 @@ func TestParseSkus_MultipleRegions(t *testing.T) {
 	assert.NotNil(t, snap.tokens["europe-west1"]["gemini-1.5-pro"])
 }
 
+func TestRegexPatterns(t *testing.T) {
+	t.Run("tokenInputRegex", func(t *testing.T) {
+		cases := []struct {
+			input string
+			match bool
+		}{
+			{"Gemini 1.5 Flash Input tokens", true},
+			{"Gemini 1.5 Flash Input token", true},   // singular
+			{"Gemini Embedding 001 Input characters", true},
+			{"Gemini Embedding 001 Input character", true}, // singular
+			{"GEMINI 1.5 FLASH INPUT TOKENS", true},        // case insensitive
+			{"Gemini 1.5 Flash Output tokens", false},      // wrong direction
+			{"Gemini 1.5 Flash Input", false},              // missing unit
+			{"Gemini 1.5 Flash Input bytes", false},        // wrong unit
+			{"Input tokens", false},                        // no model prefix
+		}
+		for _, tc := range cases {
+			assert.Equal(t, tc.match, tokenInputRegex.MatchString(tc.input), "input: %q", tc.input)
+		}
+	})
+
+	t.Run("tokenOutputRegex", func(t *testing.T) {
+		cases := []struct {
+			input string
+			match bool
+		}{
+			{"Gemini 1.5 Flash Output tokens", true},
+			{"Gemini 1.5 Flash Output token", true},   // singular
+			{"Gemini 1.5 Flash Output characters", true},
+			{"Cloud Vertex AI Model Garden Model as a Service Llama 4 Maverick Output tokens", true}, // long prefix
+			{"GEMINI 1.5 FLASH OUTPUT TOKENS", true},  // case insensitive
+			{"Gemini 1.5 Flash Input tokens", false},  // wrong direction
+			{"Gemini 1.5 Flash Output", false},        // missing unit
+			{"Output tokens", false},                  // no model prefix
+		}
+		for _, tc := range cases {
+			assert.Equal(t, tc.match, tokenOutputRegex.MatchString(tc.input), "input: %q", tc.input)
+		}
+	})
+
+	t.Run("computeRegex", func(t *testing.T) {
+		cases := []struct {
+			input string
+			match bool
+		}{
+			{"Custom Training n1-standard-4 running in us-central1", true},
+			{"Spot Custom Prediction n1-highmem-8 running in europe-west1", true},
+			{"Custom Prediction n2-standard-8 running in asia-east1", true},
+			{"SPOT CUSTOM TRAINING n1-standard-4 RUNNING IN us-central1", true}, // case insensitive
+			{"Custom n1-standard-4 running in us-central1", false},              // missing Training/Prediction
+			{"Preemptible Custom Training n1-standard-4 running in us-central1", false}, // wrong preemptible prefix
+			{"Gemini 1.5 Flash Input tokens", false},
+		}
+		for _, tc := range cases {
+			assert.Equal(t, tc.match, computeRegex.MatchString(tc.input), "input: %q", tc.input)
+		}
+	})
+
+	t.Run("rerankRegex", func(t *testing.T) {
+		cases := []struct {
+			input string
+			match bool
+		}{
+			{"Semantic Ranker API Ranking Requests", true},
+			{"Semantic Ranker API Ranking Request", true}, // singular
+			{"Some Model Ranking requests", true},         // case insensitive
+			{"Gemini 1.5 Flash Input tokens", false},
+			{"Ranking Requests", false}, // no model prefix
+		}
+		for _, tc := range cases {
+			assert.Equal(t, tc.match, rerankRegex.MatchString(tc.input), "input: %q", tc.input)
+		}
+	})
+}
+
 func newTokenSKU(description, region, usageUnit string, units int64, nanos int32) *billingpb.Sku {
 	return &billingpb.Sku{
 		Description:    description,

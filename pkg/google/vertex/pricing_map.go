@@ -22,7 +22,6 @@ const (
 var (
 	// tokenInputRegex matches Vertex AI input token/character SKU descriptions.
 	// Examples: "Gemini 1.5 Flash Input tokens", "Gemini Embedding 001 Input characters"
-	// NOTE: Exact SKU description strings must be verified against the live GCP Billing API.
 	tokenInputRegex = regexp.MustCompile(`(?i)^(.+?)\s+Input\s+(tokens?|characters?)$`)
 	// tokenOutputRegex matches Vertex AI output token/character SKU descriptions.
 	// Example: "Gemini 1.5 Flash Output tokens"
