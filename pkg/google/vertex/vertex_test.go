@@ -48,14 +48,14 @@ func TestCollect_EmitsTokenMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 
-	inputMetric := metricByName(results, "cloudcost_gcp_vertex_token_input_usd_per_1k_tokens")
+	inputMetric := metricByName(results, "cloudcost_gcp_vertex_input_usd_per_1k_tokens")
 	require.NotNil(t, inputMetric)
 	assert.Equal(t, "gemini-1.5-flash", inputMetric.Labels["model_id"])
 	assert.Equal(t, "google", inputMetric.Labels["family"])
 	assert.Equal(t, "us-central1", inputMetric.Labels["region"])
 	assert.InDelta(t, 0.00125, inputMetric.Value, 1e-9)
 
-	outputMetric := metricByName(results, "cloudcost_gcp_vertex_token_output_usd_per_1k_tokens")
+	outputMetric := metricByName(results, "cloudcost_gcp_vertex_output_usd_per_1k_tokens")
 	require.NotNil(t, outputMetric)
 	assert.Equal(t, "gemini-1.5-flash", outputMetric.Labels["model_id"])
 	assert.Equal(t, "google", outputMetric.Labels["family"])
@@ -105,7 +105,7 @@ func TestCollect_EmitsAnthropicFamilyForClaudeTokens(t *testing.T) {
 	results, err := collectVertexMetrics(t, c)
 	require.NoError(t, err)
 
-	inputMetric := metricByName(results, "cloudcost_gcp_vertex_token_input_usd_per_1k_tokens")
+	inputMetric := metricByName(results, "cloudcost_gcp_vertex_input_usd_per_1k_tokens")
 	require.NotNil(t, inputMetric)
 	assert.Equal(t, "claude-3.5-sonnet", inputMetric.Labels["model_id"])
 	assert.Equal(t, "anthropic", inputMetric.Labels["family"])
