@@ -399,19 +399,22 @@ func (m *MachineStore) PopulateMachineStore(ctx context.Context) {
 	)
 }
 
+// getMachineName returns the VM's ComputerName, which Azure populates only
+// once the OS is running. VMs in transitional states (provisioning, failed,
+// deallocating) are skipped and picked up on the next refresh cycle; emitting
+// metrics with a fallback name would cause the instance label to flap when the
+// VM reaches a running state.
 func (m *MachineStore) getMachineName(vm *armcompute.VirtualMachineScaleSetVM) (string, error) {
-	if vm.Properties.InstanceView == nil {
-		m.logger.Error(fmt.Sprintf("unable to determine machine name, instanceView property not set: %+v", vm))
-		return "", fmt.Errorf("unable to determine machine name, instanceView property not set: %+v", vm)
+	var computerName string
+	if vm.Properties != nil && vm.Properties.InstanceView != nil {
+		computerName = to.String(vm.Properties.InstanceView.ComputerName)
+	}
+	if len(computerName) > 0 {
+		return strings.ToLower(computerName), nil
 	}
 
-	computerName := to.String(vm.Properties.InstanceView.ComputerName)
-	if len(computerName) == 0 {
-		m.logger.Error(fmt.Sprintf("unable to determine machine name: %+v", vm))
-		return "", fmt.Errorf("unable to determine machine name: %+v", vm)
-	}
-
-	return strings.ToLower(computerName), nil
+	m.logger.Debug("ComputerName unavailable, skipping VM until next refresh", slog.String("resourceName", to.String(vm.Name)))
+	return "", fmt.Errorf("ComputerName unavailable")
 }
 
 // Based on this logic https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
