@@ -492,8 +492,9 @@ func TestGetMachineName(t *testing.T) {
 			expectedName: "aks-vmss-machine",
 			expectedErr:  false,
 		},
-		"instanceView not retrieved": {
+		"instanceView nil, skipped": {
 			vmObject: &armcompute.VirtualMachineScaleSetVM{
+				Name: to.StringPtr("aks-nodepool1-xxxxx-vmss_0"),
 				Properties: &armcompute.VirtualMachineScaleSetVMProperties{
 					InstanceView: nil,
 				},
@@ -501,11 +502,19 @@ func TestGetMachineName(t *testing.T) {
 			expectedName: "",
 			expectedErr:  true,
 		},
-		"instanceView partially retrieved": {
+		"ComputerName empty, skipped": {
 			vmObject: &armcompute.VirtualMachineScaleSetVM{
+				Name: to.StringPtr("aks-nodepool1-xxxxx-vmss_0"),
 				Properties: &armcompute.VirtualMachineScaleSetVMProperties{
 					InstanceView: &armcompute.VirtualMachineScaleSetVMInstanceView{},
 				},
+			},
+			expectedName: "",
+			expectedErr:  true,
+		},
+		"Properties nil, skipped": {
+			vmObject: &armcompute.VirtualMachineScaleSetVM{
+				Name: to.StringPtr("aks-nodepool1-xxxxx-vmss_0"),
 			},
 			expectedName: "",
 			expectedErr:  true,
