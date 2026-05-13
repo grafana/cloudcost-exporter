@@ -17,9 +17,8 @@ func TestParseSkus_TokenInputSKU(t *testing.T) {
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
-	require.NotNil(t, snap.tokens["us-central1"])
-	require.NotNil(t, snap.tokens["us-central1"]["gemini-1.5-flash"])
-	assert.InDelta(t, 0.00125, snap.tokens["us-central1"]["gemini-1.5-flash"].InputPer1kTokens, 1e-9)
+	require.NotNil(t, snap.tokenInput["us-central1"])
+	assert.InDelta(t, 0.00125, snap.tokenInput["us-central1"]["gemini-1.5-flash"], 1e-9)
 }
 
 func TestParseSkus_TokenOutputSKU(t *testing.T) {
@@ -30,8 +29,7 @@ func TestParseSkus_TokenOutputSKU(t *testing.T) {
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
-	require.NotNil(t, snap.tokens["us-central1"]["gemini-1.5-flash"])
-	assert.InDelta(t, 0.005, snap.tokens["us-central1"]["gemini-1.5-flash"].OutputPer1kTokens, 1e-9)
+	assert.InDelta(t, 0.005, snap.tokenOutput["us-central1"]["gemini-1.5-flash"], 1e-9)
 }
 
 func TestParseSkus_TokenSKUNormalizesPerUnitPrice(t *testing.T) {
@@ -43,7 +41,7 @@ func TestParseSkus_TokenSKUNormalizesPerUnitPrice(t *testing.T) {
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
-	assert.InDelta(t, 0.00125, snap.tokens["us-central1"]["gemini-1.0-pro"].InputPer1kTokens, 1e-9)
+	assert.InDelta(t, 0.00125, snap.tokenInput["us-central1"]["gemini-1.0-pro"], 1e-9)
 }
 
 func TestParseSkus_ComputeOnDemand(t *testing.T) {
@@ -86,17 +84,16 @@ func TestParseSkus_CharacterSKUsRoutedSeparately(t *testing.T) {
 
 	snap := pm.Snapshot()
 
-	// Character-priced SKUs go to characters map.
-	require.NotNil(t, snap.characters["global"]["translation-llm"])
-	assert.InDelta(t, 0.05, snap.characters["global"]["translation-llm"].InputPer1kChars, 1e-9)
-	assert.InDelta(t, 0.15, snap.characters["global"]["translation-llm"].OutputPer1kChars, 1e-9)
+	// Character-priced SKUs go to char maps.
+	assert.InDelta(t, 0.05, snap.charInput["global"]["translation-llm"], 1e-9)
+	assert.InDelta(t, 0.15, snap.charOutput["global"]["translation-llm"], 1e-9)
 
-	// Token-priced SKUs still go to tokens map.
-	require.NotNil(t, snap.tokens["global"]["llama-4-scout"])
-	assert.InDelta(t, 0.17, snap.tokens["global"]["llama-4-scout"].InputPer1kTokens, 1e-9)
+	// Token-priced SKUs still go to token maps.
+	assert.InDelta(t, 0.17, snap.tokenInput["global"]["llama-4-scout"], 1e-9)
 
-	// Character-priced model must not appear in tokens map.
-	assert.Nil(t, snap.tokens["global"]["translation-llm"])
+	// Character-priced model must not appear in token maps.
+	assert.Zero(t, snap.tokenInput["global"]["translation-llm"])
+	assert.Zero(t, snap.tokenOutput["global"]["translation-llm"])
 }
 
 func TestParseSkus_RerankingSKU(t *testing.T) {
@@ -123,11 +120,10 @@ func TestParseSkus_ModelGardenMaaSPrefixStripped(t *testing.T) {
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
-	require.NotNil(t, snap.tokens["global"]["llama-4-maverick"])
-	assert.InDelta(t, 0.00035, snap.tokens["global"]["llama-4-maverick"].InputPer1kTokens, 1e-9)
-	assert.InDelta(t, 0.00115, snap.tokens["global"]["llama-4-maverick"].OutputPer1kTokens, 1e-9)
+	assert.InDelta(t, 0.00035, snap.tokenInput["global"]["llama-4-maverick"], 1e-9)
+	assert.InDelta(t, 0.00115, snap.tokenOutput["global"]["llama-4-maverick"], 1e-9)
 	// The long-prefix key must not exist as a separate entry.
-	assert.Nil(t, snap.tokens["global"]["cloud-vertex-ai-model-garden-model-as-a-service-llama-4-maverick"])
+	assert.Zero(t, snap.tokenInput["global"]["cloud-vertex-ai-model-garden-model-as-a-service-llama-4-maverick"])
 }
 
 func TestParseSkus_UnknownSKUsIgnored(t *testing.T) {
@@ -139,7 +135,7 @@ func TestParseSkus_UnknownSKUsIgnored(t *testing.T) {
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
-	assert.Len(t, snap.tokens["us-central1"], 1)
+	assert.Len(t, snap.tokenInput["us-central1"], 1)
 	assert.Empty(t, snap.compute)
 }
 
@@ -171,9 +167,8 @@ func TestParseSkus_GlobalFallbackForTokenSKUWithNoRegion(t *testing.T) {
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
-	require.NotNil(t, snap.tokens["global"])
-	require.NotNil(t, snap.tokens["global"]["gemini-1.5-flash"])
-	assert.InDelta(t, 0.00125, snap.tokens["global"]["gemini-1.5-flash"].InputPer1kTokens, 1e-9)
+	require.NotNil(t, snap.tokenInput["global"])
+	assert.InDelta(t, 0.00125, snap.tokenInput["global"]["gemini-1.5-flash"], 1e-9)
 }
 
 func TestParseSkus_MultipleRegions(t *testing.T) {
@@ -197,8 +192,8 @@ func TestParseSkus_MultipleRegions(t *testing.T) {
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
-	assert.NotNil(t, snap.tokens["us-central1"]["gemini-1.5-pro"])
-	assert.NotNil(t, snap.tokens["europe-west1"]["gemini-1.5-pro"])
+	assert.NotZero(t, snap.tokenInput["us-central1"]["gemini-1.5-pro"])
+	assert.NotZero(t, snap.tokenInput["europe-west1"]["gemini-1.5-pro"])
 }
 
 func TestRegexPatterns(t *testing.T) {

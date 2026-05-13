@@ -37,18 +37,6 @@ var (
 	rerankRegex = regexp.MustCompile(`(?i)^(.+?)\s+[Rr]anking\s+[Rr]equests?$`)
 )
 
-// TokenPricing holds per-1k-token prices for a model billed by token.
-type TokenPricing struct {
-	InputPer1kTokens  float64
-	OutputPer1kTokens float64
-}
-
-// CharacterPricing holds per-1k-character prices for a model billed by character.
-type CharacterPricing struct {
-	InputPer1kChars  float64
-	OutputPer1kChars float64
-}
-
 // ComputePricing holds per-hour prices for a Vertex AI compute node.
 type ComputePricing struct {
 	OnDemandPerHour float64
@@ -57,10 +45,14 @@ type ComputePricing struct {
 
 // Snapshot is an immutable view of the Vertex AI pricing data.
 type Snapshot struct {
-	// tokens[region][model] = TokenPricing (models billed per token)
-	tokens map[string]map[string]*TokenPricing
-	// characters[region][model] = CharacterPricing (models billed per character, e.g. translation models)
-	characters map[string]map[string]*CharacterPricing
+	// tokenInput[region][model] = price per 1k input tokens (only set if a SKU exists)
+	tokenInput map[string]map[string]float64
+	// tokenOutput[region][model] = price per 1k output tokens (only set if a SKU exists)
+	tokenOutput map[string]map[string]float64
+	// charInput[region][model] = price per 1k input characters (only set if a SKU exists)
+	charInput map[string]map[string]float64
+	// charOutput[region][model] = price per 1k output characters (only set if a SKU exists)
+	charOutput map[string]map[string]float64
 	// compute[region][machineType][useCase] = ComputePricing
 	compute map[string]map[string]map[string]*ComputePricing
 	// reranking[region][model] = price per 1k ranking requests (USD)
@@ -116,10 +108,12 @@ func (pm *PricingMap) Populate(ctx context.Context) error {
 // Unknown SKUs are logged at debug level and skipped.
 func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 	snap := &Snapshot{
-		tokens:     make(map[string]map[string]*TokenPricing),
-		characters: make(map[string]map[string]*CharacterPricing),
-		compute:    make(map[string]map[string]map[string]*ComputePricing),
-		reranking:  make(map[string]map[string]float64),
+		tokenInput:  make(map[string]map[string]float64),
+		tokenOutput: make(map[string]map[string]float64),
+		charInput:   make(map[string]map[string]float64),
+		charOutput:  make(map[string]map[string]float64),
+		compute:     make(map[string]map[string]map[string]*ComputePricing),
+		reranking:   make(map[string]map[string]float64),
 	}
 
 	for _, sku := range skus {
@@ -133,10 +127,11 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 			model := normalizeModelName(matches[1])
 			price := normalizeToPerK(priceFromSku(sku), sku)
 			isChar := strings.HasPrefix(strings.ToLower(matches[2]), "char")
-			applyPrice(snap, model, price, regions, isChar,
-				func(tp *TokenPricing, p float64) { tp.InputPer1kTokens = p },
-				func(cp *CharacterPricing, p float64) { cp.InputPer1kChars = p },
-			)
+			target := snap.tokenInput
+			if isChar {
+				target = snap.charInput
+			}
+			applyPrice(target, model, price, regions)
 			continue
 		}
 
@@ -144,10 +139,11 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 			model := normalizeModelName(matches[1])
 			price := normalizeToPerK(priceFromSku(sku), sku)
 			isChar := strings.HasPrefix(strings.ToLower(matches[2]), "char")
-			applyPrice(snap, model, price, regions, isChar,
-				func(tp *TokenPricing, p float64) { tp.OutputPer1kTokens = p },
-				func(cp *CharacterPricing, p float64) { cp.OutputPer1kChars = p },
-			)
+			target := snap.tokenOutput
+			if isChar {
+				target = snap.charOutput
+			}
+			applyPrice(target, model, price, regions)
 			continue
 		}
 
@@ -201,39 +197,17 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 	return nil
 }
 
-// applyPrice routes a parsed SKU price into the correct region/model entry
-// of the snapshot. setToken and setChar assign the price to the appropriate field on
-// TokenPricing and CharacterPricing respectively.
-func applyPrice(
-	snap *Snapshot,
-	model string,
-	price float64,
-	regions []string,
-	isChar bool,
-	setToken func(*TokenPricing, float64),
-	setChar func(*CharacterPricing, float64),
-) {
+// applyPrice writes a price into the target region/model map for each region.
+// Only regions with a non-empty name are written; no entry is created for unpopulated directions.
+func applyPrice(target map[string]map[string]float64, model string, price float64, regions []string) {
 	for _, region := range regions {
 		if region == "" {
 			continue
 		}
-		if isChar {
-			if snap.characters[region] == nil {
-				snap.characters[region] = make(map[string]*CharacterPricing)
-			}
-			if snap.characters[region][model] == nil {
-				snap.characters[region][model] = &CharacterPricing{}
-			}
-			setChar(snap.characters[region][model], price)
-		} else {
-			if snap.tokens[region] == nil {
-				snap.tokens[region] = make(map[string]*TokenPricing)
-			}
-			if snap.tokens[region][model] == nil {
-				snap.tokens[region][model] = &TokenPricing{}
-			}
-			setToken(snap.tokens[region][model], price)
+		if target[region] == nil {
+			target[region] = make(map[string]float64)
 		}
+		target[region][model] = price
 	}
 }
 

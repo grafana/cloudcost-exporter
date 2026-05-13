@@ -115,22 +115,28 @@ func (c *Collector) Name() string {
 // Collect emits Vertex AI pricing metrics.
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	snapshot := c.pricingMap.Snapshot()
-	for region, models := range snapshot.tokens {
-		for model, pricing := range models {
-			family := familyFromModelID(model)
+	for region, models := range snapshot.tokenInput {
+		for model, price := range models {
 			ch <- prometheus.MustNewConstMetric(vertexTokenInputDesc, prometheus.GaugeValue,
-				pricing.InputPer1kTokens, model, family, region)
-			ch <- prometheus.MustNewConstMetric(vertexTokenOutputDesc, prometheus.GaugeValue,
-				pricing.OutputPer1kTokens, model, family, region)
+				price, model, familyFromModelID(model), region)
 		}
 	}
-	for region, models := range snapshot.characters {
-		for model, pricing := range models {
-			family := familyFromModelID(model)
+	for region, models := range snapshot.tokenOutput {
+		for model, price := range models {
+			ch <- prometheus.MustNewConstMetric(vertexTokenOutputDesc, prometheus.GaugeValue,
+				price, model, familyFromModelID(model), region)
+		}
+	}
+	for region, models := range snapshot.charInput {
+		for model, price := range models {
 			ch <- prometheus.MustNewConstMetric(vertexCharacterInputDesc, prometheus.GaugeValue,
-				pricing.InputPer1kChars, model, family, region)
+				price, model, familyFromModelID(model), region)
+		}
+	}
+	for region, models := range snapshot.charOutput {
+		for model, price := range models {
 			ch <- prometheus.MustNewConstMetric(vertexCharacterOutputDesc, prometheus.GaugeValue,
-				pricing.OutputPer1kChars, model, family, region)
+				price, model, familyFromModelID(model), region)
 		}
 	}
 	for region, machines := range snapshot.compute {
