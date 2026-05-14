@@ -10,7 +10,7 @@ import (
 )
 
 func TestParseSkus_TokenInputSKU(t *testing.T) {
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newTokenSKU("Gemini 1.5 Flash Input tokens", "us-central1", "k{char}", 0, 1250000),
 	})
@@ -22,7 +22,7 @@ func TestParseSkus_TokenInputSKU(t *testing.T) {
 }
 
 func TestParseSkus_TokenOutputSKU(t *testing.T) {
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newTokenSKU("Gemini 1.5 Flash Output tokens", "us-central1", "k{char}", 0, 5000000),
 	})
@@ -34,7 +34,7 @@ func TestParseSkus_TokenOutputSKU(t *testing.T) {
 
 func TestParseSkus_TokenSKUNormalizesPerUnitPrice(t *testing.T) {
 	// A SKU with no "k" prefix in UsageUnit should be multiplied by 1000.
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newTokenSKU("Gemini 1.0 Pro Input tokens", "us-central1", "char", 0, 1250),
 	})
@@ -45,7 +45,7 @@ func TestParseSkus_TokenSKUNormalizesPerUnitPrice(t *testing.T) {
 }
 
 func TestParseSkus_ComputeOnDemand(t *testing.T) {
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newComputeSKU("Custom Training n1-standard-4 running in us-central1", "us-central1", 0, 500000000),
 	})
@@ -60,7 +60,7 @@ func TestParseSkus_ComputeOnDemand(t *testing.T) {
 }
 
 func TestParseSkus_ComputeSpot(t *testing.T) {
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newComputeSKU("Spot Custom Prediction n1-highmem-8 running in europe-west1", "europe-west1", 0, 150000000),
 	})
@@ -74,7 +74,7 @@ func TestParseSkus_ComputeSpot(t *testing.T) {
 
 func TestParseSkus_CharacterSKUsRoutedSeparately(t *testing.T) {
 	// Character-priced models must land in snap.characters, not snap.tokens.
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newTokenSKU("Translation LLM Input Characters", "global", "count", 0, 50000),
 		newTokenSKU("Translation LLM Output Characters", "global", "count", 0, 150000),
@@ -97,7 +97,7 @@ func TestParseSkus_CharacterSKUsRoutedSeparately(t *testing.T) {
 }
 
 func TestParseSkus_RerankingSKU(t *testing.T) {
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		// usageUnit "k{request}" is already per-1k, price passes through unchanged.
 		newTokenSKU("Semantic Ranker API Ranking Requests", "global", "k{request}", 0, 1000000),
@@ -112,7 +112,7 @@ func TestParseSkus_RerankingSKU(t *testing.T) {
 func TestParseSkus_ModelGardenMaaSPrefixStripped(t *testing.T) {
 	// GCP sometimes prefixes Model Garden MaaS output SKUs with a long billing path
 	// while the input SKU uses the short name. Both should normalize to the same model ID.
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newTokenSKU("Llama 4 Maverick Input tokens", "global", "k{char}", 0, 350000),
 		newTokenSKU("Cloud Vertex AI Model Garden Model as a Service Llama 4 Maverick Output tokens", "global", "k{char}", 0, 1150000),
@@ -127,7 +127,7 @@ func TestParseSkus_ModelGardenMaaSPrefixStripped(t *testing.T) {
 }
 
 func TestParseSkus_UnknownSKUsIgnored(t *testing.T) {
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newComputeSKU("Some Unknown Vertex AI SKU", "us-central1", 0, 100000000),
 		newTokenSKU("Gemini 1.5 Flash Input tokens", "us-central1", "k{char}", 0, 1250000),
@@ -140,7 +140,7 @@ func TestParseSkus_UnknownSKUsIgnored(t *testing.T) {
 }
 
 func TestParseSkus_NilSKUIgnored(t *testing.T) {
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{nil})
 	require.NoError(t, err)
 }
@@ -162,7 +162,7 @@ func TestParseSkus_GlobalFallbackForTokenSKUWithNoRegion(t *testing.T) {
 		},
 	}
 
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{sku})
 	require.NoError(t, err)
 
@@ -187,7 +187,7 @@ func TestParseSkus_MultipleRegions(t *testing.T) {
 		},
 	}
 
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{sku})
 	require.NoError(t, err)
 
@@ -197,7 +197,7 @@ func TestParseSkus_MultipleRegions(t *testing.T) {
 }
 
 func TestParseSkus_GeminiBatchInputSKU(t *testing.T) {
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newTokenSKU("Gemini 2.5 Flash Text Input - Batch Predictions", "us-central1", "k{char}", 0, 75000),
 	})
@@ -208,7 +208,7 @@ func TestParseSkus_GeminiBatchInputSKU(t *testing.T) {
 }
 
 func TestParseSkus_GeminiOnDemandInputSKU(t *testing.T) {
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newTokenSKU("Gemini 2.5 Flash Text Input - Predictions", "us-central1", "k{char}", 0, 150000),
 	})
@@ -219,7 +219,7 @@ func TestParseSkus_GeminiOnDemandInputSKU(t *testing.T) {
 }
 
 func TestParseSkus_GeminiThinkingOutputSKU(t *testing.T) {
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newTokenSKU("Gemini 2.5 Flash Thinking Text Output - Predictions", "global", "k{char}", 0, 350000),
 	})
@@ -230,7 +230,7 @@ func TestParseSkus_GeminiThinkingOutputSKU(t *testing.T) {
 }
 
 func TestParseSkus_GeminiCachedInputSKU(t *testing.T) {
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newTokenSKU("Gemini 2.0 Flash Input Text Caching", "global", "k{char}", 0, 25000),
 	})
@@ -241,7 +241,7 @@ func TestParseSkus_GeminiCachedInputSKU(t *testing.T) {
 }
 
 func TestParseSkus_GeminiLiveInputSKU(t *testing.T) {
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newTokenSKU("Gemini 2.5 Flash Live Text Input - Predictions", "global", "k{char}", 0, 100000),
 	})
@@ -252,7 +252,7 @@ func TestParseSkus_GeminiLiveInputSKU(t *testing.T) {
 }
 
 func TestParseSkus_MaaSBatchSKU(t *testing.T) {
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newTokenSKU("Cloud Vertex AI Model Garden Model as a Service Llama 4 Maverick Batch Input Token", "global", "k{char}", 0, 200000),
 	})
@@ -263,7 +263,7 @@ func TestParseSkus_MaaSBatchSKU(t *testing.T) {
 }
 
 func TestParseSkus_MaaSCachedSKU(t *testing.T) {
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newTokenSKU("Cloud Vertex AI Model Garden Model as a Service DeepSeek-V3.1 Cached Text Input Token", "global", "k{char}", 0, 100000),
 	})
@@ -274,7 +274,7 @@ func TestParseSkus_MaaSCachedSKU(t *testing.T) {
 }
 
 func TestParseSkus_MaaSOnDemandSKU(t *testing.T) {
-	pm := &PricingMap{}
+	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
 		newTokenSKU("Cloud Vertex AI Model Garden Model as a Service Llama 4 Scout Input Tokens", "global", "k{char}", 0, 170000),
 	})

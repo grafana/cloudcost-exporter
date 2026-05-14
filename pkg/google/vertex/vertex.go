@@ -64,7 +64,7 @@ type Collector struct {
 func New(ctx context.Context, logger *slog.Logger, gcpClient client.Client) (*Collector, error) {
 	logger = logger.With("collector", subsystem)
 
-	pm, err := NewPricingMap(ctx, gcpClient)
+	pm, err := NewPricingMap(ctx, logger, gcpClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize pricing map: %w", err)
 	}

@@ -156,12 +156,13 @@ type Snapshot struct {
 // PricingMap stores Vertex AI pricing and refreshes atomically.
 type PricingMap struct {
 	gcpClient client.Client
+	logger    *slog.Logger
 	current   atomic.Pointer[Snapshot]
 }
 
 // NewPricingMap initialises and populates a PricingMap.
-func NewPricingMap(ctx context.Context, gcpClient client.Client) (*PricingMap, error) {
-	pm := &PricingMap{gcpClient: gcpClient}
+func NewPricingMap(ctx context.Context, logger *slog.Logger, gcpClient client.Client) (*PricingMap, error) {
+	pm := &PricingMap{gcpClient: gcpClient, logger: logger}
 	if err := pm.Populate(ctx); err != nil {
 		return nil, err
 	}
@@ -190,7 +191,7 @@ func (pm *PricingMap) Populate(ctx context.Context) error {
 	}
 
 	if deSvcName, err := pm.gcpClient.GetServiceName(ctx, discoveryEngineServiceName); err != nil {
-		slog.Warn("failed to get Discovery Engine service name, reranking metrics will be unavailable", "error", err)
+		pm.logger.Warn("failed to get Discovery Engine service name, reranking metrics will be unavailable", "error", err)
 	} else {
 		skus = append(skus, pm.gcpClient.GetPricing(ctx, deSvcName)...)
 	}
@@ -287,7 +288,7 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 			continue
 		}
 
-		slog.Debug("skipping unknown Vertex AI SKU", "description", desc)
+		pm.logger.Debug("skipping unknown Vertex AI SKU", "description", desc)
 	}
 
 	pm.current.Store(snap)
