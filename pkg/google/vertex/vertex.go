@@ -23,22 +23,22 @@ var (
 	vertexTokenInputDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.InputTokenCostSuffix,
 		"Vertex AI input cost in USD per 1k tokens, for models billed by token. Character-billed models use the character metric.",
-		[]string{"model_id", "family", "region"},
+		[]string{"model_id", "family", "region", "price_tier"},
 	)
 	vertexTokenOutputDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.OutputTokenCostSuffix,
 		"Vertex AI output cost in USD per 1k tokens, for models billed by token. Character-billed models use the character metric.",
-		[]string{"model_id", "family", "region"},
+		[]string{"model_id", "family", "region", "price_tier"},
 	)
 	vertexCharacterInputDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.CharacterInputCostSuffix,
 		"Vertex AI input character cost in USD per 1k characters (models billed per character, e.g. translation models).",
-		[]string{"model_id", "family", "region"},
+		[]string{"model_id", "family", "region", "price_tier"},
 	)
 	vertexCharacterOutputDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.CharacterOutputCostSuffix,
 		"Vertex AI output character cost in USD per 1k characters (models billed per character, e.g. translation models).",
-		[]string{"model_id", "family", "region"},
+		[]string{"model_id", "family", "region", "price_tier"},
 	)
 	vertexComputeCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.InstanceTotalCostSuffix,
@@ -116,27 +116,35 @@ func (c *Collector) Name() string {
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	snapshot := c.pricingMap.Snapshot()
 	for region, models := range snapshot.tokenInput {
-		for model, price := range models {
-			ch <- prometheus.MustNewConstMetric(vertexTokenInputDesc, prometheus.GaugeValue,
-				price, model, familyFromModelID(model), region)
+		for model, tiers := range models {
+			for tier, price := range tiers {
+				ch <- prometheus.MustNewConstMetric(vertexTokenInputDesc, prometheus.GaugeValue,
+					price, model, familyFromModelID(model), region, tier)
+			}
 		}
 	}
 	for region, models := range snapshot.tokenOutput {
-		for model, price := range models {
-			ch <- prometheus.MustNewConstMetric(vertexTokenOutputDesc, prometheus.GaugeValue,
-				price, model, familyFromModelID(model), region)
+		for model, tiers := range models {
+			for tier, price := range tiers {
+				ch <- prometheus.MustNewConstMetric(vertexTokenOutputDesc, prometheus.GaugeValue,
+					price, model, familyFromModelID(model), region, tier)
+			}
 		}
 	}
 	for region, models := range snapshot.charInput {
-		for model, price := range models {
-			ch <- prometheus.MustNewConstMetric(vertexCharacterInputDesc, prometheus.GaugeValue,
-				price, model, familyFromModelID(model), region)
+		for model, tiers := range models {
+			for tier, price := range tiers {
+				ch <- prometheus.MustNewConstMetric(vertexCharacterInputDesc, prometheus.GaugeValue,
+					price, model, familyFromModelID(model), region, tier)
+			}
 		}
 	}
 	for region, models := range snapshot.charOutput {
-		for model, price := range models {
-			ch <- prometheus.MustNewConstMetric(vertexCharacterOutputDesc, prometheus.GaugeValue,
-				price, model, familyFromModelID(model), region)
+		for model, tiers := range models {
+			for tier, price := range tiers {
+				ch <- prometheus.MustNewConstMetric(vertexCharacterOutputDesc, prometheus.GaugeValue,
+					price, model, familyFromModelID(model), region, tier)
+			}
 		}
 	}
 	for region, machines := range snapshot.compute {

@@ -6,8 +6,8 @@ Metrics exported for the GCP Vertex AI service.
 
 | Metric | Labels | Description |
 |--------|--------|-------------|
-| `cloudcost_gcp_vertex_input_usd_per_1k_tokens` | `model_id`, `family`, `region` | Input cost in USD per 1k tokens, for models billed by token. Character-billed models use the character metric. |
-| `cloudcost_gcp_vertex_output_usd_per_1k_tokens` | `model_id`, `family`, `region` | Output cost in USD per 1k tokens, for models billed by token. Character-billed models use the character metric. |
+| `cloudcost_gcp_vertex_input_usd_per_1k_tokens` | `model_id`, `family`, `region`, `price_tier` | Input cost in USD per 1k tokens, for models billed by token. Character-billed models use the character metric. |
+| `cloudcost_gcp_vertex_output_usd_per_1k_tokens` | `model_id`, `family`, `region`, `price_tier` | Output cost in USD per 1k tokens, for models billed by token. Character-billed models use the character metric. |
 
 ### Labels
 
@@ -16,13 +16,14 @@ Metrics exported for the GCP Vertex AI service.
 | `model_id` | e.g. `gemini-1.5-flash`, `gemma-4`, `llama-4-maverick` | Model name, normalised to lowercase with spaces replaced by hyphens |
 | `family` | `google`, `meta`, `alibaba`, `deepseek`, `minimax`, `moonshot`, `unknown` | Model provider family; `unknown` for unrecognised model prefixes |
 | `region` | e.g. `us-central1` | GCP region |
+| `price_tier` | `on_demand`, `batch`, `long_context`, `cached`, `cache_storage`, `thinking`, `priority`, `flex`, `live` | Running mode or pricing tier derived from the GCP SKU description |
 
 ## Character Pricing
 
 | Metric | Labels | Description |
 |--------|--------|-------------|
-| `cloudcost_gcp_vertex_input_usd_per_1k_characters` | `model_id`, `family`, `region` | Input cost in USD per 1k characters, for models billed by character (e.g. translation models). |
-| `cloudcost_gcp_vertex_output_usd_per_1k_characters` | `model_id`, `family`, `region` | Output cost in USD per 1k characters, for models billed by character (e.g. translation models). |
+| `cloudcost_gcp_vertex_input_usd_per_1k_characters` | `model_id`, `family`, `region`, `price_tier` | Input cost in USD per 1k characters, for models billed by character (e.g. translation models). |
+| `cloudcost_gcp_vertex_output_usd_per_1k_characters` | `model_id`, `family`, `region`, `price_tier` | Output cost in USD per 1k characters, for models billed by character (e.g. translation models). |
 
 ### Labels
 
@@ -31,6 +32,7 @@ Metrics exported for the GCP Vertex AI service.
 | `model_id` | e.g. `translation-llm` | Model name, normalised to lowercase with spaces replaced by hyphens |
 | `family` | `google`, `unknown` | Model provider family |
 | `region` | e.g. `global` | GCP region |
+| `price_tier` | `on_demand`, `batch` | Running mode derived from the GCP SKU description |
 
 ## Compute Pricing
 

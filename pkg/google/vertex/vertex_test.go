@@ -53,6 +53,7 @@ func TestCollect_EmitsTokenMetrics(t *testing.T) {
 	assert.Equal(t, "gemini-1.5-flash", inputMetric.Labels["model_id"])
 	assert.Equal(t, "google", inputMetric.Labels["family"])
 	assert.Equal(t, "us-central1", inputMetric.Labels["region"])
+	assert.Equal(t, "on_demand", inputMetric.Labels["price_tier"])
 	assert.InDelta(t, 0.00125, inputMetric.Value, 1e-9)
 
 	outputMetric := metricByName(results, "cloudcost_gcp_vertex_output_usd_per_1k_tokens")
@@ -60,6 +61,7 @@ func TestCollect_EmitsTokenMetrics(t *testing.T) {
 	assert.Equal(t, "gemini-1.5-flash", outputMetric.Labels["model_id"])
 	assert.Equal(t, "google", outputMetric.Labels["family"])
 	assert.Equal(t, "us-central1", outputMetric.Labels["region"])
+	assert.Equal(t, "on_demand", outputMetric.Labels["price_tier"])
 	assert.InDelta(t, 0.005, outputMetric.Value, 1e-9)
 }
 

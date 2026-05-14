@@ -17,15 +17,12 @@ const (
 	// discoveryEngineServiceName is the GCP Billing API service name for Vertex AI Search,
 	// which hosts the Ranking API used for reranking.
 	discoveryEngineServiceName = "Vertex AI Search"
+
+	// modalityGroup matches the modality tokens that appear in Vertex AI SKU descriptions.
+	modalityGroup = `(?:text|audio(?:\s+\(av2a\))?|image|video)`
 )
 
 var (
-	// tokenInputRegex matches Vertex AI input token/character SKU descriptions.
-	// Examples: "Gemini 1.5 Flash Input tokens", "Gemini Embedding 001 Input characters"
-	tokenInputRegex = regexp.MustCompile(`(?i)^(.+?)\s+Input\s+(tokens?|characters?)$`)
-	// tokenOutputRegex matches Vertex AI output token/character SKU descriptions.
-	// Example: "Gemini 1.5 Flash Output tokens"
-	tokenOutputRegex = regexp.MustCompile(`(?i)^(.+?)\s+Output\s+(tokens?|characters?)$`)
 	// computeRegex matches custom training/prediction compute SKU descriptions.
 	// Example: "Custom Training n1-standard-4 running in us-central1"
 	// Example: "Spot Custom Prediction n1-highmem-8 running in europe-west1"
@@ -37,6 +34,103 @@ var (
 	rerankRegex = regexp.MustCompile(`(?i)^(.+?)\s+[Rr]anking\s+[Rr]equests?$`)
 )
 
+// skuPattern maps a compiled regex to the billing direction, billing type, and price tier.
+type skuPattern struct {
+	re          *regexp.Regexp
+	direction   string // "input" or "output"
+	billingType string // "token" or "char"
+	tier        string
+}
+
+func mustCompile(pattern string) *regexp.Regexp {
+	return regexp.MustCompile(strings.ReplaceAll(pattern, "{mod}", modalityGroup))
+}
+
+// skuPatterns is the ordered lookup table for Vertex AI token/character SKU descriptions.
+// More specific patterns must appear before generic ones to prevent the lazy (.+?) from
+// capturing too much.
+var skuPatterns = []skuPattern{
+	// Gemini output — "Thinking" prefix style (most specific first)
+	{mustCompile(`(?i)^(.+?)\s+Thinking\s+` + modalityGroup + `\s+Output\s+Priority\s+\(Long\)\s+-\s+Predictions$`), "output", "token", "thinking_priority_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+Thinking\s+` + modalityGroup + `\s+Output\s+Priority\s+-\s+Predictions$`), "output", "token", "thinking_priority"},
+	{mustCompile(`(?i)^(.+?)\s+Thinking\s+` + modalityGroup + `\s+Output\s+Flex\s+\(Long\)\s+-\s+Predictions$`), "output", "token", "thinking_flex_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+Thinking\s+` + modalityGroup + `\s+Output\s+Flex\s+-\s+Predictions$`), "output", "token", "thinking_flex"},
+	{mustCompile(`(?i)^(.+?)\s+Thinking\s+` + modalityGroup + `\s+Output\s+\(Long\)\s+-\s+Batch\s+Predictions$`), "output", "token", "thinking_batch_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+Thinking\s+` + modalityGroup + `\s+Output\s+-\s+Batch\s+Predictions$`), "output", "token", "thinking_batch"},
+	{mustCompile(`(?i)^(.+?)\s+Thinking\s+` + modalityGroup + `\s+Output\s+\(Long\)\s+-\s+Predictions$`), "output", "token", "thinking_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+Thinking\s+` + modalityGroup + `\s+Output\s+-\s+Predictions$`), "output", "token", "thinking"},
+
+	// Gemini output — "(Thinking On...)" parenthetical style
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Output\s+Priority\s+\(Thinking\s+On\s+and\s+Long\)\s+-\s+Predictions$`), "output", "token", "thinking_priority_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Output\s+Priority\s+\(Thinking\s+On\)\s+-\s+Predictions$`), "output", "token", "thinking_priority"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Output\s+\(Thinking\s+On\s+and\s+Long\)\s+-\s+Batch\s+Predictions$`), "output", "token", "thinking_batch_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Output\s+\(Thinking\s+On\s+and\s+Long\)\s+-\s+Predictions$`), "output", "token", "thinking_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Output\s+\(Thinking\s+On\)\s+-\s+Batch\s+Predictions$`), "output", "token", "thinking_batch"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Output\s+\(Thinking\s+On\)\s+-\s+Predictions$`), "output", "token", "thinking"},
+
+	// Gemini output — Live (before generic)
+	{mustCompile(`(?i)^(.+?)\s+Live\s+` + modalityGroup + `\s+Output\s+-\s+Predictions$`), "output", "token", "live"},
+
+	// Gemini output — Priority / Flex (before generic)
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Output\s+Priority\s+\(Long\)\s+-\s+Predictions$`), "output", "token", "priority_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Output\s+Priority\s+-\s+Predictions$`), "output", "token", "priority"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Output\s+Flex\s+\(Long\)\s+-\s+Predictions$`), "output", "token", "flex_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Output\s+Flex\s+-\s+Predictions$`), "output", "token", "flex"},
+
+	// Gemini output — standard
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Output\s+\(Long\)\s+-\s+Batch\s+Predictions$`), "output", "token", "batch_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Output\s+Long\s+Context\s+-\s+Batch\s+Predictions$`), "output", "token", "batch_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Output\s+-\s+Batch\s+Predictions$`), "output", "token", "batch"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Output\s+\(Long\)\s+-\s+Predictions$`), "output", "token", "long_context"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Output\s+-\s+Predictions$`), "output", "token", "on_demand"},
+
+	// Gemini input — Live (before generic)
+	{mustCompile(`(?i)^(.+?)\s+Live\s+` + modalityGroup + `\s+Input\s+-\s+Predictions$`), "input", "token", "live"},
+
+	// Gemini input — 1.5 cached style (before generic)
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Cached\s+Input\s+\(Long\)\s+-\s+Predictions$`), "input", "token", "cached_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Cached\s+Input\s+-\s+Predictions$`), "input", "token", "cached"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Input\s+Cache\s+Storage\s+-\s+Predictions$`), "input", "token", "cache_storage"},
+
+	// Gemini input — Priority (before generic)
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Input\s+Priority\s+\(Long\)\s+-\s+Predictions$`), "input", "token", "priority_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Input\s+Priority\s+-\s+Predictions$`), "input", "token", "priority"},
+
+	// Gemini input — standard
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Input\s+\(Long\)\s+-\s+Batch\s+Predictions$`), "input", "token", "batch_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Input\s+Long\s+Context\s+-\s+Batch\s+Predictions$`), "input", "token", "batch_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Input\s+-\s+Batch\s+Predictions$`), "input", "token", "batch"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Input\s+\(Long\)\s+-\s+Predictions$`), "input", "token", "long_context"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Input\s+-\s+Predictions$`), "input", "token", "on_demand"},
+
+	// Gemini caching 2.0+ style ("Input" before modality) — more specific before less specific
+	{mustCompile(`(?i)^(.+?)\s+Input\s+` + modalityGroup + `\s+Caching\s+Storage$`), "input", "token", "cache_storage"},
+	{mustCompile(`(?i)^(.+?)\s+Input\s+` + modalityGroup + `\s+Caching\s+Batch\s+\(Long\)$`), "input", "token", "cached_batch_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+Input\s+` + modalityGroup + `\s+Caching\s+Batch$`), "input", "token", "cached_batch"},
+	{mustCompile(`(?i)^(.+?)\s+Input\s+` + modalityGroup + `\s+Caching\s+Flex\s+\(Long\)$`), "input", "token", "cached_flex_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+Input\s+` + modalityGroup + `\s+Caching\s+Flex$`), "input", "token", "cached_flex"},
+	{mustCompile(`(?i)^(.+?)\s+Input\s+` + modalityGroup + `\s+Caching\s+Priority\s+\(Long\)$`), "input", "token", "cached_priority_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+Input\s+` + modalityGroup + `\s+Caching\s+Priority$`), "input", "token", "cached_priority"},
+	{mustCompile(`(?i)^(.+?)\s+Input\s+` + modalityGroup + `\s+Caching\s+\(Long\)$`), "input", "token", "cached_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+Input\s+` + modalityGroup + `\s+Caching$`), "input", "token", "cached"},
+
+	// Gemini caching alternate style ("modality" before "Input Caching")
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Input\s+Caching\s+Storage$`), "input", "token", "cache_storage"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Input\s+Caching\s+Priority\s+\(Long\)$`), "input", "token", "cached_priority_long_context"},
+	{mustCompile(`(?i)^(.+?)\s+` + modalityGroup + `\s+Input\s+Caching\s+Priority$`), "input", "token", "cached_priority"},
+
+	// MaaS token format — specific before generic
+	{regexp.MustCompile(`(?i)^(.+?)\s+Batch\s+Input\s+Tokens?$`), "input", "token", "batch"},
+	{regexp.MustCompile(`(?i)^(.+?)\s+Batch\s+Output\s+Tokens?$`), "output", "token", "batch"},
+	{regexp.MustCompile(`(?i)^(.+?)\s+Cached(?:\s+Text)?\s+Input\s+Tokens?$`), "input", "token", "cached"},
+	{regexp.MustCompile(`(?i)^(.+?)\s+Input\s+Tokens?$`), "input", "token", "on_demand"},
+	{regexp.MustCompile(`(?i)^(.+?)\s+Output\s+Tokens?$`), "output", "token", "on_demand"},
+
+	// Character-billed models
+	{regexp.MustCompile(`(?i)^(.+?)\s+Input\s+Characters?$`), "input", "char", "on_demand"},
+	{regexp.MustCompile(`(?i)^(.+?)\s+Output\s+Characters?$`), "output", "char", "on_demand"},
+}
+
 // ComputePricing holds per-hour prices for a Vertex AI compute node.
 type ComputePricing struct {
 	OnDemandPerHour float64
@@ -45,14 +139,14 @@ type ComputePricing struct {
 
 // Snapshot is an immutable view of the Vertex AI pricing data.
 type Snapshot struct {
-	// tokenInput[region][model] = price per 1k input tokens (only set if a SKU exists)
-	tokenInput map[string]map[string]float64
-	// tokenOutput[region][model] = price per 1k output tokens (only set if a SKU exists)
-	tokenOutput map[string]map[string]float64
-	// charInput[region][model] = price per 1k input characters (only set if a SKU exists)
-	charInput map[string]map[string]float64
-	// charOutput[region][model] = price per 1k output characters (only set if a SKU exists)
-	charOutput map[string]map[string]float64
+	// tokenInput[region][model][tier] = price per 1k input tokens (only set if a SKU exists)
+	tokenInput map[string]map[string]map[string]float64
+	// tokenOutput[region][model][tier] = price per 1k output tokens (only set if a SKU exists)
+	tokenOutput map[string]map[string]map[string]float64
+	// charInput[region][model][tier] = price per 1k input characters (only set if a SKU exists)
+	charInput map[string]map[string]map[string]float64
+	// charOutput[region][model][tier] = price per 1k output characters (only set if a SKU exists)
+	charOutput map[string]map[string]map[string]float64
 	// compute[region][machineType][useCase] = ComputePricing
 	compute map[string]map[string]map[string]*ComputePricing
 	// reranking[region][model] = price per 1k ranking requests (USD)
@@ -108,10 +202,10 @@ func (pm *PricingMap) Populate(ctx context.Context) error {
 // Unknown SKUs are logged at debug level and skipped.
 func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 	snap := &Snapshot{
-		tokenInput:  make(map[string]map[string]float64),
-		tokenOutput: make(map[string]map[string]float64),
-		charInput:   make(map[string]map[string]float64),
-		charOutput:  make(map[string]map[string]float64),
+		tokenInput:  make(map[string]map[string]map[string]float64),
+		tokenOutput: make(map[string]map[string]map[string]float64),
+		charInput:   make(map[string]map[string]map[string]float64),
+		charOutput:  make(map[string]map[string]map[string]float64),
 		compute:     make(map[string]map[string]map[string]*ComputePricing),
 		reranking:   make(map[string]map[string]float64),
 	}
@@ -120,30 +214,33 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 		if sku == nil {
 			continue
 		}
-		desc := sku.GetDescription()
+		desc := strings.TrimSpace(sku.GetDescription())
 		regions := skuRegions(sku)
 
-		if matches := tokenInputRegex.FindStringSubmatch(desc); len(matches) > 0 {
-			model := normalizeModelName(matches[1])
-			price := normalizeToPerK(priceFromSku(sku), sku)
-			isChar := strings.HasPrefix(strings.ToLower(matches[2]), "char")
-			target := snap.tokenInput
-			if isChar {
-				target = snap.charInput
+		matched := false
+		for _, pat := range skuPatterns {
+			matches := pat.re.FindStringSubmatch(desc)
+			if len(matches) == 0 {
+				continue
 			}
-			applyPrice(target, model, price, regions)
-			continue
-		}
-
-		if matches := tokenOutputRegex.FindStringSubmatch(desc); len(matches) > 0 {
 			model := normalizeModelName(matches[1])
 			price := normalizeToPerK(priceFromSku(sku), sku)
-			isChar := strings.HasPrefix(strings.ToLower(matches[2]), "char")
-			target := snap.tokenOutput
-			if isChar {
+			var target map[string]map[string]map[string]float64
+			switch {
+			case pat.direction == "input" && pat.billingType == "token":
+				target = snap.tokenInput
+			case pat.direction == "output" && pat.billingType == "token":
+				target = snap.tokenOutput
+			case pat.direction == "input" && pat.billingType == "char":
+				target = snap.charInput
+			default:
 				target = snap.charOutput
 			}
-			applyPrice(target, model, price, regions)
+			applyPrice(target, model, pat.tier, price, regions)
+			matched = true
+			break
+		}
+		if matched {
 			continue
 		}
 
@@ -197,17 +294,20 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 	return nil
 }
 
-// applyPrice writes a price into the target region/model map for each region.
-// Only regions with a non-empty name are written; no entry is created for unpopulated directions.
-func applyPrice(target map[string]map[string]float64, model string, price float64, regions []string) {
+// applyPrice writes a price into the target region/model/tier map for each region.
+// Only regions with a non-empty name are written.
+func applyPrice(target map[string]map[string]map[string]float64, model, tier string, price float64, regions []string) {
 	for _, region := range regions {
 		if region == "" {
 			continue
 		}
 		if target[region] == nil {
-			target[region] = make(map[string]float64)
+			target[region] = make(map[string]map[string]float64)
 		}
-		target[region][model] = price
+		if target[region][model] == nil {
+			target[region][model] = make(map[string]float64)
+		}
+		target[region][model][tier] = price
 	}
 }
 

@@ -18,7 +18,7 @@ func TestParseSkus_TokenInputSKU(t *testing.T) {
 
 	snap := pm.Snapshot()
 	require.NotNil(t, snap.tokenInput["us-central1"])
-	assert.InDelta(t, 0.00125, snap.tokenInput["us-central1"]["gemini-1.5-flash"], 1e-9)
+	assert.InDelta(t, 0.00125, snap.tokenInput["us-central1"]["gemini-1.5-flash"]["on_demand"], 1e-9)
 }
 
 func TestParseSkus_TokenOutputSKU(t *testing.T) {
@@ -29,7 +29,7 @@ func TestParseSkus_TokenOutputSKU(t *testing.T) {
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
-	assert.InDelta(t, 0.005, snap.tokenOutput["us-central1"]["gemini-1.5-flash"], 1e-9)
+	assert.InDelta(t, 0.005, snap.tokenOutput["us-central1"]["gemini-1.5-flash"]["on_demand"], 1e-9)
 }
 
 func TestParseSkus_TokenSKUNormalizesPerUnitPrice(t *testing.T) {
@@ -41,7 +41,7 @@ func TestParseSkus_TokenSKUNormalizesPerUnitPrice(t *testing.T) {
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
-	assert.InDelta(t, 0.00125, snap.tokenInput["us-central1"]["gemini-1.0-pro"], 1e-9)
+	assert.InDelta(t, 0.00125, snap.tokenInput["us-central1"]["gemini-1.0-pro"]["on_demand"], 1e-9)
 }
 
 func TestParseSkus_ComputeOnDemand(t *testing.T) {
@@ -85,11 +85,11 @@ func TestParseSkus_CharacterSKUsRoutedSeparately(t *testing.T) {
 	snap := pm.Snapshot()
 
 	// Character-priced SKUs go to char maps.
-	assert.InDelta(t, 0.05, snap.charInput["global"]["translation-llm"], 1e-9)
-	assert.InDelta(t, 0.15, snap.charOutput["global"]["translation-llm"], 1e-9)
+	assert.InDelta(t, 0.05, snap.charInput["global"]["translation-llm"]["on_demand"], 1e-9)
+	assert.InDelta(t, 0.15, snap.charOutput["global"]["translation-llm"]["on_demand"], 1e-9)
 
 	// Token-priced SKUs still go to token maps.
-	assert.InDelta(t, 0.17, snap.tokenInput["global"]["llama-4-scout"], 1e-9)
+	assert.InDelta(t, 0.17, snap.tokenInput["global"]["llama-4-scout"]["on_demand"], 1e-9)
 
 	// Character-priced model must not appear in token maps.
 	assert.Zero(t, snap.tokenInput["global"]["translation-llm"])
@@ -120,8 +120,8 @@ func TestParseSkus_ModelGardenMaaSPrefixStripped(t *testing.T) {
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
-	assert.InDelta(t, 0.00035, snap.tokenInput["global"]["llama-4-maverick"], 1e-9)
-	assert.InDelta(t, 0.00115, snap.tokenOutput["global"]["llama-4-maverick"], 1e-9)
+	assert.InDelta(t, 0.00035, snap.tokenInput["global"]["llama-4-maverick"]["on_demand"], 1e-9)
+	assert.InDelta(t, 0.00115, snap.tokenOutput["global"]["llama-4-maverick"]["on_demand"], 1e-9)
 	// The long-prefix key must not exist as a separate entry.
 	assert.Zero(t, snap.tokenInput["global"]["cloud-vertex-ai-model-garden-model-as-a-service-llama-4-maverick"])
 }
@@ -168,7 +168,7 @@ func TestParseSkus_GlobalFallbackForTokenSKUWithNoRegion(t *testing.T) {
 
 	snap := pm.Snapshot()
 	require.NotNil(t, snap.tokenInput["global"])
-	assert.InDelta(t, 0.00125, snap.tokenInput["global"]["gemini-1.5-flash"], 1e-9)
+	assert.InDelta(t, 0.00125, snap.tokenInput["global"]["gemini-1.5-flash"]["on_demand"], 1e-9)
 }
 
 func TestParseSkus_MultipleRegions(t *testing.T) {
@@ -192,50 +192,99 @@ func TestParseSkus_MultipleRegions(t *testing.T) {
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
-	assert.NotZero(t, snap.tokenInput["us-central1"]["gemini-1.5-pro"])
-	assert.NotZero(t, snap.tokenInput["europe-west1"]["gemini-1.5-pro"])
+	assert.NotZero(t, snap.tokenInput["us-central1"]["gemini-1.5-pro"]["on_demand"])
+	assert.NotZero(t, snap.tokenInput["europe-west1"]["gemini-1.5-pro"]["on_demand"])
+}
+
+func TestParseSkus_GeminiBatchInputSKU(t *testing.T) {
+	pm := &PricingMap{}
+	err := pm.ParseSkus([]*billingpb.Sku{
+		newTokenSKU("Gemini 2.5 Flash Text Input - Batch Predictions", "us-central1", "k{char}", 0, 75000),
+	})
+	require.NoError(t, err)
+
+	snap := pm.Snapshot()
+	assert.InDelta(t, 0.000075, snap.tokenInput["us-central1"]["gemini-2.5-flash"]["batch"], 1e-9)
+}
+
+func TestParseSkus_GeminiOnDemandInputSKU(t *testing.T) {
+	pm := &PricingMap{}
+	err := pm.ParseSkus([]*billingpb.Sku{
+		newTokenSKU("Gemini 2.5 Flash Text Input - Predictions", "us-central1", "k{char}", 0, 150000),
+	})
+	require.NoError(t, err)
+
+	snap := pm.Snapshot()
+	assert.NotZero(t, snap.tokenInput["us-central1"]["gemini-2.5-flash"]["on_demand"])
+}
+
+func TestParseSkus_GeminiThinkingOutputSKU(t *testing.T) {
+	pm := &PricingMap{}
+	err := pm.ParseSkus([]*billingpb.Sku{
+		newTokenSKU("Gemini 2.5 Flash Thinking Text Output - Predictions", "global", "k{char}", 0, 350000),
+	})
+	require.NoError(t, err)
+
+	snap := pm.Snapshot()
+	assert.NotZero(t, snap.tokenOutput["global"]["gemini-2.5-flash"]["thinking"])
+}
+
+func TestParseSkus_GeminiCachedInputSKU(t *testing.T) {
+	pm := &PricingMap{}
+	err := pm.ParseSkus([]*billingpb.Sku{
+		newTokenSKU("Gemini 2.0 Flash Input Text Caching", "global", "k{char}", 0, 25000),
+	})
+	require.NoError(t, err)
+
+	snap := pm.Snapshot()
+	assert.NotZero(t, snap.tokenInput["global"]["gemini-2.0-flash"]["cached"])
+}
+
+func TestParseSkus_GeminiLiveInputSKU(t *testing.T) {
+	pm := &PricingMap{}
+	err := pm.ParseSkus([]*billingpb.Sku{
+		newTokenSKU("Gemini 2.5 Flash Live Text Input - Predictions", "global", "k{char}", 0, 100000),
+	})
+	require.NoError(t, err)
+
+	snap := pm.Snapshot()
+	assert.NotZero(t, snap.tokenInput["global"]["gemini-2.5-flash"]["live"])
+}
+
+func TestParseSkus_MaaSBatchSKU(t *testing.T) {
+	pm := &PricingMap{}
+	err := pm.ParseSkus([]*billingpb.Sku{
+		newTokenSKU("Cloud Vertex AI Model Garden Model as a Service Llama 4 Maverick Batch Input Token", "global", "k{char}", 0, 200000),
+	})
+	require.NoError(t, err)
+
+	snap := pm.Snapshot()
+	assert.NotZero(t, snap.tokenInput["global"]["llama-4-maverick"]["batch"])
+}
+
+func TestParseSkus_MaaSCachedSKU(t *testing.T) {
+	pm := &PricingMap{}
+	err := pm.ParseSkus([]*billingpb.Sku{
+		newTokenSKU("Cloud Vertex AI Model Garden Model as a Service DeepSeek-V3.1 Cached Text Input Token", "global", "k{char}", 0, 100000),
+	})
+	require.NoError(t, err)
+
+	snap := pm.Snapshot()
+	assert.NotZero(t, snap.tokenInput["global"]["deepseek-v3.1"]["cached"])
+}
+
+func TestParseSkus_MaaSOnDemandSKU(t *testing.T) {
+	pm := &PricingMap{}
+	err := pm.ParseSkus([]*billingpb.Sku{
+		newTokenSKU("Cloud Vertex AI Model Garden Model as a Service Llama 4 Scout Input Tokens", "global", "k{char}", 0, 170000),
+	})
+	require.NoError(t, err)
+
+	snap := pm.Snapshot()
+	assert.NotZero(t, snap.tokenInput["global"]["llama-4-scout"]["on_demand"])
 }
 
 func TestRegexPatterns(t *testing.T) {
-	t.Run("tokenInputRegex", func(t *testing.T) {
-		cases := []struct {
-			input string
-			match bool
-		}{
-			{"Gemini 1.5 Flash Input tokens", true},
-			{"Gemini 1.5 Flash Input token", true}, // singular
-			{"Gemini Embedding 001 Input characters", true},
-			{"Gemini Embedding 001 Input character", true}, // singular
-			{"GEMINI 1.5 FLASH INPUT TOKENS", true},        // case insensitive
-			{"Gemini 1.5 Flash Output tokens", false},      // wrong direction
-			{"Gemini 1.5 Flash Input", false},              // missing unit
-			{"Gemini 1.5 Flash Input bytes", false},        // wrong unit
-			{"Input tokens", false},                        // no model prefix
-		}
-		for _, tc := range cases {
-			assert.Equal(t, tc.match, tokenInputRegex.MatchString(tc.input), "input: %q", tc.input)
-		}
-	})
-
-	t.Run("tokenOutputRegex", func(t *testing.T) {
-		cases := []struct {
-			input string
-			match bool
-		}{
-			{"Gemini 1.5 Flash Output tokens", true},
-			{"Gemini 1.5 Flash Output token", true}, // singular
-			{"Gemini 1.5 Flash Output characters", true},
-			{"Cloud Vertex AI Model Garden Model as a Service Llama 4 Maverick Output tokens", true}, // long prefix
-			{"GEMINI 1.5 FLASH OUTPUT TOKENS", true},                                                 // case insensitive
-			{"Gemini 1.5 Flash Input tokens", false},                                                 // wrong direction
-			{"Gemini 1.5 Flash Output", false},                                                       // missing unit
-			{"Output tokens", false},                                                                 // no model prefix
-		}
-		for _, tc := range cases {
-			assert.Equal(t, tc.match, tokenOutputRegex.MatchString(tc.input), "input: %q", tc.input)
-		}
-	})
-
 	t.Run("computeRegex", func(t *testing.T) {
 		cases := []struct {
 			input string
