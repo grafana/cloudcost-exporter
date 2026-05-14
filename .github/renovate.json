@@ -1,5 +1,13 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["github>grafana/grafana-renovate-config//presets/base"],
-  "ignoreUnstable": true
+  "ignoreUnstable": true,
+  "packageRules": [
+    {
+      "matchManagers": ["gomod"],
+      "matchDepNames": ["go"],
+      "enabled": true,
+      "rangeStrategy": "bump"
+    }
+  ]
 }
