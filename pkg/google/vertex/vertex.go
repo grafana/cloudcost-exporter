@@ -54,7 +54,6 @@ var (
 
 // Collector collects Vertex AI pricing metrics.
 type Collector struct {
-	gcpClient  client.Client
 	pricingMap *PricingMap
 	logger     *slog.Logger
 }
@@ -85,7 +84,6 @@ func New(ctx context.Context, logger *slog.Logger, gcpClient client.Client) (*Co
 	}()
 
 	return &Collector{
-		gcpClient:  gcpClient,
 		pricingMap: pm,
 		logger:     logger,
 	}, nil
