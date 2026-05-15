@@ -312,11 +312,11 @@ func applyPrice(target map[string]map[string]map[string]float64, model, tier str
 	}
 }
 
-// priceFromSku extracts the unit price from a SKU's last tiered rate.
-// GCP tiered rates are ordered ascending by start usage amount. The first tier
-// typically has a start amount of 0 and a unit price of $0 (free tier). Paid
-// pricing begins at the next tier. Taking the last rate gives the steady-state
-// paid price, which is what this exporter reports.
+// priceFromSku extracts the unit price from the last tiered rate of a SKU.
+// Vertex AI SKUs today use flat pricing: the first tier is a $0 free allowance and the
+// last tier is the steady-state paid rate. Taking the last rate is correct for this structure.
+// If GCP introduces volume discounts on a SKU (descending price at higher tiers), the last
+// rate would be the discounted tier rather than the base rate. Re-evaluate this if such SKUs appear.
 func priceFromSku(sku *billingpb.Sku) float64 {
 	if sku == nil || len(sku.GetPricingInfo()) == 0 {
 		return 0
