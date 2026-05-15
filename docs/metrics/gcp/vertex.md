@@ -16,7 +16,47 @@ Metrics exported for the GCP Vertex AI service.
 | `model_id` | e.g. `gemini-1.5-flash`, `gemma-4`, `llama-4-maverick` | Model name, normalised to lowercase with spaces replaced by hyphens |
 | `family` | `google`, `meta`, `alibaba`, `deepseek`, `minimax`, `moonshot`, `unknown` | Model provider family; `unknown` for unrecognised model prefixes |
 | `region` | e.g. `us-central1` | GCP region |
-| `price_tier` | `on_demand`, `batch`, `long_context`, `cached`, `cache_storage`, `thinking`, `priority`, `flex`, `live` | Running mode or pricing tier derived from the GCP SKU description |
+| `price_tier` | see below | Running mode or pricing tier derived from the GCP SKU description |
+
+#### `price_tier` Values for Token Metrics
+
+Tiers are composed from up to three modifiers: a `thinking_` prefix, a `cached_` prefix, and a `_long_context` suffix. Not all combinations exist in GCP's SKU catalogue; only tiers with a matching SKU are emitted.
+
+**Simple tiers**
+
+| Value | Description |
+|-------|-------------|
+| `on_demand` | Standard real-time inference |
+| `batch` | Batch prediction |
+| `long_context` | Long-context window at standard priority |
+| `cached` | Context-cached input |
+| `cache_storage` | Context cache storage cost |
+| `thinking` | Extended thinking, standard priority |
+| `priority` | Priority tier |
+| `flex` | Flex tier |
+| `live` | Live (streaming) mode |
+
+**Compound tiers**
+
+| Value | Description |
+|-------|-------------|
+| `batch_long_context` | Batch + long context |
+| `priority_long_context` | Priority + long context |
+| `flex_long_context` | Flex + long context |
+| `cached_long_context` | Cached input + long context |
+| `cached_batch` | Cached input + batch |
+| `cached_flex` | Cached input + flex tier |
+| `cached_priority` | Cached input + priority tier |
+| `cached_batch_long_context` | Cached input + batch + long context |
+| `cached_flex_long_context` | Cached input + flex + long context |
+| `cached_priority_long_context` | Cached input + priority + long context |
+| `thinking_batch` | Thinking + batch |
+| `thinking_flex` | Thinking + flex tier |
+| `thinking_priority` | Thinking + priority tier |
+| `thinking_long_context` | Thinking + long context |
+| `thinking_batch_long_context` | Thinking + batch + long context |
+| `thinking_flex_long_context` | Thinking + flex + long context |
+| `thinking_priority_long_context` | Thinking + priority + long context |
 
 ## Character Pricing
 
