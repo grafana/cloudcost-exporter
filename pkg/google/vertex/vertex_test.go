@@ -174,6 +174,24 @@ func TestCollect_EmitsRerankingMetrics(t *testing.T) {
 	assert.InDelta(t, 0.001, rerank.Value, 1e-9)
 }
 
+func TestCollect_DiscoveryEngineUnavailable_RerankingOmitted(t *testing.T) {
+	c, err := New(t.Context(), testLogger(),
+		&stubVertexClient{
+			serviceName:      "services/vertex-ai",
+			deServiceNameErr: fmt.Errorf("discovery engine billing API unavailable"),
+			skus: []*billingpb.Sku{
+				newTokenSKU("Gemini 1.5 Flash Input tokens", "us-central1", "k{char}", 0, 1250000),
+			},
+		})
+	require.NoError(t, err)
+
+	results, err := collectVertexMetrics(t, c)
+	require.NoError(t, err)
+
+	assert.Nil(t, metricByName(results, "cloudcost_gcp_vertex_search_unit_usd_per_1k_search_units"))
+	assert.NotNil(t, metricByName(results, "cloudcost_gcp_vertex_input_usd_per_1k_tokens"))
+}
+
 func TestCollect_ContextCancellation(t *testing.T) {
 	c, err := New(t.Context(), testLogger(),
 		&stubVertexClient{
@@ -194,10 +212,11 @@ func TestCollect_ContextCancellation(t *testing.T) {
 
 // stubVertexClient implements client.Client for tests.
 type stubVertexClient struct {
-	serviceName    string
-	serviceNameErr error
-	skus           []*billingpb.Sku
-	deSkus         []*billingpb.Sku // Discovery Engine SKUs
+	serviceName      string
+	serviceNameErr   error
+	deServiceNameErr error
+	skus             []*billingpb.Sku
+	deSkus           []*billingpb.Sku // Discovery Engine SKUs
 }
 
 func (s *stubVertexClient) GetServiceName(_ context.Context, svc string) (string, error) {
@@ -205,6 +224,9 @@ func (s *stubVertexClient) GetServiceName(_ context.Context, svc string) (string
 		return "", s.serviceNameErr
 	}
 	if svc == discoveryEngineServiceName {
+		if s.deServiceNameErr != nil {
+			return "", s.deServiceNameErr
+		}
 		return "services/discovery-engine", nil
 	}
 	return s.serviceName, nil
