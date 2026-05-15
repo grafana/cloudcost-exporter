@@ -65,6 +65,38 @@ func TestCollect_EmitsTokenMetrics(t *testing.T) {
 	assert.InDelta(t, 0.005, outputMetric.Value, 1e-9)
 }
 
+func TestCollect_EmitsCharacterMetrics(t *testing.T) {
+	c, err := New(t.Context(), testLogger(),
+		&stubVertexClient{
+			serviceName: "services/vertex-ai",
+			skus: []*billingpb.Sku{
+				newTokenSKU("Translation LLM Input Characters", "global", "count", 0, 50000),
+				newTokenSKU("Translation LLM Output Characters", "global", "count", 0, 150000),
+			},
+		})
+	require.NoError(t, err)
+
+	results, err := collectVertexMetrics(t, c)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+
+	inputMetric := metricByName(results, "cloudcost_gcp_vertex_input_usd_per_1k_characters")
+	require.NotNil(t, inputMetric)
+	assert.Equal(t, "translation-llm", inputMetric.Labels["model_id"])
+	assert.Equal(t, "unknown", inputMetric.Labels["family"])
+	assert.Equal(t, "global", inputMetric.Labels["region"])
+	assert.Equal(t, "on_demand", inputMetric.Labels["price_tier"])
+	assert.InDelta(t, 0.05, inputMetric.Value, 1e-9)
+
+	outputMetric := metricByName(results, "cloudcost_gcp_vertex_output_usd_per_1k_characters")
+	require.NotNil(t, outputMetric)
+	assert.Equal(t, "translation-llm", outputMetric.Labels["model_id"])
+	assert.Equal(t, "unknown", outputMetric.Labels["family"])
+	assert.Equal(t, "global", outputMetric.Labels["region"])
+	assert.Equal(t, "on_demand", outputMetric.Labels["price_tier"])
+	assert.InDelta(t, 0.15, outputMetric.Value, 1e-9)
+}
+
 func TestFamilyFromModelID(t *testing.T) {
 	cases := []struct {
 		model  string
