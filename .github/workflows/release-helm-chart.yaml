@@ -50,8 +50,8 @@ jobs:
       charts_dir: charts
       cr_configfile: cr.yaml
       ct_configfile: charts/cloudcost-exporter/ct.yaml
-    secrets:
-      vault_repo_secret_name: github-app
+    with:
+      github_app: cloudcost-exporter-helm-publisher
 
   trigger-deployment-tools-update:
     needs: release-chart
