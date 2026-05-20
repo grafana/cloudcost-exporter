@@ -29,8 +29,7 @@ jobs:
         run: |
           PR_NUMBER=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
           PR_DATA=$(gh pr view "$PR_NUMBER" --json labels)
-          LABELS=$(echo "$PR_DATA" | jq -r '.labels[].name' | tr '
-' ' ')
+          LABELS=$(echo "$PR_DATA" | jq -r '.labels[].name')
           
           echo "PR Labels: $LABELS"
           
