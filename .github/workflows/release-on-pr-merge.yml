@@ -29,7 +29,8 @@ jobs:
         run: |
           PR_NUMBER=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
           PR_DATA=$(gh pr view "$PR_NUMBER" --json labels)
-          LABELS=$(echo "$PR_DATA" | jq -r '.labels[].name' | tr '\n' ' ')
+          LABELS=$(echo "$PR_DATA" | jq -r '.labels[].name' | tr '
+' ' ')
           
           echo "PR Labels: $LABELS"
           
@@ -290,7 +291,7 @@ jobs:
         id: get-github-app-token
         uses: grafana/shared-workflows/actions/create-github-app-token@259ba21cb3ff07724f331e26d926d655d24b317b # create-github-app-token/v0.2.3
         with:
-          github_app: github-app
+          github_app: cloudcost-exporter-updater
 
       - name: Create pull request
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
