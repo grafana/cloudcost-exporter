@@ -50,7 +50,6 @@ jobs:
       charts_dir: charts
       cr_configfile: cr.yaml
       ct_configfile: charts/cloudcost-exporter/ct.yaml
-    with:
       github_app: cloudcost-exporter-helm-publisher
 
   trigger-deployment-tools-update:
