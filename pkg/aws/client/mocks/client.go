@@ -108,6 +108,21 @@ func (mr *MockClientMockRecorder) GetRDSUnitData(ctx, instType, region, deployme
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRDSUnitData", reflect.TypeOf((*MockClient)(nil).GetRDSUnitData), ctx, instType, region, deploymentOption, engineCode, isOutpost)
 }
 
+// ListBedrockMarketplacePrices mocks base method.
+func (m *MockClient) ListBedrockMarketplacePrices(ctx context.Context, region string) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListBedrockMarketplacePrices", ctx, region)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListBedrockMarketplacePrices indicates an expected call of ListBedrockMarketplacePrices.
+func (mr *MockClientMockRecorder) ListBedrockMarketplacePrices(ctx, region any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBedrockMarketplacePrices", reflect.TypeOf((*MockClient)(nil).ListBedrockMarketplacePrices), ctx, region)
+}
+
 // ListBedrockPrices mocks base method.
 func (m *MockClient) ListBedrockPrices(ctx context.Context, region string) ([]string, error) {
 	m.ctrl.T.Helper()
