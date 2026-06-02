@@ -20,8 +20,7 @@ func TestStringPtr(t *testing.T) {
 	got := StringPtr("hello")
 	if got == nil {
 		t.Fatal("StringPtr returned nil")
-	}
-	if *got != "hello" {
+	} else if *got != "hello" {
 		t.Fatalf("*StringPtr(\"hello\") = %q, want %q", *got, "hello")
 	}
 }
