@@ -282,11 +282,11 @@ func (s *stubClient) GetServiceName(context.Context, string) (string, error) {
 	return s.serviceName, nil
 }
 
-func (s *stubClient) ExportRegionalDiscounts(context.Context, []string, *gcmetrics.Metrics) error {
+func (s *stubClient) ExportRegionalDiscounts(context.Context, *gcmetrics.Metrics) error {
 	return nil
 }
 
-func (s *stubClient) ExportGCPCostData(context.Context, string, []string, *gcmetrics.Metrics) float64 {
+func (s *stubClient) ExportGCPCostData(context.Context, string, *gcmetrics.Metrics) float64 {
 	return 0
 }
 

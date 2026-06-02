@@ -29,7 +29,7 @@ const (
 )
 
 var (
-	GKENodeMemoryHourlyCostDesc = utils.GenerateDesc(
+	gkeNodeMemoryHourlyCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		utils.InstanceMemoryCostSuffix,
@@ -37,7 +37,7 @@ var (
 		// Cannot simply use "cluster" because other metric scrapers may add a label for cluster, which would interfere
 		[]string{"cluster_name", "instance", "region", "family", "machine_type", "project", "price_tier"},
 	)
-	GKENodeCPUHourlyCostDesc = utils.GenerateDesc(
+	gkeNodeCPUHourlyCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		utils.InstanceCPUCostSuffix,
@@ -45,7 +45,7 @@ var (
 		// Cannot simply use "cluster" because other metric scrapers may add a label for cluster, which would interfere
 		[]string{"cluster_name", "instance", "region", "family", "machine_type", "project", "price_tier"},
 	)
-	PersistentVolumeHourlyCostDesc = utils.GenerateDesc(
+	persistentVolumeHourlyCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		utils.PersistentVolumeCostSuffix,
@@ -173,13 +173,13 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 					continue
 				}
 				ch <- prometheus.MustNewConstMetric(
-					GKENodeCPUHourlyCostDesc,
+					gkeNodeCPUHourlyCostDesc,
 					prometheus.GaugeValue,
 					cpuCost,
 					labelValues...,
 				)
 				ch <- prometheus.MustNewConstMetric(
-					GKENodeMemoryHourlyCostDesc,
+					gkeNodeMemoryHourlyCostDesc,
 					prometheus.GaugeValue,
 					ramCost,
 					labelValues...,
@@ -222,7 +222,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 					continue
 				}
 				ch <- prometheus.MustNewConstMetric(
-					PersistentVolumeHourlyCostDesc,
+					persistentVolumeHourlyCostDesc,
 					prometheus.GaugeValue,
 					computeDiskCost(d, prices),
 					labelValues...,
@@ -279,7 +279,7 @@ func (c *Collector) Name() string {
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
-	ch <- GKENodeCPUHourlyCostDesc
-	ch <- GKENodeMemoryHourlyCostDesc
+	ch <- gkeNodeCPUHourlyCostDesc
+	ch <- gkeNodeMemoryHourlyCostDesc
 	return nil
 }

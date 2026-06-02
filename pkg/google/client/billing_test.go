@@ -166,7 +166,7 @@ func Test_parseOpSku(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := parseOpSku(tt.sku, []string{"project-1"}, metrics.NewMetrics())
+			err := parseOpSku(tt.sku, metrics.NewMetrics())
 			assert.ErrorIs(t, err, tt.err)
 		})
 	}
@@ -246,7 +246,7 @@ func Test_parseStorageSku(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := parseStorageSku(tt.sku, []string{"project-1"}, metrics.NewMetrics())
+			err := parseStorageSku(tt.sku, metrics.NewMetrics())
 			assert.ErrorIs(t, err, tt.err)
 		})
 	}

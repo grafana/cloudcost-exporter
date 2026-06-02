@@ -165,8 +165,8 @@ func (c *Collector) collectMetrics(ctx context.Context) error {
 	}
 	c.nextScrape = time.Now().Add(c.interval)
 	c.metrics.NextScrapeGauge.Set(float64(c.nextScrape.Unix()))
-	exporterOperationsDiscounts(c.Projects, c.metrics)
-	if err := c.gcpClient.ExportRegionalDiscounts(ctx, c.Projects, c.metrics); err != nil {
+	exporterOperationsDiscounts(c.metrics)
+	if err := c.gcpClient.ExportRegionalDiscounts(ctx, c.metrics); err != nil {
 		c.logger.LogAttrs(ctx, slog.LevelError, "error exporting regional discounts", slog.Any("error", err))
 	}
 
@@ -179,17 +179,15 @@ func (c *Collector) collectMetrics(ctx context.Context) error {
 		c.logger.LogAttrs(ctx, slog.LevelError, "error getting service name", slog.Any("error", err))
 		return err
 	}
-	c.gcpClient.ExportGCPCostData(ctx, serviceName, c.Projects, c.metrics)
+	c.gcpClient.ExportGCPCostData(ctx, serviceName, c.metrics)
 	return nil
 }
 
-func exporterOperationsDiscounts(projects []string, m *metrics.Metrics) {
-	for _, project := range projects {
-		for locationType, locationMap := range operationsDiscountMap {
-			for storageClass, storageClassmap := range locationMap {
-				for opsClass, discount := range storageClassmap {
-					m.OperationsDiscountGauge.WithLabelValues(project, locationType, strings.ToUpper(storageClass), opsClass).Set(discount)
-				}
+func exporterOperationsDiscounts(m *metrics.Metrics) {
+	for locationType, locationMap := range operationsDiscountMap {
+		for storageClass, storageClassmap := range locationMap {
+			for opsClass, discount := range storageClassmap {
+				m.OperationsDiscountGauge.WithLabelValues(locationType, strings.ToUpper(storageClass), opsClass).Set(discount)
 			}
 		}
 	}
