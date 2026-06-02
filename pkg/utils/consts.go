@@ -4,7 +4,6 @@ package utils
 import (
 	"maps"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -50,26 +49,4 @@ func GenerateDesc(prefix, subsystem, suffix, description string, labels []string
 		labels,
 		nil,
 	)
-}
-
-// VariableLabelsFromDesc extracts the variable label names from a Prometheus
-// Desc by parsing its String() representation. Intended for tests that need to
-// assert label-set invariants across many descs without exposing private vars.
-func VariableLabelsFromDesc(d *prometheus.Desc) []string {
-	s := d.String()
-	const marker = "variableLabels: {"
-	start := strings.Index(s, marker)
-	if start < 0 {
-		return nil
-	}
-	start += len(marker)
-	end := strings.Index(s[start:], "}")
-	if end < 0 {
-		return nil
-	}
-	inner := s[start : start+end]
-	if inner == "" {
-		return nil
-	}
-	return strings.Split(inner, ",")
 }
