@@ -41,12 +41,12 @@ func (c *Mock) GetServiceName(ctx context.Context, serviceName string) (string, 
 	return c.billing.getServiceName(ctx, serviceName)
 }
 
-func (c *Mock) ExportRegionalDiscounts(ctx context.Context, m *metrics.Metrics) error {
-	return c.region.exportRegionalDiscounts(ctx, m)
+func (c *Mock) ExportRegionalDiscounts(ctx context.Context, projects []string, m *metrics.Metrics) error {
+	return c.region.exportRegionalDiscounts(ctx, projects, m)
 }
 
-func (c *Mock) ExportGCPCostData(ctx context.Context, serviceName string, m *metrics.Metrics) float64 {
-	return c.billing.exportBilling(ctx, serviceName, m)
+func (c *Mock) ExportGCPCostData(ctx context.Context, serviceName string, projects []string, m *metrics.Metrics) float64 {
+	return c.billing.exportBilling(ctx, serviceName, projects, m)
 }
 
 func (c *Mock) ExportBucketInfo(ctx context.Context, projects []string, m *metrics.Metrics) error {

@@ -38,7 +38,7 @@ func newRegion(projectId string, discount int, regionClient RegionsClient) *Regi
 	}
 }
 
-func (r *Region) exportRegionalDiscounts(ctx context.Context, m *metrics.Metrics) error {
+func (r *Region) exportRegionalDiscounts(ctx context.Context, projects []string, m *metrics.Metrics) error {
 	req := &computepb.ListRegionsRequest{
 		Project: r.projectId,
 	}
@@ -55,18 +55,20 @@ func (r *Region) exportRegionalDiscounts(ctx context.Context, m *metrics.Metrics
 		regions = append(regions, *resp.Name)
 	}
 	percentDiscount := float64(r.discount) / 100.0
-	for _, storageClass := range storageClasses {
-		for _, region := range regions {
-			m.StorageDiscountGauge.WithLabelValues(region, strings.ToUpper(storageClass)).Set(percentDiscount)
-		}
-		// Base Regions are specific to `MULTI_REGION` buckets that do not have a specific region
-		// Breakdown for buckets with these regions: https://ops.grafana-ops.net/explore?panes=%7B%229oU%22:%7B%22datasource%22:%22000000134%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22expr%22:%22sum%28count%20by%20%28bucket_name%29%20%28stackdriver_gcs_bucket_storage_googleapis_com_storage_total_bytes%7Blocation%3D~%5C%22asia%7Ceu%7Cus%5C%22%7D%29%29%22,%22range%22:true,%22instant%22:true,%22datasource%22:%7B%22type%22:%22prometheus%22,%22uid%22:%22000000134%22%7D,%22editorMode%22:%22code%22,%22legendFormat%22:%22__auto%22%7D,%7B%22refId%22:%22B%22,%22expr%22:%22sum%28count%20by%20%28bucket_name%29%20%28stackdriver_gcs_bucket_storage_googleapis_com_storage_total_bytes%7Blocation%21~%5C%22asia%7Ceu%7Cus%5C%22%7D%29%29%22,%22range%22:true,%22instant%22:true,%22datasource%22:%7B%22type%22:%22prometheus%22,%22uid%22:%22000000134%22%7D,%22editorMode%22:%22code%22,%22legendFormat%22:%22__auto%22%7D%5D,%22range%22:%7B%22from%22:%22now-6h%22,%22to%22:%22now%22%7D%7D%7D&schemaVersion=1&orgId=1
-		for _, region := range baseRegions {
-			if storageClass == "Regional" {
-				// This is a hack to align storage classes with stackdriver_exporter
-				storageClass = "MULTI_REGIONAL"
+	for _, project := range projects {
+		for _, storageClass := range storageClasses {
+			for _, region := range regions {
+				m.StorageDiscountGauge.WithLabelValues(project, region, strings.ToUpper(storageClass)).Set(percentDiscount)
 			}
-			m.StorageDiscountGauge.WithLabelValues(region, strings.ToUpper(storageClass)).Set(percentDiscount)
+			// Base Regions are specific to `MULTI_REGION` buckets that do not have a specific region
+			// Breakdown for buckets with these regions: https://ops.grafana-ops.net/explore?panes=%7B%229oU%22:%7B%22datasource%22:%22000000134%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22expr%22:%22sum%28count%20by%20%28bucket_name%29%20%28stackdriver_gcs_bucket_storage_googleapis_com_storage_total_bytes%7Blocation%3D~%5C%22asia%7Ceu%7Cus%5C%22%7D%29%29%22,%22range%22:true,%22instant%22:true,%22datasource%22:%7B%22type%22:%22prometheus%22,%22uid%22:%22000000134%22%7D,%22editorMode%22:%22code%22,%22legendFormat%22:%22__auto%22%7D,%7B%22refId%22:%22B%22,%22expr%22:%22sum%28count%20by%20%28bucket_name%29%20%28stackdriver_gcs_bucket_storage_googleapis_com_storage_total_bytes%7Blocation%21~%5C%22asia%7Ceu%7Cus%5C%22%7D%29%29%22,%22range%22:true,%22instant%22:true,%22datasource%22:%7B%22type%22:%22prometheus%22,%22uid%22:%22000000134%22%7D,%22editorMode%22:%22code%22,%22legendFormat%22:%22__auto%22%7D%5D,%22range%22:%7B%22from%22:%22now-6h%22,%22to%22:%22now%22%7D%7D%7D&schemaVersion=1&orgId=1
+			for _, region := range baseRegions {
+				if storageClass == "Regional" {
+					// This is a hack to align storage classes with stackdriver_exporter
+					storageClass = "MULTI_REGIONAL"
+				}
+				m.StorageDiscountGauge.WithLabelValues(project, region, strings.ToUpper(storageClass)).Set(percentDiscount)
+			}
 		}
 	}
 

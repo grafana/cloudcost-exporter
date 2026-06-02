@@ -57,7 +57,7 @@ func (b *Billing) getServiceName(ctx context.Context, name string) (string, erro
 	return "", errServiceNotFound
 }
 
-func (b *Billing) exportBilling(ctx context.Context, serviceName string, m *metrics.Metrics) float64 {
+func (b *Billing) exportBilling(ctx context.Context, serviceName string, projects []string, m *metrics.Metrics) float64 {
 	skus := b.getPricing(ctx, serviceName)
 	for _, sku := range skus {
 		// Skip Egress and Download costs as we don't count them yet
@@ -78,13 +78,13 @@ func (b *Billing) exportBilling(ctx context.Context, serviceName string, m *metr
 			if strings.Contains(sku.Description, "Early Delete") {
 				continue // to skip "Unknown sku"
 			}
-			if err := parseStorageSku(sku, m); err != nil {
+			if err := parseStorageSku(sku, projects, m); err != nil {
 				slog.Error("error parsing storage sku", "error", err)
 			}
 			continue
 		}
 		if strings.HasSuffix(sku.Category.ResourceGroup, "Ops") {
-			if err := parseOpSku(sku, m); err != nil {
+			if err := parseOpSku(sku, projects, m); err != nil {
 				slog.Error("error parsing op sku", "error", err)
 			}
 			continue
@@ -131,7 +131,7 @@ func getPriceFromSku(sku *billingpb.Sku) (float64, error) {
 	return float64(tierRate.UnitPrice.Units) + 1e-9*float64(tierRate.UnitPrice.Nanos), nil // Convert NanoUSD to USD when return
 }
 
-func parseStorageSku(sku *billingpb.Sku, m *metrics.Metrics) error {
+func parseStorageSku(sku *billingpb.Sku, projects []string, m *metrics.Metrics) error {
 	price, err := getPriceFromSku(sku)
 	if err != nil {
 		return err
@@ -152,11 +152,13 @@ func parseStorageSku(sku *billingpb.Sku, m *metrics.Metrics) error {
 
 	region := regionNameSameAsStackdriver(sku.ServiceRegions[0])
 	storageclass := storageClassFromSkuDescription(sku.Description, region)
-	m.StorageGauge.WithLabelValues(region, storageclass).Set(price)
+	for _, project := range projects {
+		m.StorageGauge.WithLabelValues(project, region, storageclass).Set(price)
+	}
 	return nil
 }
 
-func parseOpSku(sku *billingpb.Sku, m *metrics.Metrics) error {
+func parseOpSku(sku *billingpb.Sku, projects []string, m *metrics.Metrics) error {
 	if strings.Contains(sku.Description, "Tagging") {
 		return errTaggingNotSupported
 	}
@@ -170,7 +172,9 @@ func parseOpSku(sku *billingpb.Sku, m *metrics.Metrics) error {
 	storageclass := storageClassFromSkuDescription(sku.Description, region)
 	opclass := opClassFromSkuDescription(sku.Description)
 
-	m.OperationsGauge.WithLabelValues(region, storageclass, opclass).Set(price)
+	for _, project := range projects {
+		m.OperationsGauge.WithLabelValues(project, region, storageclass, opclass).Set(price)
+	}
 	return nil
 }
 

@@ -40,10 +40,10 @@ func (c *regionsStubClient) GetZones(project string) ([]*compute.Zone, error) {
 func (c *regionsStubClient) GetServiceName(_ context.Context, _ string) (string, error) {
 	panic("not implemented")
 }
-func (c *regionsStubClient) ExportRegionalDiscounts(_ context.Context, _ *metrics.Metrics) error {
+func (c *regionsStubClient) ExportRegionalDiscounts(_ context.Context, _ []string, _ *metrics.Metrics) error {
 	panic("not implemented")
 }
-func (c *regionsStubClient) ExportGCPCostData(_ context.Context, _ string, _ *metrics.Metrics) float64 {
+func (c *regionsStubClient) ExportGCPCostData(_ context.Context, _ string, _ []string, _ *metrics.Metrics) float64 {
 	panic("not implemented")
 }
 func (c *regionsStubClient) ExportBucketInfo(_ context.Context, _ []string, _ *metrics.Metrics) error {
