@@ -76,12 +76,12 @@ func (c *GCPClient) GetServiceName(ctx context.Context, serviceName string) (str
 	return c.billing.getServiceName(ctx, serviceName)
 }
 
-func (c *GCPClient) ExportRegionalDiscounts(ctx context.Context, projects []string, m *metrics.Metrics) error {
-	return c.regions.exportRegionalDiscounts(ctx, projects, m)
+func (c *GCPClient) ExportRegionalDiscounts(ctx context.Context, m *metrics.Metrics) error {
+	return c.regions.exportRegionalDiscounts(ctx, m)
 }
 
-func (c *GCPClient) ExportGCPCostData(ctx context.Context, serviceName string, projects []string, m *metrics.Metrics) float64 {
-	return c.billing.exportBilling(ctx, serviceName, projects, m)
+func (c *GCPClient) ExportGCPCostData(ctx context.Context, serviceName string, m *metrics.Metrics) float64 {
+	return c.billing.exportBilling(ctx, serviceName, m)
 }
 
 func (c *GCPClient) GetPricing(ctx context.Context, serviceName string) []*billingpb.Sku {

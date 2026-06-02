@@ -36,6 +36,17 @@ var knownPrefixConstants = map[string]string{
 	"ExporterName": "cloudcost_exporter",
 }
 
+// uniformPricingMetrics are exempt from the `project` label requirement: their
+// values are uniform pricing rates that are identical for every project in a
+// given region/class, so adding a `project` label would only inflate
+// cardinality without adding information.
+var uniformPricingMetrics = map[string]struct{}{
+	"cloudcost_gcp_gcs_storage_by_location_usd_per_gibyte_hour":          {},
+	"cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour": {},
+	"cloudcost_gcp_gcs_operation_by_location_usd_per_krequest":           {},
+	"cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest":  {},
+}
+
 // TestAllGCPCostMetricsHaveProjectLabel statically scans every metric
 // constructor invocation under pkg/google, resolves each metric's fqname, and
 // fails if any metric named `cloudcost_gcp_*` is missing the `project`
@@ -86,6 +97,9 @@ func TestAllGCPCostMetricsHaveProjectLabel(t *testing.T) {
 
 			costMetricsChecked++
 			pos := fset.Position(call.Pos())
+			if _, exempt := uniformPricingMetrics[fqname]; exempt {
+				return true
+			}
 			labels, labelsResolved := extractStringSliceLiteral(call.Args)
 			if !labelsResolved {
 				failures = append(failures, fmt.Sprintf(
@@ -114,10 +128,10 @@ func TestAllGCPCostMetricsHaveProjectLabel(t *testing.T) {
 }
 
 // resolveMetricFQName figures out what fqname a metric-constructor call will
-// produce. Returns ("", false) when the prefix or subsystem cannot be
-// determined statically (e.g. computed at runtime from non-literal data).
+// produce. Returns ("", false) when any part cannot be determined statically
+// (e.g. computed at runtime from non-literal data).
 func resolveMetricFQName(call *ast.CallExpr, fnName string, consts map[string]string) (string, bool) {
-	prefix, subsystem, ok := findFQNameParts(call, fnName)
+	prefix, subsystem, suffix, ok := findFQNameParts(call, fnName)
 	if !ok {
 		return "", false
 	}
@@ -129,41 +143,45 @@ func resolveMetricFQName(call *ast.CallExpr, fnName string, consts map[string]st
 	if !ok {
 		return "", false
 	}
-	return prefixStr + "_" + subsystemStr, true
+	suffixStr, ok := resolveSubsystem(suffix, consts) // same resolution rules
+	if !ok {
+		return "", false
+	}
+	return prefixStr + "_" + subsystemStr + "_" + suffixStr, true
 }
 
-// findFQNameParts locates the prefix and subsystem expressions for a metric
-// constructor call. GenerateDesc takes them as positional arguments; the
-// prometheus.* helpers wrap them inside a BuildFQName call (directly for
+// findFQNameParts locates the prefix, subsystem, and suffix expressions for a
+// metric constructor call. GenerateDesc takes them as positional arguments;
+// the prometheus.* helpers wrap them inside a BuildFQName call (directly for
 // NewDesc, or via the Name field of a *Opts struct literal for the Vec
 // helpers).
-func findFQNameParts(call *ast.CallExpr, fnName string) (prefix, subsystem ast.Expr, ok bool) {
+func findFQNameParts(call *ast.CallExpr, fnName string) (prefix, subsystem, suffix ast.Expr, ok bool) {
 	if fnName == "GenerateDesc" {
 		if len(call.Args) < 3 {
-			return nil, nil, false
+			return nil, nil, nil, false
 		}
-		return call.Args[0], call.Args[1], true
+		return call.Args[0], call.Args[1], call.Args[2], true
 	}
 
 	var buildCall *ast.CallExpr
 	if fnName == "NewDesc" {
 		if len(call.Args) < 1 {
-			return nil, nil, false
+			return nil, nil, nil, false
 		}
 		bc, ok := call.Args[0].(*ast.CallExpr)
 		if !ok {
-			return nil, nil, false
+			return nil, nil, nil, false
 		}
 		buildCall = bc
 	} else {
 		// Vec helpers: first arg is an Opts composite literal; locate the
 		// Name field's BuildFQName call.
 		if len(call.Args) < 1 {
-			return nil, nil, false
+			return nil, nil, nil, false
 		}
 		opts, ok := call.Args[0].(*ast.CompositeLit)
 		if !ok {
-			return nil, nil, false
+			return nil, nil, nil, false
 		}
 		for _, elt := range opts.Elts {
 			kv, ok := elt.(*ast.KeyValueExpr)
@@ -184,13 +202,13 @@ func findFQNameParts(call *ast.CallExpr, fnName string) (prefix, subsystem ast.E
 	}
 
 	if buildCall == nil {
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 	name, ok := selectorName(buildCall.Fun)
-	if !ok || name != "BuildFQName" || len(buildCall.Args) < 2 {
-		return nil, nil, false
+	if !ok || name != "BuildFQName" || len(buildCall.Args) < 3 {
+		return nil, nil, nil, false
 	}
-	return buildCall.Args[0], buildCall.Args[1], true
+	return buildCall.Args[0], buildCall.Args[1], buildCall.Args[2], true
 }
 
 func resolvePrefix(expr ast.Expr, consts map[string]string) (string, bool) {

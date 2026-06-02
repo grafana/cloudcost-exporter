@@ -12,8 +12,8 @@ import (
 
 type Client interface {
 	GetServiceName(ctx context.Context, serviceName string) (string, error)
-	ExportRegionalDiscounts(ctx context.Context, projects []string, m *metrics.Metrics) error
-	ExportGCPCostData(ctx context.Context, serviceName string, projects []string, m *metrics.Metrics) float64
+	ExportRegionalDiscounts(ctx context.Context, m *metrics.Metrics) error
+	ExportGCPCostData(ctx context.Context, serviceName string, m *metrics.Metrics) float64
 	ExportBucketInfo(ctx context.Context, projects []string, m *metrics.Metrics) error
 	GetPricing(ctx context.Context, serviceName string) []*billingpb.Sku
 	GetZones(project string) ([]*compute.Zone, error)
