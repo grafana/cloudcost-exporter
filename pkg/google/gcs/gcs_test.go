@@ -290,8 +290,8 @@ func TestCollector_Collect(t *testing.T) {
 	err = testutil.CollectAndCompare(r, strings.NewReader(`
    # HELP cloudcost_gcp_gcs_bucket_info Location, location_type and storage class information for a GCS object by bucket_name
 # TYPE cloudcost_gcp_gcs_bucket_info gauge
-cloudcost_gcp_gcs_bucket_info{bucket_name="testbucket-1",location="us-east1",location_type="region",storage_class="STANDARD"} 1
-cloudcost_gcp_gcs_bucket_info{bucket_name="testbucket-2",location="us",location_type="multi-region",storage_class="STANDARD"} 1
+cloudcost_gcp_gcs_bucket_info{bucket_name="testbucket-1",location="us-east1",location_type="region",project="project-1",storage_class="STANDARD"} 1
+cloudcost_gcp_gcs_bucket_info{bucket_name="testbucket-2",location="us",location_type="multi-region",project="project-1",storage_class="STANDARD"} 1
 # HELP cloudcost_gcp_gcs_operation_by_location_usd_per_krequest Operation cost of GCS objects by location, storage_class, and opclass. Cost represented in USD/(1k req)
 # TYPE cloudcost_gcp_gcs_operation_by_location_usd_per_krequest gauge
 cloudcost_gcp_gcs_operation_by_location_usd_per_krequest{location="us-east1",opclass="class-a",storage_class="REGIONAL"} 0.004

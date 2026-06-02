@@ -44,7 +44,7 @@ func NewMetrics() *Metrics {
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "bucket_info"),
 			Help: "Location, location_type and storage class information for a GCS object by bucket_name",
 		},
-			[]string{"location", "location_type", "storage_class", "bucket_name"},
+			[]string{"project", "location", "location_type", "storage_class", "bucket_name"},
 		),
 		// todo: every module so far has a "next_scrape" metric. Should we have a metric cloudcost_exporter_next_scrape{module=<gcp_gcs,gcp_compute,aws...>}?
 		NextScrapeGauge: prometheus.NewGauge(prometheus.GaugeOpts{

@@ -72,7 +72,7 @@ func (b *Bucket) exportBucketInfo(ctx context.Context, projects []string, m *met
 
 		for _, bucket := range buckets {
 			// Location is always in caps, and the metrics that need to join up on it are in lower case
-			m.BucketInfo.WithLabelValues(strings.ToLower(bucket.Location), bucket.LocationType, bucket.StorageClass, bucket.Name).Set(1)
+			m.BucketInfo.WithLabelValues(project, strings.ToLower(bucket.Location), bucket.LocationType, bucket.StorageClass, bucket.Name).Set(1)
 		}
 		m.BucketListHistogram.WithLabelValues(project).Observe(time.Since(start).Seconds())
 		m.BucketListStatus.WithLabelValues(project, "success").Inc()
