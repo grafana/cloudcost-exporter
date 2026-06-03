@@ -33,8 +33,6 @@ func TestCollector_Collect(t *testing.T) {
 	tests := map[string]struct {
 		config          *Config
 		testServer      *httptest.Server
-		err             error
-		collectResponse float64
 		expectedMetrics []*utils.MetricResult
 	}{
 		"Handle http error": {
@@ -44,15 +42,12 @@ func TestCollector_Collect(t *testing.T) {
 			testServer: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			})),
-			err:             client.ErrListInstances,
-			collectResponse: 0,
 			expectedMetrics: []*utils.MetricResult{},
 		},
 		"Parse our regular response": {
 			config: &Config{
 				Projects: "testing,testing-1",
 			},
-			collectResponse: 1.0,
 			expectedMetrics: []*utils.MetricResult{
 
 				{
@@ -482,14 +477,17 @@ func TestCollector_Collect(t *testing.T) {
 			require.NoError(t, err)
 
 			gcpClient := client.NewMock("testing", 0, nil, nil, cloudCatalogClient, computeService, nil, nil)
-			collector, _ := New(t.Context(), test.config, logger, gcpClient)
+			collector, err := New(t.Context(), test.config, logger, gcpClient)
+			require.NoError(t, err)
 			require.NotNil(t, collector)
+
+			// Wait for background stores to complete their initial population before collecting.
+			<-collector.nodeStore.Done()
+			<-collector.diskStore.Done()
+
 			ch := make(chan prometheus.Metric)
 			go func() {
-				err := collector.Collect(t.Context(), ch)
-				if (err != nil) == (test.collectResponse == 1) {
-					t.Errorf("expected collectResponse=%v, got err=%v", test.collectResponse, err)
-				}
+				require.NoError(t, collector.Collect(t.Context(), ch))
 				close(ch)
 			}()
 
@@ -505,12 +503,10 @@ func TestCollector_Collect(t *testing.T) {
 	}
 }
 
-// concurrentGCPClient is a test double for client.Client that tracks the
-// peak number of goroutines running ListInstancesInZone and ListDisks
-// simultaneously.  Methods not needed by Collector.Collect are inherited from
-// the embedded interface (nil) and will panic if called unexpectedly.
+// concurrentGCPClient tracks the peak number of goroutines running
+// ListInstancesInZone and ListDisks simultaneously during NodeStore.Populate.
 type concurrentGCPClient struct {
-	client.Client // nil for all non-overridden methods
+	client.Client
 
 	zones []*computev1.Zone
 
@@ -611,10 +607,7 @@ func TestCollector_ZoneConcurrencyDefault(t *testing.T) {
 		logger: logger,
 	}
 
-	ch := make(chan prometheus.Metric, numZones*10)
-	err := collector.Collect(t.Context(), ch)
-	close(ch)
-	require.NoError(t, err)
+	ns.Populate(t.Context())
 
 	assert.LessOrEqual(t, fakeClient.peakConcurrency, DefaultZoneCollectConcurrency,
 		"peak zone goroutine concurrency must not exceed DefaultZoneCollectConcurrency")
