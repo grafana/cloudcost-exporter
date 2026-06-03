@@ -3,6 +3,7 @@ package gke
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"sync"
 	"time"
 
@@ -55,7 +56,7 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 		close(ds.initialPopulation)
 	})
 
-	newDisks := make(map[string][]*Disk)
+	updates := make(map[string][]*Disk)
 	for _, project := range ds.projects {
 		zones, err := ds.gcpClient.GetZones(project)
 		if err != nil {
@@ -96,10 +97,10 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 			})
 		}
 		_ = eg.Wait()
-		newDisks[project] = disks
+		updates[project] = disks
 	}
 
 	ds.mu.Lock()
-	ds.disks = newDisks
+	maps.Copy(ds.disks, updates)
 	ds.mu.Unlock()
 }

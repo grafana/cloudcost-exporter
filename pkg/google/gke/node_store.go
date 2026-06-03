@@ -3,6 +3,7 @@ package gke
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"sync"
 	"time"
 
@@ -55,7 +56,7 @@ func (ns *NodeStore) Populate(ctx context.Context) {
 		close(ns.initialPopulation)
 	})
 
-	newNodes := make(map[string][]*client.MachineSpec)
+	updates := make(map[string][]*client.MachineSpec)
 	for _, project := range ns.projects {
 		zones, err := ns.gcpClient.GetZones(project)
 		if err != nil {
@@ -88,10 +89,10 @@ func (ns *NodeStore) Populate(ctx context.Context) {
 			})
 		}
 		_ = eg.Wait()
-		newNodes[project] = instances
+		updates[project] = instances
 	}
 
 	ns.mu.Lock()
-	ns.nodes = newNodes
+	maps.Copy(ns.nodes, updates)
 	ns.mu.Unlock()
 }
