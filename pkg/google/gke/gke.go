@@ -158,8 +158,8 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "metrics collected",
 		slog.Duration("duration", time.Since(now)),
-		slog.Int("nodes", nodeCount),
-		slog.Int("disks", diskCount))
+		slog.Int("nodes_emitted", nodeCount),
+		slog.Int("disks_emitted", diskCount))
 	return nil
 }
 
