@@ -504,7 +504,8 @@ func TestCollector_Collect(t *testing.T) {
 }
 
 // concurrentGCPClient tracks the peak number of goroutines running
-// ListInstancesInZone and ListDisks simultaneously during NodeStore.Populate.
+// ListInstancesInZone and ListDisks simultaneously during NodeStore.Populate
+// and DiskStore.Populate.
 type concurrentGCPClient struct {
 	client.Client
 
