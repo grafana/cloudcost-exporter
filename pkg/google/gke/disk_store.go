@@ -13,7 +13,7 @@ import (
 
 const (
 	diskRefreshInterval          = 15 * time.Minute
-	diskPopulateConcurrencyLimit = 20
+	diskPopulateConcurrencyLimit = 10
 )
 
 type DiskStore struct {

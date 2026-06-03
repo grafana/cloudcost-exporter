@@ -13,7 +13,7 @@ import (
 
 const (
 	nodeRefreshInterval          = 5 * time.Minute
-	nodePopulateConcurrencyLimit = 20
+	nodePopulateConcurrencyLimit = 10
 )
 
 type NodeStore struct {
