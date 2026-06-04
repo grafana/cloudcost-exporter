@@ -83,7 +83,7 @@ func TestCollect_EmitsCharacterMetrics(t *testing.T) {
 	inputMetric := metricByName(results, "cloudcost_gcp_vertex_input_usd_per_1k_characters")
 	require.NotNil(t, inputMetric)
 	assert.Equal(t, "translation-llm", inputMetric.Labels["model_id"])
-	assert.Equal(t, "unknown", inputMetric.Labels["family"])
+	assert.Equal(t, "google", inputMetric.Labels["family"])
 	assert.Equal(t, "global", inputMetric.Labels["region"])
 	assert.Equal(t, "on_demand", inputMetric.Labels["price_tier"])
 	assert.InDelta(t, 0.05, inputMetric.Value, 1e-9)
@@ -91,7 +91,7 @@ func TestCollect_EmitsCharacterMetrics(t *testing.T) {
 	outputMetric := metricByName(results, "cloudcost_gcp_vertex_output_usd_per_1k_characters")
 	require.NotNil(t, outputMetric)
 	assert.Equal(t, "translation-llm", outputMetric.Labels["model_id"])
-	assert.Equal(t, "unknown", outputMetric.Labels["family"])
+	assert.Equal(t, "google", outputMetric.Labels["family"])
 	assert.Equal(t, "global", outputMetric.Labels["region"])
 	assert.Equal(t, "on_demand", outputMetric.Labels["price_tier"])
 	assert.InDelta(t, 0.15, outputMetric.Value, 1e-9)
@@ -114,6 +114,8 @@ func TestFamilyFromModelID(t *testing.T) {
 		{"cloud-vertex-ai-model-garden-model-as-a-service-glm-5", "unknown"},
 		{"cloud-vertex-ai-model-garden-model-as-a-service-minimax-m2", "minimax"},
 		{"cloud-vertex-ai-model-garden-model-as-a-service-kimi-k2-thinking", "moonshot"},
+		{"adaptive-machine-translation", "google"},
+		{"translation-llm", "google"},
 		{"mistral-large", "unknown"},
 	}
 	for _, tc := range cases {

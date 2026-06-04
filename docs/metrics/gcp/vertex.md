@@ -70,7 +70,7 @@ Tiers are composed from up to three modifiers: a `thinking_` prefix, a `cached_`
 | Label | Values | Description |
 |-------|--------|-------------|
 | `model_id` | e.g. `translation-llm` | Model name, normalised to lowercase with spaces replaced by hyphens |
-| `family` | `google`, `unknown` | Model provider family |
+| `family` | `google`, `unknown` | Model provider family; `unknown` for unrecognised model prefixes |
 | `region` | e.g. `global` | GCP region |
 | `price_tier` | `on_demand`, `batch` | Running mode derived from the GCP SKU description |
 

@@ -178,6 +178,8 @@ func familyFromModelID(model string) string {
 		return "google" // Gemma is Google DeepMind's open model family
 	case strings.HasPrefix(model, "semantic"):
 		return "google" // Discovery Engine reranking is a Google service
+	case strings.Contains(model, "translation"):
+		return "google" // Cloud Translation models are a Google service
 	case strings.Contains(model, "deepseek"):
 		return "deepseek"
 	case strings.Contains(model, "llama"):
