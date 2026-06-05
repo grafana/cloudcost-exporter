@@ -149,8 +149,8 @@ github.com/googleapis/enterprise-certificate-proxy v0.3.16 h1:F/VPrx0YPBdksZJQdC
 github.com/googleapis/enterprise-certificate-proxy v0.3.16/go.mod h1:9Yb0eAkH/Xqhvv3zbeKf/+wMJqCeocWc6KIhDvEAuYE=
 github.com/googleapis/gax-go/v2 v2.22.0 h1:PjIWBpgGIVKGoCXuiCoP64altEJCj3/Ei+kSU5vlZD4=
 github.com/googleapis/gax-go/v2 v2.22.0/go.mod h1:irWBbALSr0Sk3qlqb9SyJ1h68WjgeFuiOzI4Rqw5+aY=
-github.com/grafana/grafana-foundation-sdk/go v0.0.13 h1:lQdaxgOg/kV9IKF3SmTtdM+Bw7/WAjBVTZNTMke6N94=
-github.com/grafana/grafana-foundation-sdk/go v0.0.13/go.mod h1:48EA8jF85SrReYflLa39Sk34b6NpxwJPBwjF3TJgRpE=
+github.com/grafana/grafana-foundation-sdk/go v0.0.16 h1:SLcU8K/YVCToj7/a+7NT/AosaH0mAJlZQjbZ1WX6X/E=
+github.com/grafana/grafana-foundation-sdk/go v0.0.16/go.mod h1:48EA8jF85SrReYflLa39Sk34b6NpxwJPBwjF3TJgRpE=
 github.com/keybase/go-keychain v0.0.1 h1:way+bWYa6lDppZoZcgMbYsvC7GxljxrskdNInRtuthU=
 github.com/keybase/go-keychain v0.0.1/go.mod h1:PdEILRW3i9D8JcdM+FmY6RwkHGnhHxXwkPPMeUgOK1k=
 github.com/klauspost/compress v1.18.0 h1:c/Cqfb0r+Yi+JtIEq73FWXVkRonBlf0CRNYc8Zttxdo=
