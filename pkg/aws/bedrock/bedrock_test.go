@@ -660,14 +660,14 @@ func TestCollect_EmitsMarketplaceTokenMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 
-	inputMetric := metricByName(results, "cloudcost_aws_bedrock_token_input_usd_per_1k_tokens")
+	inputMetric := metricByName(results, "cloudcost_aws_bedrock_input_usd_per_1k_tokens")
 	require.NotNil(t, inputMetric)
 	assert.Equal(t, "claude-sonnet-4.6", inputMetric.Labels["model_id"])
 	assert.Equal(t, "anthropic", inputMetric.Labels["family"])
 	assert.Equal(t, "on_demand", inputMetric.Labels["price_tier"])
 	assert.InDelta(t, 0.003, inputMetric.Value, 1e-9)
 
-	outputMetric := metricByName(results, "cloudcost_aws_bedrock_token_output_usd_per_1k_tokens")
+	outputMetric := metricByName(results, "cloudcost_aws_bedrock_output_usd_per_1k_tokens")
 	require.NotNil(t, outputMetric)
 	assert.InDelta(t, 0.015, outputMetric.Value, 1e-9)
 }
@@ -769,7 +769,7 @@ func TestNew_DegradesToStandardPricingWhenMarketplaceAPIUnavailable(t *testing.T
 	require.NoError(t, err)
 
 	// Standard pricing still flows through despite the marketplace failure.
-	inputMetric := metricByName(results, "cloudcost_aws_bedrock_token_input_usd_per_1k_tokens")
+	inputMetric := metricByName(results, "cloudcost_aws_bedrock_input_usd_per_1k_tokens")
 	require.NotNil(t, inputMetric)
 	assert.Equal(t, "Claude3Sonnet", inputMetric.Labels["model_id"])
 }
