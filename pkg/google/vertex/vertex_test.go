@@ -20,21 +20,21 @@ import (
 )
 
 func TestNew_FailsIfPricingInitFails(t *testing.T) {
-	_, err := New(t.Context(), testLogger(),
+	_, err := New(t.Context(), &Config{}, testLogger(),
 		&stubVertexClient{serviceNameErr: fmt.Errorf("billing API down")})
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "failed to initialize pricing map")
 }
 
 func TestNew_FailsIfNoPricingDataReturned(t *testing.T) {
-	_, err := New(t.Context(), testLogger(),
+	_, err := New(t.Context(), &Config{}, testLogger(),
 		&stubVertexClient{serviceName: "services/vertex-ai", skus: nil})
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "failed to initialize pricing map")
 }
 
 func TestCollect_EmitsTokenMetrics(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), &Config{}, testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{
@@ -66,7 +66,7 @@ func TestCollect_EmitsTokenMetrics(t *testing.T) {
 }
 
 func TestCollect_EmitsCharacterMetrics(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), &Config{}, testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{
@@ -126,7 +126,7 @@ func TestFamilyFromModelID(t *testing.T) {
 }
 
 func TestCollect_EmitsComputeMetrics(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), &Config{}, testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{
@@ -153,7 +153,7 @@ func TestCollect_EmitsComputeMetrics(t *testing.T) {
 }
 
 func TestCollect_EmitsRerankingMetrics(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), &Config{}, testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{
@@ -177,7 +177,7 @@ func TestCollect_EmitsRerankingMetrics(t *testing.T) {
 }
 
 func TestCollect_DiscoveryEngineUnavailable_RerankingOmitted(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), &Config{}, testLogger(),
 		&stubVertexClient{
 			serviceName:      "services/vertex-ai",
 			deServiceNameErr: fmt.Errorf("discovery engine billing API unavailable"),
@@ -195,7 +195,7 @@ func TestCollect_DiscoveryEngineUnavailable_RerankingOmitted(t *testing.T) {
 }
 
 func TestCollect_ContextCancellation(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), &Config{}, testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{

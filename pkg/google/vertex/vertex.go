@@ -19,6 +19,11 @@ const (
 	PriceRefreshInterval = 24 * time.Hour
 )
 
+// Config holds configuration for the Vertex AI collector.
+type Config struct {
+	ScrapeInterval time.Duration
+}
+
 var (
 	vertexTokenInputDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.InputTokenCostSuffix,
@@ -60,7 +65,7 @@ type Collector struct {
 
 // New creates and initialises a Vertex AI Collector.
 // Pricing is fetched at construction time; an error means the collector cannot be used.
-func New(ctx context.Context, logger *slog.Logger, gcpClient client.Client) (*Collector, error) {
+func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient client.Client) (*Collector, error) {
 	logger = logger.With("collector", subsystem)
 
 	pm, err := NewPricingMap(ctx, logger, gcpClient)
@@ -68,8 +73,13 @@ func New(ctx context.Context, logger *slog.Logger, gcpClient client.Client) (*Co
 		return nil, fmt.Errorf("failed to initialize pricing map: %w", err)
 	}
 
+	refreshInterval := config.ScrapeInterval
+	if refreshInterval == 0 {
+		refreshInterval = PriceRefreshInterval
+	}
+
 	go func() {
-		ticker := time.NewTicker(PriceRefreshInterval)
+		ticker := time.NewTicker(refreshInterval)
 		defer ticker.Stop()
 		for {
 			select {

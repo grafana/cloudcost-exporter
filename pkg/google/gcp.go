@@ -162,7 +162,9 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 				continue
 			}
 		case "VERTEX":
-			collector, err = vertex.New(ctx, logger, gcpClient)
+			collector, err = vertex.New(ctx, &vertex.Config{
+				ScrapeInterval: config.ScrapeInterval,
+			}, logger, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
