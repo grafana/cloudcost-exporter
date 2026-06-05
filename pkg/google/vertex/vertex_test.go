@@ -152,6 +152,23 @@ func TestCollect_EmitsComputeMetrics(t *testing.T) {
 	assert.InDelta(t, 0.15, spot.Value, 1e-9)
 }
 
+func TestCollect_OmitsOnDemandComputeMetricWhenPriceIsZero(t *testing.T) {
+	c, err := New(t.Context(), &Config{}, testLogger(),
+		&stubVertexClient{
+			serviceName: "services/vertex-ai",
+			skus: []*billingpb.Sku{
+				newComputeSKU("Spot Custom Training n1-standard-4 running in us-central1", "us-central1", 0, 150000000),
+			},
+		})
+	require.NoError(t, err)
+
+	results, err := collectVertexMetrics(t, c)
+	require.NoError(t, err)
+
+	assert.Nil(t, metricByLabel(results, "cloudcost_gcp_vertex_instance_total_usd_per_hour", "price_tier", "on_demand"))
+	assert.NotNil(t, metricByLabel(results, "cloudcost_gcp_vertex_instance_total_usd_per_hour", "price_tier", "spot"))
+}
+
 func TestCollect_EmitsRerankingMetrics(t *testing.T) {
 	c, err := New(t.Context(), &Config{}, testLogger(),
 		&stubVertexClient{

@@ -158,8 +158,10 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	for region, machines := range snapshot.compute {
 		for machineType, useCases := range machines {
 			for useCase, pricing := range useCases {
-				ch <- prometheus.MustNewConstMetric(vertexComputeCostDesc, prometheus.GaugeValue,
-					pricing.OnDemandPerHour, machineType, useCase, region, "on_demand")
+				if pricing.OnDemandPerHour > 0 {
+					ch <- prometheus.MustNewConstMetric(vertexComputeCostDesc, prometheus.GaugeValue,
+						pricing.OnDemandPerHour, machineType, useCase, region, "on_demand")
+				}
 				if pricing.SpotPerHour > 0 {
 					ch <- prometheus.MustNewConstMetric(vertexComputeCostDesc, prometheus.GaugeValue,
 						pricing.SpotPerHour, machineType, useCase, region, "spot")
