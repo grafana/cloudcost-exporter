@@ -9,6 +9,7 @@
 - **[ELB](./aws/elb.md)** - Elastic Load Balancers (ALB, NLB)
 - **[NAT Gateway](./aws/natgateway.md)** - Network Address Translation gateways
 - **[VPC](./aws/vpc.md)** - VPC endpoints and services
+- **[Bedrock](./aws/bedrock.md)** - Foundation model token and search-unit pricing (first-party and Marketplace)
 
 ## GCP Services
 
