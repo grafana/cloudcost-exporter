@@ -3,6 +3,7 @@ package gke
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -618,4 +619,74 @@ func TestCollector_ZoneConcurrencyDefault(t *testing.T) {
 
 	assert.LessOrEqual(t, fakeClient.peakConcurrency, DefaultZoneCollectConcurrency,
 		"peak zone goroutine concurrency must not exceed DefaultZoneCollectConcurrency")
+}
+
+var errZoneAPI = errors.New("simulated zone API error")
+
+type listInstancesErrClient struct {
+	client.Client
+	zones []*computev1.Zone
+}
+
+func (c *listInstancesErrClient) GetZones(_ string) ([]*computev1.Zone, error) {
+	return c.zones, nil
+}
+
+func (c *listInstancesErrClient) ListInstancesInZone(_ string, _ string) ([]*client.MachineSpec, error) {
+	return nil, errZoneAPI
+}
+
+func (c *listInstancesErrClient) ListDisks(_ context.Context, _ string, _ string) ([]*computev1.Disk, error) {
+	return nil, nil
+}
+
+type listDisksErrClient struct {
+	client.Client
+	zones []*computev1.Zone
+}
+
+func (c *listDisksErrClient) GetZones(_ string) ([]*computev1.Zone, error) {
+	return c.zones, nil
+}
+
+func (c *listDisksErrClient) ListInstancesInZone(_ string, _ string) ([]*client.MachineSpec, error) {
+	return nil, nil
+}
+
+func (c *listDisksErrClient) ListDisks(_ context.Context, _ string, _ string) ([]*computev1.Disk, error) {
+	return nil, errZoneAPI
+}
+
+func newTestCollector(t *testing.T, gcpClient client.Client) *Collector {
+	t.Helper()
+	return &Collector{
+		gcpClient: gcpClient,
+		config:    &Config{},
+		projects:  []string{"proj1"},
+		pricingMap: &PricingMap{
+			compute: map[string]*FamilyPricing{},
+			storage: map[string]*StoragePricing{},
+		},
+		logger: logger,
+	}
+}
+
+func TestCollector_Collect_ZoneErrors(t *testing.T) {
+	zones := []*computev1.Zone{{Name: "us-central1-a"}}
+
+	t.Run("ListInstancesInZone error propagates", func(t *testing.T) {
+		collector := newTestCollector(t, &listInstancesErrClient{zones: zones})
+		ch := make(chan prometheus.Metric, 10)
+		err := collector.Collect(t.Context(), ch)
+		close(ch)
+		require.ErrorIs(t, err, errZoneAPI)
+	})
+
+	t.Run("ListDisks error propagates", func(t *testing.T) {
+		collector := newTestCollector(t, &listDisksErrClient{zones: zones})
+		ch := make(chan prometheus.Metric, 10)
+		err := collector.Collect(t.Context(), ch)
+		close(ch)
+		require.ErrorIs(t, err, errZoneAPI)
+	})
 }
