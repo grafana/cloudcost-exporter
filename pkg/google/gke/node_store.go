@@ -7,8 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 )
 
@@ -66,29 +64,31 @@ func (ns *NodeStore) Populate(ctx context.Context) {
 			continue
 		}
 
-		eg, egCtx := errgroup.WithContext(ctx)
-		eg.SetLimit(nodePopulateConcurrencyLimit)
-
+		sem := make(chan struct{}, nodePopulateConcurrencyLimit)
+		var wg sync.WaitGroup
 		var mu sync.Mutex
 		var instances []*client.MachineSpec
 
 		for _, zone := range zones {
-			eg.Go(func() error {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
 				results, err := ns.gcpClient.ListInstancesInZone(project, zone.Name)
 				if err != nil {
-					ns.logger.LogAttrs(egCtx, slog.LevelError, "failed to list instances in zone",
+					ns.logger.LogAttrs(ctx, slog.LevelError, "failed to list instances in zone",
 						slog.String("project", project),
 						slog.String("zone", zone.Name),
 						slog.String("error", err.Error()))
-					return nil
+					return
 				}
 				mu.Lock()
 				instances = append(instances, results...)
 				mu.Unlock()
-				return nil
-			})
+			}()
 		}
-		_ = eg.Wait()
+		wg.Wait()
 		updates[project] = instances
 	}
 

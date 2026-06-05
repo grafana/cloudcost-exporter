@@ -7,8 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 )
 
@@ -66,22 +64,25 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 			continue
 		}
 
-		eg, egCtx := errgroup.WithContext(ctx)
-		eg.SetLimit(diskPopulateConcurrencyLimit)
-
+		sem := make(chan struct{}, diskPopulateConcurrencyLimit)
+		var wg sync.WaitGroup
 		var mu sync.Mutex
 		seen := make(map[string]bool)
 		var disks []*Disk
 
 		for _, zone := range zones {
-			eg.Go(func() error {
-				results, err := ds.gcpClient.ListDisks(egCtx, project, zone.Name)
+			wg.Add(1)
+			sem <- struct{}{}
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+				results, err := ds.gcpClient.ListDisks(ctx, project, zone.Name)
 				if err != nil {
-					ds.logger.LogAttrs(egCtx, slog.LevelError, "failed to list disks in zone",
+					ds.logger.LogAttrs(ctx, slog.LevelError, "failed to list disks in zone",
 						slog.String("project", project),
 						slog.String("zone", zone.Name),
 						slog.String("error", err.Error()))
-					return nil
+					return
 				}
 				mu.Lock()
 				for _, raw := range results {
@@ -93,10 +94,9 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 					disks = append(disks, d)
 				}
 				mu.Unlock()
-				return nil
-			})
+			}()
 		}
-		_ = eg.Wait()
+		wg.Wait()
 		updates[project] = disks
 	}
 
