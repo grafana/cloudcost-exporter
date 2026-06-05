@@ -662,7 +662,7 @@ func TestCollect_EmitsMarketplaceTokenMetrics(t *testing.T) {
 
 	inputMetric := metricByName(results, "cloudcost_aws_bedrock_token_input_usd_per_1k_tokens")
 	require.NotNil(t, inputMetric)
-	assert.Equal(t, "Claude_Sonnet_4.6", inputMetric.Labels["model_id"])
+	assert.Equal(t, "claude-sonnet-4.6", inputMetric.Labels["model_id"])
 	assert.Equal(t, "anthropic", inputMetric.Labels["family"])
 	assert.Equal(t, "on_demand", inputMetric.Labels["price_tier"])
 	assert.InDelta(t, 0.003, inputMetric.Value, 1e-9)
@@ -703,7 +703,7 @@ func TestCollect_EmitsMarketplaceSearchUnitMetrics(t *testing.T) {
 
 	m := results[0]
 	assert.Equal(t, "cloudcost_aws_bedrock_search_unit_usd_per_1k_search_units", m.FqName)
-	assert.Equal(t, "Cohere_Rerank_v3.5", m.Labels["model_id"])
+	assert.Equal(t, "cohere-rerank-v3.5", m.Labels["model_id"])
 	assert.Equal(t, "cohere", m.Labels["family"])
 	assert.InDelta(t, 2.0, m.Value, 1e-9)
 }
@@ -740,14 +740,16 @@ func TestCollect_MarketplaceFamilyFilterApplied(t *testing.T) {
 	assert.Equal(t, "anthropic", results[0].Labels["family"])
 }
 
-func TestNew_ReturnsErrorWhenMarketplacePricingAPIUnavailable(t *testing.T) {
+func TestNew_DegradesToStandardPricingWhenMarketplaceAPIUnavailable(t *testing.T) {
+	// Marketplace pricing is best-effort: a marketplace API failure must not drop standard
+	// Bedrock pricing or fail collector creation.
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	pricingClient := mockclient.NewMockClient(ctrl)
 	pricingClient.EXPECT().
 		ListBedrockPrices(gomock.Any(), "us-east-1").
-		Return([]string{}, nil).
+		Return([]string{inputPriceJSON("us-east-1", "USE1", "Claude3Sonnet", "Anthropic", "0.00300")}, nil).
 		Times(1)
 	pricingClient.EXPECT().
 		ListBedrockMarketplacePrices(gomock.Any(), "us-east-1").
@@ -758,8 +760,16 @@ func TestNew_ReturnsErrorWhenMarketplacePricingAPIUnavailable(t *testing.T) {
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
 		Logger:        testLogger(),
+		AccountID:     "123456789012",
 	})
+	require.NoError(t, err)
+	require.NotNil(t, collector)
 
-	assert.Nil(t, collector)
-	require.Error(t, err)
+	results, err := collectMetricResults(t, collector)
+	require.NoError(t, err)
+
+	// Standard pricing still flows through despite the marketplace failure.
+	inputMetric := metricByName(results, "cloudcost_aws_bedrock_token_input_usd_per_1k_tokens")
+	require.NotNil(t, inputMetric)
+	assert.Equal(t, "Claude3Sonnet", inputMetric.Labels["model_id"])
 }

@@ -240,11 +240,18 @@ func newPriceFetcher(pricingClient client.Client, familyFilter *regexp.Regexp, l
 		if err != nil {
 			return nil, err
 		}
+		result := preprocessBedrockPrices(standard, familyFilter, logger)
+
+		// Marketplace pricing is best-effort. A failure fetching AmazonBedrockFoundationModels
+		// must not drop the standard AmazonBedrock pricing, so log and continue with the
+		// standard SKUs rather than failing the whole collector.
 		marketplace, err := pricingClient.ListBedrockMarketplacePrices(ctx, region)
 		if err != nil {
-			return nil, err
+			logger.LogAttrs(ctx, slog.LevelWarn, "failed to fetch Bedrock marketplace pricing, continuing with standard pricing only",
+				slog.String("region", region),
+				slog.String("error", err.Error()))
+			return result, nil
 		}
-		result := preprocessBedrockPrices(standard, familyFilter, logger)
 		result = append(result, preprocessBedrockMarketplacePrices(marketplace, familyFilter, logger)...)
 		return result, nil
 	}
@@ -433,7 +440,7 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 	}
 
 	attrs := &info.Product.Attributes
-	modelID := strings.ReplaceAll(strings.TrimSuffix(attrs.ServiceName, marketplaceSuffix), " ", "_")
+	modelID := normalizeModelID(strings.TrimSuffix(attrs.ServiceName, marketplaceSuffix))
 	if modelID == "" {
 		return "", false, nil
 	}
@@ -481,8 +488,19 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 	return string(modified), true, nil
 }
 
+// normalizeModelID converts a marketplace servicename into a canonical model_id slug:
+// lowercase with spaces replaced by hyphens. This matches the convention used by the
+// GCP vertex collector (pkg/google/vertex), so model IDs are uniform across the AI
+// pricing collectors.
+// Example: "Claude Sonnet 4.6" → "claude-sonnet-4.6"
+func normalizeModelID(raw string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(raw), " ", "-"))
+}
+
 // familyFromServiceName extracts the provider family from a marketplace servicename.
 // E.g. "Claude Sonnet 4.6 (Amazon Bedrock Edition)" → "anthropic".
+// Unrecognised providers return "unknown" rather than guessing from the first word,
+// which keeps the family label bounded and predictable.
 func familyFromServiceName(servicename string) string {
 	lower := strings.ToLower(servicename)
 	switch {
@@ -501,10 +519,7 @@ func familyFromServiceName(servicename string) string {
 	case strings.HasPrefix(lower, "twelvelabs"):
 		return "twelvelabs"
 	default:
-		if i := strings.Index(lower, " "); i >= 0 {
-			return lower[:i]
-		}
-		return lower
+		return "unknown"
 	}
 }
 
