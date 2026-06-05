@@ -91,11 +91,6 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 					}
 					seen[d.Name()] = true
 					disks = append(disks, d)
-					if seen[key] {
-						continue
-					}
-					seen[key] = true
-					disks = append(disks, NewDisk(raw, project))
 				}
 				mu.Unlock()
 				return nil
