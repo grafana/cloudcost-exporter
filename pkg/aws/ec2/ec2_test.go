@@ -469,3 +469,52 @@ func Test_EmitMetricsFromVolumesChannel(t *testing.T) {
 		assert.Contains(t, receivedMsg.Desc().String(), "persistent_volume_usd_per_hour")
 	})
 }
+
+func TestCollector_Collect_RegionErrors(t *testing.T) {
+	listErr := errors.New("simulated ListComputeInstances error")
+	volumeErr := errors.New("simulated ListEBSVolumes error")
+
+	regions := []ec2Types.Region{{RegionName: aws.String("us-east-1")}}
+
+	t.Run("ListComputeInstances error propagates", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockClient := mock_client.NewMockClient(ctrl)
+		mockClient.EXPECT().ListComputeInstances(gomock.Any()).Return(nil, listErr).Times(1)
+		mockClient.EXPECT().ListEBSVolumes(gomock.Any()).Return(nil, nil).Times(1)
+
+		c := &Collector{
+			regions:            regions,
+			awsRegionClientMap: map[string]client.Client{"us-east-1": mockClient},
+			computePricingMap:  NewComputePricingMap(logger, &Config{Regions: regions}),
+			storagePricingMap:  NewStoragePricingMap(logger, &Config{Regions: regions}),
+			logger:             logger,
+			accountID:          "123456789012",
+		}
+
+		ch := make(chan prometheus.Metric, 10)
+		err := c.Collect(t.Context(), ch)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, listErr)
+	})
+
+	t.Run("ListEBSVolumes error propagates", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockClient := mock_client.NewMockClient(ctrl)
+		mockClient.EXPECT().ListComputeInstances(gomock.Any()).Return(nil, nil).Times(1)
+		mockClient.EXPECT().ListEBSVolumes(gomock.Any()).Return(nil, volumeErr).Times(1)
+
+		c := &Collector{
+			regions:            regions,
+			awsRegionClientMap: map[string]client.Client{"us-east-1": mockClient},
+			computePricingMap:  NewComputePricingMap(logger, &Config{Regions: regions}),
+			storagePricingMap:  NewStoragePricingMap(logger, &Config{Regions: regions}),
+			logger:             logger,
+			accountID:          "123456789012",
+		}
+
+		ch := make(chan prometheus.Metric, 10)
+		err := c.Collect(t.Context(), ch)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, volumeErr)
+	})
+}

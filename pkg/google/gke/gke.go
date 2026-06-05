@@ -73,6 +73,7 @@ func (c *Collector) Register(_ provider.Registry) error {
 }
 
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
+	var collectErr error
 	for _, project := range c.projects {
 		zones, err := c.gcpClient.GetZones(project)
 		if err != nil {
@@ -103,7 +104,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 						slog.String("msg", err.Error()))
 
 					instances <- nil
-					return nil
+					return err
 				}
 				c.logger.LogAttrs(egCtx, slog.LevelInfo,
 					"finished listing instances in zone",
@@ -116,25 +117,25 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 			eg.Go(func() error {
 				results, err := c.gcpClient.ListDisks(egCtx, project, zone.Name)
 				if err != nil {
-					c.logger.Error("error listing disks in zone %s: %v",
+					c.logger.Error("error listing disks in zone",
 						slog.String("zone", zone.Name),
 						slog.String("msg", err.Error()))
-					return nil
+					disks <- nil
+					return err
 				}
 				disks <- results
 				return nil
 			})
 		}
 
-		go func() {
-			// Goroutines always return nil; Wait() will not return an error.
-			_ = eg.Wait()
-			close(instances)
-			close(disks)
-		}()
+		if err := eg.Wait(); err != nil && collectErr == nil {
+			collectErr = err
+		}
+		close(instances)
+		close(disks)
 
 		for group := range instances {
-			if instances == nil {
+			if group == nil {
 				continue
 			}
 			for _, instance := range group {
@@ -230,7 +231,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 			}
 		}
 	}
-	return nil
+	return collectErr
 }
 
 func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient client.Client) (*Collector, error) {
