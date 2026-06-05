@@ -85,7 +85,12 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 				}
 				mu.Lock()
 				for _, raw := range results {
-					key := raw.Zone + "/" + raw.Name
+					d := NewDisk(raw, project)
+					if seen[d.Name()] {
+						continue
+					}
+					seen[d.Name()] = true
+					disks = append(disks, d)
 					if seen[key] {
 						continue
 					}
