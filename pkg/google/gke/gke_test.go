@@ -615,9 +615,9 @@ func TestCollector_ZoneConcurrencyDefault(t *testing.T) {
 }
 
 func TestDiskStore_Populate_ConcurrencyLimit(t *testing.T) {
-	// 8 zones → up to 8 goroutines for ListDisks during DiskStore.Populate.
+	// 13 zones → up to 13 goroutines for ListDisks during DiskStore.Populate.
 	// diskPopulateConcurrencyLimit caps the total.
-	const numZones = 8
+	const numZones = 13
 
 	zones := make([]*computev1.Zone, numZones)
 	for i := range numZones {
