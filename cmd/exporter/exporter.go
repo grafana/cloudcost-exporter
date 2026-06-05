@@ -46,10 +46,6 @@ func main() {
 	)
 	cfg.Logger = logs
 
-	if cfg.Providers.GCP.BucketProjectsDeprecated {
-		logs.LogAttrs(ctx, slog.LevelWarn, "'gcp.bucket-projects' is deprecated and will be removed in a future version. Use '--gcp.projects' instead.")
-	}
-
 	csp, err := selectProvider(ctx, &cfg)
 	if err != nil {
 		logs.LogAttrs(ctx, slog.LevelError, "Error selecting provider",
@@ -72,7 +68,6 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.StringVar(&cfg.Provider, "provider", "aws", "aws, gcp, or azure")
 	fs.StringVar(&cfg.Providers.AWS.Profile, "aws.profile", "", "AWS Profile to authenticate with.")
 	fs.Var(&cfg.Providers.GCP.Projects, "gcp.projects", "GCP project(s).")
-	fs.Var(config.NewDeprecatedStringSliceFlag(&cfg.Providers.GCP.Projects, &cfg.Providers.GCP.BucketProjectsDeprecated), "gcp.bucket-projects", "GCP project(s). (deprecated: use --gcp.projects instead)")
 	fs.Var(&cfg.Providers.AWS.Services, "aws.services", "AWS service(s).")
 	fs.Var(&cfg.Providers.AWS.ExcludeRegions, "aws.exclude-regions", "AWS region(s) to exclude from cost collection.")
 	fs.Var(&cfg.Providers.Azure.Services, "azure.services", "Azure service(s): AKS, blob (comma-separated and/or repeat flag; case-insensitive).")
