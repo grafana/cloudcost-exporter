@@ -24,8 +24,6 @@ pkg/google/gcp.go                    # GCP: GCS, GKE, CLB, SQL, VPC
 pkg/azure/azure.go                   # Azure: AKS, blob
 pkg/gatherer/gatherer.go             # Wraps Collect(): duration, errors, metadata metrics
 pkg/utils/consts.go                  # Shared metric suffixes, HoursInMonth, GenerateDesc()
-cmd/dashboards/main.go               # Dashboard generation (grafana-foundation-sdk)
-cloudcost-exporter-dashboards/       # Generated output. Never edit by hand.
 ```
 
 ### Metric naming
@@ -43,13 +41,12 @@ Pattern: `cloudcost_{provider}_{service}_{description}_{unit}`
 make build-binary      # Compile binary (CGO_ENABLED=0)
 make build-image       # Docker image (multi-stage, scratch base)
 make build             # lint + generate + build-binary + build-image
-make test              # lint + generate + build-dashboards + go test
+make test              # lint + generate + go test
 make lint              # golangci-lint v2
 make generate          # go generate (mocks via mockgen/mockery)
-make build-dashboards  # Grafana dashboards
 ```
 
-CI runs on push to `main` and PRs: build, lint, test, dashboard drift check.
+CI runs on push to `main` and PRs: build, lint, test.
 
 Rule: Never push to `main`.
 
@@ -85,7 +82,6 @@ Run `make generate` before writing tests. See reference implementations above fo
 ## Caveats
 
 - **`ExporterName` vs `MetricPrefix`**: `ExporterName` (`cloudcost_exporter`) is for operational metrics. `MetricPrefix` (`cloudcost`) is for cost metrics.
-- **Dashboard drift**: Edit `cmd/dashboards/`, run `make build-dashboards`, commit generated output. CI fails on mismatch.
 - **`main.go` exists for mockery**: Root `main.go` exports constants so mockery finds the package. Entrypoint is `cmd/exporter/exporter.go`.
 - **Silent collector init failures**: Provider skips failed collectors and continues by design so that a collector failing does not fail the whole app. Check startup logs.
 
@@ -103,7 +99,7 @@ Active voice. Cut every word that serves no function. No meta-commentary.
 ### Safe to execute
 
 - `go test ./...`, `go build ./...`, `go vet ./...`
-- `make lint`, `make generate`, `make build-binary`, `make build-dashboards`
+- `make lint`, `make generate`, `make build-binary`
 - `gh pr view`, `gh api --method GET`
 
 ### Requires user approval
