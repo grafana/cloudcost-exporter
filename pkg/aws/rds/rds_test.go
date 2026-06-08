@@ -110,6 +110,79 @@ func TestMultiOrSingleAZ(t *testing.T) {
 	}
 }
 
+func TestCollector_Collect_MultiRegion(t *testing.T) {
+	const validPriceJSON = `{
+            "terms": {
+                "OnDemand": {
+                    "term1": {
+                        "priceDimensions": {
+                            "dim1": {
+                                "pricePerUnit": {"USD": "0.456"}
+                            }
+                        }
+                    }
+                }
+            }
+        }`
+
+	instanceFor := func(region, id string) rdsTypes.DBInstance {
+		return rdsTypes.DBInstance{
+			DBSubnetGroup:        &rdsTypes.DBSubnetGroup{},
+			AvailabilityZone:     aws.String(region + "a"),
+			DBInstanceClass:      aws.String("db.t3.medium"),
+			Engine:               aws.String("postgres"),
+			DBInstanceIdentifier: aws.String(id),
+			MultiAZ:              aws.Bool(false),
+			DbiResourceId:        aws.String(id),
+			DBInstanceArn:        aws.String("arn-" + id),
+		}
+	}
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	regionNames := []string{"us-east-1", "eu-west-1", "ap-southeast-7"}
+	regions := make([]types.Region, 0, len(regionNames))
+	regionMap := make(map[string]client.Client, len(regionNames))
+	for _, region := range regionNames {
+		regions = append(regions, types.Region{RegionName: aws.String(region)})
+		regionClient := mock.NewMockClient(mockCtrl)
+		regionClient.EXPECT().ListRDSInstances(gomock.Any()).
+			Return([]rdsTypes.DBInstance{instanceFor(region, "db-"+region)}, nil).
+			Times(1)
+		regionMap[region] = regionClient
+	}
+
+	// Pricing lookups go through the shared client; serve a valid price for any region.
+	pricingClient := mock.NewMockClient(mockCtrl)
+	pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(validPriceJSON, nil).
+		AnyTimes()
+
+	c := &Collector{
+		pricingMap:     newPricingMap(),
+		regions:        regions,
+		regionMap:      regionMap,
+		scrapeInterval: time.Minute,
+		Client:         pricingClient,
+		accountID:      "123456789012",
+		logger:         slog.Default(),
+	}
+
+	ch := make(chan prometheus.Metric, len(regionNames))
+	err := c.Collect(t.Context(), ch)
+	assert.NoError(t, err)
+	close(ch)
+
+	gotRegions := map[string]bool{}
+	for metric := range ch {
+		gotRegions[utils.ReadMetrics(metric).Labels["region"]] = true
+	}
+	for _, region := range regionNames {
+		assert.True(t, gotRegions[region], "expected a metric for region %s", region)
+	}
+}
+
 func TestCollector_Collect(t *testing.T) {
 	const cacheKey = "us-east-1-db.t3.medium-mysql-Single-AZ-AWS Outposts"
 	validPriceJSON := `{
