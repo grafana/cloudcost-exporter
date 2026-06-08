@@ -445,6 +445,13 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 		return "", false, nil
 	}
 
+	// The marketplace catalog re-lists the Claude 2.x / Instant / 3 Haiku / 3 Sonnet generation
+	// that the standard AmazonBedrock source already prices. Skip those here so each model is
+	// reported under one model_id. Claude 3 Opus, 3.5/3.7, and 4.x are marketplace-only and pass.
+	if _, legacy := legacyMarketplaceModelIDs[modelID]; legacy {
+		return "", false, nil
+	}
+
 	family := familyFromServiceName(attrs.ServiceName)
 	if !familyFilter.MatchString(family) {
 		return "", false, nil
@@ -488,13 +495,38 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 	return string(modified), true, nil
 }
 
+// multiHyphen matches runs of two or more hyphens, produced when a servicename contains a
+// " - " separator (the surrounding spaces each become a hyphen alongside the literal one).
+var multiHyphen = regexp.MustCompile(`-{2,}`)
+
+// legacyMarketplaceModelIDs are normalized model_ids the standard AmazonBedrock source already
+// prices (Claude 2.x as Claude2.0/Claude2.1, Claude Instant as ClaudeInstant, plus Claude3Haiku
+// and Claude3Sonnet). The AmazonBedrockFoundationModels catalog re-lists this generation, which
+// would emit the same model twice under different model_ids; skip them in the marketplace path.
+var legacyMarketplaceModelIDs = map[string]struct{}{
+	"claude":              {},
+	"claude-100k":         {},
+	"claude-instant":      {},
+	"claude-instant-100k": {},
+	"claude-3-haiku":      {},
+	"claude-3-sonnet":     {},
+}
+
 // normalizeModelID converts a marketplace servicename into a canonical model_id slug:
-// lowercase with spaces replaced by hyphens. This matches the convention used by the
+// lowercase, with spaces replaced by hyphens. This matches the convention used by the
 // GCP vertex collector (pkg/google/vertex), so model IDs are uniform across the AI
 // pricing collectors.
-// Example: "Claude Sonnet 4.6" → "claude-sonnet-4.6"
+//
+// Parenthesis characters are dropped but their content is kept, so context variants stay
+// distinct (e.g. "Claude (100K)" → "claude-100k", not "claude"). Runs of hyphens from
+// " - " separators are collapsed, and leading/trailing hyphens are trimmed.
+// Example: "Cohere Embed 3 Model - English" → "cohere-embed-3-model-english"
 func normalizeModelID(raw string) string {
-	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(raw), " ", "-"))
+	s := strings.ToLower(strings.TrimSpace(raw))
+	s = strings.NewReplacer("(", "", ")", "").Replace(s)
+	s = strings.ReplaceAll(s, " ", "-")
+	s = multiHyphen.ReplaceAllString(s, "-")
+	return strings.Trim(s, "-")
 }
 
 // familyFromServiceName extracts the provider family from a marketplace servicename.

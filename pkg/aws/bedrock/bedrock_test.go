@@ -557,6 +557,73 @@ func marketplacePriceJSON(servicename, usagetype, regionCode, price string) stri
 	)
 }
 
+func TestCollect_SkipsLegacyClaudeCoveredByStandardSource(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	pricingClient := mockclient.NewMockClient(ctrl)
+	pricingClient.EXPECT().
+		ListBedrockPrices(gomock.Any(), "us-east-1").
+		Return([]string{}, nil).
+		Times(1)
+	pricingClient.EXPECT().
+		ListBedrockMarketplacePrices(gomock.Any(), "us-east-1").
+		Return([]string{
+			// Legacy generation the standard source already prices: must be skipped.
+			marketplacePriceJSON("Claude 3 Sonnet (Amazon Bedrock Edition)", "USE1-MP:USE1_InputTokenCount-Units", "us-east-1", "3.0"),
+			marketplacePriceJSON("Claude 3 Haiku (Amazon Bedrock Edition)", "USE1-MP:USE1_InputTokenCount-Units", "us-east-1", "0.25"),
+			marketplacePriceJSON("Claude Instant (Amazon Bedrock Edition)", "USE1-MP:USE1_InputTokenCount-Units", "us-east-1", "0.8"),
+			// Marketplace-only: must pass through.
+			marketplacePriceJSON("Claude 3 Opus (Amazon Bedrock Edition)", "USE1-MP:USE1_InputTokenCount-Units", "us-east-1", "15.0"),
+			marketplacePriceJSON("Claude Sonnet 4.6 (Amazon Bedrock Edition)", "USE1-MP:USE1_InputTokenCount-Units", "us-east-1", "3.0"),
+		}, nil).
+		Times(1)
+
+	collector, err := New(t.Context(), &Config{
+		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
+		PricingClient: pricingClient,
+		Logger:        testLogger(),
+		AccountID:     "123456789012",
+	})
+	require.NoError(t, err)
+
+	results, err := collectMetricResults(t, collector)
+	require.NoError(t, err)
+
+	emitted := map[string]bool{}
+	for _, r := range results {
+		emitted[r.Labels["model_id"]] = true
+	}
+	assert.False(t, emitted["claude-3-sonnet"], "legacy claude-3-sonnet should be skipped")
+	assert.False(t, emitted["claude-3-haiku"], "legacy claude-3-haiku should be skipped")
+	assert.False(t, emitted["claude-instant"], "legacy claude-instant should be skipped")
+	assert.True(t, emitted["claude-3-opus"], "marketplace-only claude-3-opus should pass")
+	assert.True(t, emitted["claude-sonnet-4.6"], "claude-sonnet-4.6 should pass")
+}
+
+func TestNormalizeModelID(t *testing.T) {
+	tests := []struct {
+		raw  string
+		want string
+	}{
+		{"Claude Sonnet 4.6", "claude-sonnet-4.6"},
+		{"Cohere Rerank v3.5", "cohere-rerank-v3.5"},
+		// " - " separators collapse to a single hyphen instead of "---".
+		{"Cohere Embed 3 Model - English", "cohere-embed-3-model-english"},
+		{"Cohere Generate Model - Command Light", "cohere-generate-model-command-light"},
+		// Parenthesis content is kept (sans parens) so context variants stay distinct.
+		{"Claude (100K)", "claude-100k"},
+		{"Claude Instant (100K)", "claude-instant-100k"},
+		{"Claude", "claude"},
+		{"  Padded Name  ", "padded-name"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.raw, func(t *testing.T) {
+			assert.Equal(t, tt.want, normalizeModelID(tt.raw))
+		})
+	}
+}
+
 func TestFamilyFromServiceName(t *testing.T) {
 	tests := []struct {
 		servicename string
