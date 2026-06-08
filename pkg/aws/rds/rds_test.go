@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -259,6 +260,53 @@ func TestCollector_Collect_SlowRegionFailsFast(t *testing.T) {
 	}
 	assert.True(t, gotRegions["us-east-1"], "healthy region should still emit a metric")
 	assert.False(t, gotRegions["ap-southeast-7"], "slow region should be skipped, not block")
+}
+
+// TestCollector_Collect_RegionListTimeout verifies the wrap/no-wrap behavior:
+// a zero timeout leaves the region call bounded only by the parent context
+// (backwards-compatible default), while a positive timeout imposes a deadline.
+func TestCollector_Collect_RegionListTimeout(t *testing.T) {
+	tests := []struct {
+		name              string
+		regionListTimeout time.Duration
+		wantDeadline      bool
+	}{
+		{name: "zero disables per-region timeout", regionListTimeout: 0, wantDeadline: false},
+		{name: "positive imposes per-region timeout", regionListTimeout: 30 * time.Second, wantDeadline: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+
+			var gotDeadline bool
+			regionClient := mock.NewMockClient(mockCtrl)
+			regionClient.EXPECT().ListRDSInstances(gomock.Any()).
+				DoAndReturn(func(ctx context.Context) ([]rdsTypes.DBInstance, error) {
+					_, gotDeadline = ctx.Deadline()
+					return nil, nil
+				}).
+				Times(1)
+
+			c := &Collector{
+				pricingMap:        newPricingMap(),
+				regions:           []types.Region{{RegionName: aws.String("us-east-1")}},
+				regionMap:         map[string]client.Client{"us-east-1": regionClient},
+				scrapeInterval:    time.Minute,
+				regionListTimeout: tt.regionListTimeout,
+				Client:            regionClient,
+				accountID:         "123456789012",
+				logger:            slog.Default(),
+			}
+
+			// Parent context carries no deadline, so any deadline observed by the
+			// region call comes from the per-region timeout.
+			ch := make(chan prometheus.Metric, 1)
+			require.NoError(t, c.Collect(context.Background(), ch))
+			assert.Equal(t, tt.wantDeadline, gotDeadline)
+		})
+	}
 }
 
 func TestCollector_Collect(t *testing.T) {
