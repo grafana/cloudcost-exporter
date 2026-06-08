@@ -38,9 +38,10 @@ Restrict which model families are emitted with `--aws.bedrock.families` (a regex
 
 - **account_id**: The AWS account ID (12-digit), resolved via STS GetCallerIdentity
 - **region**: The AWS region for which the price applies
-- **model_id**: Normalized model identifier. The two pricing sources use different conventions:
-  - `AmazonBedrock` emits the `usagetype` slug as published (e.g. `Claude3Sonnet`, `NovaPro`, `Llama4-Scout-17B`).
-  - `AmazonBedrockFoundationModels` emits the `servicename` lowercased with spaces replaced by hyphens (e.g. `claude-sonnet-4.6`, `cohere-rerank-v3.5`, `palmyra-x5`).
+- **model_id**: Normalized model identifier, lowercase with spaces replaced by hyphens, uniform across both pricing sources (e.g. `claude-3-sonnet`, `claude-sonnet-4.6`, `nova-pro`, `llama-3.1-405b`, `cohere-rerank-v3.5`).
+  - `AmazonBedrock` derives it from the human-readable `model` attribute, falling back to the normalized `usagetype` slug for the few SKUs (some Titan, Rerank) that lack `model`.
+  - `AmazonBedrockFoundationModels` derives it from the `servicename`.
+  - Models that AWS prices per modality under one name carry the modality (e.g. `nova-sonic-text`, `nova-sonic-speech`).
 
   `model_id` is a normalized label derived from pricing metadata, not a canonical Bedrock model ID or ARN. The Claude 2.x, Claude Instant, Claude 3 Haiku, and Claude 3 Sonnet generation is priced under both service codes; the collector emits it once from `AmazonBedrock` and skips the `AmazonBedrockFoundationModels` duplicates, so each model appears under a single `model_id`.
 - **family**: Model provider, normalized to lowercase (spaces become underscores) from the `AmazonBedrock` `provider` attribute, or derived from the `AmazonBedrockFoundationModels` `servicename`. The set tracks whatever AWS publishes, so it is open-ended; observed values include `anthropic`, `amazon`, `cohere`, `meta`, `ai21`, `mistral`, `deepseek`, `google`, `qwen`, `nvidia`, `openai`, `writer`, and `twelvelabs`. Amazon-developed models with no provider attribute (Nova, Titan) use `amazon`. A marketplace `servicename` with no recognized provider falls back to `unknown`. Filter with `--aws.bedrock.families`.
