@@ -20,6 +20,7 @@ We have the following development guides available.
 1. [Developer Guide](developer-guide.md) - Setup and development workflow
 2. [Creating a New Module](creating-a-new-module.md) - Add support for a new cloud service
 3. [Release Process](releases.md) - How releases are created
+4. [Deprecation Policy](./deprecation-policy.md) - How to deprecate an existing feature
 
 **Additional**
 - [Logging Guidelines](logging.md) - Best practices for logging
