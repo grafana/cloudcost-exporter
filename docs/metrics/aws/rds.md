@@ -23,6 +23,16 @@ Or via command line:
 --aws.services=ec2,s3,rds
 ```
 
+### Per-region list timeout
+
+The collector queries `DescribeDBInstances` in each region concurrently. `--aws.rds.region-timeout` bounds each region's call (default `15s`):
+
+```bash
+--aws.rds.region-timeout=15s
+```
+
+A region that exceeds the timeout is logged and skipped; the other regions still report. Lower the value to fail slow or unreachable regions fast and keep total collection under the Prometheus `scrape_timeout` (protecting scrape availability). Raise it to wait for complete data from slow regions at the cost of longer scrapes.
+
 ## Labels
 
 - **account_id**: The AWS account ID (12-digit), resolved via STS GetCallerIdentity

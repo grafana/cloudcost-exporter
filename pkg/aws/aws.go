@@ -37,16 +37,17 @@ import (
 )
 
 type Config struct {
-	Services            []string
-	Region              string
-	Profile             string
-	RoleARN             string
-	ExcludeRegions      []string // AWS region names to skip (e.g. me-central-1)
-	ScrapeInterval      time.Duration
-	CollectorTimeout    time.Duration
-	Logger              *slog.Logger
-	AccountID           string
-	BedrockFamilyFilter string // regex matched against family label; default "anthropic|amazon"
+	Services             []string
+	Region               string
+	Profile              string
+	RoleARN              string
+	ExcludeRegions       []string // AWS region names to skip (e.g. me-central-1)
+	ScrapeInterval       time.Duration
+	CollectorTimeout     time.Duration
+	RDSRegionListTimeout time.Duration // per-region timeout for RDS DescribeDBInstances; 0 uses the collector default
+	Logger               *slog.Logger
+	AccountID            string
+	BedrockFamilyFilter  string // regex matched against family label; default "anthropic|amazon"
 }
 
 type AWS struct {
@@ -190,11 +191,12 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				RDSService:     rds.NewFromConfig(awsConfig),
 			})
 			collector, err := rdsCollector.New(ctx, &rdsCollector.Config{
-				ScrapeInterval: config.ScrapeInterval,
-				Regions:        regions,
-				RegionMap:      regionClients,
-				Client:         awsRDSClient,
-				AccountID:      config.AccountID,
+				ScrapeInterval:    config.ScrapeInterval,
+				Regions:           regions,
+				RegionMap:         regionClients,
+				Client:            awsRDSClient,
+				AccountID:         config.AccountID,
+				RegionListTimeout: config.RDSRegionListTimeout,
 			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",

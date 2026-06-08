@@ -43,25 +43,31 @@ type Collector struct {
 }
 
 type Config struct {
-	Regions        []types.Region
-	RegionMap      map[string]client.Client
-	Client         client.Client
-	ScrapeInterval time.Duration
-	AccountID      string
+	Regions           []types.Region
+	RegionMap         map[string]client.Client
+	Client            client.Client
+	ScrapeInterval    time.Duration
+	RegionListTimeout time.Duration
+	AccountID         string
 }
 
 const (
 	serviceName = "RDS"
 
-	// regionListTimeout caps a single region's DescribeDBInstances call so a slow
-	// or unreachable region fails fast instead of consuming the whole collector
-	// budget. Without it, one region riding the full ~60s budget overruns the
-	// Prometheus scrape_timeout and fails the scrape (up=0).
-	regionListTimeout = 15 * time.Second
+	// DefaultRegionListTimeout caps a single region's DescribeDBInstances call so
+	// a slow or unreachable region fails fast instead of consuming the whole
+	// collector budget. Without it, one region riding the full ~60s budget
+	// overruns the Prometheus scrape_timeout and fails the scrape (up=0).
+	// Overridable via the -aws.rds.region-timeout flag.
+	DefaultRegionListTimeout = 15 * time.Second
 )
 
 // New creates an rds collector
 func New(_ context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
+	regionListTimeout := config.RegionListTimeout
+	if regionListTimeout <= 0 {
+		regionListTimeout = DefaultRegionListTimeout
+	}
 	return &Collector{
 		pricingMap:        newPricingMap(),
 		regions:           config.Regions,

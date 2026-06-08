@@ -10,12 +10,13 @@ type Config struct {
 	ProjectID string
 	Providers struct {
 		AWS struct {
-			Profile             string
-			Region              string
-			Services            StringSliceFlag
-			RoleARN             string
-			ExcludeRegions      StringSliceFlag
-			BedrockFamilyFilter string
+			Profile              string
+			Region               string
+			Services             StringSliceFlag
+			RoleARN              string
+			ExcludeRegions       StringSliceFlag
+			BedrockFamilyFilter  string
+			RDSRegionListTimeout time.Duration
 		}
 		GCP struct {
 			DefaultGCSDiscount       int
