@@ -77,6 +77,7 @@ type bedrockProductInfo struct {
 			RegionCode    string `json:"regionCode"`
 			InferenceType string `json:"inferenceType"`
 			Provider      string `json:"provider"`
+			Model         string `json:"model"`
 		} `json:"attributes"`
 	} `json:"product"`
 	Terms struct {
@@ -289,9 +290,20 @@ func encodeBedrockPriceJSON(raw string, familyFilter *regexp.Regexp) (string, bo
 		}
 	}
 
-	modelID, priceTier := parseBedrockModelID(attrs.UsageType)
-	if modelID == "" {
+	slug, priceTier := parseBedrockModelID(attrs.UsageType)
+	if slug == "" {
 		return "", false, nil
+	}
+
+	// Prefer the human-readable `model` attribute, normalized to the same lowercase-hyphen slug
+	// the marketplace source uses (e.g. "Claude 3 Sonnet" -> "claude-3-sonnet"), so model_id is
+	// uniform across both sources. Append the modality segment (e.g. -speech/-text) so models
+	// that AWS prices per modality under one `model` name (Nova Sonic) stay distinct instead of
+	// colliding on one key. SKUs without a `model` attribute (some Titan, Rerank) fall back to
+	// the normalized usagetype slug, keeping the same lowercase-hyphen style.
+	modelID := normalizeModelID(slug)
+	if normalized := normalizeModelID(attrs.Model); normalized != "" {
+		modelID = normalized + modalitySuffix(attrs.UsageType)
 	}
 
 	family := normalizeProvider(attrs.Provider)
@@ -527,6 +539,21 @@ func normalizeModelID(raw string) string {
 	s = strings.ReplaceAll(s, " ", "-")
 	s = multiHyphen.ReplaceAllString(s, "-")
 	return strings.Trim(s, "-")
+}
+
+// modalitySuffix returns the modality segment of a standard usagetype when present. AWS prices
+// some models (Nova Sonic) per modality at different rates while publishing a single `model`
+// name, so the modality must be folded into model_id to keep the variants distinct.
+func modalitySuffix(usagetype string) string {
+	lower := strings.ToLower(usagetype)
+	switch {
+	case strings.Contains(lower, "-speech-"):
+		return "-speech"
+	case strings.Contains(lower, "-text-"):
+		return "-text"
+	default:
+		return ""
+	}
 }
 
 // familyFromServiceName extracts the provider family from a marketplace servicename.

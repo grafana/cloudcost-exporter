@@ -94,7 +94,10 @@ func TestCollect_EmitsInputAndOutputTokenMetrics(t *testing.T) {
 	inputMetric := metricByName(results, "cloudcost_aws_bedrock_input_usd_per_1k_tokens")
 	require.NotNil(t, inputMetric)
 	assert.Equal(t, "us-east-1", inputMetric.Labels["region"])
-	assert.Equal(t, "Claude3Sonnet", inputMetric.Labels["model_id"])
+	// These fixtures omit the `model` attribute, so model_id is the normalized usagetype slug
+	// (fallback path). Real Claude SKUs carry `model`, yielding claude-3-sonnet; see
+	// TestCollect_StandardModelIDUsesModelAttribute.
+	assert.Equal(t, "claude3sonnet", inputMetric.Labels["model_id"])
 	assert.Equal(t, "anthropic", inputMetric.Labels["family"])
 	assert.Equal(t, "on_demand", inputMetric.Labels["price_tier"])
 	assert.Equal(t, "123456789012", inputMetric.Labels["account_id"])
@@ -103,7 +106,7 @@ func TestCollect_EmitsInputAndOutputTokenMetrics(t *testing.T) {
 	outputMetric := metricByName(results, "cloudcost_aws_bedrock_output_usd_per_1k_tokens")
 	require.NotNil(t, outputMetric)
 	assert.Equal(t, "us-east-1", outputMetric.Labels["region"])
-	assert.Equal(t, "Claude3Sonnet", outputMetric.Labels["model_id"])
+	assert.Equal(t, "claude3sonnet", outputMetric.Labels["model_id"])
 	assert.Equal(t, "anthropic", outputMetric.Labels["family"])
 	assert.Equal(t, "on_demand", outputMetric.Labels["price_tier"])
 	assert.InDelta(t, 0.015, outputMetric.Value, 1e-9)
@@ -172,7 +175,7 @@ func TestCollect_LabelsCrossRegionPriceTier(t *testing.T) {
 	m := results[0]
 	assert.Equal(t, "cross_region", m.Labels["price_tier"])
 	assert.Equal(t, "amazon", m.Labels["family"])
-	assert.Equal(t, "NovaPremier", m.Labels["model_id"])
+	assert.Equal(t, "novapremier", m.Labels["model_id"])
 }
 
 func TestCollect_LabelsBatchPriceTier(t *testing.T) {
@@ -206,7 +209,7 @@ func TestCollect_LabelsBatchPriceTier(t *testing.T) {
 	m := results[0]
 	assert.Equal(t, "on_demand_batch", m.Labels["price_tier"])
 	assert.Equal(t, "anthropic", m.Labels["family"])
-	assert.Equal(t, "Claude3Sonnet", m.Labels["model_id"])
+	assert.Equal(t, "claude3sonnet", m.Labels["model_id"])
 }
 
 func TestCollect_FamilyFilterRegexFiltersOtherFamilies(t *testing.T) {
@@ -242,7 +245,7 @@ func TestCollect_FamilyFilterRegexFiltersOtherFamilies(t *testing.T) {
 
 	m := results[0]
 	assert.Equal(t, "anthropic", m.Labels["family"])
-	assert.Equal(t, "Claude3Sonnet", m.Labels["model_id"])
+	assert.Equal(t, "claude3sonnet", m.Labels["model_id"])
 }
 
 func TestCollect_FamilyFilterDefaultEmitsAllFamilies(t *testing.T) {
@@ -492,11 +495,22 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// rawPriceJSON builds a minimal Pricing API JSON item with explicit inferenceType and provider.
+// rawPriceJSON builds a minimal Pricing API JSON item with explicit inferenceType and provider,
+// and no `model` attribute. SKUs built with it exercise the usagetype-slug fallback in
+// encodeBedrockPriceJSON (the path for the rare SKU AWS publishes without a `model` attribute).
 func rawPriceJSON(regionCode, usagetype, inferenceType, provider, price string) string {
 	return fmt.Sprintf(
 		`{"product":{"attributes":{"usagetype":%q,"regionCode":%q,"inferenceType":%q,"provider":%q}},"terms":{"OnDemand":{"term1":{"priceDimensions":{"dim1":{"pricePerUnit":{"USD":%q}}}}}}}`,
 		usagetype, regionCode, inferenceType, provider, price,
+	)
+}
+
+// modelPriceJSON builds a standard SKU that includes the human-readable `model` attribute, which
+// is what the live AWS Pricing API returns. model_id is derived from `model`, not the usagetype.
+func modelPriceJSON(regionCode, usagetype, inferenceType, provider, model, price string) string {
+	return fmt.Sprintf(
+		`{"product":{"attributes":{"usagetype":%q,"regionCode":%q,"inferenceType":%q,"provider":%q,"model":%q}},"terms":{"OnDemand":{"term1":{"priceDimensions":{"dim1":{"pricePerUnit":{"USD":%q}}}}}}}`,
+		usagetype, regionCode, inferenceType, provider, model, price,
 	)
 }
 
@@ -622,6 +636,83 @@ func TestNormalizeModelID(t *testing.T) {
 			assert.Equal(t, tt.want, normalizeModelID(tt.raw))
 		})
 	}
+}
+
+func TestCollect_StandardModelIDUsesModelAttribute(t *testing.T) {
+	// The standard source derives model_id from the human-readable `model` attribute, normalized
+	// to the same lowercase-hyphen slug the marketplace source uses, so the two match.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	pricingClient := mockclient.NewMockClient(ctrl)
+	pricingClient.EXPECT().
+		ListBedrockPrices(gomock.Any(), "us-east-1").
+		Return([]string{
+			modelPriceJSON("us-east-1", "USE1-Claude3Sonnet-input-tokens", "Input tokens", "Anthropic", "Claude 3 Sonnet", "0.00300"),
+			modelPriceJSON("us-east-1", "USE1-Llama3-1-405B-input-tokens", "Input tokens", "Meta", "Llama 3.1 405B", "0.00240"),
+		}, nil).
+		Times(1)
+	pricingClient.EXPECT().
+		ListBedrockMarketplacePrices(gomock.Any(), "us-east-1").
+		Return([]string{}, nil).
+		Times(1)
+
+	collector, err := New(t.Context(), &Config{
+		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
+		PricingClient: pricingClient,
+		Logger:        testLogger(),
+		AccountID:     "123456789012",
+	})
+	require.NoError(t, err)
+
+	results, err := collectMetricResults(t, collector)
+	require.NoError(t, err)
+
+	ids := map[string]bool{}
+	for _, r := range results {
+		ids[r.Labels["model_id"]] = true
+	}
+	assert.True(t, ids["claude-3-sonnet"], "expected normalized claude-3-sonnet, got %v", ids)
+	assert.True(t, ids["llama-3.1-405b"], "expected normalized llama-3.1-405b, got %v", ids)
+}
+
+func TestCollect_StandardModelIDDisambiguatesNovaSonicModality(t *testing.T) {
+	// Nova Sonic prices text and speech tokens differently while publishing one `model` name.
+	// The modality must fold into model_id so the two prices do not collide on a single key.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	pricingClient := mockclient.NewMockClient(ctrl)
+	pricingClient.EXPECT().
+		ListBedrockPrices(gomock.Any(), "us-east-1").
+		Return([]string{
+			modelPriceJSON("us-east-1", "USE1-NovaSonic-text-input-tokens", "Input tokens", "", "Nova Sonic", "0.00006"),
+			modelPriceJSON("us-east-1", "USE1-NovaSonic-speech-input-tokens", "Input tokens", "", "Nova Sonic", "0.00340"),
+		}, nil).
+		Times(1)
+	pricingClient.EXPECT().
+		ListBedrockMarketplacePrices(gomock.Any(), "us-east-1").
+		Return([]string{}, nil).
+		Times(1)
+
+	collector, err := New(t.Context(), &Config{
+		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
+		PricingClient: pricingClient,
+		Logger:        testLogger(),
+		AccountID:     "123456789012",
+	})
+	require.NoError(t, err)
+
+	results, err := collectMetricResults(t, collector)
+	require.NoError(t, err)
+	require.Len(t, results, 2, "text and speech must not collide into one series")
+
+	byID := map[string]float64{}
+	for _, r := range results {
+		byID[r.Labels["model_id"]] = r.Value
+	}
+	assert.InDelta(t, 0.00006, byID["nova-sonic-text"], 1e-9)
+	assert.InDelta(t, 0.00340, byID["nova-sonic-speech"], 1e-9)
 }
 
 func TestFamilyFromServiceName(t *testing.T) {
@@ -838,5 +929,5 @@ func TestNew_DegradesToStandardPricingWhenMarketplaceAPIUnavailable(t *testing.T
 	// Standard pricing still flows through despite the marketplace failure.
 	inputMetric := metricByName(results, "cloudcost_aws_bedrock_input_usd_per_1k_tokens")
 	require.NotNil(t, inputMetric)
-	assert.Equal(t, "Claude3Sonnet", inputMetric.Labels["model_id"])
+	assert.Equal(t, "claude3sonnet", inputMetric.Labels["model_id"])
 }
