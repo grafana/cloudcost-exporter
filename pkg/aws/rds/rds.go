@@ -53,27 +53,19 @@ type Config struct {
 
 const (
 	serviceName = "RDS"
-
-	// DefaultRegionListTimeout caps a single region's DescribeDBInstances call so
-	// a slow or unreachable region fails fast instead of consuming the whole
-	// collector budget. Without it, one region riding the full ~60s budget
-	// overruns the Prometheus scrape_timeout and fails the scrape (up=0).
-	// Overridable via the -aws.rds.region-timeout flag.
-	DefaultRegionListTimeout = 15 * time.Second
 )
 
-// New creates an rds collector
+// New creates an rds collector. A RegionListTimeout of 0 leaves each region's
+// DescribeDBInstances call bounded only by the shared collector context
+// (-collector-interval); a positive value caps it per region so a slow or
+// unreachable region fails fast instead of overrunning the scrape.
 func New(_ context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
-	regionListTimeout := config.RegionListTimeout
-	if regionListTimeout <= 0 {
-		regionListTimeout = DefaultRegionListTimeout
-	}
 	return &Collector{
 		pricingMap:        newPricingMap(),
 		regions:           config.Regions,
 		regionMap:         config.RegionMap,
 		scrapeInterval:    config.ScrapeInterval,
-		regionListTimeout: regionListTimeout,
+		regionListTimeout: config.RegionListTimeout,
 		Client:            config.Client,
 		accountID:         config.AccountID,
 		logger:            logger.With("collector", serviceName),
@@ -166,10 +158,15 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 // fetchInstancesData lists RDS instances for a single region, sending the
 // result to instanceCh. On failure it logs the error and returns.
 func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.Client, region string, instanceCh chan []rdsTypes.DBInstance) {
-	regionCtx, cancel := context.WithTimeout(ctx, c.regionListTimeout)
-	defer cancel()
+	// A positive regionListTimeout caps this region's call; 0 leaves it bounded
+	// only by the parent collector context (backwards-compatible default).
+	if c.regionListTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.regionListTimeout)
+		defer cancel()
+	}
 
-	is, err := regionClient.ListRDSInstances(regionCtx)
+	is, err := regionClient.ListRDSInstances(ctx)
 	if err != nil {
 		c.logger.Error("error listing RDS instances", "region", region, "error", err)
 		return

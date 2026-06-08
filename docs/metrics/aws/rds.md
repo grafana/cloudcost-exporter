@@ -25,13 +25,13 @@ Or via command line:
 
 ### Per-region list timeout
 
-The collector queries `DescribeDBInstances` in each region concurrently. `--aws.rds.region-timeout` bounds each region's call (default `15s`):
+The collector queries `DescribeDBInstances` in each region concurrently. `--aws.rds.region-timeout` bounds each region's call:
 
 ```bash
 --aws.rds.region-timeout=15s
 ```
 
-A region that exceeds the timeout is logged and skipped; the other regions still report. Lower the value to fail slow or unreachable regions fast and keep total collection under the Prometheus `scrape_timeout` (protecting scrape availability). Raise it to wait for complete data from slow regions at the cost of longer scrapes.
+The default is `0`, which leaves each region bounded only by the collector context (`--collector-interval`) — a slow or unreachable region can consume the whole budget and overrun the Prometheus `scrape_timeout`, failing the scrape (`up=0`). Set a positive value (e.g. `15s`) to fail such regions fast: the region is logged and skipped while the others still report, keeping total collection under the scrape timeout and protecting scrape availability. Raise it to wait for complete data from slow regions at the cost of longer scrapes.
 
 ## Labels
 
