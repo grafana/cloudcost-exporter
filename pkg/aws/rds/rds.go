@@ -32,13 +32,14 @@ var (
 
 // Collector is a prometheus collector that collects metrics from AWS RDS clusters.
 type Collector struct {
-	regions        []types.Region
-	regionMap      map[string]client.Client
-	scrapeInterval time.Duration
-	Client         client.Client
-	pricingMap     *pricingMap
-	accountID      string
-	logger         *slog.Logger
+	regions           []types.Region
+	regionMap         map[string]client.Client
+	scrapeInterval    time.Duration
+	regionListTimeout time.Duration
+	Client            client.Client
+	pricingMap        *pricingMap
+	accountID         string
+	logger            *slog.Logger
 }
 
 type Config struct {
@@ -51,18 +52,25 @@ type Config struct {
 
 const (
 	serviceName = "RDS"
+
+	// regionListTimeout caps a single region's DescribeDBInstances call so a slow
+	// or unreachable region fails fast instead of consuming the whole collector
+	// budget. Without it, one region riding the full ~60s budget overruns the
+	// Prometheus scrape_timeout and fails the scrape (up=0).
+	regionListTimeout = 15 * time.Second
 )
 
 // New creates an rds collector
 func New(_ context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
 	return &Collector{
-		pricingMap:     newPricingMap(),
-		regions:        config.Regions,
-		regionMap:      config.RegionMap,
-		scrapeInterval: config.ScrapeInterval,
-		Client:         config.Client,
-		accountID:      config.AccountID,
-		logger:         logger.With("collector", serviceName),
+		pricingMap:        newPricingMap(),
+		regions:           config.Regions,
+		regionMap:         config.RegionMap,
+		scrapeInterval:    config.ScrapeInterval,
+		regionListTimeout: regionListTimeout,
+		Client:            config.Client,
+		accountID:         config.AccountID,
+		logger:            logger.With("collector", serviceName),
 	}, nil
 }
 
@@ -152,7 +160,10 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 // fetchInstancesData lists RDS instances for a single region, sending the
 // result to instanceCh. On failure it logs the error and returns.
 func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.Client, region string, instanceCh chan []rdsTypes.DBInstance) {
-	is, err := regionClient.ListRDSInstances(ctx)
+	regionCtx, cancel := context.WithTimeout(ctx, c.regionListTimeout)
+	defer cancel()
+
+	is, err := regionClient.ListRDSInstances(regionCtx)
 	if err != nil {
 		c.logger.Error("error listing RDS instances", "region", region, "error", err)
 		return
