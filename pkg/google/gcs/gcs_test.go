@@ -295,7 +295,7 @@ cloudcost_gcp_gcs_bucket_info{bucket_name="testbucket-2",location="us",location_
 # HELP cloudcost_gcp_gcs_operation_by_location_usd_per_krequest Operation cost of GCS objects by location, storage_class, and opclass. Cost represented in USD/(1k req)
 # TYPE cloudcost_gcp_gcs_operation_by_location_usd_per_krequest gauge
 cloudcost_gcp_gcs_operation_by_location_usd_per_krequest{location="us-east1",opclass="class-a",storage_class="REGIONAL"} 0.004
-# HELP cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest Discount for operation cost of GCS objects by location, storage_class, and opclass. Cost represented in USD/(1k req)
+# HELP cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest DEPRECATED (removal in v2.0.0, no replacement): Discount for operation cost of GCS objects by location, storage_class, and opclass. Cost represented in USD/(1k req)
 # TYPE cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest gauge
 cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="dual-region",opclass="class-a",storage_class="MULTI_REGIONAL"} 0.595
 cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="dual-region",opclass="class-a",storage_class="STANDARD"} 0.595
@@ -319,7 +319,7 @@ cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type=
 cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-b",storage_class="NEARLINE"} 0.19
 cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-b",storage_class="REGIONAL"} 0.19
 cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest{location_type="region",opclass="class-b",storage_class="STANDARD"} 0.19
-# HELP cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour Discount for storage cost of GCS objects by location and storage_class. Cost represented in USD/(GiB*h)
+# HELP cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour DEPRECATED (removal in v2.0.0, no replacement): Discount for storage cost of GCS objects by location and storage_class. Cost represented in USD/(GiB*h)
 # TYPE cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour gauge
 cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="asia",storage_class="ARCHIVE"} 0
 cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour{location="asia",storage_class="COLDLINE"} 0

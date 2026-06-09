@@ -141,6 +141,7 @@ func (c *Collector) Name() string {
 // Register is called when the collector is created and is responsible for registering the metrics with the registry
 func (c *Collector) Register(registry provider.Registry) error {
 	c.logger.Info("registering GCS metrics")
+	c.logger.Warn("metrics 'cloudcost_gcp_gcs_storage_discount_by_location_usd_per_gibyte_hour' and 'cloudcost_gcp_gcs_operation_discount_by_location_usd_per_krequest' are deprecated and will be removed in v2.0.0. There is no replacement. See https://github.com/grafana/cloudcost-exporter/issues/742")
 	registry.MustRegister(c.metrics.StorageGauge)
 	registry.MustRegister(c.metrics.StorageDiscountGauge)
 	registry.MustRegister(c.metrics.OperationsDiscountGauge)
