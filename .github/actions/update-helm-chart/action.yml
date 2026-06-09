@@ -1,0 +1,60 @@
+name: Update Helm Chart
+description: Bump the chart appVersion and version to a released cloudcost-exporter version and open a PR.
+
+inputs:
+  version:
+    description: Released cloudcost-exporter version, with or without a leading v (e.g. v1.2.2 or 1.2.2).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install yq
+      shell: bash
+      env:
+        YQ_VERSION: v4.44.3
+        YQ_SHA256: a2c097180dd884a8d50c956ee16a9cec070f30a7947cf4ebf87d5f36213e9ed7
+      run: |
+        wget -qO /tmp/yq \
+          "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
+        echo "${YQ_SHA256}  /tmp/yq" | sha256sum -c
+        sudo mv /tmp/yq /usr/local/bin/yq
+        sudo chmod +x /usr/local/bin/yq
+
+    - name: Update Chart.yaml
+      id: update-versions
+      shell: bash
+      env:
+        APP_VERSION: ${{ inputs.version }}
+      run: |
+        APP_VERSION="${APP_VERSION#v}"
+
+        yq -i ".appVersion = \"${APP_VERSION}\"" charts/cloudcost-exporter/Chart.yaml
+        yq -i '.version |= (split(".") | .[2] = (.[2] | tonumber + 1 | tostring) | join("."))' charts/cloudcost-exporter/Chart.yaml
+
+        echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+        echo "chart_version=$(yq '.version' charts/cloudcost-exporter/Chart.yaml)" >> "$GITHUB_OUTPUT"
+
+    - name: Get GitHub App token
+      id: get-github-app-token
+      uses: grafana/shared-workflows/actions/create-github-app-token@795f748a236f9de024b7514efc9a208456e7e468 # create-github-app-token/v0.3.0
+      with:
+        github_app: cloudcost-exporter-updater
+
+    - name: Create pull request
+      uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+      with:
+        token: ${{ steps.get-github-app-token.outputs.token }}
+        add-paths: charts/cloudcost-exporter/Chart.yaml
+        branch: helm-chart/update-to-${{ steps.update-versions.outputs.app_version }}
+        delete-branch: true
+        base: main
+        commit-message: "chore: update Helm chart appVersion to ${{ steps.update-versions.outputs.app_version }}"
+        title: "chore: update Helm chart to appVersion ${{ steps.update-versions.outputs.app_version }}"
+        body: |
+          Automated update triggered by release `${{ inputs.version }}`.
+
+          - `appVersion`: updated to `${{ steps.update-versions.outputs.app_version }}`
+          - `version`: bumped to `${{ steps.update-versions.outputs.chart_version }}`
+
+          Once merged, the [Release Helm Chart](https://github.com/grafana/cloudcost-exporter/actions/workflows/release-helm-chart.yaml) workflow will publish the updated Helm chart.
