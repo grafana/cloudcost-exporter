@@ -73,13 +73,8 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 		return nil, fmt.Errorf("failed to initialize pricing map: %w", err)
 	}
 
-	refreshInterval := config.ScrapeInterval
-	if refreshInterval == 0 {
-		refreshInterval = PriceRefreshInterval
-	}
-
 	go func() {
-		ticker := time.NewTicker(refreshInterval)
+		ticker := time.NewTicker(PriceRefreshInterval)
 		defer ticker.Stop()
 		for {
 			select {
