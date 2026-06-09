@@ -116,6 +116,7 @@ Pushing a tag manually will trigger the [release-on-tag-push.yml](../../.github/
 - Create a GitHub release with binaries via GoReleaser
 - Build and push Docker images with the versioned tag
 - Trigger Argo Workflow deployment
+- Open a PR to bump the Helm chart `appVersion` (see [Helm chart](#helm-chart))
 
 ## Release Workflows
 
@@ -145,22 +146,33 @@ Granular control of the version helps with security since commit SHAs are immuta
 
 The `cloudcost-exporter`'s Helm chart is maintained in this repository at `charts/cloudcost-exporter/`.
 
-### Helm chart release process
+### Automated chart bump on release
 
-The Helm chart is released independently from the Docker images. To release a new chart version:
+Every cloudcost-exporter release bumps the chart automatically. When a release is cut, the `update-helm-chart` job opens a PR that sets the chart `appVersion` to the released version and patch-bumps the chart `version`. This happens on both release paths:
 
-1. **Update Chart.yaml**:
-   - Update `appVersion` to match the latest cloudcost-exporter release (if needed)
-   - Bump the chart `version` according to semver:
-     - **Patch**: Only appVersion updates or bug fixes
-     - **Minor**: New features, new values, backward-compatible changes
-     - **Major**: Breaking changes to chart structure or values
+- a labeled PR merge to `main` ([release-on-pr-merge.yml](../../.github/workflows/release-on-pr-merge.yml))
+- a manual tag push ([release-on-tag-push.yml](../../.github/workflows/release-on-tag-push.yml))
 
-2. **Update Chart Templates** (if needed):
+Both call the shared [update-helm-chart](../../.github/actions/update-helm-chart/action.yml) composite action, so the generated PR is identical regardless of path: title `chore: update Helm chart to appVersion X.Y.Z`, touching only `charts/cloudcost-exporter/Chart.yaml`.
+
+Review and merge that PR to publish the chart. Merging any change to `charts/cloudcost-exporter/Chart.yaml` on `main` triggers [release-helm-chart.yaml](../../.github/workflows/release-helm-chart.yaml), which:
+
+- creates a `cloudcost-exporter-X.Y.Z` tag,
+- publishes the packaged chart to grafana/helm-charts (index and ghcr.io OCI image),
+- triggers the `chartfile-version-update` Argo workflow in `platform-monitoring-cd` to bump the chart pin in `deployment_tools` (`ksonnet/lib/cloudcost-exporter/chartfile.yaml`).
+
+### Chart template or values changes
+
+The automated bump covers `appVersion` and the chart `version` only. For changes to the chart itself:
+
+1. **Update the chart**:
    - Modify templates in `charts/cloudcost-exporter/templates/`
    - Update `values.yaml` or `values.aws.yaml` if needed
+   - Bump the chart `version` in `Chart.yaml` according to semver:
+     - **Minor**: new features, new values, backward-compatible changes
+     - **Major**: breaking changes to chart structure or values
 
-3. **Generate README**:
+2. **Generate README**:
    ```bash
    # Install helm-docs if not already installed
    go install github.com/norwoodj/helm-docs/cmd/helm-docs@latest
@@ -169,24 +181,9 @@ The Helm chart is released independently from the Docker images. To release a ne
    helm-docs charts/cloudcost-exporter
    ```
 
-4. **Commit and Push Changes**:
-   ```bash
-   git add charts/cloudcost-exporter/
-   git commit -m "Update Helm chart to version X.Y.Z"
-   git push origin main
-   ```
+3. **Open a PR**. Merging it triggers the same [release-helm-chart.yaml](../../.github/workflows/release-helm-chart.yaml) workflow described above. Use the workflow's manual `workflow_dispatch` trigger only as a fallback if the path-based trigger does not fire.
 
-5. **Trigger Release Workflow**:
-   - Go to GitHub Actions: https://github.com/grafana/cloudcost-exporter/actions
-   - Select "Release Helm Chart" workflow
-   - Click "Run workflow" on the main branch
-   - The workflow will:
-     - Create a tag `cloudcost-exporter-X.Y.Z` in this repository
-     - Create a release in grafana/helm-charts with the packaged chart
-     - Push the chart to grafana/helm-charts index
-     - Push the chart OCI image to ghcr.io
-
-6. **Verify Release**:
+4. **Verify the release**:
    - Check https://github.com/grafana/helm-charts/releases for the new tag
    - Verify the chart is available:
      ```bash
