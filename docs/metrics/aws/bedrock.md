@@ -43,7 +43,7 @@ Restrict which model families are emitted with `--aws.bedrock.families` (a regex
   - `AmazonBedrockFoundationModels` derives it from the `servicename`.
   - Models that AWS prices per modality under one name carry the modality (e.g. `nova-sonic-text`, `nova-sonic-speech`).
 
-  `model_id` is a normalized label derived from pricing metadata, not a canonical Bedrock model ID or ARN. The Claude 2.x, Claude Instant, Claude 3 Haiku, and Claude 3 Sonnet generation is priced under both service codes; the collector emits it once from `AmazonBedrock` and skips the `AmazonBedrockFoundationModels` duplicates, so each model appears under a single `model_id`.
+  `model_id` is a normalized label derived from pricing metadata, not a canonical Bedrock model ID or ARN. Because both sources normalize to the same `model_id`, a model priced under both (e.g. the legacy Claude generation) merges into one set of series: identical prices dedupe, and a price one source lacks (the standard source prices some legacy Claude models for input only) is filled in by the other.
 - **family**: Model provider, normalized to lowercase (spaces become underscores) from the `AmazonBedrock` `provider` attribute, or derived from the `AmazonBedrockFoundationModels` `servicename`. The set tracks whatever AWS publishes, so it is open-ended; observed values include `anthropic`, `amazon`, `cohere`, `meta`, `ai21`, `mistral`, `deepseek`, `google`, `qwen`, `nvidia`, `openai`, `writer`, and `twelvelabs`. Amazon-developed models with no provider attribute (Nova, Titan) use `amazon`. A marketplace `servicename` with no recognized provider falls back to `unknown`. Filter with `--aws.bedrock.families`.
 - **price_tier**: Inference tier:
   - Token metrics: `on_demand`, `on_demand_batch`, `on_demand_flex`, `on_demand_priority`, `cross_region`, `cross_region_batch`, `cross_region_flex`, `cross_region_priority`.
@@ -56,7 +56,7 @@ The collector fetches `AmazonBedrock` and `AmazonBedrockFoundationModels` per re
 - `AmazonBedrock` publishes token prices per 1000 tokens directly.
 - `AmazonBedrockFoundationModels` publishes token prices per 1,000,000 tokens (converted to per-1000) and search-unit prices per single unit (converted to per-1000).
 
-Where both service codes price the same model (the Claude 2.x / Instant / 3 Haiku / 3 Sonnet generation), the `AmazonBedrockFoundationModels` copy is skipped so the model is reported once.
+When both service codes price the same model (the legacy Claude generation), they share a `model_id`, so per-region/direction/tier entries dedupe and any price only one source carries is retained. Overlapping prices are identical across the two sources.
 
 `AmazonBedrockFoundationModels` pricing is best-effort: if that service code is unavailable, the collector logs a warning and continues to emit `AmazonBedrock` pricing rather than failing.
 
