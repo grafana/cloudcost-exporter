@@ -571,25 +571,26 @@ func marketplacePriceJSON(servicename, usagetype, regionCode, price string) stri
 	)
 }
 
-func TestCollect_SkipsLegacyClaudeCoveredByStandardSource(t *testing.T) {
+func TestCollect_MergesLegacyClaudeAcrossSources(t *testing.T) {
+	// The standard source prices legacy Claude with input tokens only; the marketplace source
+	// adds the output price under the same model_id. Both must be emitted: the overlapping input
+	// key dedups in the pricing store (equal prices), and the marketplace output fills the gap.
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	pricingClient := mockclient.NewMockClient(ctrl)
 	pricingClient.EXPECT().
 		ListBedrockPrices(gomock.Any(), "us-east-1").
-		Return([]string{}, nil).
+		Return([]string{
+			modelPriceJSON("us-east-1", "USE1-Claude3Sonnet-input-tokens", "Input tokens", "Anthropic", "Claude 3 Sonnet", "0.00300"),
+		}, nil).
 		Times(1)
 	pricingClient.EXPECT().
 		ListBedrockMarketplacePrices(gomock.Any(), "us-east-1").
 		Return([]string{
-			// Legacy generation the standard source already prices: must be skipped.
+			// Same model_id (claude-3-sonnet) as standard: input matches, output is new.
 			marketplacePriceJSON("Claude 3 Sonnet (Amazon Bedrock Edition)", "USE1-MP:USE1_InputTokenCount-Units", "us-east-1", "3.0"),
-			marketplacePriceJSON("Claude 3 Haiku (Amazon Bedrock Edition)", "USE1-MP:USE1_InputTokenCount-Units", "us-east-1", "0.25"),
-			marketplacePriceJSON("Claude Instant (Amazon Bedrock Edition)", "USE1-MP:USE1_InputTokenCount-Units", "us-east-1", "0.8"),
-			// Marketplace-only: must pass through.
-			marketplacePriceJSON("Claude 3 Opus (Amazon Bedrock Edition)", "USE1-MP:USE1_InputTokenCount-Units", "us-east-1", "15.0"),
-			marketplacePriceJSON("Claude Sonnet 4.6 (Amazon Bedrock Edition)", "USE1-MP:USE1_InputTokenCount-Units", "us-east-1", "3.0"),
+			marketplacePriceJSON("Claude 3 Sonnet (Amazon Bedrock Edition)", "USE1-MP:USE1_OutputTokenCount-Units", "us-east-1", "15.0"),
 		}, nil).
 		Times(1)
 
@@ -604,15 +605,23 @@ func TestCollect_SkipsLegacyClaudeCoveredByStandardSource(t *testing.T) {
 	results, err := collectMetricResults(t, collector)
 	require.NoError(t, err)
 
-	emitted := map[string]bool{}
+	var input, output *utils.MetricResult
 	for _, r := range results {
-		emitted[r.Labels["model_id"]] = true
+		if r.Labels["model_id"] != "claude-3-sonnet" {
+			continue
+		}
+		switch r.FqName {
+		case "cloudcost_aws_bedrock_input_usd_per_1k_tokens":
+			input = r
+		case "cloudcost_aws_bedrock_output_usd_per_1k_tokens":
+			output = r
+		}
 	}
-	assert.False(t, emitted["claude-3-sonnet"], "legacy claude-3-sonnet should be skipped")
-	assert.False(t, emitted["claude-3-haiku"], "legacy claude-3-haiku should be skipped")
-	assert.False(t, emitted["claude-instant"], "legacy claude-instant should be skipped")
-	assert.True(t, emitted["claude-3-opus"], "marketplace-only claude-3-opus should pass")
-	assert.True(t, emitted["claude-sonnet-4.6"], "claude-sonnet-4.6 should pass")
+	// Input appears once (deduped across sources), output comes from the marketplace source.
+	require.NotNil(t, input, "claude-3-sonnet input should be emitted")
+	require.NotNil(t, output, "claude-3-sonnet output should be recovered from marketplace")
+	assert.InDelta(t, 0.003, input.Value, 1e-9)
+	assert.InDelta(t, 0.015, output.Value, 1e-9)
 }
 
 func TestNormalizeModelID(t *testing.T) {
