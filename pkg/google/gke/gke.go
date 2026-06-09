@@ -83,6 +83,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		if err != nil {
 			return err
 		}
+
 		// Two goroutines are launched per zone (ListInstances + ListDisks).
 		// zoneConcurrency caps the total across both, so at most
 		// zoneConcurrency/2 zones are queried in parallel.
@@ -90,6 +91,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		if zoneConcurrency <= 0 {
 			zoneConcurrency = DefaultZoneCollectConcurrency
 		}
+
 		eg, egCtx := errgroup.WithContext(ctx)
 		eg.SetLimit(zoneConcurrency)
 		instances := make(chan []*client.MachineSpec, len(zones))
@@ -148,7 +150,6 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 			}
 			for _, instance := range group {
 				clusterName := instance.GetClusterName()
-				// We skip instances that do not have a clusterName because they are not associated with an GKE cluster
 				if clusterName == "" {
 					c.logger.LogAttrs(ctx,
 						slog.LevelDebug,
@@ -170,7 +171,6 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				}
 				cpuCost, ramCost, err := c.pricingMap.GetCostOfInstance(instance)
 				if err != nil {
-					// Log out the error and continue processing nodes
 					// TODO(@pokom): Should we set sane defaults here to emit _something_?
 					c.logger.LogAttrs(ctx,
 						slog.LevelError,
