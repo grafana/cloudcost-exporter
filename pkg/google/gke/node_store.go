@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"maps"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
@@ -20,6 +21,8 @@ type NodeStore struct {
 
 	mu    sync.RWMutex
 	nodes map[string][]*client.MachineSpec
+
+	populating atomic.Bool
 
 	initialPopulationOnce sync.Once
 	initialPopulation     chan struct{}
@@ -55,6 +58,15 @@ func (ns *NodeStore) GetNodes(project string) []*client.MachineSpec {
 }
 
 func (ns *NodeStore) Populate(ctx context.Context) {
+	// Drop overlapping populates: if a tick fires while the previous one is
+	// still running (slow GCP / many projects), avoid doubling API load and
+	// the last-writer race on ns.nodes.
+	if !ns.populating.CompareAndSwap(false, true) {
+		ns.logger.LogAttrs(ctx, slog.LevelInfo, "populate already in progress, skipping tick")
+		return
+	}
+	defer ns.populating.Store(false)
+
 	defer ns.initialPopulationOnce.Do(func() {
 		close(ns.initialPopulation)
 	})
