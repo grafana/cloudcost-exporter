@@ -54,6 +54,12 @@ var (
 	)
 )
 
+type Store interface {
+	Done() <-chan struct{}
+	Populate(ctx context.Context)
+}
+
+
 type Config struct {
 	Projects       string
 	ScrapeInterval time.Duration
