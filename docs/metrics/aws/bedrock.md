@@ -45,13 +45,14 @@ Restrict which model families are emitted with `--aws.bedrock.families` (a regex
 
   `model_id` is a normalized label derived from pricing metadata, not a canonical Bedrock model ID or ARN. Because both sources normalize to the same `model_id`, a model priced under both (e.g. the legacy Claude generation) merges into one set of series: identical prices dedupe, and a price one source lacks (the standard source prices some legacy Claude models for input only) is filled in by the other.
 - **family**: Model provider, normalized to lowercase (spaces become underscores) from the `AmazonBedrock` `provider` attribute, or derived from the `AmazonBedrockFoundationModels` `servicename`. The set tracks whatever AWS publishes, so it is open-ended; observed values include `anthropic`, `amazon`, `cohere`, `meta`, `ai21`, `mistral`, `deepseek`, `google`, `qwen`, `nvidia`, `openai`, `writer`, and `twelvelabs`. Amazon-developed models with no provider attribute (Nova, Titan) use `amazon`. A marketplace `servicename` with no recognized provider falls back to `unknown`. Filter with `--aws.bedrock.families`.
-- **price_tier**: Inference tier:
+- **price_tier**: Inference tier.
   - Token metrics: `on_demand`, `on_demand_batch`, `on_demand_flex`, `on_demand_priority`, `cross_region`, `cross_region_batch`, `cross_region_flex`, `cross_region_priority`.
+  - Prompt caching (token metrics, marketplace source): `cache_read`, `cache_write_5m`, `cache_write_1h`, and their `cross_region_*` / `*_latency_optimized` variants. Reads are a single rate; writes split by cache TTL (5-minute default vs 1-hour). Cache storage (priced per token-hour) is not emitted. Caching for Amazon-native models (Nova/Titan) in the `AmazonBedrock` source is not emitted.
   - Search-unit metrics: `on_demand`, `cross_region`.
 
 ## Pricing Sources
 
-The collector fetches `AmazonBedrock` and `AmazonBedrockFoundationModels` per region and merges them into one metric set. Each SKU's direction, family, model, and price tier are parsed from its `usagetype` and `servicename`; image, video, audio, cache, provisioned-throughput, and guardrail SKUs are skipped.
+The collector fetches `AmazonBedrock` and `AmazonBedrockFoundationModels` per region and merges them into one metric set. Each SKU's direction, family, model, and price tier are parsed from its `usagetype` and `servicename`; image, video, audio, cache-storage, provisioned-throughput, and guardrail SKUs are skipped. Prompt-cache read/write SKUs from the marketplace source are emitted on the input metric as `cache_*` price tiers.
 
 - `AmazonBedrock` publishes token prices per 1000 tokens directly.
 - `AmazonBedrockFoundationModels` publishes token prices per 1,000,000 tokens (converted to per-1000) and search-unit prices per single unit (converted to per-1000).
@@ -63,7 +64,7 @@ When both service codes price the same model (the legacy Claude generation), the
 ## Notes
 
 - Pricing data is fetched from the AWS Pricing API (`us-east-1` endpoint) and refreshed every 24 hours
-- Image, video, audio, cache, provisioned-throughput, and guardrail SKUs are skipped; only token and search-unit SKUs are emitted
+- Image, video, audio, cache-storage, provisioned-throughput, and guardrail SKUs are skipped; token (including prompt-cache read/write), and search-unit SKUs are emitted
 - `model_id` is a normalized pricing identifier, not the canonical Bedrock model ARN
 
 ## IAM Permissions
