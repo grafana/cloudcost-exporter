@@ -85,7 +85,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.StringVar(&cfg.ProjectID, "project-id", "", "Project ID to target.")
 	flag.StringVar(&cfg.Providers.Azure.SubscriptionID, "azure.subscription-id", "", "Azure subscription ID to pull data from.")
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
-	flag.IntVar(&cfg.Providers.GCP.GKEZoneConcurrency, "gcp.gke.zone-concurrency", 10, "Cap on concurrent zone-level API calls per project during background GKE inventory refresh. Applied separately to the node store and disk store.")
+	flag.IntVar(&cfg.Providers.GCP.GKEZoneConcurrency, "gcp.gke.zone-concurrency", 10, "Cap on concurrent API calls during a GKE scrape per project. Two goroutines run per zone (ListInstances + ListDisks), so the parallel-zone count is this value divided by 2.")
 }
 
 // operationalFlags is a helper method that is responsible for setting up the flags that are used to configure the operational aspects of the application.

@@ -68,8 +68,8 @@ type Config struct {
 	ScrapeInterval   time.Duration
 	DefaultDiscount  int
 	CollectorTimeout time.Duration
-	// GKEZoneConcurrency caps concurrent zone-level API calls per project during
-	// GKE background populates. Zero or negative falls back to the store default.
+	// GKEZoneConcurrency caps zone-level goroutines per project during a GKE scrape.
+	// Zero or negative values fall back to gke.DefaultZoneCollectConcurrency.
 	GKEZoneConcurrency int
 	Logger             *slog.Logger
 }
