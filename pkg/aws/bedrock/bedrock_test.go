@@ -34,9 +34,8 @@ func TestNew_Succeeds(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 
 	require.NoError(t, err)
 	assert.NotNil(t, collector)
@@ -55,8 +54,7 @@ func TestNew_ReturnsErrorWhenPricingAPIUnavailable(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
-	})
+	}, testLogger())
 
 	assert.Nil(t, collector)
 	require.Error(t, err)
@@ -82,9 +80,8 @@ func TestCollect_EmitsInputAndOutputTokenMetrics(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -134,9 +131,8 @@ func TestCollect_EmitsMetricsForMultipleModels(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -163,9 +159,8 @@ func TestCollect_LabelsCrossRegionPriceTier(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -197,9 +192,8 @@ func TestCollect_LabelsBatchPriceTier(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -234,9 +228,8 @@ func TestCollect_FamilyFilterRegexFiltersOtherFamilies(t *testing.T) {
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
 		FamilyFilter:  "anthropic|amazon",
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -269,9 +262,8 @@ func TestCollect_FamilyFilterDefaultEmitsAllFamilies(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -289,8 +281,7 @@ func TestNew_ReturnsErrorForInvalidFamilyFilterRegex(t *testing.T) {
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
 		FamilyFilter:  "[invalid",
-		Logger:        testLogger(),
-	})
+	}, testLogger())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid bedrock family filter")
 }
@@ -320,9 +311,8 @@ func TestCollect_SkipsNonTextTokenSKUs(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -347,9 +337,8 @@ func TestCollect_ReturnsContextErrWhenContextCancelled(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -597,9 +586,8 @@ func TestCollect_MergesLegacyClaudeAcrossSources(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -669,9 +657,8 @@ func TestCollect_StandardModelIDUsesModelAttribute(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -707,9 +694,8 @@ func TestCollect_StandardModelIDDisambiguatesNovaSonicModality(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -851,9 +837,8 @@ func TestCollect_EmitsMarketplaceCacheMetrics(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -892,9 +877,8 @@ func TestCollect_EmitsMarketplaceTokenMetrics(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -933,9 +917,8 @@ func TestCollect_EmitsMarketplaceSearchUnitMetrics(t *testing.T) {
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -970,9 +953,8 @@ func TestCollect_MarketplaceFamilyFilterApplied(t *testing.T) {
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
 		FamilyFilter:  "anthropic",
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 
 	results, err := collectMetricResults(t, collector)
@@ -1000,9 +982,8 @@ func TestNew_DegradesToStandardPricingWhenMarketplaceAPIUnavailable(t *testing.T
 	collector, err := New(t.Context(), &Config{
 		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
 		PricingClient: pricingClient,
-		Logger:        testLogger(),
 		AccountID:     "123456789012",
-	})
+	}, testLogger())
 	require.NoError(t, err)
 	require.NotNil(t, collector)
 

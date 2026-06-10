@@ -118,7 +118,6 @@ type bedrockMarketplaceProductInfo struct {
 type Config struct {
 	Regions       []ec2types.Region
 	PricingClient client.Client
-	Logger        *slog.Logger
 	AccountID     string
 	FamilyFilter  string // regex matched against the family label; see --aws.bedrock.families flag
 }
@@ -131,11 +130,8 @@ type Collector struct {
 	familyFilter *regexp.Regexp
 }
 
-func New(ctx context.Context, config *Config) (*Collector, error) {
-	logger := slog.Default()
-	if config.Logger != nil {
-		logger = config.Logger.With("collector", serviceName)
-	}
+func New(ctx context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
+	logger = logger.With("collector", serviceName)
 
 	familyFilter, err := regexp.Compile(config.FamilyFilter)
 	if err != nil {
