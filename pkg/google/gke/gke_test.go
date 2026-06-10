@@ -622,6 +622,43 @@ func TestDiskStore_Populate_ConcurrencyLimit(t *testing.T) {
 		"peak goroutine concurrency must not exceed DefaultZoneCollectConcurrency")
 }
 
+// Guards the gke.Config.ZoneConcurrency plumbing: an explicit value passed to
+// NewNodeStore must cap the populate concurrency, not the default.
+func TestNewNodeStore_HonorsConcurrencyArg(t *testing.T) {
+	const customLimit = 3
+	const numZones = customLimit + 5
+
+	zones := make([]*computev1.Zone, numZones)
+	for i := range numZones {
+		zones[i] = &computev1.Zone{Name: fmt.Sprintf("us-central1-%d", i)}
+	}
+
+	fakeClient := &concurrentGCPClient{zones: zones}
+	ns := NewNodeStore(t.Context(), logger, fakeClient, []string{"proj1"}, customLimit)
+	<-ns.Done()
+
+	assert.LessOrEqual(t, fakeClient.peakConcurrency, customLimit,
+		"peak goroutine concurrency must not exceed the supplied concurrency arg")
+}
+
+// Same guard for NewDiskStore.
+func TestNewDiskStore_HonorsConcurrencyArg(t *testing.T) {
+	const customLimit = 3
+	const numZones = customLimit + 5
+
+	zones := make([]*computev1.Zone, numZones)
+	for i := range numZones {
+		zones[i] = &computev1.Zone{Name: fmt.Sprintf("us-central1-%d", i)}
+	}
+
+	fakeClient := &concurrentGCPClient{zones: zones}
+	ds := NewDiskStore(t.Context(), logger, fakeClient, []string{"proj1"}, customLimit)
+	<-ds.Done()
+
+	assert.LessOrEqual(t, fakeClient.peakConcurrency, customLimit,
+		"peak goroutine concurrency must not exceed the supplied concurrency arg")
+}
+
 // Sequential emission would put all metrics of one kind before any of the
 // other; parallel emission interleaves them on an unbuffered channel. The
 // assertion checks that the leading run of a single kind is shorter than that

@@ -14,7 +14,7 @@ GKE inventory is collected by background goroutines and cached in memory. Each s
 - **Disk inventory** refreshes every 15 minutes (`Compute.Zones.List` per project, `Disks.List` per zone). Disks are deduplicated by name.
 - **Pricing** refreshes on its own interval via the Cloud Billing Catalog API.
 
-Per-zone API calls within a project are issued in parallel, capped at 10 concurrent in-flight calls per store.
+Per-zone API calls within a project are issued in parallel, capped at 10 concurrent in-flight calls per store by default. Override with the `--gcp.gke.zone-concurrency` flag; the value is applied separately to the node store and disk store.
 
 ### Staleness and partial-failure behaviour
 

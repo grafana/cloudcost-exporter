@@ -27,7 +27,7 @@ type DiskStore struct {
 
 // NewDiskStore returns a DiskStore that refreshes disk inventory in the
 // background. concurrency caps in-flight zone-level calls per populate;
-// zero or negative values fall back to diskPopulateConcurrencyLimit.
+// zero or negative values fall back to DefaultZoneCollectConcurrency.
 func NewDiskStore(ctx context.Context, logger *slog.Logger, gcpClient client.Client, projects []string, concurrency int) *DiskStore {
 	if concurrency <= 0 {
 		concurrency = DefaultZoneCollectConcurrency
