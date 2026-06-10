@@ -21,8 +21,7 @@ Per-zone API calls within a project are issued in parallel, capped at 10 concurr
 - Node metrics may be up to 5 minutes stale; disk metrics up to 15 minutes.
 - The first scrape after startup emits no GKE metrics until both stores complete their initial populate. The collector logs `node store not yet populated, skipping node metrics` (or the disk equivalent) and continues.
 - If `GetZones` fails for a project, that project's existing cache is preserved.
-- If every zone-level call within a project fails, the cache is wiped and an error is logged (`all zone listings failed, wiping cached data`). Subsequent scrapes emit no metrics for that project until a later populate succeeds.
-- If a subset of zone-level calls fail, the cache is updated with data from the zones that did succeed. The failures are logged but do not surface as scrape errors — monitor the collector logs.
+- If a zone-level call fails (partial or total), the cache entry for that zone is left untouched. Subsequent populates that succeed for that zone will refresh it. Failures are logged but do not surface as scrape errors — monitor the collector logs.
 - During shutdown, populate goroutines exit promptly: queued per-zone iterations bail out on context cancellation, and goroutines that have not yet issued their GCP call skip it.
 
 ## Persistent Volumes
