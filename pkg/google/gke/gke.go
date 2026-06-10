@@ -76,29 +76,9 @@ func (c *Collector) Register(_ provider.Registry) error {
 }
 
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
-	for _, project := range c.projects {
-		zones, err := c.gcpClient.GetZones(project)
-		if err != nil {
-			return err
-		}
-		// Two goroutines are launched per zone (ListInstances + ListDisks).
-		// zoneConcurrency caps the total across both, so at most
-		// zoneConcurrency/2 zones are queried in parallel.
-		zoneConcurrency := c.config.ZoneConcurrency
-		if zoneConcurrency <= 0 {
-			zoneConcurrency = DefaultZoneCollectConcurrency
-		}
-		eg, egCtx := errgroup.WithContext(ctx)
-		eg.SetLimit(zoneConcurrency)
-		instances := make(chan []*client.MachineSpec, len(zones))
-		disks := make(chan []*compute.Disk, len(zones))
-		for _, zone := range zones {
-			eg.Go(func() error {
-				now := time.Now()
-				c.logger.LogAttrs(egCtx, slog.LevelInfo,
-					"Listing instances for project %s in zone %s",
-					slog.String("project", project),
-					slog.String("zone", zone.Name))
+	now := time.Now()
+	// Single-writer per counter; wg.Wait below provides happens-before for the read.
+	var nodeCount, diskCount int64
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -187,8 +167,8 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 	projects := strings.Split(config.Projects, ",")
 	regions := client.RegionsFromZonesForProjects(gcpClient, projects, logger)
 
-	nodeStore := NewNodeStore(ctx, logger, gcpClient, projects)
-	diskStore := NewDiskStore(ctx, logger, gcpClient, projects)
+	nodeStore := NewNodeStore(ctx, logger, gcpClient, projects, config.ZoneConcurrency)
+	diskStore := NewDiskStore(ctx, logger, gcpClient, projects, config.ZoneConcurrency)
 
 	startRefreshTicker(ctx, PriceRefreshInterval, func() {
 		if err := pm.Populate(ctx); err != nil {

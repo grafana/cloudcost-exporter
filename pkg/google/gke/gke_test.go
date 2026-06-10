@@ -555,11 +555,40 @@ func (c *concurrentGCPClient) ListDisks(_ context.Context, _ string, _ string) (
 	return nil, nil
 }
 
-func TestCollector_ZoneConcurrencyLimit(t *testing.T) {
-	// 20 zones → 40 goroutines (2 per zone: ListInstancesInZone + ListDisks),
-	// with ZoneConcurrency=10 capping the total.
-	const numZones = 20
-	const limit = 10
+// newSeededNodeStore returns a NodeStore without starting a populate goroutine.
+func newSeededNodeStore(t *testing.T, gcpClient client.Client, projects []string, seed map[string][]*client.MachineSpec) *NodeStore {
+	t.Helper()
+	if seed == nil {
+		seed = make(map[string][]*client.MachineSpec)
+	}
+	return &NodeStore{
+		logger:            logger,
+		gcpClient:         gcpClient,
+		projects:          projects,
+		concurrency:       DefaultZoneCollectConcurrency,
+		nodes:             seed,
+		initialPopulation: make(chan struct{}),
+	}
+}
+
+func newSeededDiskStore(t *testing.T, gcpClient client.Client, projects []string, seed map[string][]*Disk) *DiskStore {
+	t.Helper()
+	if seed == nil {
+		seed = make(map[string][]*Disk)
+	}
+	return &DiskStore{
+		logger:            logger,
+		gcpClient:         gcpClient,
+		projects:          projects,
+		concurrency:       DefaultZoneCollectConcurrency,
+		disks:             seed,
+		initialPopulation: make(chan struct{}),
+	}
+}
+
+func TestNodeStore_Populate_ConcurrencyLimit(t *testing.T) {
+	// Zones > limit so the cap is actually exercised.
+	const numZones = DefaultZoneCollectConcurrency + 3
 
 	zones := make([]*computev1.Zone, numZones)
 	for i := range numZones {
@@ -567,59 +596,17 @@ func TestCollector_ZoneConcurrencyLimit(t *testing.T) {
 	}
 
 	fakeClient := &concurrentGCPClient{zones: zones}
-
-	// Build the Collector directly to bypass the billing/pricing initialisation
-	// that New() performs — it is irrelevant for a concurrency test.
-	collector := &Collector{
-		gcpClient: fakeClient,
-		config:    &Config{ZoneConcurrency: limit},
-		projects:  []string{"proj1"},
-		pricingMap: &PricingMap{
-			compute: map[string]*FamilyPricing{},
-			storage: map[string]*StoragePricing{},
-		},
-		logger: logger,
-	}
-
-	ch := make(chan prometheus.Metric, numZones*10)
-	err := collector.Collect(t.Context(), ch)
-	close(ch)
-	require.NoError(t, err)
-
-	assert.LessOrEqual(t, fakeClient.peakConcurrency, limit,
-		"peak zone goroutine concurrency must not exceed configured ZoneConcurrency")
-}
-
-func TestCollector_ZoneConcurrencyDefault(t *testing.T) {
-	// Empty Config.ZoneConcurrency should fall back to DefaultZoneCollectConcurrency.
-	const numZones = 40
-
-	zones := make([]*computev1.Zone, numZones)
-	for i := range numZones {
-		zones[i] = &computev1.Zone{Name: fmt.Sprintf("us-central1-%d", i)}
-	}
-
-	fakeClient := &concurrentGCPClient{zones: zones}
-	collector := &Collector{
-		gcpClient: fakeClient,
-		config:    &Config{},
-		projects:  []string{"proj1"},
-		pricingMap: &PricingMap{
-			compute: map[string]*FamilyPricing{},
-			storage: map[string]*StoragePricing{},
-		},
-		logger: logger,
-	}
+	ns := newSeededNodeStore(t, fakeClient, []string{"proj1"}, nil)
 
 	ns.Populate(t.Context())
 
 	assert.LessOrEqual(t, fakeClient.peakConcurrency, DefaultZoneCollectConcurrency,
-		"peak zone goroutine concurrency must not exceed DefaultZoneCollectConcurrency")
+		"peak goroutine concurrency must not exceed DefaultZoneCollectConcurrency")
 }
 
 func TestDiskStore_Populate_ConcurrencyLimit(t *testing.T) {
 	// Zones > limit so the cap is actually exercised.
-	const numZones = diskPopulateConcurrencyLimit + 3
+	const numZones = DefaultZoneCollectConcurrency + 3
 
 	zones := make([]*computev1.Zone, numZones)
 	for i := range numZones {
@@ -631,8 +618,8 @@ func TestDiskStore_Populate_ConcurrencyLimit(t *testing.T) {
 
 	ds.Populate(t.Context())
 
-	assert.LessOrEqual(t, fakeClient.peakConcurrency, diskPopulateConcurrencyLimit,
-		"peak goroutine concurrency must not exceed diskPopulateConcurrencyLimit")
+	assert.LessOrEqual(t, fakeClient.peakConcurrency, DefaultZoneCollectConcurrency,
+		"peak goroutine concurrency must not exceed DefaultZoneCollectConcurrency")
 }
 
 // Sequential emission would put all metrics of one kind before any of the
@@ -886,13 +873,13 @@ func makeZones(n int) []*computev1.Zone {
 
 func TestNodeStore_Populate_HonorsContextCancellation(t *testing.T) {
 	// Zones > limit so iterations queue on sem; cancellation must unblock them.
-	const numZones = nodePopulateConcurrencyLimit * 3
+	const numZones = DefaultZoneCollectConcurrency * 3
 
 	fake := &blockingGCPClient{
 		zones:      makeZones(numZones),
 		saturation: make(chan struct{}),
 		release:    make(chan struct{}),
-		limit:      nodePopulateConcurrencyLimit,
+		limit:      DefaultZoneCollectConcurrency,
 	}
 
 	ns := newSeededNodeStore(t, fake, []string{"p1"}, nil)
@@ -921,18 +908,18 @@ func TestNodeStore_Populate_HonorsContextCancellation(t *testing.T) {
 		t.Fatal("Populate did not return after context cancellation")
 	}
 
-	assert.Equal(t, int64(nodePopulateConcurrencyLimit), fake.callCount.Load(),
+	assert.Equal(t, int64(DefaultZoneCollectConcurrency), fake.callCount.Load(),
 		"context cancellation should prevent additional zone calls beyond the in-flight batch")
 }
 
 func TestDiskStore_Populate_HonorsContextCancellation(t *testing.T) {
-	const numZones = diskPopulateConcurrencyLimit * 3
+	const numZones = DefaultZoneCollectConcurrency * 3
 
 	fake := &blockingGCPClient{
 		zones:      makeZones(numZones),
 		saturation: make(chan struct{}),
 		release:    make(chan struct{}),
-		limit:      diskPopulateConcurrencyLimit,
+		limit:      DefaultZoneCollectConcurrency,
 	}
 
 	ds := newSeededDiskStore(t, fake, []string{"p1"}, nil)
@@ -961,20 +948,20 @@ func TestDiskStore_Populate_HonorsContextCancellation(t *testing.T) {
 		t.Fatal("Populate did not return after context cancellation")
 	}
 
-	assert.Equal(t, int64(diskPopulateConcurrencyLimit), fake.callCount.Load(),
+	assert.Equal(t, int64(DefaultZoneCollectConcurrency), fake.callCount.Load(),
 		"context cancellation should prevent additional zone calls beyond the in-flight batch")
 }
 
 // Shutdown with all in-flight calls erroring must not look like a real
 // total-failure: ctx.Err() guards the wipe log.
 func TestNodeStore_Populate_ShutdownDoesNotLogWipe(t *testing.T) {
-	const numZones = nodePopulateConcurrencyLimit * 3
+	const numZones = DefaultZoneCollectConcurrency * 3
 
 	fake := &blockingGCPClient{
 		zones:      makeZones(numZones),
 		saturation: make(chan struct{}),
 		release:    make(chan struct{}),
-		limit:      nodePopulateConcurrencyLimit,
+		limit:      DefaultZoneCollectConcurrency,
 		returnErr:  fmt.Errorf("shutdown in progress"),
 	}
 
