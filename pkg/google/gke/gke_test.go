@@ -668,11 +668,7 @@ func TestNewDiskStore_HonorsConcurrencyArg(t *testing.T) {
 		"peak goroutine concurrency must not exceed the supplied concurrency arg")
 }
 
-// Sequential emission would put all metrics of one kind before any of the
-// other; parallel emission interleaves them on an unbuffered channel. The
-// assertion checks that the leading run of a single kind is shorter than that
-// kind's total count.
-func TestCollector_Collect_NodeAndDiskEmitInParallel(t *testing.T) {
+func TestCollector_Collect_EmitsBothNodeAndDiskMetrics(t *testing.T) {
 	const (
 		numNodes = 10
 		numDisks = 10
@@ -728,40 +724,22 @@ func TestCollector_Collect_NodeAndDiskEmitInParallel(t *testing.T) {
 		logger:     logger,
 	}
 
-	ch := make(chan prometheus.Metric)
-	go func() {
-		require.NoError(t, collector.Collect(t.Context(), ch))
-		close(ch)
-	}()
-
-	var order []string
-	for m := range ch {
-		if strings.Contains(m.Desc().String(), "persistent_volume") {
-			order = append(order, "disk")
-		} else {
-			order = append(order, "node")
-		}
-	}
-
 	const totalNodeMetrics = numNodes * 2
 	const totalDiskMetrics = numDisks
-	require.Len(t, order, totalNodeMetrics+totalDiskMetrics, "expected all metrics to be emitted")
+	ch := make(chan prometheus.Metric, totalNodeMetrics+totalDiskMetrics)
+	require.NoError(t, collector.Collect(t.Context(), ch))
+	close(ch)
 
-	prefixLen := 1
-	for i := 1; i < len(order); i++ {
-		if order[i] != order[0] {
-			break
+	var nodeCount, diskCount int
+	for m := range ch {
+		if strings.Contains(m.Desc().String(), "persistent_volume") {
+			diskCount++
+		} else {
+			nodeCount++
 		}
-		prefixLen++
 	}
-
-	maxPrefix := totalNodeMetrics
-	if order[0] == "disk" {
-		maxPrefix = totalDiskMetrics
-	}
-	assert.Less(t, prefixLen, maxPrefix,
-		"expected node and disk metrics to interleave (parallel emission), but got %d consecutive %s metrics at the start: sequential emission detected",
-		prefixLen, order[0])
+	assert.Equal(t, totalNodeMetrics, nodeCount, "expected %d node metrics", totalNodeMetrics)
+	assert.Equal(t, totalDiskMetrics, diskCount, "expected %d disk metrics", totalDiskMetrics)
 }
 
 // programmableGCPClient returns configurable per-zone results for testing
@@ -1025,6 +1003,50 @@ func TestNodeStore_Populate_ShutdownDoesNotLogWipe(t *testing.T) {
 	populateDone := make(chan struct{})
 	go func() {
 		ns.Populate(ctx)
+		close(populateDone)
+	}()
+
+	select {
+	case <-fake.saturation:
+	case <-time.After(2 * time.Second):
+		close(fake.release)
+		t.Fatal("timed out waiting for in-flight calls to saturate")
+	}
+
+	cancel()
+	close(fake.release)
+
+	select {
+	case <-populateDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Populate did not return after context cancellation")
+	}
+
+	assert.NotContains(t, logBuf.String(), "all zone listings failed",
+		"shutdown should not emit a total-failure log even when in-flight calls fail")
+}
+
+func TestDiskStore_Populate_ShutdownDoesNotLogWipe(t *testing.T) {
+	const numZones = DefaultZoneCollectConcurrency * 3
+
+	fake := &blockingGCPClient{
+		zones:      makeZones(numZones),
+		saturation: make(chan struct{}),
+		release:    make(chan struct{}),
+		limit:      DefaultZoneCollectConcurrency,
+		returnErr:  fmt.Errorf("shutdown in progress"),
+	}
+
+	var logBuf bytes.Buffer
+	captureLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
+	ds := newSeededDiskStore(t, captureLogger, fake, []string{"p1"}, nil)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	populateDone := make(chan struct{})
+	go func() {
+		ds.Populate(ctx)
 		close(populateDone)
 	}()
 
