@@ -132,7 +132,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 					if err != nil {
 						c.logger.LogAttrs(ctx, slog.LevelError, err.Error(),
 							slog.String("disk_name", d.name),
-							slog.String("persistentvolume", d.Name()),
+						slog.String("persistentvolume", d.Name()),
 							slog.String("project", project),
 							slog.String("region", d.Region()),
 							slog.String("cluster_name", d.Cluster),
