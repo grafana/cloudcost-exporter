@@ -45,10 +45,12 @@ Restrict which model families are emitted with `--aws.bedrock.families` (a regex
 
   `model_id` is a normalized label derived from pricing metadata, not a canonical Bedrock model ID or ARN. Because both sources normalize to the same `model_id`, a model priced under both (e.g. the legacy Claude generation) merges into one set of series: identical prices dedupe, and a price one source lacks (the standard source prices some legacy Claude models for input only) is filled in by the other.
 - **family**: Model provider, normalized to lowercase (spaces become underscores) from the `AmazonBedrock` `provider` attribute, or derived from the `AmazonBedrockFoundationModels` `servicename`. The set tracks whatever AWS publishes, so it is open-ended; observed values include `anthropic`, `amazon`, `cohere`, `meta`, `ai21`, `mistral`, `deepseek`, `google`, `qwen`, `nvidia`, `openai`, `writer`, and `twelvelabs`. Amazon-developed models with no provider attribute (Nova, Titan) use `amazon`. A marketplace `servicename` with no recognized provider falls back to `unknown`. Filter with `--aws.bedrock.families`.
-- **price_tier**: Inference tier.
-  - Token metrics: `on_demand`, `on_demand_batch`, `on_demand_flex`, `on_demand_priority`, `cross_region`, `cross_region_batch`, `cross_region_flex`, `cross_region_priority`.
-  - Prompt caching (token metrics, marketplace source): `cache_read`, `cache_write_5m`, `cache_write_1h`, and their `cross_region_*` / `*_latency_optimized` variants. Reads are a single rate; writes split by cache TTL (5-minute default vs 1-hour). Cache storage (priced per token-hour) is not emitted. Caching for Amazon-native models (Nova/Titan) in the `AmazonBedrock` source is not emitted.
-  - Search-unit metrics: `on_demand`, `cross_region`.
+- **price_tier**: Inference tier, composed of an optional `cross_region` prefix, a base operation, and an optional quota suffix, joined by `_`. The parts stack, so values like `on_demand`, `on_demand_batch`, `cross_region`, `cross_region_batch`, `cross_region_cache_read` all occur.
+  - Base operation (token metrics): `on_demand`, or a prompt-cache operation `cache_read`, `cache_write_5m`, `cache_write_1h`. Cache reads are a single rate; writes split by TTL (5-minute default vs 1-hour).
+  - Quota suffix: `batch`, `flex`, `priority`, or `latency_optimized` (e.g. `on_demand_batch`, `on_demand_latency_optimized`, `cache_write_1h`).
+  - Cross-region: any of the above prefixed with `cross_region` (e.g. `cross_region`, `cross_region_batch`, `cross_region_cache_write_1h`).
+  - Search-unit metrics use only `on_demand` and `cross_region`.
+  - Prompt caching is emitted only from the marketplace source. Cache storage (priced per token-hour) and caching for Amazon-native models (Nova/Titan) in the `AmazonBedrock` source are not emitted.
 
 ## Pricing Sources
 
