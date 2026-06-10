@@ -69,7 +69,7 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 		var mu sync.Mutex
 		seen := make(map[string]bool)
 		var disks []*Disk
-		successCount := 0
+		successfulZones := 0
 
 	zoneLoop:
 		for _, zone := range zones {
@@ -82,6 +82,7 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 			go func() {
 				defer wg.Done()
 				defer func() { <-sem }()
+				// Re-check: sem<- may have raced with cancellation.
 				if ctx.Err() != nil {
 					return
 				}
@@ -102,13 +103,14 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 					seen[d.Name()] = true
 					disks = append(disks, d)
 				}
-				successCount++
+				successfulZones++
 				mu.Unlock()
 			}()
 		}
 		wg.Wait()
 
-		if successCount == 0 && len(zones) > 0 {
+		// ctx.Err() != nil means we bailed for shutdown, not a real total-failure.
+		if ctx.Err() == nil && successfulZones == 0 && len(zones) > 0 {
 			ds.logger.LogAttrs(ctx, slog.LevelError, "all zone listings failed, wiping cached data",
 				slog.String("project", project),
 				slog.Int("zones", len(zones)))

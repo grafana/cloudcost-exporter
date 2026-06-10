@@ -618,9 +618,8 @@ func TestCollector_ZoneConcurrencyDefault(t *testing.T) {
 }
 
 func TestDiskStore_Populate_ConcurrencyLimit(t *testing.T) {
-	// 13 zones → up to 13 goroutines for ListDisks during DiskStore.Populate.
-	// diskPopulateConcurrencyLimit caps the total.
-	const numZones = 13
+	// Zones > limit so the cap is actually exercised.
+	const numZones = diskPopulateConcurrencyLimit + 3
 
 	zones := make([]*computev1.Zone, numZones)
 	for i := range numZones {
@@ -636,17 +635,10 @@ func TestDiskStore_Populate_ConcurrencyLimit(t *testing.T) {
 		"peak goroutine concurrency must not exceed diskPopulateConcurrencyLimit")
 }
 
-// TestCollector_Collect_NodeAndDiskEmitInParallel asserts that node and disk
-// metric emission run concurrently inside Collect().
-//
-// With sequential emission, all metrics of one kind arrive before any metric
-// of the other. With parallel emission, both goroutines are runnable at the
-// same time and Go's FIFO channel queue interleaves their sends on an
-// unbuffered channel, so the receive order alternates almost immediately.
-//
-// The test asserts that the first contiguous run of a single metric kind is
-// shorter than the total count of that kind — true under any reasonable
-// scheduling for the parallel implementation, impossible for a sequential one.
+// Sequential emission would put all metrics of one kind before any of the
+// other; parallel emission interleaves them on an unbuffered channel. The
+// assertion checks that the leading run of a single kind is shorter than that
+// kind's total count.
 func TestCollector_Collect_NodeAndDiskEmitInParallel(t *testing.T) {
 	const (
 		numNodes = 10
@@ -739,9 +731,8 @@ func TestCollector_Collect_NodeAndDiskEmitInParallel(t *testing.T) {
 		prefixLen, order[0])
 }
 
-// programmableGCPClient is a fake gcp client whose per-zone results can be
-// configured. Used to exercise partial- and total-failure paths in store
-// populate logic.
+// programmableGCPClient returns configurable per-zone results for testing
+// partial- and total-failure paths.
 type programmableGCPClient struct {
 	client.Client
 
@@ -849,10 +840,8 @@ func TestDiskStore_Populate_AllZonesFail_LogsAndWipesCache(t *testing.T) {
 		"expected an error log when every zone fails")
 }
 
-// blockingGCPClient blocks every ListInstancesInZone / ListDisks call until
-// release is closed. It signals via saturation once `limit` calls are in flight,
-// letting tests deterministically cancel context after the concurrency pool is
-// full.
+// blockingGCPClient blocks every list call until release is closed; saturation
+// closes once limit calls are in flight, enabling deterministic ctx-cancel tests.
 type blockingGCPClient struct {
 	client.Client
 
@@ -861,6 +850,7 @@ type blockingGCPClient struct {
 	saturation chan struct{}
 	release    chan struct{}
 	limit      int64
+	returnErr  error
 	once       sync.Once
 }
 
@@ -877,16 +867,15 @@ func (b *blockingGCPClient) signalSaturation() {
 func (b *blockingGCPClient) ListInstancesInZone(_, _ string) ([]*client.MachineSpec, error) {
 	b.signalSaturation()
 	<-b.release
-	return nil, nil
+	return nil, b.returnErr
 }
 
 func (b *blockingGCPClient) ListDisks(_ context.Context, _, _ string) ([]*computev1.Disk, error) {
 	b.signalSaturation()
 	<-b.release
-	return nil, nil
+	return nil, b.returnErr
 }
 
-// makeZones builds n distinct compute.Zone fixtures for use as GetZones returns.
 func makeZones(n int) []*computev1.Zone {
 	zones := make([]*computev1.Zone, n)
 	for i := range n {
@@ -896,10 +885,7 @@ func makeZones(n int) []*computev1.Zone {
 }
 
 func TestNodeStore_Populate_HonorsContextCancellation(t *testing.T) {
-	// More zones than the concurrency limit so the for-loop blocks on sem
-	// acquisition for iterations beyond nodePopulateConcurrencyLimit. We then
-	// cancel ctx; without ctx-aware sem acquisition those queued iterations
-	// would eventually fire when the in-flight batch drains.
+	// Zones > limit so iterations queue on sem; cancellation must unblock them.
 	const numZones = nodePopulateConcurrencyLimit * 3
 
 	fake := &blockingGCPClient{
@@ -977,4 +963,50 @@ func TestDiskStore_Populate_HonorsContextCancellation(t *testing.T) {
 
 	assert.Equal(t, int64(diskPopulateConcurrencyLimit), fake.callCount.Load(),
 		"context cancellation should prevent additional zone calls beyond the in-flight batch")
+}
+
+// Shutdown with all in-flight calls erroring must not look like a real
+// total-failure: ctx.Err() guards the wipe log.
+func TestNodeStore_Populate_ShutdownDoesNotLogWipe(t *testing.T) {
+	const numZones = nodePopulateConcurrencyLimit * 3
+
+	fake := &blockingGCPClient{
+		zones:      makeZones(numZones),
+		saturation: make(chan struct{}),
+		release:    make(chan struct{}),
+		limit:      nodePopulateConcurrencyLimit,
+		returnErr:  fmt.Errorf("shutdown in progress"),
+	}
+
+	var logBuf bytes.Buffer
+	ns := newSeededNodeStore(t, fake, []string{"p1"}, nil)
+	ns.logger = slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	populateDone := make(chan struct{})
+	go func() {
+		ns.Populate(ctx)
+		close(populateDone)
+	}()
+
+	select {
+	case <-fake.saturation:
+	case <-time.After(2 * time.Second):
+		close(fake.release)
+		t.Fatal("timed out waiting for in-flight calls to saturate")
+	}
+
+	cancel()
+	close(fake.release)
+
+	select {
+	case <-populateDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Populate did not return after context cancellation")
+	}
+
+	assert.NotContains(t, logBuf.String(), "all zone listings failed",
+		"shutdown should not emit a total-failure log even when in-flight calls fail")
 }
