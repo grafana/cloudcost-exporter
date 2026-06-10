@@ -30,6 +30,12 @@ const (
 	priceTierOnDemandPriority = "on_demand_priority"
 	priceTierCrossRegion      = "cross_region"
 
+	// Prompt-caching operations, emitted as price_tier values on the input metric. Reads are a
+	// single rate; writes split by cache TTL (5-minute default vs 1-hour).
+	priceTierCacheRead    = "cache_read"
+	priceTierCacheWrite5m = "cache_write_5m"
+	priceTierCacheWrite1h = "cache_write_1h"
+
 	// compositeKeySep separates the four fields encoded in the pricingstore usagetype key:
 	// family|direction|model_id|price_tier
 	compositeKeySep = "|"
@@ -462,12 +468,22 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 		return "", false, nil
 	}
 
-	direction, ok := classifyMarketplaceUsageType(attrs.UsageType)
-	if !ok {
+	// Cache read/write are input-token operations; storage is per token-hour (a different unit)
+	// so it is skipped. Non-cache SKUs fall through to the normal direction classifier.
+	cacheOp, storage := marketplaceCacheOp(attrs.UsageType)
+	if storage {
 		return "", false, nil
 	}
+	direction := "input"
+	if cacheOp == "" {
+		var ok bool
+		direction, ok = classifyMarketplaceUsageType(attrs.UsageType)
+		if !ok {
+			return "", false, nil
+		}
+	}
 
-	priceTier := extractMarketplacePriceTier(attrs.UsageType)
+	priceTier := extractMarketplacePriceTier(attrs.UsageType, cacheOp)
 
 	for _, term := range info.Terms.OnDemand {
 		for _, pd := range term.PriceDimensions {
@@ -567,8 +583,9 @@ func familyFromServiceName(servicename string) string {
 func classifyMarketplaceUsageType(usagetype string) (direction string, ok bool) {
 	lower := strings.ToLower(usagetype)
 	// lctx (long context) SKUs share the direction/tier of standard SKUs and would overwrite
-	// their prices; skip until long context is modelled as its own price tier.
-	for _, skip := range []string{"image", "video", "audio", "provisionedthroughput", "created_image", "request", "cache", "lctx"} {
+	// their prices; skip until long context is modelled as its own price tier. Cache SKUs are
+	// handled by the caller before this point.
+	for _, skip := range []string{"image", "video", "audio", "provisionedthroughput", "created_image", "request", "lctx"} {
 		if strings.Contains(lower, skip) {
 			return "", false
 		}
@@ -588,28 +605,65 @@ func classifyMarketplaceUsageType(usagetype string) (direction string, ok bool) 
 // extractMarketplacePriceTier derives price tier from the marketplace usagetype suffix.
 // Cross-region ("global") and quota-tier ("batch", "priority", "flex") can stack —
 // check batch/priority/flex before the global catch-all.
-func extractMarketplacePriceTier(usagetype string) string {
-	lower := strings.ToLower(usagetype)
-	isCrossRegion := strings.Contains(lower, "_global")
+// composeTier builds a price_tier from its parts: an optional cross-region prefix, the base
+// operation (on_demand or a cache_* op), and an optional quota tier suffix (batch/flex/priority/
+// latency_optimized). Components stack, e.g. cross_region_cache_read, cache_write_1h,
+// on_demand_batch. Each distinct combination gets a distinct value, so SKUs that differ only by a
+// qualifier do not collide on one key.
+func composeTier(crossRegion bool, op, quota string) string {
+	if op == "" {
+		op = priceTierOnDemand
+	}
+	parts := make([]string, 0, 3)
+	if crossRegion {
+		parts = append(parts, priceTierCrossRegion)
+	}
+	// Drop a redundant on_demand when cross-region already carries the base meaning, matching the
+	// established names (cross_region, not cross_region_on_demand).
+	if !crossRegion || op != priceTierOnDemand {
+		parts = append(parts, op)
+	}
+	if quota != "" {
+		parts = append(parts, quota)
+	}
+	return strings.Join(parts, "_")
+}
 
-	var quotaTier string
+// marketplaceCacheOp returns the cache operation for a marketplace usagetype, and whether it is a
+// cache-storage SKU. Storage is priced per token-hour (a different unit), so the caller skips it.
+// Returns "" for non-cache SKUs. Reads are a single rate; writes split by 5-minute vs 1-hour TTL.
+func marketplaceCacheOp(usagetype string) (op string, storage bool) {
+	lower := strings.ToLower(usagetype)
+	if !strings.Contains(lower, "cache") {
+		return "", false
+	}
+	if strings.Contains(lower, "storage") {
+		return "", true
+	}
+	if strings.Contains(lower, "cacheread") || strings.Contains(lower, "cache_read") {
+		return priceTierCacheRead, false
+	}
+	if strings.Contains(lower, "1h") {
+		return priceTierCacheWrite1h, false
+	}
+	return priceTierCacheWrite5m, false
+}
+
+func extractMarketplacePriceTier(usagetype, cacheOp string) string {
+	lower := strings.ToLower(usagetype)
+	crossRegion := strings.Contains(lower, "_global")
+
+	var quota string
 	switch {
 	case strings.Contains(lower, "_batch"):
-		quotaTier = priceTierOnDemandBatch
+		quota = "batch"
 	case strings.Contains(lower, "_priority"):
-		quotaTier = priceTierOnDemandPriority
+		quota = "priority"
 	case strings.Contains(lower, "_flex"):
-		quotaTier = priceTierOnDemandFlex
+		quota = "flex"
+	case strings.Contains(lower, "latencyoptimized"):
+		quota = "latency_optimized"
 	}
 
-	if isCrossRegion && quotaTier != "" {
-		return priceTierCrossRegion + "_" + strings.TrimPrefix(quotaTier, "on_demand_")
-	}
-	if isCrossRegion {
-		return priceTierCrossRegion
-	}
-	if quotaTier != "" {
-		return quotaTier
-	}
-	return priceTierOnDemand
+	return composeTier(crossRegion, cacheOp, quota)
 }

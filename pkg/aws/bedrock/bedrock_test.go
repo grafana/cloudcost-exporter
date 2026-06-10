@@ -764,10 +764,7 @@ func TestClassifyMarketplaceUsageType(t *testing.T) {
 		{"USE1-MP:USE1_InputImageCount-Units", "", false},
 		{"USE1-MP:USE1_ProvisionedThroughput_1MonthCommit_ModelUnits_Usage-Units", "", false},
 		{"USE1-MP:USE1_created_image-Units", "", false},
-		// Cache tokens contain "InputTokenCount" but must be skipped — explicit guard against misclassification.
-		{"USE1-MP:USE1_CacheReadInputTokenCount-Units", "", false},
-		{"USE1-MP:USE1_CacheWriteInputTokenCount-Units", "", false},
-		{"USE1-MP:USE1_CacheWrite1hInputTokenCount_Global-Units", "", false},
+		// Cache SKUs are handled by marketplaceCacheOp before this classifier; see TestMarketplaceCacheOp.
 	}
 	for _, tt := range tests {
 		t.Run(tt.usagetype, func(t *testing.T) {
@@ -781,20 +778,97 @@ func TestClassifyMarketplaceUsageType(t *testing.T) {
 func TestExtractMarketplacePriceTier(t *testing.T) {
 	tests := []struct {
 		usagetype string
+		cacheOp   string
 		want      string
 	}{
-		{"USE1-MP:USE1_InputTokenCount-Units", "on_demand"},
-		{"USE1-MP:USE1_InputTokenCount_Global-Units", "cross_region"},
-		{"USE1-MP:USE1_InputTokenCount_Batch-Units", "on_demand_batch"},
-		{"USE1-MP:USE1_InputTokenCount_Global_Batch-Units", "cross_region_batch"},
-		{"USE1-MP:USE1_OutputTokenCount_Global-Units", "cross_region"},
-		{"USE1-MP:USE1_search_units-Units", "on_demand"},
+		{"USE1-MP:USE1_InputTokenCount-Units", "", "on_demand"},
+		{"USE1-MP:USE1_InputTokenCount_Global-Units", "", "cross_region"},
+		{"USE1-MP:USE1_InputTokenCount_Batch-Units", "", "on_demand_batch"},
+		{"USE1-MP:USE1_InputTokenCount_Global_Batch-Units", "", "cross_region_batch"},
+		{"USE1-MP:USE1_OutputTokenCount_Global-Units", "", "cross_region"},
+		{"USE1-MP:USE1_search_units-Units", "", "on_demand"},
+		// Latency-optimized is its own quota tier (does not collide with on_demand).
+		{"USE1-MP:USE1_InputTokenCount_LatencyOptimized-Units", "", "on_demand_latency_optimized"},
+		// Cache operations fold into the tier and stack with cross-region.
+		{"USE1-MP:USE1_CacheReadInputTokenCount-Units", "cache_read", "cache_read"},
+		{"USE1-MP:USE1_CacheReadInputTokenCount_Global-Units", "cache_read", "cross_region_cache_read"},
+		{"USE1-MP:USE1_CacheWriteInputTokenCount-Units", "cache_write_5m", "cache_write_5m"},
+		{"USE1-MP:USE1_CacheWrite1hInputTokenCount-Units", "cache_write_1h", "cache_write_1h"},
+		{"USE1-MP:USE1_CacheWrite1hInputTokenCount_Global-Units", "cache_write_1h", "cross_region_cache_write_1h"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.usagetype, func(t *testing.T) {
-			assert.Equal(t, tt.want, extractMarketplacePriceTier(tt.usagetype))
+			assert.Equal(t, tt.want, extractMarketplacePriceTier(tt.usagetype, tt.cacheOp))
 		})
 	}
+}
+
+func TestMarketplaceCacheOp(t *testing.T) {
+	tests := []struct {
+		usagetype   string
+		wantOp      string
+		wantStorage bool
+	}{
+		{"USE1-MP:USE1_CacheReadInputTokenCount-Units", "cache_read", false},
+		{"USE1-MP:USE1_CacheReadInputTokenCount_Global-Units", "cache_read", false},
+		{"USE1-MP:USE1_CacheWriteInputTokenCount-Units", "cache_write_5m", false},
+		{"USE1-MP:USE1_CacheWrite1hInputTokenCount-Units", "cache_write_1h", false},
+		{"USE1-MP:USE1_cache_write_tokens_1h_standard-Units", "cache_write_1h", false},
+		{"USE1-MP:USE1_InputTokenCount-Units", "", false}, // not cache
+		{"USE1-MP:USE1_CacheStorage-Units", "", true},     // storage skipped
+	}
+	for _, tt := range tests {
+		t.Run(tt.usagetype, func(t *testing.T) {
+			op, storage := marketplaceCacheOp(tt.usagetype)
+			assert.Equal(t, tt.wantOp, op)
+			assert.Equal(t, tt.wantStorage, storage)
+		})
+	}
+}
+
+func TestCollect_EmitsMarketplaceCacheMetrics(t *testing.T) {
+	// Cache read/write are emitted on the input metric with cache_* price_tier values; storage
+	// (per token-hour) is skipped.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	pricingClient := mockclient.NewMockClient(ctrl)
+	pricingClient.EXPECT().
+		ListBedrockPrices(gomock.Any(), "us-east-1").
+		Return([]string{}, nil).
+		Times(1)
+	pricingClient.EXPECT().
+		ListBedrockMarketplacePrices(gomock.Any(), "us-east-1").
+		Return([]string{
+			marketplacePriceJSON("Claude Sonnet 4.6 (Amazon Bedrock Edition)", "USE1-MP:USE1_CacheReadInputTokenCount-Units", "us-east-1", "0.3"),
+			marketplacePriceJSON("Claude Sonnet 4.6 (Amazon Bedrock Edition)", "USE1-MP:USE1_CacheWriteInputTokenCount-Units", "us-east-1", "3.75"),
+			marketplacePriceJSON("Claude Sonnet 4.6 (Amazon Bedrock Edition)", "USE1-MP:USE1_CacheWrite1hInputTokenCount_Global-Units", "us-east-1", "6.0"),
+			// Storage SKU must be skipped.
+			marketplacePriceJSON("Claude Sonnet 4.6 (Amazon Bedrock Edition)", "USE1-MP:USE1_CacheStorage-Units", "us-east-1", "0.07"),
+		}, nil).
+		Times(1)
+
+	collector, err := New(t.Context(), &Config{
+		Regions:       []ec2types.Region{{RegionName: aws.String("us-east-1")}},
+		PricingClient: pricingClient,
+		Logger:        testLogger(),
+		AccountID:     "123456789012",
+	})
+	require.NoError(t, err)
+
+	results, err := collectMetricResults(t, collector)
+	require.NoError(t, err)
+	require.Len(t, results, 3, "read + write_5m + write_1h emitted; storage skipped")
+
+	byTier := map[string]float64{}
+	for _, r := range results {
+		require.Equal(t, "cloudcost_aws_bedrock_input_usd_per_1k_tokens", r.FqName)
+		require.Equal(t, "claude-sonnet-4.6", r.Labels["model_id"])
+		byTier[r.Labels["price_tier"]] = r.Value
+	}
+	assert.InDelta(t, 0.0003, byTier["cache_read"], 1e-9)      // 0.3/1M
+	assert.InDelta(t, 0.00375, byTier["cache_write_5m"], 1e-9) // 3.75/1M
+	assert.InDelta(t, 0.006, byTier["cross_region_cache_write_1h"], 1e-9)
 }
 
 func TestCollect_EmitsMarketplaceTokenMetrics(t *testing.T) {
