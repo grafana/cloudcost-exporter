@@ -27,7 +27,7 @@ type NodeStore struct {
 
 // NewNodeStore returns a NodeStore that refreshes node inventory in the
 // background. concurrency caps in-flight zone-level calls per populate;
-// zero or negative values fall back to nodePopulateConcurrencyLimit.
+// zero or negative values fall back to DefaultZoneCollectConcurrency.
 func NewNodeStore(ctx context.Context, logger *slog.Logger, gcpClient client.Client, projects []string, concurrency int) *NodeStore {
 	if concurrency <= 0 {
 		concurrency = DefaultZoneCollectConcurrency
