@@ -3,7 +3,6 @@ package gke
 import (
 	"context"
 	"log/slog"
-	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,7 +19,7 @@ type DiskStore struct {
 	concurrency int
 
 	mu    sync.RWMutex
-	disks map[string][]*Disk
+	disks map[string]map[string][]*Disk // project → zone → disks
 
 	populating atomic.Bool
 
@@ -40,7 +39,7 @@ func NewDiskStore(ctx context.Context, logger *slog.Logger, gcpClient client.Cli
 		gcpClient:         gcpClient,
 		projects:          projects,
 		concurrency:       concurrency,
-		disks:             make(map[string][]*Disk),
+		disks:             make(map[string]map[string][]*Disk),
 		initialPopulation: make(chan struct{}),
 	}
 	go ds.Populate(ctx)
@@ -51,10 +50,22 @@ func (ds *DiskStore) Done() <-chan struct{} {
 	return ds.initialPopulation
 }
 
+// GetDisks returns all cached disks for a project, deduplicated by name across zones.
 func (ds *DiskStore) GetDisks(project string) []*Disk {
 	ds.mu.RLock()
 	defer ds.mu.RUnlock()
-	return ds.disks[project]
+	seen := make(map[string]bool)
+	var all []*Disk
+	for _, zonedDisks := range ds.disks[project] {
+		for _, d := range zonedDisks {
+			if seen[d.Name()] {
+				continue
+			}
+			seen[d.Name()] = true
+			all = append(all, d)
+		}
+	}
+	return all
 }
 
 func (ds *DiskStore) Populate(ctx context.Context) {
@@ -71,7 +82,6 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 		close(ds.initialPopulation)
 	})
 
-	updates := make(map[string][]*Disk)
 	for _, project := range ds.projects {
 		zones, err := ds.gcpClient.GetZones(project)
 		if err != nil {
@@ -83,10 +93,6 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 
 		sem := make(chan struct{}, ds.concurrency)
 		var wg sync.WaitGroup
-		var mu sync.Mutex
-		seen := make(map[string]bool)
-		var disks []*Disk
-		successfulZones := 0
 
 	zoneLoop:
 		for _, zone := range zones {
@@ -111,31 +117,18 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 						slog.String("error", err.Error()))
 					return
 				}
-				mu.Lock()
+				zonedDisks := make([]*Disk, 0, len(results))
 				for _, raw := range results {
-					d := NewDisk(raw, project)
-					if seen[d.Name()] {
-						continue
-					}
-					seen[d.Name()] = true
-					disks = append(disks, d)
+					zonedDisks = append(zonedDisks, NewDisk(raw, project))
 				}
-				successfulZones++
-				mu.Unlock()
+				ds.mu.Lock()
+				if ds.disks[project] == nil {
+					ds.disks[project] = make(map[string][]*Disk)
+				}
+				ds.disks[project][zone.Name] = zonedDisks
+				ds.mu.Unlock()
 			}()
 		}
 		wg.Wait()
-
-		// ctx.Err() != nil means we bailed for shutdown, not a real total-failure.
-		if ctx.Err() == nil && successfulZones == 0 && len(zones) > 0 {
-			ds.logger.LogAttrs(ctx, slog.LevelError, "all zone listings failed, wiping cached data",
-				slog.String("project", project),
-				slog.Int("zones", len(zones)))
-		}
-		updates[project] = disks
 	}
-
-	ds.mu.Lock()
-	maps.Copy(ds.disks, updates)
-	ds.mu.Unlock()
 }

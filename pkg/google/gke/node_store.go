@@ -3,7 +3,6 @@ package gke
 import (
 	"context"
 	"log/slog"
-	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,7 +19,7 @@ type NodeStore struct {
 	concurrency int
 
 	mu    sync.RWMutex
-	nodes map[string][]*client.MachineSpec
+	nodes map[string]map[string][]*client.MachineSpec // project → zone → instances
 
 	populating atomic.Bool
 
@@ -40,7 +39,7 @@ func NewNodeStore(ctx context.Context, logger *slog.Logger, gcpClient client.Cli
 		gcpClient:         gcpClient,
 		projects:          projects,
 		concurrency:       concurrency,
-		nodes:             make(map[string][]*client.MachineSpec),
+		nodes:             make(map[string]map[string][]*client.MachineSpec),
 		initialPopulation: make(chan struct{}),
 	}
 	go ns.Populate(ctx)
@@ -54,7 +53,11 @@ func (ns *NodeStore) Done() <-chan struct{} {
 func (ns *NodeStore) GetNodes(project string) []*client.MachineSpec {
 	ns.mu.RLock()
 	defer ns.mu.RUnlock()
-	return ns.nodes[project]
+	var all []*client.MachineSpec
+	for _, instances := range ns.nodes[project] {
+		all = append(all, instances...)
+	}
+	return all
 }
 
 func (ns *NodeStore) Populate(ctx context.Context) {
@@ -71,7 +74,6 @@ func (ns *NodeStore) Populate(ctx context.Context) {
 		close(ns.initialPopulation)
 	})
 
-	updates := make(map[string][]*client.MachineSpec)
 	for _, project := range ns.projects {
 		zones, err := ns.gcpClient.GetZones(project)
 		if err != nil {
@@ -83,9 +85,6 @@ func (ns *NodeStore) Populate(ctx context.Context) {
 
 		sem := make(chan struct{}, ns.concurrency)
 		var wg sync.WaitGroup
-		var mu sync.Mutex
-		var instances []*client.MachineSpec
-		successfulZones := 0
 
 	zoneLoop:
 		for _, zone := range zones {
@@ -110,24 +109,14 @@ func (ns *NodeStore) Populate(ctx context.Context) {
 						slog.String("error", err.Error()))
 					return
 				}
-				mu.Lock()
-				instances = append(instances, results...)
-				successfulZones++
-				mu.Unlock()
+				ns.mu.Lock()
+				if ns.nodes[project] == nil {
+					ns.nodes[project] = make(map[string][]*client.MachineSpec)
+				}
+				ns.nodes[project][zone.Name] = results
+				ns.mu.Unlock()
 			}()
 		}
 		wg.Wait()
-
-		// ctx.Err() != nil means we bailed for shutdown, not a real total-failure.
-		if ctx.Err() == nil && successfulZones == 0 && len(zones) > 0 {
-			ns.logger.LogAttrs(ctx, slog.LevelError, "all zone listings failed, wiping cached data",
-				slog.String("project", project),
-				slog.Int("zones", len(zones)))
-		}
-		updates[project] = instances
 	}
-
-	ns.mu.Lock()
-	maps.Copy(ns.nodes, updates)
-	ns.mu.Unlock()
 }

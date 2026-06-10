@@ -559,13 +559,13 @@ func (c *concurrentGCPClient) ListDisks(_ context.Context, _ string, _ string) (
 // Passing nil for lgr uses the package-default logger. The helper always applies
 // the same .With("store", "nodes") wrapping as NewNodeStore so log-content
 // assertions exercise that attribute.
-func newSeededNodeStore(t *testing.T, lgr *slog.Logger, gcpClient client.Client, projects []string, seed map[string][]*client.MachineSpec) *NodeStore {
+func newSeededNodeStore(t *testing.T, lgr *slog.Logger, gcpClient client.Client, projects []string, seed map[string]map[string][]*client.MachineSpec) *NodeStore {
 	t.Helper()
 	if lgr == nil {
 		lgr = logger
 	}
 	if seed == nil {
-		seed = make(map[string][]*client.MachineSpec)
+		seed = make(map[string]map[string][]*client.MachineSpec)
 	}
 	return &NodeStore{
 		logger:            lgr.With("store", "nodes"),
@@ -577,13 +577,13 @@ func newSeededNodeStore(t *testing.T, lgr *slog.Logger, gcpClient client.Client,
 	}
 }
 
-func newSeededDiskStore(t *testing.T, lgr *slog.Logger, gcpClient client.Client, projects []string, seed map[string][]*Disk) *DiskStore {
+func newSeededDiskStore(t *testing.T, lgr *slog.Logger, gcpClient client.Client, projects []string, seed map[string]map[string][]*Disk) *DiskStore {
 	t.Helper()
 	if lgr == nil {
 		lgr = logger
 	}
 	if seed == nil {
-		seed = make(map[string][]*Disk)
+		seed = make(map[string]map[string][]*Disk)
 	}
 	return &DiskStore{
 		logger:            lgr.With("store", "disks"),
@@ -700,7 +700,7 @@ func TestCollector_Collect_EmitsBothNodeAndDiskMetrics(t *testing.T) {
 			Labels:      map[string]string{client.GkeClusterLabel: "cluster1"},
 		}
 	}
-	nodeStore := newSeededNodeStore(t, nil, nil, []string{project}, map[string][]*client.MachineSpec{project: nodes})
+	nodeStore := newSeededNodeStore(t, nil, nil, []string{project}, map[string]map[string][]*client.MachineSpec{project: {"zone-a": nodes}})
 	close(nodeStore.initialPopulation)
 
 	disks := make([]*Disk, numDisks)
@@ -713,7 +713,7 @@ func TestCollector_Collect_EmitsBothNodeAndDiskMetrics(t *testing.T) {
 			SizeGb: 10,
 		}, project)
 	}
-	diskStore := newSeededDiskStore(t, nil, nil, []string{project}, map[string][]*Disk{project: disks})
+	diskStore := newSeededDiskStore(t, nil, nil, []string{project}, map[string]map[string][]*Disk{project: {"zone-a": disks}})
 	close(diskStore.initialPopulation)
 
 	collector := &Collector{
@@ -789,7 +789,7 @@ func TestNodeStore_Populate_PartialZoneFailure_KeepsSuccessfulZones(t *testing.T
 	assert.Equal(t, "node-ok", got[0].Instance)
 }
 
-func TestNodeStore_Populate_AllZonesFail_LogsAndWipesCache(t *testing.T) {
+func TestNodeStore_Populate_AllZonesFail_PreservesStaleCache(t *testing.T) {
 	stale := []*client.MachineSpec{{Instance: "stale-node"}}
 
 	fake := &programmableGCPClient{
@@ -800,17 +800,13 @@ func TestNodeStore_Populate_AllZonesFail_LogsAndWipesCache(t *testing.T) {
 		},
 	}
 
-	var logBuf bytes.Buffer
-	captureLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
-	ns := newSeededNodeStore(t, captureLogger, fake, []string{"p1"}, map[string][]*client.MachineSpec{"p1": stale})
+	ns := newSeededNodeStore(t, nil, fake, []string{"p1"}, map[string]map[string][]*client.MachineSpec{"p1": {"stale-zone": stale}})
 
 	ns.Populate(t.Context())
 
-	assert.Empty(t, ns.GetNodes("p1"), "cache should be wiped when every zone fails")
-	assert.Contains(t, logBuf.String(), "all zone listings failed, wiping cached data",
-		"expected an error log when every zone fails")
-	assert.Contains(t, logBuf.String(), `store=nodes`,
-		"log must carry the store=nodes attribute applied by NewNodeStore")
+	got := ns.GetNodes("p1")
+	require.Len(t, got, 1, "stale cache should be preserved when every zone fails")
+	assert.Equal(t, "stale-node", got[0].Instance)
 }
 
 func TestDiskStore_Populate_PartialZoneFailure_KeepsSuccessfulZones(t *testing.T) {
@@ -831,7 +827,7 @@ func TestDiskStore_Populate_PartialZoneFailure_KeepsSuccessfulZones(t *testing.T
 	assert.Equal(t, "disk-ok", got[0].Name())
 }
 
-func TestDiskStore_Populate_AllZonesFail_LogsAndWipesCache(t *testing.T) {
+func TestDiskStore_Populate_AllZonesFail_PreservesStaleCache(t *testing.T) {
 	stale := []*Disk{NewDisk(&computev1.Disk{Name: "stale-disk"}, "p1")}
 
 	fake := &programmableGCPClient{
@@ -842,17 +838,13 @@ func TestDiskStore_Populate_AllZonesFail_LogsAndWipesCache(t *testing.T) {
 		},
 	}
 
-	var logBuf bytes.Buffer
-	captureLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
-	ds := newSeededDiskStore(t, captureLogger, fake, []string{"p1"}, map[string][]*Disk{"p1": stale})
+	ds := newSeededDiskStore(t, nil, fake, []string{"p1"}, map[string]map[string][]*Disk{"p1": {"stale-zone": stale}})
 
 	ds.Populate(t.Context())
 
-	assert.Empty(t, ds.GetDisks("p1"), "cache should be wiped when every zone fails")
-	assert.Contains(t, logBuf.String(), "all zone listings failed, wiping cached data",
-		"expected an error log when every zone fails")
-	assert.Contains(t, logBuf.String(), `store=disks`,
-		"log must carry the store=disks attribute applied by NewDiskStore")
+	got := ds.GetDisks("p1")
+	require.Len(t, got, 1, "stale cache should be preserved when every zone fails")
+	assert.Equal(t, "stale-disk", got[0].Name())
 }
 
 // blockingGCPClient blocks every list call until release is closed; saturation
@@ -978,96 +970,6 @@ func TestDiskStore_Populate_HonorsContextCancellation(t *testing.T) {
 
 	assert.Equal(t, int64(DefaultZoneCollectConcurrency), fake.callCount.Load(),
 		"context cancellation should prevent additional zone calls beyond the in-flight batch")
-}
-
-// Shutdown with all in-flight calls erroring must not look like a real
-// total-failure: ctx.Err() guards the wipe log.
-func TestNodeStore_Populate_ShutdownDoesNotLogWipe(t *testing.T) {
-	const numZones = DefaultZoneCollectConcurrency * 3
-
-	fake := &blockingGCPClient{
-		zones:      makeZones(numZones),
-		saturation: make(chan struct{}),
-		release:    make(chan struct{}),
-		limit:      DefaultZoneCollectConcurrency,
-		returnErr:  fmt.Errorf("shutdown in progress"),
-	}
-
-	var logBuf bytes.Buffer
-	captureLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
-	ns := newSeededNodeStore(t, captureLogger, fake, []string{"p1"}, nil)
-
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-
-	populateDone := make(chan struct{})
-	go func() {
-		ns.Populate(ctx)
-		close(populateDone)
-	}()
-
-	select {
-	case <-fake.saturation:
-	case <-time.After(2 * time.Second):
-		close(fake.release)
-		t.Fatal("timed out waiting for in-flight calls to saturate")
-	}
-
-	cancel()
-	close(fake.release)
-
-	select {
-	case <-populateDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Populate did not return after context cancellation")
-	}
-
-	assert.NotContains(t, logBuf.String(), "all zone listings failed",
-		"shutdown should not emit a total-failure log even when in-flight calls fail")
-}
-
-func TestDiskStore_Populate_ShutdownDoesNotLogWipe(t *testing.T) {
-	const numZones = DefaultZoneCollectConcurrency * 3
-
-	fake := &blockingGCPClient{
-		zones:      makeZones(numZones),
-		saturation: make(chan struct{}),
-		release:    make(chan struct{}),
-		limit:      DefaultZoneCollectConcurrency,
-		returnErr:  fmt.Errorf("shutdown in progress"),
-	}
-
-	var logBuf bytes.Buffer
-	captureLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
-	ds := newSeededDiskStore(t, captureLogger, fake, []string{"p1"}, nil)
-
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-
-	populateDone := make(chan struct{})
-	go func() {
-		ds.Populate(ctx)
-		close(populateDone)
-	}()
-
-	select {
-	case <-fake.saturation:
-	case <-time.After(2 * time.Second):
-		close(fake.release)
-		t.Fatal("timed out waiting for in-flight calls to saturate")
-	}
-
-	cancel()
-	close(fake.release)
-
-	select {
-	case <-populateDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Populate did not return after context cancellation")
-	}
-
-	assert.NotContains(t, logBuf.String(), "all zone listings failed",
-		"shutdown should not emit a total-failure log even when in-flight calls fail")
 }
 
 // A tick that fires while a previous populate is still running must be dropped,
