@@ -20,13 +20,13 @@ import (
 const (
 	subsystem = "gcp_gke"
 
-	// zoneCollectConcurrencyLimit caps the total number of zone-level goroutines
+	// DefaultZoneCollectConcurrency caps the total number of zone-level goroutines
 	// (ListInstances + ListDisks) that run simultaneously per project during a
 	// scrape. GCP regions contain ~50 zones; without a limit every scrape would
-	// fire ~100 concurrent API calls per project. The value of 30 allows up to
-	// 15 zones to be queried in parallel, reducing scrape latency at the cost of
-	// a higher API request burst rate.
-	zoneCollectConcurrencyLimit = 30
+	// fire ~100 concurrent API calls per project. The default of 10 means at most
+	// 5 zones are queried in parallel, which stays well within GCP quota defaults.
+	// Override via Config.ZoneConcurrency to trade burst rate for scrape latency.
+	DefaultZoneCollectConcurrency = 10
 )
 
 var (
@@ -58,6 +58,9 @@ var (
 type Config struct {
 	Projects       string
 	ScrapeInterval time.Duration
+	// ZoneConcurrency caps zone-level goroutines per project during a scrape.
+	// Falls back to DefaultZoneCollectConcurrency.
+	ZoneConcurrency int
 }
 
 type Collector struct {
@@ -80,10 +83,14 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 			return err
 		}
 		// Two goroutines are launched per zone (ListInstances + ListDisks).
-		// zoneCollectConcurrencyLimit caps the total across both, so at most
-		// zoneCollectConcurrencyLimit/2 zones are queried in parallel.
+		// zoneConcurrency caps the total across both, so at most
+		// zoneConcurrency/2 zones are queried in parallel.
+		zoneConcurrency := c.config.ZoneConcurrency
+		if zoneConcurrency <= 0 {
+			zoneConcurrency = DefaultZoneCollectConcurrency
+		}
 		eg, egCtx := errgroup.WithContext(ctx)
-		eg.SetLimit(zoneCollectConcurrencyLimit)
+		eg.SetLimit(zoneConcurrency)
 		instances := make(chan []*client.MachineSpec, len(zones))
 		disks := make(chan []*compute.Disk, len(zones))
 		for _, zone := range zones {
