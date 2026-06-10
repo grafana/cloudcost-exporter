@@ -10,15 +10,13 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 )
 
-const (
-	nodeRefreshInterval          = 5 * time.Minute
-	nodePopulateConcurrencyLimit = 10
-)
+const nodeRefreshInterval = 5 * time.Minute
 
 type NodeStore struct {
-	logger    *slog.Logger
-	gcpClient client.Client
-	projects  []string
+	logger      *slog.Logger
+	gcpClient   client.Client
+	projects    []string
+	concurrency int
 
 	mu    sync.RWMutex
 	nodes map[string][]*client.MachineSpec
@@ -27,11 +25,18 @@ type NodeStore struct {
 	initialPopulation     chan struct{}
 }
 
-func NewNodeStore(ctx context.Context, logger *slog.Logger, gcpClient client.Client, projects []string) *NodeStore {
+// NewNodeStore returns a NodeStore that refreshes node inventory in the
+// background. concurrency caps in-flight zone-level calls per populate;
+// zero or negative values fall back to nodePopulateConcurrencyLimit.
+func NewNodeStore(ctx context.Context, logger *slog.Logger, gcpClient client.Client, projects []string, concurrency int) *NodeStore {
+	if concurrency <= 0 {
+		concurrency = DefaultZoneCollectConcurrency
+	}
 	ns := &NodeStore{
 		logger:            logger.With("store", "nodes"),
 		gcpClient:         gcpClient,
 		projects:          projects,
+		concurrency:       concurrency,
 		nodes:             make(map[string][]*client.MachineSpec),
 		initialPopulation: make(chan struct{}),
 	}
@@ -64,7 +69,7 @@ func (ns *NodeStore) Populate(ctx context.Context) {
 			continue
 		}
 
-		sem := make(chan struct{}, nodePopulateConcurrencyLimit)
+		sem := make(chan struct{}, ns.concurrency)
 		var wg sync.WaitGroup
 		var mu sync.Mutex
 		var instances []*client.MachineSpec

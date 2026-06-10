@@ -10,15 +10,13 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 )
 
-const (
-	diskRefreshInterval          = 15 * time.Minute
-	diskPopulateConcurrencyLimit = 10
-)
+const diskRefreshInterval = 15 * time.Minute
 
 type DiskStore struct {
-	logger    *slog.Logger
-	gcpClient client.Client
-	projects  []string
+	logger      *slog.Logger
+	gcpClient   client.Client
+	projects    []string
+	concurrency int
 
 	mu    sync.RWMutex
 	disks map[string][]*Disk
@@ -27,11 +25,18 @@ type DiskStore struct {
 	initialPopulation     chan struct{}
 }
 
-func NewDiskStore(ctx context.Context, logger *slog.Logger, gcpClient client.Client, projects []string) *DiskStore {
+// NewDiskStore returns a DiskStore that refreshes disk inventory in the
+// background. concurrency caps in-flight zone-level calls per populate;
+// zero or negative values fall back to diskPopulateConcurrencyLimit.
+func NewDiskStore(ctx context.Context, logger *slog.Logger, gcpClient client.Client, projects []string, concurrency int) *DiskStore {
+	if concurrency <= 0 {
+		concurrency = DefaultZoneCollectConcurrency
+	}
 	ds := &DiskStore{
 		logger:            logger.With("store", "disks"),
 		gcpClient:         gcpClient,
 		projects:          projects,
+		concurrency:       concurrency,
 		disks:             make(map[string][]*Disk),
 		initialPopulation: make(chan struct{}),
 	}
@@ -64,7 +69,7 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 			continue
 		}
 
-		sem := make(chan struct{}, diskPopulateConcurrencyLimit)
+		sem := make(chan struct{}, ds.concurrency)
 		var wg sync.WaitGroup
 		var mu sync.Mutex
 		seen := make(map[string]bool)
