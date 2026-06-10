@@ -69,13 +69,22 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 		var mu sync.Mutex
 		seen := make(map[string]bool)
 		var disks []*Disk
+		successCount := 0
 
+	zoneLoop:
 		for _, zone := range zones {
+			select {
+			case <-ctx.Done():
+				break zoneLoop
+			case sem <- struct{}{}:
+			}
 			wg.Add(1)
-			sem <- struct{}{}
 			go func() {
 				defer wg.Done()
 				defer func() { <-sem }()
+				if ctx.Err() != nil {
+					return
+				}
 				results, err := ds.gcpClient.ListDisks(ctx, project, zone.Name)
 				if err != nil {
 					ds.logger.LogAttrs(ctx, slog.LevelError, "failed to list disks in zone",
@@ -93,10 +102,17 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 					seen[d.Name()] = true
 					disks = append(disks, d)
 				}
+				successCount++
 				mu.Unlock()
 			}()
 		}
 		wg.Wait()
+
+		if successCount == 0 && len(zones) > 0 {
+			ds.logger.LogAttrs(ctx, slog.LevelError, "all zone listings failed, wiping cached data",
+				slog.String("project", project),
+				slog.Int("zones", len(zones)))
+		}
 		updates[project] = disks
 	}
 

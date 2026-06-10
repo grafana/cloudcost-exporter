@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
@@ -99,67 +101,79 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 					slog.String("project", project),
 					slog.String("zone", zone.Name))
 
-	select {
-	case <-c.nodeStore.Done():
-		for _, project := range c.projects {
-			for _, instance := range c.nodeStore.GetNodes(project) {
-				clusterName := instance.GetClusterName()
-				if clusterName == "" {
-					c.logger.LogAttrs(ctx, slog.LevelDebug, "instance does not have a cluster name",
-						slog.String("region", instance.Region),
-						slog.String("machine_type", instance.MachineType),
-						slog.String("project", project))
-					continue
-				}
-				cpuCost, ramCost, err := c.pricingMap.GetCostOfInstance(instance)
-				if err != nil {
-					c.logger.LogAttrs(ctx, slog.LevelError, err.Error(),
-						slog.String("machine_type", instance.MachineType),
-						slog.String("region", instance.Region),
-						slog.String("project", project))
-					continue
-				}
-				labelValues := []string{clusterName, instance.Instance, instance.Region, instance.Family, instance.MachineType, project, instance.PriceTier}
-				ch <- prometheus.MustNewConstMetric(gkeNodeCPUHourlyCostDesc, prometheus.GaugeValue, cpuCost, labelValues...)
-				ch <- prometheus.MustNewConstMetric(gkeNodeMemoryHourlyCostDesc, prometheus.GaugeValue, ramCost, labelValues...)
-				nodeCount++
-			}
-		}
-	default:
-		c.logger.LogAttrs(ctx, slog.LevelInfo, "node store not yet populated, skipping node metrics")
-	}
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	select {
-	case <-c.diskStore.Done():
-		for _, project := range c.projects {
-			for _, d := range c.diskStore.GetDisks(project) {
-				prices, err := c.pricingMap.GetCostOfStorage(d.Region(), d.StorageClass())
-				if err != nil {
-					c.logger.LogAttrs(ctx, slog.LevelError, err.Error(),
-						slog.String("disk_name", d.name),
-						slog.String("project", project),
-						slog.String("region", d.Region()),
-						slog.String("cluster_name", d.Cluster),
-						slog.String("storage_class", d.StorageClass()))
-					continue
+	go func() {
+		defer wg.Done()
+		select {
+		case <-c.nodeStore.Done():
+			for _, project := range c.projects {
+				for _, instance := range c.nodeStore.GetNodes(project) {
+					clusterName := instance.GetClusterName()
+					if clusterName == "" {
+						c.logger.LogAttrs(ctx, slog.LevelDebug, "instance does not have a cluster name",
+							slog.String("region", instance.Region),
+							slog.String("machine_type", instance.MachineType),
+							slog.String("project", project))
+						continue
+					}
+					cpuCost, ramCost, err := c.pricingMap.GetCostOfInstance(instance)
+					if err != nil {
+						c.logger.LogAttrs(ctx, slog.LevelError, err.Error(),
+							slog.String("machine_type", instance.MachineType),
+							slog.String("region", instance.Region),
+							slog.String("project", project))
+						continue
+					}
+					labelValues := []string{clusterName, instance.Instance, instance.Region, instance.Family, instance.MachineType, project, instance.PriceTier}
+					ch <- prometheus.MustNewConstMetric(gkeNodeCPUHourlyCostDesc, prometheus.GaugeValue, cpuCost, labelValues...)
+					ch <- prometheus.MustNewConstMetric(gkeNodeMemoryHourlyCostDesc, prometheus.GaugeValue, ramCost, labelValues...)
+					nodeCount.Add(1)
 				}
-				ch <- prometheus.MustNewConstMetric(
-					persistentVolumeHourlyCostDesc,
-					prometheus.GaugeValue,
-					computeDiskCost(d, prices),
-					d.Cluster, d.Namespace(), d.Name(), d.Region(), d.Project, d.StorageClass(), d.DiskType(), d.UseStatus(),
-				)
-				diskCount++
 			}
+		default:
+			c.logger.LogAttrs(ctx, slog.LevelInfo, "node store not yet populated, skipping node metrics")
 		}
-	default:
-		c.logger.LogAttrs(ctx, slog.LevelInfo, "disk store not yet populated, skipping disk metrics")
-	}
+	}()
+
+	go func() {
+		defer wg.Done()
+		select {
+		case <-c.diskStore.Done():
+			for _, project := range c.projects {
+				for _, d := range c.diskStore.GetDisks(project) {
+					prices, err := c.pricingMap.GetCostOfStorage(d.Region(), d.StorageClass())
+					if err != nil {
+						c.logger.LogAttrs(ctx, slog.LevelError, err.Error(),
+							slog.String("disk_name", d.name),
+							slog.String("persistentvolume", d.Name()),
+							slog.String("project", project),
+							slog.String("region", d.Region()),
+							slog.String("cluster_name", d.Cluster),
+							slog.String("storage_class", d.StorageClass()))
+						continue
+					}
+					ch <- prometheus.MustNewConstMetric(
+						persistentVolumeHourlyCostDesc,
+						prometheus.GaugeValue,
+						computeDiskCost(d, prices),
+						d.Cluster, d.Namespace(), d.Name(), d.Region(), d.Project, d.StorageClass(), d.DiskType(), d.UseStatus(),
+					)
+					diskCount.Add(1)
+				}
+			}
+		default:
+			c.logger.LogAttrs(ctx, slog.LevelInfo, "disk store not yet populated, skipping disk metrics")
+		}
+	}()
+
+	wg.Wait()
 
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "metrics collected",
 		slog.Duration("duration", time.Since(now)),
-		slog.Int("nodes_emitted", nodeCount),
-		slog.Int("disks_emitted", diskCount))
+		slog.Int64("nodes_emitted", nodeCount.Load()),
+		slog.Int64("disks_emitted", diskCount.Load()))
 	return nil
 }
 

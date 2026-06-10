@@ -1,6 +1,7 @@
 package gke
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -625,17 +628,353 @@ func TestDiskStore_Populate_ConcurrencyLimit(t *testing.T) {
 	}
 
 	fakeClient := &concurrentGCPClient{zones: zones}
-
-	ds := &DiskStore{
-		logger:            logger,
-		gcpClient:         fakeClient,
-		projects:          []string{"proj1"},
-		disks:             make(map[string][]*Disk),
-		initialPopulation: make(chan struct{}),
-	}
+	ds := newSeededDiskStore(t, fakeClient, []string{"proj1"}, nil)
 
 	ds.Populate(t.Context())
 
 	assert.LessOrEqual(t, fakeClient.peakConcurrency, diskPopulateConcurrencyLimit,
 		"peak goroutine concurrency must not exceed diskPopulateConcurrencyLimit")
+}
+
+// TestCollector_Collect_NodeAndDiskEmitInParallel asserts that node and disk
+// metric emission run concurrently inside Collect().
+//
+// With sequential emission, all metrics of one kind arrive before any metric
+// of the other. With parallel emission, both goroutines are runnable at the
+// same time and Go's FIFO channel queue interleaves their sends on an
+// unbuffered channel, so the receive order alternates almost immediately.
+//
+// The test asserts that the first contiguous run of a single metric kind is
+// shorter than the total count of that kind — true under any reasonable
+// scheduling for the parallel implementation, impossible for a sequential one.
+func TestCollector_Collect_NodeAndDiskEmitInParallel(t *testing.T) {
+	const (
+		numNodes = 10
+		numDisks = 10
+		region   = "us-central1"
+		project  = "p1"
+	)
+
+	pm := &PricingMap{
+		compute: map[string]*FamilyPricing{
+			region: {Family: map[string]*PriceTiers{
+				"n1": {OnDemand: Prices{Cpu: 1, Ram: 1}},
+			}},
+		},
+		storage: map[string]*StoragePricing{
+			region: {Storage: map[string]*StoragePrices{
+				"pd-standard": {ProvisionedSpaceGiB: 1},
+			}},
+		},
+	}
+
+	nodes := make([]*client.MachineSpec, numNodes)
+	for i := range numNodes {
+		nodes[i] = &client.MachineSpec{
+			Instance:    fmt.Sprintf("node-%d", i),
+			Region:      region,
+			Family:      "n1",
+			MachineType: "n1-slim",
+			PriceTier:   "ondemand",
+			Labels:      map[string]string{client.GkeClusterLabel: "cluster1"},
+		}
+	}
+	nodeStore := newSeededNodeStore(t, nil, []string{project}, map[string][]*client.MachineSpec{project: nodes})
+	close(nodeStore.initialPopulation)
+
+	disks := make([]*Disk, numDisks)
+	for i := range numDisks {
+		disks[i] = NewDisk(&computev1.Disk{
+			Name:   fmt.Sprintf("disk-%d", i),
+			Zone:   "projects/p/zones/us-central1-a",
+			Labels: map[string]string{client.GkeRegionLabel: region},
+			Type:   "projects/p/zones/us-central1-a/diskTypes/pd-standard",
+			SizeGb: 10,
+		}, project)
+	}
+	diskStore := newSeededDiskStore(t, nil, []string{project}, map[string][]*Disk{project: disks})
+	close(diskStore.initialPopulation)
+
+	collector := &Collector{
+		projects:   []string{project},
+		pricingMap: pm,
+		nodeStore:  nodeStore,
+		diskStore:  diskStore,
+		logger:     logger,
+	}
+
+	ch := make(chan prometheus.Metric)
+	go func() {
+		require.NoError(t, collector.Collect(t.Context(), ch))
+		close(ch)
+	}()
+
+	var order []string
+	for m := range ch {
+		if strings.Contains(m.Desc().String(), "persistent_volume") {
+			order = append(order, "disk")
+		} else {
+			order = append(order, "node")
+		}
+	}
+
+	const totalNodeMetrics = numNodes * 2
+	const totalDiskMetrics = numDisks
+	require.Len(t, order, totalNodeMetrics+totalDiskMetrics, "expected all metrics to be emitted")
+
+	prefixLen := 1
+	for i := 1; i < len(order); i++ {
+		if order[i] != order[0] {
+			break
+		}
+		prefixLen++
+	}
+
+	maxPrefix := totalNodeMetrics
+	if order[0] == "disk" {
+		maxPrefix = totalDiskMetrics
+	}
+	assert.Less(t, prefixLen, maxPrefix,
+		"expected node and disk metrics to interleave (parallel emission), but got %d consecutive %s metrics at the start: sequential emission detected",
+		prefixLen, order[0])
+}
+
+// programmableGCPClient is a fake gcp client whose per-zone results can be
+// configured. Used to exercise partial- and total-failure paths in store
+// populate logic.
+type programmableGCPClient struct {
+	client.Client
+
+	zones     []*computev1.Zone
+	instances map[string][]*client.MachineSpec // zone name → instances (nil + present in errs means error)
+	disks     map[string][]*computev1.Disk     // zone name → disks
+	errs      map[string]error                 // zone name → error to return
+}
+
+func (p *programmableGCPClient) GetZones(_ string) ([]*computev1.Zone, error) {
+	return p.zones, nil
+}
+
+func (p *programmableGCPClient) ListInstancesInZone(_, zone string) ([]*client.MachineSpec, error) {
+	if err, ok := p.errs[zone]; ok {
+		return nil, err
+	}
+	return p.instances[zone], nil
+}
+
+func (p *programmableGCPClient) ListDisks(_ context.Context, _, zone string) ([]*computev1.Disk, error) {
+	if err, ok := p.errs[zone]; ok {
+		return nil, err
+	}
+	return p.disks[zone], nil
+}
+
+func TestNodeStore_Populate_PartialZoneFailure_KeepsSuccessfulZones(t *testing.T) {
+	fake := &programmableGCPClient{
+		zones: []*computev1.Zone{{Name: "zone-ok"}, {Name: "zone-bad"}},
+		instances: map[string][]*client.MachineSpec{
+			"zone-ok": {{Instance: "node-ok"}},
+		},
+		errs: map[string]error{"zone-bad": fmt.Errorf("transient gcp error")},
+	}
+
+	ns := newSeededNodeStore(t, fake, []string{"p1"}, nil)
+
+	ns.Populate(t.Context())
+
+	got := ns.GetNodes("p1")
+	require.Len(t, got, 1, "expected the successful zone's data to be stored")
+	assert.Equal(t, "node-ok", got[0].Instance)
+}
+
+func TestNodeStore_Populate_AllZonesFail_LogsAndWipesCache(t *testing.T) {
+	stale := []*client.MachineSpec{{Instance: "stale-node"}}
+
+	fake := &programmableGCPClient{
+		zones: []*computev1.Zone{{Name: "zone-a"}, {Name: "zone-b"}},
+		errs: map[string]error{
+			"zone-a": fmt.Errorf("transient gcp error"),
+			"zone-b": fmt.Errorf("transient gcp error"),
+		},
+	}
+
+	var logBuf bytes.Buffer
+	ns := newSeededNodeStore(t, fake, []string{"p1"}, map[string][]*client.MachineSpec{"p1": stale})
+	ns.logger = slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	ns.Populate(t.Context())
+
+	assert.Empty(t, ns.GetNodes("p1"), "cache should be wiped when every zone fails")
+	assert.Contains(t, logBuf.String(), "all zone listings failed, wiping cached data",
+		"expected an error log when every zone fails")
+}
+
+func TestDiskStore_Populate_PartialZoneFailure_KeepsSuccessfulZones(t *testing.T) {
+	fake := &programmableGCPClient{
+		zones: []*computev1.Zone{{Name: "zone-ok"}, {Name: "zone-bad"}},
+		disks: map[string][]*computev1.Disk{
+			"zone-ok": {{Name: "disk-ok"}},
+		},
+		errs: map[string]error{"zone-bad": fmt.Errorf("transient gcp error")},
+	}
+
+	ds := newSeededDiskStore(t, fake, []string{"p1"}, nil)
+
+	ds.Populate(t.Context())
+
+	got := ds.GetDisks("p1")
+	require.Len(t, got, 1, "expected the successful zone's data to be stored")
+	assert.Equal(t, "disk-ok", got[0].Name())
+}
+
+func TestDiskStore_Populate_AllZonesFail_LogsAndWipesCache(t *testing.T) {
+	stale := []*Disk{NewDisk(&computev1.Disk{Name: "stale-disk"}, "p1")}
+
+	fake := &programmableGCPClient{
+		zones: []*computev1.Zone{{Name: "zone-a"}, {Name: "zone-b"}},
+		errs: map[string]error{
+			"zone-a": fmt.Errorf("transient gcp error"),
+			"zone-b": fmt.Errorf("transient gcp error"),
+		},
+	}
+
+	var logBuf bytes.Buffer
+	ds := newSeededDiskStore(t, fake, []string{"p1"}, map[string][]*Disk{"p1": stale})
+	ds.logger = slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	ds.Populate(t.Context())
+
+	assert.Empty(t, ds.GetDisks("p1"), "cache should be wiped when every zone fails")
+	assert.Contains(t, logBuf.String(), "all zone listings failed, wiping cached data",
+		"expected an error log when every zone fails")
+}
+
+// blockingGCPClient blocks every ListInstancesInZone / ListDisks call until
+// release is closed. It signals via saturation once `limit` calls are in flight,
+// letting tests deterministically cancel context after the concurrency pool is
+// full.
+type blockingGCPClient struct {
+	client.Client
+
+	zones      []*computev1.Zone
+	callCount  atomic.Int64
+	saturation chan struct{}
+	release    chan struct{}
+	limit      int64
+	once       sync.Once
+}
+
+func (b *blockingGCPClient) GetZones(_ string) ([]*computev1.Zone, error) {
+	return b.zones, nil
+}
+
+func (b *blockingGCPClient) signalSaturation() {
+	if b.callCount.Add(1) == b.limit {
+		b.once.Do(func() { close(b.saturation) })
+	}
+}
+
+func (b *blockingGCPClient) ListInstancesInZone(_, _ string) ([]*client.MachineSpec, error) {
+	b.signalSaturation()
+	<-b.release
+	return nil, nil
+}
+
+func (b *blockingGCPClient) ListDisks(_ context.Context, _, _ string) ([]*computev1.Disk, error) {
+	b.signalSaturation()
+	<-b.release
+	return nil, nil
+}
+
+// makeZones builds n distinct compute.Zone fixtures for use as GetZones returns.
+func makeZones(n int) []*computev1.Zone {
+	zones := make([]*computev1.Zone, n)
+	for i := range n {
+		zones[i] = &computev1.Zone{Name: fmt.Sprintf("zone-%d", i)}
+	}
+	return zones
+}
+
+func TestNodeStore_Populate_HonorsContextCancellation(t *testing.T) {
+	// More zones than the concurrency limit so the for-loop blocks on sem
+	// acquisition for iterations beyond nodePopulateConcurrencyLimit. We then
+	// cancel ctx; without ctx-aware sem acquisition those queued iterations
+	// would eventually fire when the in-flight batch drains.
+	const numZones = nodePopulateConcurrencyLimit * 3
+
+	fake := &blockingGCPClient{
+		zones:      makeZones(numZones),
+		saturation: make(chan struct{}),
+		release:    make(chan struct{}),
+		limit:      nodePopulateConcurrencyLimit,
+	}
+
+	ns := newSeededNodeStore(t, fake, []string{"p1"}, nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	populateDone := make(chan struct{})
+	go func() {
+		ns.Populate(ctx)
+		close(populateDone)
+	}()
+
+	select {
+	case <-fake.saturation:
+	case <-time.After(2 * time.Second):
+		close(fake.release)
+		t.Fatal("timed out waiting for in-flight calls to saturate")
+	}
+
+	cancel()
+	close(fake.release)
+
+	select {
+	case <-populateDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Populate did not return after context cancellation")
+	}
+
+	assert.Equal(t, int64(nodePopulateConcurrencyLimit), fake.callCount.Load(),
+		"context cancellation should prevent additional zone calls beyond the in-flight batch")
+}
+
+func TestDiskStore_Populate_HonorsContextCancellation(t *testing.T) {
+	const numZones = diskPopulateConcurrencyLimit * 3
+
+	fake := &blockingGCPClient{
+		zones:      makeZones(numZones),
+		saturation: make(chan struct{}),
+		release:    make(chan struct{}),
+		limit:      diskPopulateConcurrencyLimit,
+	}
+
+	ds := newSeededDiskStore(t, fake, []string{"p1"}, nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	populateDone := make(chan struct{})
+	go func() {
+		ds.Populate(ctx)
+		close(populateDone)
+	}()
+
+	select {
+	case <-fake.saturation:
+	case <-time.After(2 * time.Second):
+		close(fake.release)
+		t.Fatal("timed out waiting for in-flight calls to saturate")
+	}
+
+	cancel()
+	close(fake.release)
+
+	select {
+	case <-populateDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Populate did not return after context cancellation")
+	}
+
+	assert.Equal(t, int64(diskPopulateConcurrencyLimit), fake.callCount.Load(),
+		"context cancellation should prevent additional zone calls beyond the in-flight batch")
 }
