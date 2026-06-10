@@ -556,13 +556,19 @@ func (c *concurrentGCPClient) ListDisks(_ context.Context, _ string, _ string) (
 }
 
 // newSeededNodeStore returns a NodeStore without starting a populate goroutine.
-func newSeededNodeStore(t *testing.T, gcpClient client.Client, projects []string, seed map[string][]*client.MachineSpec) *NodeStore {
+// Passing nil for lgr uses the package-default logger. The helper always applies
+// the same .With("store", "nodes") wrapping as NewNodeStore so log-content
+// assertions exercise that attribute.
+func newSeededNodeStore(t *testing.T, lgr *slog.Logger, gcpClient client.Client, projects []string, seed map[string][]*client.MachineSpec) *NodeStore {
 	t.Helper()
+	if lgr == nil {
+		lgr = logger
+	}
 	if seed == nil {
 		seed = make(map[string][]*client.MachineSpec)
 	}
 	return &NodeStore{
-		logger:            logger,
+		logger:            lgr.With("store", "nodes"),
 		gcpClient:         gcpClient,
 		projects:          projects,
 		concurrency:       DefaultZoneCollectConcurrency,
@@ -571,13 +577,16 @@ func newSeededNodeStore(t *testing.T, gcpClient client.Client, projects []string
 	}
 }
 
-func newSeededDiskStore(t *testing.T, gcpClient client.Client, projects []string, seed map[string][]*Disk) *DiskStore {
+func newSeededDiskStore(t *testing.T, lgr *slog.Logger, gcpClient client.Client, projects []string, seed map[string][]*Disk) *DiskStore {
 	t.Helper()
+	if lgr == nil {
+		lgr = logger
+	}
 	if seed == nil {
 		seed = make(map[string][]*Disk)
 	}
 	return &DiskStore{
-		logger:            logger,
+		logger:            lgr.With("store", "disks"),
 		gcpClient:         gcpClient,
 		projects:          projects,
 		concurrency:       DefaultZoneCollectConcurrency,
@@ -596,7 +605,7 @@ func TestNodeStore_Populate_ConcurrencyLimit(t *testing.T) {
 	}
 
 	fakeClient := &concurrentGCPClient{zones: zones}
-	ns := newSeededNodeStore(t, fakeClient, []string{"proj1"}, nil)
+	ns := newSeededNodeStore(t, nil, fakeClient, []string{"proj1"}, nil)
 
 	ns.Populate(t.Context())
 
@@ -614,7 +623,7 @@ func TestDiskStore_Populate_ConcurrencyLimit(t *testing.T) {
 	}
 
 	fakeClient := &concurrentGCPClient{zones: zones}
-	ds := newSeededDiskStore(t, fakeClient, []string{"proj1"}, nil)
+	ds := newSeededDiskStore(t, nil, fakeClient, []string{"proj1"}, nil)
 
 	ds.Populate(t.Context())
 
@@ -695,7 +704,7 @@ func TestCollector_Collect_NodeAndDiskEmitInParallel(t *testing.T) {
 			Labels:      map[string]string{client.GkeClusterLabel: "cluster1"},
 		}
 	}
-	nodeStore := newSeededNodeStore(t, nil, []string{project}, map[string][]*client.MachineSpec{project: nodes})
+	nodeStore := newSeededNodeStore(t, nil, nil, []string{project}, map[string][]*client.MachineSpec{project: nodes})
 	close(nodeStore.initialPopulation)
 
 	disks := make([]*Disk, numDisks)
@@ -708,7 +717,7 @@ func TestCollector_Collect_NodeAndDiskEmitInParallel(t *testing.T) {
 			SizeGb: 10,
 		}, project)
 	}
-	diskStore := newSeededDiskStore(t, nil, []string{project}, map[string][]*Disk{project: disks})
+	diskStore := newSeededDiskStore(t, nil, nil, []string{project}, map[string][]*Disk{project: disks})
 	close(diskStore.initialPopulation)
 
 	collector := &Collector{
@@ -793,7 +802,7 @@ func TestNodeStore_Populate_PartialZoneFailure_KeepsSuccessfulZones(t *testing.T
 		errs: map[string]error{"zone-bad": fmt.Errorf("transient gcp error")},
 	}
 
-	ns := newSeededNodeStore(t, fake, []string{"p1"}, nil)
+	ns := newSeededNodeStore(t, nil, fake, []string{"p1"}, nil)
 
 	ns.Populate(t.Context())
 
@@ -814,14 +823,16 @@ func TestNodeStore_Populate_AllZonesFail_LogsAndWipesCache(t *testing.T) {
 	}
 
 	var logBuf bytes.Buffer
-	ns := newSeededNodeStore(t, fake, []string{"p1"}, map[string][]*client.MachineSpec{"p1": stale})
-	ns.logger = slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
+	captureLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
+	ns := newSeededNodeStore(t, captureLogger, fake, []string{"p1"}, map[string][]*client.MachineSpec{"p1": stale})
 
 	ns.Populate(t.Context())
 
 	assert.Empty(t, ns.GetNodes("p1"), "cache should be wiped when every zone fails")
 	assert.Contains(t, logBuf.String(), "all zone listings failed, wiping cached data",
 		"expected an error log when every zone fails")
+	assert.Contains(t, logBuf.String(), `store=nodes`,
+		"log must carry the store=nodes attribute applied by NewNodeStore")
 }
 
 func TestDiskStore_Populate_PartialZoneFailure_KeepsSuccessfulZones(t *testing.T) {
@@ -833,7 +844,7 @@ func TestDiskStore_Populate_PartialZoneFailure_KeepsSuccessfulZones(t *testing.T
 		errs: map[string]error{"zone-bad": fmt.Errorf("transient gcp error")},
 	}
 
-	ds := newSeededDiskStore(t, fake, []string{"p1"}, nil)
+	ds := newSeededDiskStore(t, nil, fake, []string{"p1"}, nil)
 
 	ds.Populate(t.Context())
 
@@ -854,14 +865,16 @@ func TestDiskStore_Populate_AllZonesFail_LogsAndWipesCache(t *testing.T) {
 	}
 
 	var logBuf bytes.Buffer
-	ds := newSeededDiskStore(t, fake, []string{"p1"}, map[string][]*Disk{"p1": stale})
-	ds.logger = slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
+	captureLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
+	ds := newSeededDiskStore(t, captureLogger, fake, []string{"p1"}, map[string][]*Disk{"p1": stale})
 
 	ds.Populate(t.Context())
 
 	assert.Empty(t, ds.GetDisks("p1"), "cache should be wiped when every zone fails")
 	assert.Contains(t, logBuf.String(), "all zone listings failed, wiping cached data",
 		"expected an error log when every zone fails")
+	assert.Contains(t, logBuf.String(), `store=disks`,
+		"log must carry the store=disks attribute applied by NewDiskStore")
 }
 
 // blockingGCPClient blocks every list call until release is closed; saturation
@@ -919,7 +932,7 @@ func TestNodeStore_Populate_HonorsContextCancellation(t *testing.T) {
 		limit:      DefaultZoneCollectConcurrency,
 	}
 
-	ns := newSeededNodeStore(t, fake, []string{"p1"}, nil)
+	ns := newSeededNodeStore(t, nil, fake, []string{"p1"}, nil)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -959,7 +972,7 @@ func TestDiskStore_Populate_HonorsContextCancellation(t *testing.T) {
 		limit:      DefaultZoneCollectConcurrency,
 	}
 
-	ds := newSeededDiskStore(t, fake, []string{"p1"}, nil)
+	ds := newSeededDiskStore(t, nil, fake, []string{"p1"}, nil)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -1003,8 +1016,8 @@ func TestNodeStore_Populate_ShutdownDoesNotLogWipe(t *testing.T) {
 	}
 
 	var logBuf bytes.Buffer
-	ns := newSeededNodeStore(t, fake, []string{"p1"}, nil)
-	ns.logger = slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
+	captureLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
+	ns := newSeededNodeStore(t, captureLogger, fake, []string{"p1"}, nil)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -1033,4 +1046,99 @@ func TestNodeStore_Populate_ShutdownDoesNotLogWipe(t *testing.T) {
 
 	assert.NotContains(t, logBuf.String(), "all zone listings failed",
 		"shutdown should not emit a total-failure log even when in-flight calls fail")
+}
+
+// A tick that fires while a previous populate is still running must be dropped,
+// not stacked. Without the in-flight guard the two populates would race on
+// ns.nodes and double the GCP API load.
+func TestNodeStore_Populate_SkipsConcurrentInvocation(t *testing.T) {
+	fake := &blockingGCPClient{
+		zones:      makeZones(DefaultZoneCollectConcurrency * 2),
+		saturation: make(chan struct{}),
+		release:    make(chan struct{}),
+		limit:      DefaultZoneCollectConcurrency,
+	}
+
+	var logBuf bytes.Buffer
+	captureLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	ns := newSeededNodeStore(t, captureLogger, fake, []string{"p1"}, nil)
+
+	firstDone := make(chan struct{})
+	go func() {
+		ns.Populate(t.Context())
+		close(firstDone)
+	}()
+
+	select {
+	case <-fake.saturation:
+	case <-time.After(2 * time.Second):
+		close(fake.release)
+		t.Fatal("timed out waiting for first populate to saturate")
+	}
+
+	secondDone := make(chan struct{})
+	go func() {
+		ns.Populate(t.Context())
+		close(secondDone)
+	}()
+	select {
+	case <-secondDone:
+	case <-time.After(500 * time.Millisecond):
+		close(fake.release)
+		t.Fatal("overlapping populate did not return quickly; in-flight guard missing")
+	}
+
+	assert.Contains(t, logBuf.String(), "populate already in progress",
+		"overlapping populate should log a skip")
+	assert.Contains(t, logBuf.String(), `store=nodes`,
+		"log must carry the store=nodes attribute applied by NewNodeStore")
+
+	close(fake.release)
+	<-firstDone
+}
+
+func TestDiskStore_Populate_SkipsConcurrentInvocation(t *testing.T) {
+	fake := &blockingGCPClient{
+		zones:      makeZones(DefaultZoneCollectConcurrency * 2),
+		saturation: make(chan struct{}),
+		release:    make(chan struct{}),
+		limit:      DefaultZoneCollectConcurrency,
+	}
+
+	var logBuf bytes.Buffer
+	captureLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	ds := newSeededDiskStore(t, captureLogger, fake, []string{"p1"}, nil)
+
+	firstDone := make(chan struct{})
+	go func() {
+		ds.Populate(t.Context())
+		close(firstDone)
+	}()
+
+	select {
+	case <-fake.saturation:
+	case <-time.After(2 * time.Second):
+		close(fake.release)
+		t.Fatal("timed out waiting for first populate to saturate")
+	}
+
+	secondDone := make(chan struct{})
+	go func() {
+		ds.Populate(t.Context())
+		close(secondDone)
+	}()
+	select {
+	case <-secondDone:
+	case <-time.After(500 * time.Millisecond):
+		close(fake.release)
+		t.Fatal("overlapping populate did not return quickly; in-flight guard missing")
+	}
+
+	assert.Contains(t, logBuf.String(), "populate already in progress",
+		"overlapping populate should log a skip")
+	assert.Contains(t, logBuf.String(), `store=disks`,
+		"log must carry the store=disks attribute applied by NewDiskStore")
+
+	close(fake.release)
+	<-firstDone
 }

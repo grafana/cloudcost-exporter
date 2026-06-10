@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"maps"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
@@ -20,6 +21,8 @@ type DiskStore struct {
 
 	mu    sync.RWMutex
 	disks map[string][]*Disk
+
+	populating atomic.Bool
 
 	initialPopulationOnce sync.Once
 	initialPopulation     chan struct{}
@@ -55,6 +58,15 @@ func (ds *DiskStore) GetDisks(project string) []*Disk {
 }
 
 func (ds *DiskStore) Populate(ctx context.Context) {
+	// Drop overlapping populates: if a tick fires while the previous one is
+	// still running (slow GCP / many projects), avoid doubling API load and
+	// the last-writer race on ds.disks.
+	if !ds.populating.CompareAndSwap(false, true) {
+		ds.logger.LogAttrs(ctx, slog.LevelInfo, "populate already in progress, skipping tick")
+		return
+	}
+	defer ds.populating.Store(false)
+
 	defer ds.initialPopulationOnce.Do(func() {
 		close(ds.initialPopulation)
 	})
