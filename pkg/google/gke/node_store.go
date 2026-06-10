@@ -68,13 +68,22 @@ func (ns *NodeStore) Populate(ctx context.Context) {
 		var wg sync.WaitGroup
 		var mu sync.Mutex
 		var instances []*client.MachineSpec
+		successCount := 0
 
+	zoneLoop:
 		for _, zone := range zones {
+			select {
+			case <-ctx.Done():
+				break zoneLoop
+			case sem <- struct{}{}:
+			}
 			wg.Add(1)
-			sem <- struct{}{}
 			go func() {
 				defer wg.Done()
 				defer func() { <-sem }()
+				if ctx.Err() != nil {
+					return
+				}
 				results, err := ns.gcpClient.ListInstancesInZone(project, zone.Name)
 				if err != nil {
 					ns.logger.LogAttrs(ctx, slog.LevelError, "failed to list instances in zone",
@@ -85,10 +94,17 @@ func (ns *NodeStore) Populate(ctx context.Context) {
 				}
 				mu.Lock()
 				instances = append(instances, results...)
+				successCount++
 				mu.Unlock()
 			}()
 		}
 		wg.Wait()
+
+		if successCount == 0 && len(zones) > 0 {
+			ns.logger.LogAttrs(ctx, slog.LevelError, "all zone listings failed, wiping cached data",
+				slog.String("project", project),
+				slog.Int("zones", len(zones)))
+		}
 		updates[project] = instances
 	}
 
