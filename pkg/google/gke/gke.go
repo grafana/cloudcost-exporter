@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
@@ -129,7 +128,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 					labelValues := []string{clusterName, instance.Instance, instance.Region, instance.Family, instance.MachineType, project, instance.PriceTier}
 					ch <- prometheus.MustNewConstMetric(gkeNodeCPUHourlyCostDesc, prometheus.GaugeValue, cpuCost, labelValues...)
 					ch <- prometheus.MustNewConstMetric(gkeNodeMemoryHourlyCostDesc, prometheus.GaugeValue, ramCost, labelValues...)
-					nodeCount.Add(1)
+					nodeCount++
 				}
 			}
 		default:
@@ -160,7 +159,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 						computeDiskCost(d, prices),
 						d.Cluster, d.Namespace(), d.Name(), d.Region(), d.Project, d.StorageClass(), d.DiskType(), d.UseStatus(),
 					)
-					diskCount.Add(1)
+					diskCount++
 				}
 			}
 		default:
@@ -172,8 +171,8 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "metrics collected",
 		slog.Duration("duration", time.Since(now)),
-		slog.Int64("nodes_emitted", nodeCount.Load()),
-		slog.Int64("disks_emitted", diskCount.Load()))
+		slog.Int64("nodes_emitted", nodeCount),
+		slog.Int64("disks_emitted", diskCount))
 	return nil
 }
 
@@ -185,52 +184,19 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 		return nil, err
 	}
 
-	go func() {
-		priceTicker := time.NewTicker(PriceRefreshInterval)
-		defer priceTicker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-priceTicker.C:
-				if err := pm.Populate(ctx); err != nil {
-					logger.Error(err.Error())
-				}
-			}
-		}
-	}()
-
 	projects := strings.Split(config.Projects, ",")
 	regions := client.RegionsFromZonesForProjects(gcpClient, projects, logger)
 
 	nodeStore := NewNodeStore(ctx, logger, gcpClient, projects)
 	diskStore := NewDiskStore(ctx, logger, gcpClient, projects)
 
-	go func() {
-		nodeTicker := time.NewTicker(nodeRefreshInterval)
-		defer nodeTicker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-nodeTicker.C:
-				nodeStore.Populate(ctx)
-			}
+	startRefreshTicker(ctx, PriceRefreshInterval, func() {
+		if err := pm.Populate(ctx); err != nil {
+			logger.Error(err.Error())
 		}
-	}()
-
-	go func() {
-		diskTicker := time.NewTicker(diskRefreshInterval)
-		defer diskTicker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-diskTicker.C:
-				diskStore.Populate(ctx)
-			}
-		}
-	}()
+	})
+	startRefreshTicker(ctx, nodeRefreshInterval, func() { nodeStore.Populate(ctx) })
+	startRefreshTicker(ctx, diskRefreshInterval, func() { diskStore.Populate(ctx) })
 
 	return &Collector{
 		projects:   projects,
@@ -240,6 +206,21 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 		nodeStore:  nodeStore,
 		diskStore:  diskStore,
 	}, nil
+}
+
+func startRefreshTicker(ctx context.Context, interval time.Duration, run func()) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				run()
+			}
+		}
+	}()
 }
 
 func (c *Collector) Regions() []string {
