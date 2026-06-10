@@ -556,9 +556,10 @@ func (c *concurrentGCPClient) ListDisks(_ context.Context, _ string, _ string) (
 }
 
 func TestCollector_ZoneConcurrencyLimit(t *testing.T) {
-	// 8 zones → 16 goroutines (2 per zone: ListInstancesInZone + ListDisks),
-	// but zoneCollectConcurrencyLimit=10 caps the total.
-	const numZones = 8
+	// 20 zones → 40 goroutines (2 per zone: ListInstancesInZone + ListDisks),
+	// with ZoneConcurrency=10 capping the total.
+	const numZones = 20
+	const limit = 10
 
 	zones := make([]*computev1.Zone, numZones)
 	for i := range numZones {
@@ -569,6 +570,36 @@ func TestCollector_ZoneConcurrencyLimit(t *testing.T) {
 
 	// Build the Collector directly to bypass the billing/pricing initialisation
 	// that New() performs — it is irrelevant for a concurrency test.
+	collector := &Collector{
+		gcpClient: fakeClient,
+		config:    &Config{ZoneConcurrency: limit},
+		projects:  []string{"proj1"},
+		pricingMap: &PricingMap{
+			compute: map[string]*FamilyPricing{},
+			storage: map[string]*StoragePricing{},
+		},
+		logger: logger,
+	}
+
+	ch := make(chan prometheus.Metric, numZones*10)
+	err := collector.Collect(t.Context(), ch)
+	close(ch)
+	require.NoError(t, err)
+
+	assert.LessOrEqual(t, fakeClient.peakConcurrency, limit,
+		"peak zone goroutine concurrency must not exceed configured ZoneConcurrency")
+}
+
+func TestCollector_ZoneConcurrencyDefault(t *testing.T) {
+	// Empty Config.ZoneConcurrency should fall back to DefaultZoneCollectConcurrency.
+	const numZones = 40
+
+	zones := make([]*computev1.Zone, numZones)
+	for i := range numZones {
+		zones[i] = &computev1.Zone{Name: fmt.Sprintf("us-central1-%d", i)}
+	}
+
+	fakeClient := &concurrentGCPClient{zones: zones}
 	collector := &Collector{
 		gcpClient: fakeClient,
 		config:    &Config{},
@@ -585,6 +616,6 @@ func TestCollector_ZoneConcurrencyLimit(t *testing.T) {
 	close(ch)
 	require.NoError(t, err)
 
-	assert.LessOrEqual(t, fakeClient.peakConcurrency, zoneCollectConcurrencyLimit,
-		"peak zone goroutine concurrency must not exceed zoneCollectConcurrencyLimit")
+	assert.LessOrEqual(t, fakeClient.peakConcurrency, DefaultZoneCollectConcurrency,
+		"peak zone goroutine concurrency must not exceed DefaultZoneCollectConcurrency")
 }

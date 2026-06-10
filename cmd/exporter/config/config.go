@@ -24,6 +24,7 @@ type Config struct {
 			BucketProjectsDeprecated bool
 			Region                   string
 			Services                 StringSliceFlag
+			GKEZoneConcurrency       int
 		}
 		Azure struct {
 			Services       StringSliceFlag

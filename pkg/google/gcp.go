@@ -68,7 +68,10 @@ type Config struct {
 	ScrapeInterval   time.Duration
 	DefaultDiscount  int
 	CollectorTimeout time.Duration
-	Logger           *slog.Logger
+	// GKEZoneConcurrency caps zone-level goroutines per project during a GKE scrape.
+	// Zero or negative values fall back to gke.DefaultZoneCollectConcurrency.
+	GKEZoneConcurrency int
+	Logger             *slog.Logger
 }
 
 // New is responsible for parsing out a configuration file and setting up the associated services that could be required.
@@ -103,8 +106,9 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 			}
 		case "GKE":
 			collector, err = gke.New(ctx, &gke.Config{
-				Projects:       config.Projects,
-				ScrapeInterval: config.ScrapeInterval,
+				Projects:        config.Projects,
+				ScrapeInterval:  config.ScrapeInterval,
+				ZoneConcurrency: config.GKEZoneConcurrency,
 			}, logger, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",

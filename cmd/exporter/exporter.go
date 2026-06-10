@@ -85,6 +85,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.StringVar(&cfg.ProjectID, "project-id", "", "Project ID to target.")
 	flag.StringVar(&cfg.Providers.Azure.SubscriptionID, "azure.subscription-id", "", "Azure subscription ID to pull data from.")
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
+	flag.IntVar(&cfg.Providers.GCP.GKEZoneConcurrency, "gcp.gke.zone-concurrency", 10, "Cap on concurrent API calls during a GKE scrape per project. Two goroutines run per zone (ListInstances + ListDisks), so the parallel-zone count is this value divided by 2.")
 }
 
 // operationalFlags is a helper method that is responsible for setting up the flags that are used to configure the operational aspects of the application.
@@ -264,14 +265,15 @@ func selectProviderWith(
 
 	case "gcp":
 		return newGCP(ctx, &google.Config{
-			Logger:           cfg.Logger,
-			ProjectId:        cfg.ProjectID,
-			Region:           cfg.Providers.GCP.Region,
-			Projects:         cfg.Providers.GCP.Projects.String(),
-			DefaultDiscount:  cfg.Providers.GCP.DefaultGCSDiscount,
-			ScrapeInterval:   cfg.Collector.ScrapeInterval,
-			Services:         strings.Split(cfg.Providers.GCP.Services.String(), ","),
-			CollectorTimeout: collectorTimeout,
+			Logger:             cfg.Logger,
+			ProjectId:          cfg.ProjectID,
+			Region:             cfg.Providers.GCP.Region,
+			Projects:           cfg.Providers.GCP.Projects.String(),
+			DefaultDiscount:    cfg.Providers.GCP.DefaultGCSDiscount,
+			ScrapeInterval:     cfg.Collector.ScrapeInterval,
+			Services:           strings.Split(cfg.Providers.GCP.Services.String(), ","),
+			CollectorTimeout:   collectorTimeout,
+			GKEZoneConcurrency: cfg.Providers.GCP.GKEZoneConcurrency,
 		})
 
 	default:
