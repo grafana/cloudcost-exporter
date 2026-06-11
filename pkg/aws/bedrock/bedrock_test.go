@@ -804,6 +804,10 @@ func TestMarketplaceCacheOp(t *testing.T) {
 		{"USE1-MP:USE1_CacheStorage-Units", "", true},     // storage: skipped
 		// A cache shape that is neither read nor write must be skipped, not labeled a 5m write.
 		{"USE1-MP:USE1_CacheValidationCount-Units", "", true},
+		// A write with an unrecognized TTL must be skipped, not defaulted to 5m.
+		{"USE1-MP:USE1_CacheWrite30mInputTokenCount-Units", "", true},
+		// An explicit 5m write is recognized as 5m.
+		{"USE1-MP:USE1_CacheWrite5mInputTokenCount-Units", "cache_write_5m", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.usagetype, func(t *testing.T) {

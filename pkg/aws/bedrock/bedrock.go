@@ -521,6 +521,10 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 // " - " separator (the surrounding spaces each become a hyphen alongside the literal one).
 var multiHyphen = regexp.MustCompile(`-{2,}`)
 
+// cacheWriteTTL matches the TTL token in a cache-write usagetype (e.g. "1h", "5m"). A bare write
+// carries no token and defaults to 5 minutes; an unrecognized token means a TTL we do not model.
+var cacheWriteTTL = regexp.MustCompile(`\d+[hm]`)
+
 // normalizeModelID converts a marketplace servicename into a canonical model_id slug:
 // lowercase, with spaces replaced by hyphens, so model IDs are uniform across the AI
 // pricing collectors.
@@ -641,11 +645,17 @@ func marketplaceCacheOp(usagetype string) (op string, skip bool) {
 	case strings.Contains(lower, "cacheread") || strings.Contains(lower, "cache_read"):
 		return priceTierCacheRead, false
 	case strings.Contains(lower, "cachewrite") || strings.Contains(lower, "cache_write"):
-		if strings.Contains(lower, "1h") {
+		// Recognize the write TTL explicitly. AWS bills the bare write (no TTL token) at the
+		// 5-minute default and tags the 1-hour write with "1h". Any other TTL token is one we do
+		// not model yet, so skip it and surface it rather than silently labeling it a 5m write.
+		switch cacheWriteTTL.FindString(lower) {
+		case "", "5m":
+			return priceTierCacheWrite5m, false
+		case "1h":
 			return priceTierCacheWrite1h, false
+		default:
+			return "", true
 		}
-		// AWS bills the bare write (no TTL token) at the 5-minute default.
-		return priceTierCacheWrite5m, false
 	default:
 		// Cache storage (per token-hour, a different unit) and any cache shape that is neither a
 		// read nor a write: drop it rather than mislabel it as a 5-minute write.
