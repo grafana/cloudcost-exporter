@@ -115,7 +115,7 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 			return nil
 		})
 	}
-	eg.Wait()
+	eg.Wait() // errors are swallowed by design
 
 	// Phase 2: list disks for every (project, zone) in parallel under the
 	// same global concurrency limit.
