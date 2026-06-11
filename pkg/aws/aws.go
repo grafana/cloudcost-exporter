@@ -100,6 +100,22 @@ const (
 	serviceBedrock = "BEDROCK"
 )
 
+// Services returns the collectors that can be enabled via -aws.services.
+// The Name field is the canonical flag value; the dispatch switch in
+// newWithDependencies cases on the same constants.
+func Services() []provider.ServiceInfo {
+	return []provider.ServiceInfo{
+		{Name: serviceS3, DisplayName: "S3", Description: "Simple Storage Service buckets"},
+		{Name: serviceEC2, DisplayName: "EC2", Description: "Elastic Compute Cloud instances (spot and on-demand pricing)"},
+		{Name: serviceRDS, DisplayName: "RDS", Description: "Relational Database Service instances"},
+		{Name: serviceMSK, DisplayName: "MSK", Description: "Managed Service for Apache Kafka clusters"},
+		{Name: serviceELB, DisplayName: "ELB", Description: "Elastic Load Balancers (ALB, NLB)"},
+		{Name: serviceNATGW, DisplayName: "NAT Gateway", Description: "Network Address Translation gateways"},
+		{Name: serviceVPC, DisplayName: "VPC", Description: "VPC endpoints and services"},
+		{Name: serviceBedrock, DisplayName: "Bedrock", Description: "Amazon Bedrock foundation model pricing"},
+	}
+}
+
 func New(ctx context.Context, config *Config) (*AWS, error) {
 	// There are two scenarios:
 	// 1. Running locally, the user must pass in a region and profile to use
