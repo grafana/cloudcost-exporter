@@ -791,23 +791,25 @@ func TestExtractMarketplacePriceTier(t *testing.T) {
 
 func TestMarketplaceCacheOp(t *testing.T) {
 	tests := []struct {
-		usagetype   string
-		wantOp      string
-		wantStorage bool
+		usagetype string
+		wantOp    string
+		wantSkip  bool
 	}{
 		{"USE1-MP:USE1_CacheReadInputTokenCount-Units", "cache_read", false},
 		{"USE1-MP:USE1_CacheReadInputTokenCount_Global-Units", "cache_read", false},
 		{"USE1-MP:USE1_CacheWriteInputTokenCount-Units", "cache_write_5m", false},
 		{"USE1-MP:USE1_CacheWrite1hInputTokenCount-Units", "cache_write_1h", false},
 		{"USE1-MP:USE1_cache_write_tokens_1h_standard-Units", "cache_write_1h", false},
-		{"USE1-MP:USE1_InputTokenCount-Units", "", false}, // not cache
-		{"USE1-MP:USE1_CacheStorage-Units", "", true},     // storage skipped
+		{"USE1-MP:USE1_InputTokenCount-Units", "", false}, // not cache, classified normally
+		{"USE1-MP:USE1_CacheStorage-Units", "", true},     // storage: skipped
+		// A cache shape that is neither read nor write must be skipped, not labeled a 5m write.
+		{"USE1-MP:USE1_CacheValidationCount-Units", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.usagetype, func(t *testing.T) {
-			op, storage := marketplaceCacheOp(tt.usagetype)
+			op, skip := marketplaceCacheOp(tt.usagetype)
 			assert.Equal(t, tt.wantOp, op)
-			assert.Equal(t, tt.wantStorage, storage)
+			assert.Equal(t, tt.wantSkip, skip)
 		})
 	}
 }

@@ -466,8 +466,13 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 
 	// Cache read/write are input-token operations; storage is per token-hour (a different unit)
 	// so it is skipped. Non-cache SKUs fall through to the normal direction classifier.
-	cacheOp, storage := marketplaceCacheOp(attrs.UsageType)
-	if storage {
+	cacheOp, skipCache := marketplaceCacheOp(attrs.UsageType)
+	if skipCache {
+		// Storage (per token-hour, a different unit) is an expected skip; anything else is an
+		// unrecognized cache shape worth surfacing so we add it rather than mislabel it.
+		if !strings.Contains(strings.ToLower(attrs.UsageType), "storage") {
+			return "", false, fmt.Errorf("unrecognized cache SKU, skipping: %q", attrs.UsageType)
+		}
 		return "", false, nil
 	}
 	direction := "input"
@@ -627,21 +632,25 @@ func composeTier(crossRegion bool, op, quota string) string {
 // marketplaceCacheOp returns the cache operation for a marketplace usagetype, and whether it is a
 // cache-storage SKU. Storage is priced per token-hour (a different unit), so the caller skips it.
 // Returns "" for non-cache SKUs. Reads are a single rate; writes split by 5-minute vs 1-hour TTL.
-func marketplaceCacheOp(usagetype string) (op string, storage bool) {
+func marketplaceCacheOp(usagetype string) (op string, skip bool) {
 	lower := strings.ToLower(usagetype)
 	if !strings.Contains(lower, "cache") {
 		return "", false
 	}
-	if strings.Contains(lower, "storage") {
+	switch {
+	case strings.Contains(lower, "cacheread") || strings.Contains(lower, "cache_read"):
+		return priceTierCacheRead, false
+	case strings.Contains(lower, "cachewrite") || strings.Contains(lower, "cache_write"):
+		if strings.Contains(lower, "1h") {
+			return priceTierCacheWrite1h, false
+		}
+		// AWS bills the bare write (no TTL token) at the 5-minute default.
+		return priceTierCacheWrite5m, false
+	default:
+		// Cache storage (per token-hour, a different unit) and any cache shape that is neither a
+		// read nor a write: drop it rather than mislabel it as a 5-minute write.
 		return "", true
 	}
-	if strings.Contains(lower, "cacheread") || strings.Contains(lower, "cache_read") {
-		return priceTierCacheRead, false
-	}
-	if strings.Contains(lower, "1h") {
-		return priceTierCacheWrite1h, false
-	}
-	return priceTierCacheWrite5m, false
 }
 
 func extractMarketplacePriceTier(usagetype, cacheOp string) string {
