@@ -517,8 +517,7 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 var multiHyphen = regexp.MustCompile(`-{2,}`)
 
 // normalizeModelID converts a marketplace servicename into a canonical model_id slug:
-// lowercase, with spaces replaced by hyphens. This matches the convention used by the
-// GCP vertex collector (pkg/google/vertex), so model IDs are uniform across the AI
+// lowercase, with spaces replaced by hyphens, so model IDs are uniform across the AI
 // pricing collectors.
 //
 // Parenthesis characters are dropped but their content is kept, so context variants stay
