@@ -18,8 +18,12 @@ const (
 	// which hosts the Ranking API used for reranking.
 	discoveryEngineServiceName = "Vertex AI Search"
 
-	// modalityGroup matches the modality tokens that appear in Vertex AI SKU descriptions.
-	modalityGroup = `(?:text|audio(?:\s+\(av2a\))?|image|video)`
+	// modalityGroup matches only the text modality in Vertex AI SKU descriptions. Audio,
+	// image, and video inputs are multimodal inputs priced separately from text tokens and
+	// are not represented by these metrics. Matching all modalities would cause each
+	// modality's price to overwrite the previous one, leaving the emitted value
+	// non-deterministic.
+	modalityGroup = `(?:text)`
 )
 
 var (
