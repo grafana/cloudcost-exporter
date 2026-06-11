@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/pprof"
@@ -12,6 +13,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,6 +37,11 @@ func main() {
 	providerFlags(flag.CommandLine, &cfg)
 	operationalFlags(&cfg)
 	flag.Parse()
+
+	if cfg.ListServices {
+		printAvailableServices(os.Stdout)
+		return
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -73,10 +80,10 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	fs.StringVar(&cfg.Providers.AWS.Profile, "aws.profile", "", "AWS Profile to authenticate with.")
 	fs.Var(&cfg.Providers.GCP.Projects, "gcp.projects", "GCP project(s).")
 	fs.Var(config.NewDeprecatedStringSliceFlag(&cfg.Providers.GCP.Projects, &cfg.Providers.GCP.BucketProjectsDeprecated), "gcp.bucket-projects", "GCP project(s). (deprecated: use --gcp.projects instead)")
-	fs.Var(&cfg.Providers.AWS.Services, "aws.services", "AWS service(s).")
+	fs.Var(&cfg.Providers.AWS.Services, "aws.services", "AWS service(s). Run with -list-services to see available values.")
 	fs.Var(&cfg.Providers.AWS.ExcludeRegions, "aws.exclude-regions", "AWS region(s) to exclude from cost collection.")
-	fs.Var(&cfg.Providers.Azure.Services, "azure.services", "Azure service(s): AKS, blob (comma-separated and/or repeat flag; case-insensitive).")
-	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s).")
+	fs.Var(&cfg.Providers.Azure.Services, "azure.services", "Azure service(s) (comma-separated and/or repeat flag; case-insensitive). Run with -list-services to see available values.")
+	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s). Run with -list-services to see available values.")
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
 	flag.StringVar(&cfg.Providers.AWS.RoleARN, "aws.roleARN", "", "Optional AWS role ARN to assume for cross-account access.")
 	fs.StringVar(&cfg.Providers.AWS.BedrockFamilyFilter, "aws.bedrock.families", ".*", "Regex matched against the Bedrock model family label. Only matching families are emitted.")
@@ -91,6 +98,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 // operationalFlags is a helper method that is responsible for setting up the flags that are used to configure the operational aspects of the application.
 // TODO: This should probably be moved over to the config package.
 func operationalFlags(cfg *config.Config) {
+	flag.BoolVar(&cfg.ListServices, "list-services", false, "Print the services available per provider and exit. Does not require credentials.")
 	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
 	flag.DurationVar(&cfg.Collector.Timeout, "collector-interval", 1*time.Minute, "Context timeout for collectors")
 	flag.DurationVar(&cfg.Server.Timeout, "server-timeout", 30*time.Second, "Server timeout")
@@ -278,5 +286,57 @@ func selectProviderWith(
 
 	default:
 		return nil, fmt.Errorf("unknown provider")
+	}
+}
+
+// printAvailableServices writes a human-readable summary of every collector
+// each provider supports, plus a ready-to-run example command per provider.
+// It does not initialize any provider and does not require credentials.
+func printAvailableServices(w io.Writer) {
+	groups := []struct {
+		label    string
+		flag     string
+		services []provider.ServiceInfo
+		example  string
+	}{
+		{
+			label:    "GCP",
+			flag:     "-gcp.services",
+			services: google.Services(),
+			example:  "cloudcost-exporter -provider gcp -gcp.projects <project> -gcp.services GKE,GCS",
+		},
+		{
+			label:    "AWS",
+			flag:     "-aws.services",
+			services: aws.Services(),
+			example:  "cloudcost-exporter -provider aws -aws.region <region> -aws.services EC2,S3",
+		},
+		{
+			label:    "Azure",
+			flag:     "-azure.services",
+			services: azure.Services(),
+			example:  "cloudcost-exporter -provider azure -azure.subscription-id <id> -azure.services AKS",
+		},
+	}
+
+	for i, g := range groups {
+		if i > 0 {
+			fmt.Fprintln(w)
+		}
+		fmt.Fprintf(w, "%s services (%s):\n", g.label, g.flag)
+		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		for _, s := range g.services {
+			name := s.Name
+			if len(s.Aliases) > 0 {
+				name = fmt.Sprintf("%s (alias: %s)", s.Name, strings.Join(s.Aliases, ", "))
+			}
+			desc := s.Description
+			if s.DisplayName != "" && !strings.EqualFold(s.DisplayName, s.Name) {
+				desc = fmt.Sprintf("%s: %s", s.DisplayName, s.Description)
+			}
+			fmt.Fprintf(tw, "  %s\t%s\n", name, desc)
+		}
+		_ = tw.Flush()
+		fmt.Fprintf(w, "\n  Example: %s\n", g.example)
 	}
 }

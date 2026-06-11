@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -243,6 +245,44 @@ func Test_createPromRegistryHandler(t *testing.T) {
 
 			if rec.Code != tc.wantHTTPStatus {
 				t.Errorf("expected HTTP status %d, got %d", tc.wantHTTPStatus, rec.Code)
+			}
+		})
+	}
+}
+
+func TestPrintAvailableServices(t *testing.T) {
+	var buf bytes.Buffer
+	printAvailableServices(&buf)
+	out := buf.String()
+
+	cases := []struct {
+		name     string
+		services []provider.ServiceInfo
+		header   string
+		example  string
+	}{
+		{"AWS", aws.Services(), "AWS services (-aws.services):", "-provider aws"},
+		{"GCP", google.Services(), "GCP services (-gcp.services):", "-provider gcp"},
+		{"Azure", azure.Services(), "Azure services (-azure.services):", "-provider azure"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !strings.Contains(out, tc.header) {
+				t.Errorf("output missing header %q", tc.header)
+			}
+			if !strings.Contains(out, tc.example) {
+				t.Errorf("output missing example for %s", tc.name)
+			}
+			for _, s := range tc.services {
+				if !strings.Contains(out, s.Name) {
+					t.Errorf("output missing service %s", s.Name)
+				}
+				for _, a := range s.Aliases {
+					if !strings.Contains(out, a) {
+						t.Errorf("output missing alias %s for %s", a, s.Name)
+					}
+				}
 			}
 		})
 	}
