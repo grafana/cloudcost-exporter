@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 )
 
@@ -82,40 +84,57 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 		close(ds.initialPopulation)
 	})
 
+	var eg errgroup.Group
+	eg.SetLimit(ds.concurrency)
+
+	// Phase 1: resolve zones for every project in parallel.
+	var mu sync.Mutex
+	zonesByProject := make(map[string][]string)
 	for _, project := range ds.projects {
-		zones, err := ds.gcpClient.GetZones(project)
-		if err != nil {
-			ds.logger.LogAttrs(ctx, slog.LevelError, "failed to get zones",
-				slog.String("project", project),
-				slog.String("error", err.Error()))
-			continue
+		if ctx.Err() != nil {
+			break
 		}
-
-		sem := make(chan struct{}, ds.concurrency)
-		var wg sync.WaitGroup
-
-	zoneLoop:
-		for _, zone := range zones {
-			select {
-			case <-ctx.Done():
-				break zoneLoop
-			case sem <- struct{}{}:
+		eg.Go(func() error {
+			if ctx.Err() != nil {
+				return nil
 			}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				defer func() { <-sem }()
-				// Re-check: sem<- may have raced with cancellation.
+			zones, err := ds.gcpClient.GetZones(project)
+			if err != nil {
+				ds.logger.LogAttrs(ctx, slog.LevelError, "failed to get zones",
+					slog.String("project", project),
+					slog.String("error", err.Error()))
+				return nil // log and continue; don't drop sibling projects
+			}
+			names := make([]string, len(zones))
+			for i, zone := range zones {
+				names[i] = zone.Name
+			}
+			mu.Lock()
+			zonesByProject[project] = names
+			mu.Unlock()
+			return nil
+		})
+	}
+	eg.Wait()
+
+	// Phase 2: list disks for every (project, zone) in parallel under the
+	// same global concurrency limit.
+	for project, zones := range zonesByProject {
+		for _, zone := range zones {
+			if ctx.Err() != nil {
+				break
+			}
+			eg.Go(func() error {
 				if ctx.Err() != nil {
-					return
+					return nil
 				}
-				results, err := ds.gcpClient.ListDisks(ctx, project, zone.Name)
+				results, err := ds.gcpClient.ListDisks(ctx, project, zone)
 				if err != nil {
 					ds.logger.LogAttrs(ctx, slog.LevelError, "failed to list disks in zone",
 						slog.String("project", project),
-						slog.String("zone", zone.Name),
+						slog.String("zone", zone),
 						slog.String("error", err.Error()))
-					return
+					return nil // log and continue; don't abort sibling zones
 				}
 				zonedDisks := make([]*Disk, 0, len(results))
 				for _, raw := range results {
@@ -125,10 +144,11 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 				if ds.disks[project] == nil {
 					ds.disks[project] = make(map[string][]*Disk)
 				}
-				ds.disks[project][zone.Name] = zonedDisks
+				ds.disks[project][zone] = zonedDisks
 				ds.mu.Unlock()
-			}()
+				return nil
+			})
 		}
-		wg.Wait()
 	}
+	eg.Wait()
 }
