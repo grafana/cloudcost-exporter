@@ -211,3 +211,24 @@ func Test_CollectMetrics(t *testing.T) {
 		})
 	}
 }
+
+func TestServices(t *testing.T) {
+	got := Services()
+	wantNames := []string{serviceAKS, serviceBlob, serviceEventHubs}
+	gotNames := make([]string, 0, len(got))
+	for _, s := range got {
+		gotNames = append(gotNames, s.Name)
+		assert.NotEmpty(t, s.DisplayName, "DisplayName empty for %s", s.Name)
+		assert.NotEmpty(t, s.Description, "Description empty for %s", s.Name)
+	}
+	assert.ElementsMatch(t, wantNames, gotNames)
+
+	var eh provider.ServiceInfo
+	for _, s := range got {
+		if s.Name == serviceEventHubs {
+			eh = s
+			break
+		}
+	}
+	assert.Contains(t, eh.Aliases, serviceEventHubsAlias, "EVENTHUBS should carry EVENTHUB as alias")
+}
