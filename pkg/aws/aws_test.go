@@ -296,6 +296,12 @@ func Test_serviceEntries(t *testing.T) {
 			experimental: []string{"bedrock"},
 			want:         []serviceEntry{{name: "bedrock", experimental: true}},
 		},
+		{
+			name:         "service enabled as stable is not re-registered as experimental (case-insensitive)",
+			stable:       []string{"BEDROCK"},
+			experimental: []string{"bedrock"},
+			want:         []serviceEntry{{name: "BEDROCK"}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

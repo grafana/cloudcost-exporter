@@ -125,18 +125,24 @@ type serviceEntry struct {
 }
 
 // serviceEntries merges the stable and experimental service lists into one ordered set, dropping
-// empty names (the empty slice round-trips as [""] from the flag's String/Split handling).
+// empty names (an unset flag round-trips as [""] from the flag's String/Split handling). A service
+// enabled as stable is not also registered as experimental: this keeps a collector graduating from
+// experimental to stable from registering twice and failing collector registration.
 func serviceEntries(stable, experimental []string) []serviceEntry {
 	entries := make([]serviceEntry, 0, len(stable)+len(experimental))
+	stableNames := make(map[string]bool, len(stable))
 	for _, name := range stable {
-		if name != "" {
-			entries = append(entries, serviceEntry{name: name})
+		if name == "" {
+			continue
 		}
+		stableNames[strings.ToUpper(name)] = true
+		entries = append(entries, serviceEntry{name: name})
 	}
 	for _, name := range experimental {
-		if name != "" {
-			entries = append(entries, serviceEntry{name: name, experimental: true})
+		if name == "" || stableNames[strings.ToUpper(name)] {
+			continue
 		}
+		entries = append(entries, serviceEntry{name: name, experimental: true})
 	}
 	return entries
 }
