@@ -4,8 +4,8 @@ description: Cloud Cost Exporter exports cloud provider agnostic cost metrics to
 type: application
 # This is the chart version. This version number should be incremented each time you make changes
 # to the chart and its templates, including the app version.
-version: 1.1.5
+version: 1.1.6
 # This is the version of cloudcost-exporter to be deployed, which should be incremented
 # with each release.
-appVersion: "1.2.2"
+appVersion: "1.4.0"
 home: https://github.com/grafana/cloudcost-exporter
