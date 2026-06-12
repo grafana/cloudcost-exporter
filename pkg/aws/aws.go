@@ -173,11 +173,8 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 	pricingAPI := awsPricing.NewFromConfig(pricingConfig)
 
 	for _, entry := range provider.MergeServiceEntries(config.Services, config.ExperimentalServices) {
+		provider.WarnIfExperimental(ctx, logger, entry)
 		service := strings.ToUpper(entry.Name)
-		if entry.Experimental {
-			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
-				slog.String("service", service))
-		}
 
 		switch service {
 		case serviceS3:

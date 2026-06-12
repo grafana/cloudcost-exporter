@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -74,4 +75,15 @@ func MergeServiceEntries(stable, experimental []string) []ServiceEntry {
 		entries = append(entries, ServiceEntry{Name: name, Experimental: true})
 	}
 	return entries
+}
+
+// WarnIfExperimental logs a warning when entry came from a provider's experimental flag, to make
+// clear the collector's metrics are outside the backward-compatibility contract. It is a no-op for
+// stable entries, so providers can call it unconditionally for every entry they register.
+func WarnIfExperimental(ctx context.Context, logger *slog.Logger, entry ServiceEntry) {
+	if !entry.Experimental {
+		return
+	}
+	logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
+		slog.String("service", entry.Name))
 }

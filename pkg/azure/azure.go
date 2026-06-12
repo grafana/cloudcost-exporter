@@ -108,11 +108,8 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 
 	// Collector Registration (--azure.services matching is case-insensitive).
 	for _, entry := range provider.MergeServiceEntries(config.Services, config.ExperimentalServices) {
+		provider.WarnIfExperimental(ctx, logger, entry)
 		svc := entry.Name
-		if entry.Experimental {
-			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
-				slog.String("service", svc))
-		}
 		switch {
 		case strings.EqualFold(svc, serviceAKS):
 			collector, err := aks.New(ctx, &aks.Config{

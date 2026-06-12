@@ -114,10 +114,7 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 		service := entry.Name
 		logger.LogAttrs(ctx, slog.LevelInfo, "Creating service",
 			slog.String("service", service))
-		if entry.Experimental {
-			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
-				slog.String("service", service))
-		}
+		provider.WarnIfExperimental(ctx, logger, entry)
 
 		var collector provider.Collector
 		switch strings.ToUpper(service) {
