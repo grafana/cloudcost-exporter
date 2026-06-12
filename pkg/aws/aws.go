@@ -38,7 +38,7 @@ import (
 
 type Config struct {
 	Services             []string
-	ExperimentalServices []string // enabled like Services, but their metrics are not under the backward-compatibility contract
+	ExperimentalServices []string
 	Region               string
 	Profile              string
 	RoleARN              string
