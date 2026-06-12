@@ -84,13 +84,14 @@ type GCP struct {
 }
 
 type Config struct {
-	ProjectId        string // ProjectID is where the project is running. Used for authentication.
-	Region           string
-	Projects         string // Projects is a comma-separated list of projects to scrape metadata from
-	Services         []string
-	ScrapeInterval   time.Duration
-	DefaultDiscount  int
-	CollectorTimeout time.Duration
+	ProjectId            string // ProjectID is where the project is running. Used for authentication.
+	Region               string
+	Projects             string // Projects is a comma-separated list of projects to scrape metadata from
+	Services             []string
+	ExperimentalServices []string
+	ScrapeInterval       time.Duration
+	DefaultDiscount      int
+	CollectorTimeout     time.Duration
 	// GKEZoneConcurrency caps zone-level goroutines per project during a GKE scrape.
 	// Zero or negative values fall back to gke.DefaultZoneCollectConcurrency.
 	GKEZoneConcurrency int
@@ -109,9 +110,14 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 	}
 
 	var collectors []provider.Collector
-	for _, service := range config.Services {
+	for _, entry := range provider.MergeServiceEntries(config.Services, config.ExperimentalServices) {
+		service := entry.Name
 		logger.LogAttrs(ctx, slog.LevelInfo, "Creating service",
 			slog.String("service", service))
+		if entry.Experimental {
+			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
+				slog.String("service", service))
+		}
 
 		var collector provider.Collector
 		switch strings.ToUpper(service) {

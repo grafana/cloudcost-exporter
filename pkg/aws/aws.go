@@ -117,36 +117,6 @@ func Services() []provider.ServiceInfo {
 	}
 }
 
-// serviceEntry is a service to register, tagged with whether it was enabled via the experimental
-// flag (and so is exempt from the backward-compatibility contract).
-type serviceEntry struct {
-	name         string
-	experimental bool
-}
-
-// serviceEntries merges the stable and experimental service lists into one ordered set, dropping
-// empty names (an unset flag round-trips as [""] from the flag's String/Split handling). A service
-// enabled as stable is not also registered as experimental: this keeps a collector graduating from
-// experimental to stable from registering twice and failing collector registration.
-func serviceEntries(stable, experimental []string) []serviceEntry {
-	entries := make([]serviceEntry, 0, len(stable)+len(experimental))
-	stableNames := make(map[string]bool, len(stable))
-	for _, name := range stable {
-		if name == "" {
-			continue
-		}
-		stableNames[strings.ToUpper(name)] = true
-		entries = append(entries, serviceEntry{name: name})
-	}
-	for _, name := range experimental {
-		if name == "" || stableNames[strings.ToUpper(name)] {
-			continue
-		}
-		entries = append(entries, serviceEntry{name: name, experimental: true})
-	}
-	return entries
-}
-
 func New(ctx context.Context, config *Config) (*AWS, error) {
 	// There are two scenarios:
 	// 1. Running locally, the user must pass in a region and profile to use
@@ -202,9 +172,9 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 	logger := config.Logger.With("provider", subsystem)
 	pricingAPI := awsPricing.NewFromConfig(pricingConfig)
 
-	for _, entry := range serviceEntries(config.Services, config.ExperimentalServices) {
-		service := strings.ToUpper(entry.name)
-		if entry.experimental {
+	for _, entry := range provider.MergeServiceEntries(config.Services, config.ExperimentalServices) {
+		service := strings.ToUpper(entry.Name)
+		if entry.Experimental {
 			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
 				slog.String("service", service))
 		}

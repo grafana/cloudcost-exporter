@@ -81,8 +81,9 @@ type Config struct {
 	SubscriptionID string
 	ScrapeInterval time.Duration
 
-	CollectorTimeout time.Duration
-	Services         []string
+	CollectorTimeout     time.Duration
+	Services             []string
+	ExperimentalServices []string
 }
 
 func New(ctx context.Context, config *Config) (*Azure, error) {
@@ -106,10 +107,11 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 	}
 
 	// Collector Registration (--azure.services matching is case-insensitive).
-	for _, svc := range config.Services {
-		svc = strings.TrimSpace(svc)
-		if svc == "" {
-			continue
+	for _, entry := range provider.MergeServiceEntries(config.Services, config.ExperimentalServices) {
+		svc := entry.Name
+		if entry.Experimental {
+			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
+				slog.String("service", svc))
 		}
 		switch {
 		case strings.EqualFold(svc, serviceAKS):

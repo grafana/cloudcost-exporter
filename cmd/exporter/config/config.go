@@ -26,12 +26,14 @@ type Config struct {
 			BucketProjectsDeprecated bool
 			Region                   string
 			Services                 StringSliceFlag
+			ExperimentalServices     StringSliceFlag
 			GKEZoneConcurrency       int
 		}
 		Azure struct {
-			Services       StringSliceFlag
-			SubscriptionID string
-			Region         string
+			Services             StringSliceFlag
+			ExperimentalServices StringSliceFlag
+			SubscriptionID       string
+			Region               string
 		}
 	}
 	Collector struct {
