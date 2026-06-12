@@ -81,9 +81,12 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	fs.Var(&cfg.Providers.GCP.Projects, "gcp.projects", "GCP project(s).")
 	fs.Var(config.NewDeprecatedStringSliceFlag(&cfg.Providers.GCP.Projects, &cfg.Providers.GCP.BucketProjectsDeprecated), "gcp.bucket-projects", "GCP project(s). (deprecated: use --gcp.projects instead)")
 	fs.Var(&cfg.Providers.AWS.Services, "aws.services", "AWS service(s). Run with -list-services to see available values.")
+	fs.Var(&cfg.Providers.AWS.ExperimentalServices, "aws.experimental.services", "Experimental AWS service(s); their metrics are not covered by the backward-compatibility contract and may change. Run with -list-services to see available values.")
 	fs.Var(&cfg.Providers.AWS.ExcludeRegions, "aws.exclude-regions", "AWS region(s) to exclude from cost collection.")
 	fs.Var(&cfg.Providers.Azure.Services, "azure.services", "Azure service(s) (comma-separated and/or repeat flag; case-insensitive). Run with -list-services to see available values.")
+	fs.Var(&cfg.Providers.Azure.ExperimentalServices, "azure.experimental.services", "Experimental Azure service(s); their metrics are not covered by the backward-compatibility contract and may change. Run with -list-services to see available values.")
 	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s). Run with -list-services to see available values.")
+	fs.Var(&cfg.Providers.GCP.ExperimentalServices, "gcp.experimental.services", "Experimental GCP service(s); their metrics are not covered by the backward-compatibility contract and may change. Run with -list-services to see available values.")
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
 	flag.StringVar(&cfg.Providers.AWS.RoleARN, "aws.roleARN", "", "Optional AWS role ARN to assume for cross-account access.")
 	fs.StringVar(&cfg.Providers.AWS.BedrockFamilyFilter, "aws.bedrock.families", ".*", "Regex matched against the Bedrock model family label. Only matching families are emitted.")
@@ -251,11 +254,12 @@ func selectProviderWith(
 	switch cfg.Provider {
 	case "azure":
 		return newAzure(ctx, &azure.Config{
-			Logger:           cfg.Logger,
-			SubscriptionID:   cfg.Providers.Azure.SubscriptionID,
-			ScrapeInterval:   cfg.Collector.ScrapeInterval,
-			Services:         strings.Split(cfg.Providers.Azure.Services.String(), ","),
-			CollectorTimeout: collectorTimeout,
+			Logger:               cfg.Logger,
+			SubscriptionID:       cfg.Providers.Azure.SubscriptionID,
+			ScrapeInterval:       cfg.Collector.ScrapeInterval,
+			Services:             strings.Split(cfg.Providers.Azure.Services.String(), ","),
+			ExperimentalServices: strings.Split(cfg.Providers.Azure.ExperimentalServices.String(), ","),
+			CollectorTimeout:     collectorTimeout,
 		})
 	case "aws":
 		return newAWS(ctx, &aws.Config{
@@ -265,6 +269,7 @@ func selectProviderWith(
 			RoleARN:              cfg.Providers.AWS.RoleARN,
 			ScrapeInterval:       cfg.Collector.ScrapeInterval,
 			Services:             strings.Split(cfg.Providers.AWS.Services.String(), ","),
+			ExperimentalServices: strings.Split(cfg.Providers.AWS.ExperimentalServices.String(), ","),
 			ExcludeRegions:       strings.Split(cfg.Providers.AWS.ExcludeRegions.String(), ","),
 			CollectorTimeout:     collectorTimeout,
 			BedrockFamilyFilter:  cfg.Providers.AWS.BedrockFamilyFilter,
@@ -273,15 +278,16 @@ func selectProviderWith(
 
 	case "gcp":
 		return newGCP(ctx, &google.Config{
-			Logger:             cfg.Logger,
-			ProjectId:          cfg.ProjectID,
-			Region:             cfg.Providers.GCP.Region,
-			Projects:           cfg.Providers.GCP.Projects.String(),
-			DefaultDiscount:    cfg.Providers.GCP.DefaultGCSDiscount,
-			ScrapeInterval:     cfg.Collector.ScrapeInterval,
-			Services:           strings.Split(cfg.Providers.GCP.Services.String(), ","),
-			CollectorTimeout:   collectorTimeout,
-			GKEZoneConcurrency: cfg.Providers.GCP.GKEZoneConcurrency,
+			Logger:               cfg.Logger,
+			ProjectId:            cfg.ProjectID,
+			Region:               cfg.Providers.GCP.Region,
+			Projects:             cfg.Providers.GCP.Projects.String(),
+			DefaultDiscount:      cfg.Providers.GCP.DefaultGCSDiscount,
+			ScrapeInterval:       cfg.Collector.ScrapeInterval,
+			Services:             strings.Split(cfg.Providers.GCP.Services.String(), ","),
+			ExperimentalServices: strings.Split(cfg.Providers.GCP.ExperimentalServices.String(), ","),
+			CollectorTimeout:     collectorTimeout,
+			GKEZoneConcurrency:   cfg.Providers.GCP.GKEZoneConcurrency,
 		})
 
 	default:

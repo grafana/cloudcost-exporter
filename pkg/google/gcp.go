@@ -3,6 +3,7 @@ package google
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -84,13 +85,14 @@ type GCP struct {
 }
 
 type Config struct {
-	ProjectId        string // ProjectID is where the project is running. Used for authentication.
-	Region           string
-	Projects         string // Projects is a comma-separated list of projects to scrape metadata from
-	Services         []string
-	ScrapeInterval   time.Duration
-	DefaultDiscount  int
-	CollectorTimeout time.Duration
+	ProjectId            string // ProjectID is where the project is running. Used for authentication.
+	Region               string
+	Projects             string // Projects is a comma-separated list of projects to scrape metadata from
+	Services             []string
+	ExperimentalServices []string
+	ScrapeInterval       time.Duration
+	DefaultDiscount      int
+	CollectorTimeout     time.Duration
 	// GKEZoneConcurrency caps zone-level goroutines per project during a GKE scrape.
 	// Zero or negative values fall back to gke.DefaultZoneCollectConcurrency.
 	GKEZoneConcurrency int
@@ -109,7 +111,27 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 	}
 
 	var collectors []provider.Collector
-	for _, service := range config.Services {
+	// Register stable services followed by experimental ones. Experimental collectors are outside
+	// the backward-compatibility contract, so warn when registering them. A service already enabled
+	// as stable is not registered again as experimental; registering it twice would fail collector
+	// registration with a duplicate-descriptor error.
+	stableNames := make(map[string]bool, len(config.Services))
+	for _, s := range config.Services {
+		stableNames[strings.ToUpper(strings.TrimSpace(s))] = true
+	}
+	allServices := slices.Concat(config.Services, config.ExperimentalServices)
+	for i, service := range allServices {
+		service = strings.TrimSpace(service)
+		if service == "" {
+			continue
+		}
+		if i >= len(config.Services) {
+			if stableNames[strings.ToUpper(service)] {
+				continue
+			}
+			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
+				slog.String("service", service))
+		}
 		logger.LogAttrs(ctx, slog.LevelInfo, "Creating service",
 			slog.String("service", service))
 

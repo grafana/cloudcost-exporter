@@ -52,14 +52,15 @@ func (m *mockRegionClient) ListEC2ServicePrices(ctx context.Context, region stri
 // This tests the core logic of New() without requiring AWS credentials or network access.
 func Test_NewWithDependencies(t *testing.T) {
 	tests := []struct {
-		name               string
-		services           []string
-		regions            []types.Region
-		setupMockClient    func(*mock_client.MockClient)
-		setupRegionClients map[string]client.Client
-		expectedCollectors int
-		expectedError      string
-		validateAWS        func(t *testing.T, aws *AWS)
+		name                 string
+		services             []string
+		experimentalServices []string
+		regions              []types.Region
+		setupMockClient      func(*mock_client.MockClient)
+		setupRegionClients   map[string]client.Client
+		expectedCollectors   int
+		expectedError        string
+		validateAWS          func(t *testing.T, aws *AWS)
 	}{
 		{
 			name:     "empty services list creates no collectors",
@@ -89,6 +90,41 @@ func Test_NewWithDependencies(t *testing.T) {
 			setupRegionClients: map[string]client.Client{},
 			expectedCollectors: 1,
 			validateAWS: func(t *testing.T, aws *AWS) {
+				assert.Equal(t, 1, len(aws.collectors))
+			},
+		},
+		{
+			name:                 "experimental service registers a collector",
+			experimentalServices: []string{"S3"},
+			regions: []types.Region{
+				{RegionName: utils.StringPtr("us-east-1")},
+			},
+			setupMockClient: func(m *mock_client.MockClient) {
+				m.EXPECT().DescribeRegions(gomock.Any(), false).Return(nil, nil)
+			},
+			setupRegionClients: map[string]client.Client{},
+			expectedCollectors: 1,
+			validateAWS: func(t *testing.T, aws *AWS) {
+				assert.Equal(t, 1, len(aws.collectors))
+			},
+		},
+		{
+			// A service in both lists must register once; registering it twice fails
+			// RegisterCollectors with a Prometheus duplicate-descriptor error.
+			name:                 "service in both stable and experimental registers once (case-insensitive)",
+			services:             []string{"S3"},
+			experimentalServices: []string{"s3"},
+			regions: []types.Region{
+				{RegionName: utils.StringPtr("us-east-1")},
+			},
+			setupMockClient: func(m *mock_client.MockClient) {
+				m.EXPECT().DescribeRegions(gomock.Any(), false).Return(nil, nil)
+			},
+			setupRegionClients: map[string]client.Client{},
+			expectedCollectors: 1,
+			validateAWS: func(t *testing.T, aws *AWS) {
+				// Dedup leaves exactly one collector; a duplicate-descriptor failure on startup
+				// requires two collectors of the same type, which this rules out.
 				assert.Equal(t, 1, len(aws.collectors))
 			},
 		},
@@ -222,11 +258,12 @@ func Test_NewWithDependencies(t *testing.T) {
 
 			// Create config
 			config := &Config{
-				Services:       tt.services,
-				Region:         "us-east-1",
-				ScrapeInterval: 60 * time.Second,
-				Logger:         logger,
-				AccountID:      "123456789012",
+				Services:             tt.services,
+				ExperimentalServices: tt.experimentalServices,
+				Region:               "us-east-1",
+				ScrapeInterval:       60 * time.Second,
+				Logger:               logger,
+				AccountID:            "123456789012",
 			}
 
 			// Call function
