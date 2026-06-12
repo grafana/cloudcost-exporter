@@ -39,8 +39,7 @@ func (h recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h recordingHandler) WithGroup(string) slog.Handler      { return h }
 
 // Test_New_experimentalService proves the experimental path end to end for Azure: New reads
-// ExperimentalServices, routes it through provider.MergeServiceEntries, registers the collector,
-// and emits the shared experimental warning.
+// ExperimentalServices, registers the collector, and emits the experimental warning.
 func Test_New_experimentalService(t *testing.T) {
 	var mu sync.Mutex
 	var records []slog.Record
