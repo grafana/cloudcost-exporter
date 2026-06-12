@@ -174,7 +174,13 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 	pricingAPI := awsPricing.NewFromConfig(pricingConfig)
 
 	// Register stable services followed by experimental ones. Experimental collectors are outside
-	// the backward-compatibility contract, so warn when registering them.
+	// the backward-compatibility contract, so warn when registering them. A service already enabled
+	// as stable is not registered again as experimental; registering it twice would fail collector
+	// registration with a duplicate-descriptor error.
+	stableNames := make(map[string]bool, len(config.Services))
+	for _, s := range config.Services {
+		stableNames[strings.ToUpper(strings.TrimSpace(s))] = true
+	}
 	allServices := slices.Concat(config.Services, config.ExperimentalServices)
 	for i, service := range allServices {
 		service = strings.TrimSpace(service)
@@ -182,6 +188,9 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			continue
 		}
 		if i >= len(config.Services) {
+			if stableNames[strings.ToUpper(service)] {
+				continue
+			}
 			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
 				slog.String("service", service))
 		}

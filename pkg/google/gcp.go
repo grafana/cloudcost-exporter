@@ -112,19 +112,28 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 
 	var collectors []provider.Collector
 	// Register stable services followed by experimental ones. Experimental collectors are outside
-	// the backward-compatibility contract, so warn when registering them.
+	// the backward-compatibility contract, so warn when registering them. A service already enabled
+	// as stable is not registered again as experimental; registering it twice would fail collector
+	// registration with a duplicate-descriptor error.
+	stableNames := make(map[string]bool, len(config.Services))
+	for _, s := range config.Services {
+		stableNames[strings.ToUpper(strings.TrimSpace(s))] = true
+	}
 	allServices := slices.Concat(config.Services, config.ExperimentalServices)
 	for i, service := range allServices {
 		service = strings.TrimSpace(service)
 		if service == "" {
 			continue
 		}
-		logger.LogAttrs(ctx, slog.LevelInfo, "Creating service",
-			slog.String("service", service))
 		if i >= len(config.Services) {
+			if stableNames[strings.ToUpper(service)] {
+				continue
+			}
 			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
 				slog.String("service", service))
 		}
+		logger.LogAttrs(ctx, slog.LevelInfo, "Creating service",
+			slog.String("service", service))
 
 		var collector provider.Collector
 		switch strings.ToUpper(service) {

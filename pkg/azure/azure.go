@@ -109,7 +109,13 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 
 	// Collector Registration (--azure.services matching is case-insensitive). Register stable
 	// services followed by experimental ones, which are outside the backward-compatibility
-	// contract, so warn when registering them.
+	// contract, so warn when registering them. A service already enabled as stable is not
+	// registered again as experimental; registering it twice would fail collector registration
+	// with a duplicate-descriptor error.
+	stableNames := make(map[string]bool, len(config.Services))
+	for _, s := range config.Services {
+		stableNames[strings.ToUpper(strings.TrimSpace(s))] = true
+	}
 	allServices := slices.Concat(config.Services, config.ExperimentalServices)
 	for i, svc := range allServices {
 		svc = strings.TrimSpace(svc)
@@ -117,6 +123,9 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 			continue
 		}
 		if i >= len(config.Services) {
+			if stableNames[strings.ToUpper(svc)] {
+				continue
+			}
 			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
 				slog.String("service", svc))
 		}

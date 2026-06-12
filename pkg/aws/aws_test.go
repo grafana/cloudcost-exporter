@@ -109,6 +109,26 @@ func Test_NewWithDependencies(t *testing.T) {
 			},
 		},
 		{
+			// A service in both lists must register once; registering it twice fails
+			// RegisterCollectors with a Prometheus duplicate-descriptor error.
+			name:                 "service in both stable and experimental registers once (case-insensitive)",
+			services:             []string{"S3"},
+			experimentalServices: []string{"s3"},
+			regions: []types.Region{
+				{RegionName: utils.StringPtr("us-east-1")},
+			},
+			setupMockClient: func(m *mock_client.MockClient) {
+				m.EXPECT().DescribeRegions(gomock.Any(), false).Return(nil, nil)
+			},
+			setupRegionClients: map[string]client.Client{},
+			expectedCollectors: 1,
+			validateAWS: func(t *testing.T, aws *AWS) {
+				// Dedup leaves exactly one collector; a duplicate-descriptor failure on startup
+				// requires two collectors of the same type, which this rules out.
+				assert.Equal(t, 1, len(aws.collectors))
+			},
+		},
+		{
 			name:     "multiple services create multiple collectors",
 			services: []string{"S3", "EC2"},
 			regions: []types.Region{
