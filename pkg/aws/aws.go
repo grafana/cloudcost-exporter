@@ -299,10 +299,9 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			collector, err := bedrock.New(ctx, &bedrock.Config{
 				Regions:       regions,
 				PricingClient: awsBedrockClient,
-				Logger:        logger,
 				AccountID:     config.AccountID,
 				FamilyFilter:  config.BedrockFamilyFilter,
-			})
+			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),

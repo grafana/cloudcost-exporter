@@ -117,3 +117,7 @@ func (c *AWSClient) ListMSKServicePrices(ctx context.Context, region string, fil
 func (c *AWSClient) ListBedrockPrices(ctx context.Context, region string) ([]string, error) {
 	return c.priceService.listBedrockPrices(ctx, region)
 }
+
+func (c *AWSClient) ListBedrockMarketplacePrices(ctx context.Context, region string) ([]string, error) {
+	return c.priceService.listBedrockMarketplacePrices(ctx, region)
+}

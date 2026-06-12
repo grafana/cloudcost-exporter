@@ -11,7 +11,7 @@ Each bullet shows the human-readable name, the flag value to pass via `-{provide
 - **[ELB](./aws/elb.md)** (`ELB`): Elastic Load Balancers (ALB, NLB)
 - **[NAT Gateway](./aws/natgateway.md)** (`NATGATEWAY`): Network Address Translation gateways
 - **[VPC](./aws/vpc.md)** (`VPC`): VPC endpoints and services
-- **[Bedrock](./aws/bedrock.md)** (`BEDROCK`): Amazon Bedrock 
+- **[Bedrock](./aws/bedrock.md)** (`BEDROCK`): Foundation model token and search-unit pricing (first-party and Marketplace)
 
 ## GCP Services
 
