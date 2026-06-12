@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -172,9 +173,19 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 	logger := config.Logger.With("provider", subsystem)
 	pricingAPI := awsPricing.NewFromConfig(pricingConfig)
 
-	for _, entry := range provider.MergeServiceEntries(config.Services, config.ExperimentalServices) {
-		provider.WarnIfExperimental(ctx, logger, entry)
-		service := strings.ToUpper(entry.Name)
+	// Register stable services followed by experimental ones. Experimental collectors are outside
+	// the backward-compatibility contract, so warn when registering them.
+	allServices := slices.Concat(config.Services, config.ExperimentalServices)
+	for i, service := range allServices {
+		service = strings.TrimSpace(service)
+		if service == "" {
+			continue
+		}
+		if i >= len(config.Services) {
+			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
+				slog.String("service", service))
+		}
+		service = strings.ToUpper(service)
 
 		switch service {
 		case serviceS3:

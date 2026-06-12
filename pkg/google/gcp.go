@@ -3,6 +3,7 @@ package google
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -110,11 +111,20 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 	}
 
 	var collectors []provider.Collector
-	for _, entry := range provider.MergeServiceEntries(config.Services, config.ExperimentalServices) {
-		service := entry.Name
+	// Register stable services followed by experimental ones. Experimental collectors are outside
+	// the backward-compatibility contract, so warn when registering them.
+	allServices := slices.Concat(config.Services, config.ExperimentalServices)
+	for i, service := range allServices {
+		service = strings.TrimSpace(service)
+		if service == "" {
+			continue
+		}
 		logger.LogAttrs(ctx, slog.LevelInfo, "Creating service",
 			slog.String("service", service))
-		provider.WarnIfExperimental(ctx, logger, entry)
+		if i >= len(config.Services) {
+			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
+				slog.String("service", service))
+		}
 
 		var collector provider.Collector
 		switch strings.ToUpper(service) {
