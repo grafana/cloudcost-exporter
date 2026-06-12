@@ -81,6 +81,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	fs.Var(&cfg.Providers.GCP.Projects, "gcp.projects", "GCP project(s).")
 	fs.Var(config.NewDeprecatedStringSliceFlag(&cfg.Providers.GCP.Projects, &cfg.Providers.GCP.BucketProjectsDeprecated), "gcp.bucket-projects", "GCP project(s). (deprecated: use --gcp.projects instead)")
 	fs.Var(&cfg.Providers.AWS.Services, "aws.services", "AWS service(s). Run with -list-services to see available values.")
+	fs.Var(&cfg.Providers.AWS.ExperimentalServices, "aws.experimental.services", "Experimental AWS service(s) to enable. Their metrics are not covered by the backward-compatibility contract and may change (comma-separated and/or repeat flag; case-insensitive).")
 	fs.Var(&cfg.Providers.AWS.ExcludeRegions, "aws.exclude-regions", "AWS region(s) to exclude from cost collection.")
 	fs.Var(&cfg.Providers.Azure.Services, "azure.services", "Azure service(s) (comma-separated and/or repeat flag; case-insensitive). Run with -list-services to see available values.")
 	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s). Run with -list-services to see available values.")
@@ -265,6 +266,7 @@ func selectProviderWith(
 			RoleARN:              cfg.Providers.AWS.RoleARN,
 			ScrapeInterval:       cfg.Collector.ScrapeInterval,
 			Services:             strings.Split(cfg.Providers.AWS.Services.String(), ","),
+			ExperimentalServices: strings.Split(cfg.Providers.AWS.ExperimentalServices.String(), ","),
 			ExcludeRegions:       strings.Split(cfg.Providers.AWS.ExcludeRegions.String(), ","),
 			CollectorTimeout:     collectorTimeout,
 			BedrockFamilyFilter:  cfg.Providers.AWS.BedrockFamilyFilter,

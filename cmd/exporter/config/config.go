@@ -14,6 +14,7 @@ type Config struct {
 			Profile              string
 			Region               string
 			Services             StringSliceFlag
+			ExperimentalServices StringSliceFlag
 			RoleARN              string
 			ExcludeRegions       StringSliceFlag
 			BedrockFamilyFilter  string

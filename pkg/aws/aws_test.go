@@ -262,6 +262,48 @@ func Test_NewWithDependencies(t *testing.T) {
 	}
 }
 
+func Test_serviceEntries(t *testing.T) {
+	tests := []struct {
+		name         string
+		stable       []string
+		experimental []string
+		want         []serviceEntry
+	}{
+		{
+			name: "empty inputs (unset flags round-trip as [\"\"])",
+			// strings.Split("", ",") yields [""], so empties must be dropped.
+			stable:       []string{""},
+			experimental: []string{""},
+			want:         []serviceEntry{},
+		},
+		{
+			name:   "stable only",
+			stable: []string{"EC2", "S3"},
+			want:   []serviceEntry{{name: "EC2"}, {name: "S3"}},
+		},
+		{
+			name:         "experimental flagged and ordered after stable",
+			stable:       []string{"EC2"},
+			experimental: []string{"bedrock", "vertex"},
+			want: []serviceEntry{
+				{name: "EC2"},
+				{name: "bedrock", experimental: true},
+				{name: "vertex", experimental: true},
+			},
+		},
+		{
+			name:         "experimental only",
+			experimental: []string{"bedrock"},
+			want:         []serviceEntry{{name: "bedrock", experimental: true}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, serviceEntries(tt.stable, tt.experimental))
+		})
+	}
+}
+
 func Test_filterExcludedRegions(t *testing.T) {
 	tests := []struct {
 		name        string

@@ -38,6 +38,7 @@ import (
 
 type Config struct {
 	Services             []string
+	ExperimentalServices []string // enabled like Services, but their metrics are not under the backward-compatibility contract
 	Region               string
 	Profile              string
 	RoleARN              string
@@ -116,6 +117,30 @@ func Services() []provider.ServiceInfo {
 	}
 }
 
+// serviceEntry is a service to register, tagged with whether it was enabled via the experimental
+// flag (and so is exempt from the backward-compatibility contract).
+type serviceEntry struct {
+	name         string
+	experimental bool
+}
+
+// serviceEntries merges the stable and experimental service lists into one ordered set, dropping
+// empty names (the empty slice round-trips as [""] from the flag's String/Split handling).
+func serviceEntries(stable, experimental []string) []serviceEntry {
+	entries := make([]serviceEntry, 0, len(stable)+len(experimental))
+	for _, name := range stable {
+		if name != "" {
+			entries = append(entries, serviceEntry{name: name})
+		}
+	}
+	for _, name := range experimental {
+		if name != "" {
+			entries = append(entries, serviceEntry{name: name, experimental: true})
+		}
+	}
+	return entries
+}
+
 func New(ctx context.Context, config *Config) (*AWS, error) {
 	// There are two scenarios:
 	// 1. Running locally, the user must pass in a region and profile to use
@@ -171,8 +196,12 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 	logger := config.Logger.With("provider", subsystem)
 	pricingAPI := awsPricing.NewFromConfig(pricingConfig)
 
-	for _, service := range config.Services {
-		service = strings.ToUpper(service)
+	for _, entry := range serviceEntries(config.Services, config.ExperimentalServices) {
+		service := strings.ToUpper(entry.name)
+		if entry.experimental {
+			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
+				slog.String("service", service))
+		}
 
 		switch service {
 		case serviceS3:
