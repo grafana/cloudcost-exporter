@@ -651,3 +651,18 @@ func Test_AllCostMetricDescsIncludeAccountID(t *testing.T) {
 	assert.GreaterOrEqual(t, costDescs, len(allServices),
 		"expected at least %d cost metric Descs from %d services", len(allServices), len(allServices))
 }
+
+func TestServices(t *testing.T) {
+	got := Services()
+	wantNames := []string{
+		serviceS3, serviceEC2, serviceRDS, serviceMSK,
+		serviceELB, serviceNATGW, serviceVPC, serviceBedrock,
+	}
+	gotNames := make([]string, 0, len(got))
+	for _, s := range got {
+		gotNames = append(gotNames, s.Name)
+		assert.NotEmpty(t, s.DisplayName, "DisplayName empty for %s", s.Name)
+		assert.NotEmpty(t, s.Description, "Description empty for %s", s.Name)
+	}
+	assert.ElementsMatch(t, wantNames, gotNames)
+}

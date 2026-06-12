@@ -6,9 +6,10 @@ import (
 )
 
 type Config struct {
-	Provider  string
-	ProjectID string
-	Providers struct {
+	Provider     string
+	ProjectID    string
+	ListServices bool
+	Providers    struct {
 		AWS struct {
 			Profile              string
 			Region               string
