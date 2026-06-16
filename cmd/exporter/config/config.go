@@ -41,6 +41,16 @@ type Config struct {
 		Timeout        time.Duration
 	}
 
+	LeaderElection struct {
+		Enabled       bool
+		LeaseName     string
+		Namespace     string
+		Identity      string
+		LeaseDuration time.Duration
+		RenewDeadline time.Duration
+		RetryPeriod   time.Duration
+	}
+
 	Server struct {
 		Address string
 		Path    string
