@@ -517,4 +517,26 @@ func TestCollector_Collect_RegionErrors(t *testing.T) {
 		require.Error(t, err)
 		assert.ErrorIs(t, err, volumeErr)
 	})
+
+	t.Run("both errors propagate", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockClient := mock_client.NewMockClient(ctrl)
+		mockClient.EXPECT().ListComputeInstances(gomock.Any()).Return(nil, listErr).Times(1)
+		mockClient.EXPECT().ListEBSVolumes(gomock.Any()).Return(nil, volumeErr).Times(1)
+
+		c := &Collector{
+			regions:            regions,
+			awsRegionClientMap: map[string]client.Client{"us-east-1": mockClient},
+			computePricingMap:  NewComputePricingMap(logger, &Config{Regions: regions}),
+			storagePricingMap:  NewStoragePricingMap(logger, &Config{Regions: regions}),
+			logger:             logger,
+			accountID:          "123456789012",
+		}
+
+		ch := make(chan prometheus.Metric, 10)
+		err := c.Collect(t.Context(), ch)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, listErr)
+		assert.ErrorIs(t, err, volumeErr)
+	})
 }
