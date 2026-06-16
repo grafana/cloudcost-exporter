@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 )
 
@@ -74,49 +76,67 @@ func (ns *NodeStore) Populate(ctx context.Context) {
 		close(ns.initialPopulation)
 	})
 
+	var eg errgroup.Group
+	eg.SetLimit(ns.concurrency)
+
+	// Phase 1: resolve zones for every project in parallel.
+	var mu sync.Mutex
+	zonesByProject := make(map[string][]string)
 	for _, project := range ns.projects {
-		zones, err := ns.gcpClient.GetZones(project)
-		if err != nil {
-			ns.logger.LogAttrs(ctx, slog.LevelError, "failed to get zones",
-				slog.String("project", project),
-				slog.String("error", err.Error()))
-			continue
+		if ctx.Err() != nil {
+			break
 		}
-
-		sem := make(chan struct{}, ns.concurrency)
-		var wg sync.WaitGroup
-
-	zoneLoop:
-		for _, zone := range zones {
-			select {
-			case <-ctx.Done():
-				break zoneLoop
-			case sem <- struct{}{}:
+		eg.Go(func() error {
+			if ctx.Err() != nil {
+				return nil
 			}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				defer func() { <-sem }()
-				// Re-check: sem<- may have raced with cancellation.
+			zones, err := ns.gcpClient.GetZones(project)
+			if err != nil {
+				ns.logger.LogAttrs(ctx, slog.LevelError, "failed to get zones",
+					slog.String("project", project),
+					slog.String("error", err.Error()))
+				return nil // log and continue; don't drop sibling projects
+			}
+			names := make([]string, len(zones))
+			for i, zone := range zones {
+				names[i] = zone.Name
+			}
+			mu.Lock()
+			zonesByProject[project] = names
+			mu.Unlock()
+			return nil
+		})
+	}
+	eg.Wait() // errors are swallowed by design
+
+	// Phase 2: list instances for every (project, zone) in parallel under the
+	// same global concurrency limit.
+	for project, zones := range zonesByProject {
+		for _, zone := range zones {
+			if ctx.Err() != nil {
+				break
+			}
+			eg.Go(func() error {
 				if ctx.Err() != nil {
-					return
+					return nil
 				}
-				results, err := ns.gcpClient.ListInstancesInZone(project, zone.Name)
+				results, err := ns.gcpClient.ListInstancesInZone(project, zone)
 				if err != nil {
 					ns.logger.LogAttrs(ctx, slog.LevelError, "failed to list instances in zone",
 						slog.String("project", project),
-						slog.String("zone", zone.Name),
+						slog.String("zone", zone),
 						slog.String("error", err.Error()))
-					return
+					return nil // log and continue; don't abort sibling zones
 				}
 				ns.mu.Lock()
 				if ns.nodes[project] == nil {
 					ns.nodes[project] = make(map[string][]*client.MachineSpec)
 				}
-				ns.nodes[project][zone.Name] = results
+				ns.nodes[project][zone] = results
 				ns.mu.Unlock()
-			}()
+				return nil
+			})
 		}
-		wg.Wait()
 	}
+	eg.Wait()
 }
