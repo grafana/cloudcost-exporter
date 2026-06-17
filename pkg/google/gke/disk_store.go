@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
@@ -15,10 +16,11 @@ import (
 const diskRefreshInterval = 15 * time.Minute
 
 type DiskStore struct {
-	logger      *slog.Logger
-	gcpClient   client.Client
-	projects    []string
-	concurrency int
+	logger         *slog.Logger
+	gcpClient      client.Client
+	projects       []string
+	concurrency    int
+	populateErrors *prometheus.CounterVec
 
 	mu    sync.RWMutex
 	disks map[string]map[string][]*Disk // project → zone → disks
@@ -32,7 +34,7 @@ type DiskStore struct {
 // NewDiskStore returns a DiskStore that refreshes disk inventory in the
 // background. concurrency caps in-flight zone-level calls per populate;
 // zero or negative values fall back to DefaultZoneCollectConcurrency.
-func NewDiskStore(ctx context.Context, logger *slog.Logger, gcpClient client.Client, projects []string, concurrency int) *DiskStore {
+func NewDiskStore(ctx context.Context, logger *slog.Logger, gcpClient client.Client, projects []string, concurrency int, populateErrors *prometheus.CounterVec) *DiskStore {
 	if concurrency <= 0 {
 		concurrency = DefaultZoneCollectConcurrency
 	}
@@ -41,6 +43,7 @@ func NewDiskStore(ctx context.Context, logger *slog.Logger, gcpClient client.Cli
 		gcpClient:         gcpClient,
 		projects:          projects,
 		concurrency:       concurrency,
+		populateErrors:    populateErrors,
 		disks:             make(map[string]map[string][]*Disk),
 		initialPopulation: make(chan struct{}),
 	}
@@ -103,6 +106,7 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 				ds.logger.LogAttrs(ctx, slog.LevelError, "failed to get zones",
 					slog.String("project", project),
 					slog.String("error", err.Error()))
+				ds.populateErrors.WithLabelValues("disks", project, "get_zones").Inc()
 				return nil // log and continue; don't drop sibling projects
 			}
 			names := make([]string, len(zones))
@@ -134,6 +138,7 @@ func (ds *DiskStore) Populate(ctx context.Context) {
 						slog.String("project", project),
 						slog.String("zone", zone),
 						slog.String("error", err.Error()))
+					ds.populateErrors.WithLabelValues("disks", project, "list_disks").Inc()
 					return nil // log and continue; don't abort sibling zones
 				}
 				zonedDisks := make([]*Disk, 0, len(results))

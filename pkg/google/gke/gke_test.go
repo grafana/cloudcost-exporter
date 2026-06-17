@@ -20,6 +20,7 @@ import (
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	computev1 "google.golang.org/api/compute/v1"
@@ -555,11 +556,15 @@ func (c *concurrentGCPClient) ListDisks(_ context.Context, _ string, _ string) (
 	return nil, nil
 }
 
+func testPopulateErrorsCounter() *prometheus.CounterVec {
+	return newPopulateErrorsCounter()
+}
+
 // newSeededNodeStore returns a NodeStore without starting a populate goroutine.
 // Passing nil for lgr uses the package-default logger. The helper always applies
 // the same .With("store", "nodes") wrapping as NewNodeStore so log-content
 // assertions exercise that attribute.
-func newSeededNodeStore(t *testing.T, lgr *slog.Logger, gcpClient client.Client, projects []string, seed map[string]map[string][]*client.MachineSpec) *NodeStore {
+func newSeededNodeStore(t *testing.T, lgr *slog.Logger, gcpClient client.Client, projects []string, seed map[string]map[string][]*client.MachineSpec, counter *prometheus.CounterVec) *NodeStore {
 	t.Helper()
 	if lgr == nil {
 		lgr = logger
@@ -567,17 +572,21 @@ func newSeededNodeStore(t *testing.T, lgr *slog.Logger, gcpClient client.Client,
 	if seed == nil {
 		seed = make(map[string]map[string][]*client.MachineSpec)
 	}
+	if counter == nil {
+		counter = newPopulateErrorsCounter()
+	}
 	return &NodeStore{
 		logger:            lgr.With("store", "nodes"),
 		gcpClient:         gcpClient,
 		projects:          projects,
 		concurrency:       DefaultZoneCollectConcurrency,
+		populateErrors:    counter,
 		nodes:             seed,
 		initialPopulation: make(chan struct{}),
 	}
 }
 
-func newSeededDiskStore(t *testing.T, lgr *slog.Logger, gcpClient client.Client, projects []string, seed map[string]map[string][]*Disk) *DiskStore {
+func newSeededDiskStore(t *testing.T, lgr *slog.Logger, gcpClient client.Client, projects []string, seed map[string]map[string][]*Disk, counter *prometheus.CounterVec) *DiskStore {
 	t.Helper()
 	if lgr == nil {
 		lgr = logger
@@ -585,11 +594,15 @@ func newSeededDiskStore(t *testing.T, lgr *slog.Logger, gcpClient client.Client,
 	if seed == nil {
 		seed = make(map[string]map[string][]*Disk)
 	}
+	if counter == nil {
+		counter = newPopulateErrorsCounter()
+	}
 	return &DiskStore{
 		logger:            lgr.With("store", "disks"),
 		gcpClient:         gcpClient,
 		projects:          projects,
 		concurrency:       DefaultZoneCollectConcurrency,
+		populateErrors:    counter,
 		disks:             seed,
 		initialPopulation: make(chan struct{}),
 	}
@@ -605,7 +618,7 @@ func TestNodeStore_Populate_ConcurrencyLimit(t *testing.T) {
 	}
 
 	fakeClient := &concurrentGCPClient{zones: zones}
-	ns := newSeededNodeStore(t, nil, fakeClient, []string{"proj1"}, nil)
+	ns := newSeededNodeStore(t, nil, fakeClient, []string{"proj1"}, nil, nil)
 
 	ns.Populate(t.Context())
 
@@ -623,7 +636,7 @@ func TestDiskStore_Populate_ConcurrencyLimit(t *testing.T) {
 	}
 
 	fakeClient := &concurrentGCPClient{zones: zones}
-	ds := newSeededDiskStore(t, nil, fakeClient, []string{"proj1"}, nil)
+	ds := newSeededDiskStore(t, nil, fakeClient, []string{"proj1"}, nil, nil)
 
 	ds.Populate(t.Context())
 
@@ -643,7 +656,7 @@ func TestNewNodeStore_HonorsConcurrencyArg(t *testing.T) {
 	}
 
 	fakeClient := &concurrentGCPClient{zones: zones}
-	ns := NewNodeStore(t.Context(), logger, fakeClient, []string{"proj1"}, customLimit)
+	ns := NewNodeStore(t.Context(), logger, fakeClient, []string{"proj1"}, customLimit, testPopulateErrorsCounter())
 	<-ns.Done()
 
 	assert.LessOrEqual(t, fakeClient.peakConcurrency, customLimit,
@@ -661,7 +674,7 @@ func TestNewDiskStore_HonorsConcurrencyArg(t *testing.T) {
 	}
 
 	fakeClient := &concurrentGCPClient{zones: zones}
-	ds := NewDiskStore(t.Context(), logger, fakeClient, []string{"proj1"}, customLimit)
+	ds := NewDiskStore(t.Context(), logger, fakeClient, []string{"proj1"}, customLimit, testPopulateErrorsCounter())
 	<-ds.Done()
 
 	assert.LessOrEqual(t, fakeClient.peakConcurrency, customLimit,
@@ -700,7 +713,7 @@ func TestCollector_Collect_EmitsBothNodeAndDiskMetrics(t *testing.T) {
 			Labels:      map[string]string{client.GkeClusterLabel: "cluster1"},
 		}
 	}
-	nodeStore := newSeededNodeStore(t, nil, nil, []string{project}, map[string]map[string][]*client.MachineSpec{project: {"zone-a": nodes}})
+	nodeStore := newSeededNodeStore(t, nil, nil, []string{project}, map[string]map[string][]*client.MachineSpec{project: {"zone-a": nodes}}, nil)
 	close(nodeStore.initialPopulation)
 
 	disks := make([]*Disk, numDisks)
@@ -713,7 +726,7 @@ func TestCollector_Collect_EmitsBothNodeAndDiskMetrics(t *testing.T) {
 			SizeGb: 10,
 		}, project)
 	}
-	diskStore := newSeededDiskStore(t, nil, nil, []string{project}, map[string]map[string][]*Disk{project: {"zone-a": disks}})
+	diskStore := newSeededDiskStore(t, nil, nil, []string{project}, map[string]map[string][]*Disk{project: {"zone-a": disks}}, nil)
 	close(diskStore.initialPopulation)
 
 	collector := &Collector{
@@ -747,13 +760,17 @@ func TestCollector_Collect_EmitsBothNodeAndDiskMetrics(t *testing.T) {
 type programmableGCPClient struct {
 	client.Client
 
-	zones     []*computev1.Zone
-	instances map[string][]*client.MachineSpec // zone name → instances (nil + present in errs means error)
-	disks     map[string][]*computev1.Disk     // zone name → disks
-	errs      map[string]error                 // zone name → error to return
+	zones       []*computev1.Zone
+	instances   map[string][]*client.MachineSpec // zone name → instances (nil + present in errs means error)
+	disks       map[string][]*computev1.Disk     // zone name → disks
+	errs        map[string]error                 // zone name → error to return
+	getZonesErr error                            // returned by all GetZones calls when set
 }
 
 func (p *programmableGCPClient) GetZones(_ string) ([]*computev1.Zone, error) {
+	if p.getZonesErr != nil {
+		return nil, p.getZonesErr
+	}
 	return p.zones, nil
 }
 
@@ -780,7 +797,7 @@ func TestNodeStore_Populate_PartialZoneFailure_KeepsSuccessfulZones(t *testing.T
 		errs: map[string]error{"zone-bad": fmt.Errorf("transient gcp error")},
 	}
 
-	ns := newSeededNodeStore(t, nil, fake, []string{"p1"}, nil)
+	ns := newSeededNodeStore(t, nil, fake, []string{"p1"}, nil, nil)
 
 	ns.Populate(t.Context())
 
@@ -800,7 +817,7 @@ func TestNodeStore_Populate_AllZonesFail_PreservesStaleCache(t *testing.T) {
 		},
 	}
 
-	ns := newSeededNodeStore(t, nil, fake, []string{"p1"}, map[string]map[string][]*client.MachineSpec{"p1": {"stale-zone": stale}})
+	ns := newSeededNodeStore(t, nil, fake, []string{"p1"}, map[string]map[string][]*client.MachineSpec{"p1": {"stale-zone": stale}}, nil)
 
 	ns.Populate(t.Context())
 
@@ -818,7 +835,7 @@ func TestDiskStore_Populate_PartialZoneFailure_KeepsSuccessfulZones(t *testing.T
 		errs: map[string]error{"zone-bad": fmt.Errorf("transient gcp error")},
 	}
 
-	ds := newSeededDiskStore(t, nil, fake, []string{"p1"}, nil)
+	ds := newSeededDiskStore(t, nil, fake, []string{"p1"}, nil, nil)
 
 	ds.Populate(t.Context())
 
@@ -838,7 +855,7 @@ func TestDiskStore_Populate_AllZonesFail_PreservesStaleCache(t *testing.T) {
 		},
 	}
 
-	ds := newSeededDiskStore(t, nil, fake, []string{"p1"}, map[string]map[string][]*Disk{"p1": {"stale-zone": stale}})
+	ds := newSeededDiskStore(t, nil, fake, []string{"p1"}, map[string]map[string][]*Disk{"p1": {"stale-zone": stale}}, nil)
 
 	ds.Populate(t.Context())
 
@@ -902,7 +919,7 @@ func TestNodeStore_Populate_HonorsContextCancellation(t *testing.T) {
 		limit:      DefaultZoneCollectConcurrency,
 	}
 
-	ns := newSeededNodeStore(t, nil, fake, []string{"p1"}, nil)
+	ns := newSeededNodeStore(t, nil, fake, []string{"p1"}, nil, nil)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -942,7 +959,7 @@ func TestDiskStore_Populate_HonorsContextCancellation(t *testing.T) {
 		limit:      DefaultZoneCollectConcurrency,
 	}
 
-	ds := newSeededDiskStore(t, nil, fake, []string{"p1"}, nil)
+	ds := newSeededDiskStore(t, nil, fake, []string{"p1"}, nil, nil)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -985,7 +1002,7 @@ func TestNodeStore_Populate_SkipsConcurrentInvocation(t *testing.T) {
 
 	var logBuf bytes.Buffer
 	captureLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	ns := newSeededNodeStore(t, captureLogger, fake, []string{"p1"}, nil)
+	ns := newSeededNodeStore(t, captureLogger, fake, []string{"p1"}, nil, nil)
 
 	firstDone := make(chan struct{})
 	go func() {
@@ -1031,7 +1048,7 @@ func TestDiskStore_Populate_SkipsConcurrentInvocation(t *testing.T) {
 
 	var logBuf bytes.Buffer
 	captureLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	ds := newSeededDiskStore(t, captureLogger, fake, []string{"p1"}, nil)
+	ds := newSeededDiskStore(t, captureLogger, fake, []string{"p1"}, nil, nil)
 
 	firstDone := make(chan struct{})
 	go func() {
@@ -1065,4 +1082,50 @@ func TestDiskStore_Populate_SkipsConcurrentInvocation(t *testing.T) {
 
 	close(fake.release)
 	<-firstDone
+}
+
+func TestNodeStore_Populate_IncrementsCounter_OnGetZonesError(t *testing.T) {
+	counter := testPopulateErrorsCounter()
+	fake := &programmableGCPClient{getZonesErr: fmt.Errorf("zone api down")}
+	ns := newSeededNodeStore(t, nil, fake, []string{"p1"}, nil, counter)
+
+	ns.Populate(t.Context())
+
+	assert.Equal(t, float64(1), testutil.ToFloat64(counter.WithLabelValues("nodes", "p1", "get_zones")))
+}
+
+func TestNodeStore_Populate_IncrementsCounter_OnListInstancesError(t *testing.T) {
+	counter := testPopulateErrorsCounter()
+	fake := &programmableGCPClient{
+		zones: []*computev1.Zone{{Name: "zone-a"}},
+		errs:  map[string]error{"zone-a": fmt.Errorf("instances api down")},
+	}
+	ns := newSeededNodeStore(t, nil, fake, []string{"p1"}, nil, counter)
+
+	ns.Populate(t.Context())
+
+	assert.Equal(t, float64(1), testutil.ToFloat64(counter.WithLabelValues("nodes", "p1", "list_instances")))
+}
+
+func TestDiskStore_Populate_IncrementsCounter_OnGetZonesError(t *testing.T) {
+	counter := testPopulateErrorsCounter()
+	fake := &programmableGCPClient{getZonesErr: fmt.Errorf("zone api down")}
+	ds := newSeededDiskStore(t, nil, fake, []string{"p1"}, nil, counter)
+
+	ds.Populate(t.Context())
+
+	assert.Equal(t, float64(1), testutil.ToFloat64(counter.WithLabelValues("disks", "p1", "get_zones")))
+}
+
+func TestDiskStore_Populate_IncrementsCounter_OnListDisksError(t *testing.T) {
+	counter := testPopulateErrorsCounter()
+	fake := &programmableGCPClient{
+		zones: []*computev1.Zone{{Name: "zone-a"}},
+		errs:  map[string]error{"zone-a": fmt.Errorf("disks api down")},
+	}
+	ds := newSeededDiskStore(t, nil, fake, []string{"p1"}, nil, counter)
+
+	ds.Populate(t.Context())
+
+	assert.Equal(t, float64(1), testutil.ToFloat64(counter.WithLabelValues("disks", "p1", "list_disks")))
 }
