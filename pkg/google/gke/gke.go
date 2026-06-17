@@ -28,6 +28,16 @@ const (
 	DefaultZoneCollectConcurrency = 10
 )
 
+func newPopulateErrorsCounter() *prometheus.CounterVec {
+	return prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: prometheus.BuildFQName(cloudcostexporter.ExporterName, subsystem, "populate_errors_total"),
+			Help: "Total errors during background store population, by store, project, and operation.",
+		},
+		[]string{"store", "project", "operation"},
+	)
+}
+
 var (
 	gkeNodeMemoryHourlyCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
@@ -63,15 +73,17 @@ type Config struct {
 }
 
 type Collector struct {
-	projects   []string
-	regions    []string
-	pricingMap *PricingMap
-	nodeStore  *NodeStore
-	diskStore  *DiskStore
-	logger     *slog.Logger
+	projects       []string
+	regions        []string
+	pricingMap     *PricingMap
+	nodeStore      *NodeStore
+	diskStore      *DiskStore
+	logger         *slog.Logger
+	populateErrors *prometheus.CounterVec
 }
 
-func (c *Collector) Register(_ provider.Registry) error {
+func (c *Collector) Register(r provider.Registry) error {
+	r.MustRegister(c.populateErrors)
 	return nil
 }
 
@@ -166,8 +178,9 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 	projects := strings.Split(config.Projects, ",")
 	regions := client.RegionsFromZonesForProjects(gcpClient, projects, logger)
 
-	nodeStore := NewNodeStore(ctx, logger, gcpClient, projects, config.ZoneConcurrency)
-	diskStore := NewDiskStore(ctx, logger, gcpClient, projects, config.ZoneConcurrency)
+	populateErrors := newPopulateErrorsCounter()
+	nodeStore := NewNodeStore(ctx, logger, gcpClient, projects, config.ZoneConcurrency, populateErrors)
+	diskStore := NewDiskStore(ctx, logger, gcpClient, projects, config.ZoneConcurrency, populateErrors)
 
 	startRefreshTicker(ctx, PriceRefreshInterval, func() {
 		if err := pm.Populate(ctx); err != nil {
@@ -178,12 +191,13 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 	startRefreshTicker(ctx, diskRefreshInterval, func() { diskStore.Populate(ctx) })
 
 	return &Collector{
-		projects:   projects,
-		regions:    regions,
-		logger:     logger,
-		pricingMap: pm,
-		nodeStore:  nodeStore,
-		diskStore:  diskStore,
+		projects:       projects,
+		regions:        regions,
+		logger:         logger,
+		pricingMap:     pm,
+		nodeStore:      nodeStore,
+		diskStore:      diskStore,
+		populateErrors: populateErrors,
 	}, nil
 }
 

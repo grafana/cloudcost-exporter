@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
@@ -15,10 +16,11 @@ import (
 const nodeRefreshInterval = 5 * time.Minute
 
 type NodeStore struct {
-	logger      *slog.Logger
-	gcpClient   client.Client
-	projects    []string
-	concurrency int
+	logger         *slog.Logger
+	gcpClient      client.Client
+	projects       []string
+	concurrency    int
+	populateErrors *prometheus.CounterVec
 
 	mu    sync.RWMutex
 	nodes map[string]map[string][]*client.MachineSpec // project → zone → instances
@@ -32,7 +34,7 @@ type NodeStore struct {
 // NewNodeStore returns a NodeStore that refreshes node inventory in the
 // background. concurrency caps in-flight zone-level calls per populate;
 // zero or negative values fall back to DefaultZoneCollectConcurrency.
-func NewNodeStore(ctx context.Context, logger *slog.Logger, gcpClient client.Client, projects []string, concurrency int) *NodeStore {
+func NewNodeStore(ctx context.Context, logger *slog.Logger, gcpClient client.Client, projects []string, concurrency int, populateErrors *prometheus.CounterVec) *NodeStore {
 	if concurrency <= 0 {
 		concurrency = DefaultZoneCollectConcurrency
 	}
@@ -41,6 +43,7 @@ func NewNodeStore(ctx context.Context, logger *slog.Logger, gcpClient client.Cli
 		gcpClient:         gcpClient,
 		projects:          projects,
 		concurrency:       concurrency,
+		populateErrors:    populateErrors,
 		nodes:             make(map[string]map[string][]*client.MachineSpec),
 		initialPopulation: make(chan struct{}),
 	}
@@ -95,6 +98,7 @@ func (ns *NodeStore) Populate(ctx context.Context) {
 				ns.logger.LogAttrs(ctx, slog.LevelError, "failed to get zones",
 					slog.String("project", project),
 					slog.String("error", err.Error()))
+				ns.populateErrors.WithLabelValues("nodes", project, "get_zones").Inc()
 				return nil // log and continue; don't drop sibling projects
 			}
 			names := make([]string, len(zones))
@@ -126,6 +130,7 @@ func (ns *NodeStore) Populate(ctx context.Context) {
 						slog.String("project", project),
 						slog.String("zone", zone),
 						slog.String("error", err.Error()))
+					ns.populateErrors.WithLabelValues("nodes", project, "list_instances").Inc()
 					return nil // log and continue; don't abort sibling zones
 				}
 				ns.mu.Lock()
