@@ -247,7 +247,7 @@ func TestServices(t *testing.T) {
 	got := Services()
 	wantNames := []string{
 		serviceGCS, serviceGKE, serviceCLB, serviceVPC,
-		serviceSQL, serviceManagedKafka,
+		serviceSQL, serviceManagedKafka, serviceVertex,
 	}
 	gotNames := make([]string, 0, len(got))
 	for _, s := range got {

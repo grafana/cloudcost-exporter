@@ -18,6 +18,7 @@ import (
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
+	"github.com/grafana/cloudcost-exporter/pkg/google/vertex"
 	"github.com/grafana/cloudcost-exporter/pkg/google/vpc"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
@@ -39,6 +40,7 @@ const (
 	serviceSQL          = "SQL"
 	serviceManagedKafka = "MANAGEDKAFKA"
 	serviceKafkaAlias   = "KAFKA"
+	serviceVertex       = "VERTEX"
 )
 
 // Services returns the collectors that can be enabled via -gcp.services.
@@ -52,6 +54,7 @@ func Services() []provider.ServiceInfo {
 		{Name: serviceManagedKafka, DisplayName: "Managed Kafka", Description: "Managed Service for Apache Kafka clusters", Aliases: []string{serviceKafkaAlias}},
 		{Name: serviceCLB, DisplayName: "CLB", Description: "Cloud Load Balancers via forwarding rules"},
 		{Name: serviceVPC, DisplayName: "VPC", Description: "Cloud NAT Gateway, VPN Gateway, Private Service Connect"},
+		{Name: serviceVertex, DisplayName: "Vertex AI", Description: "Vertex AI model token, character, compute, and reranking pricing"},
 	}
 }
 
@@ -203,6 +206,14 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
 			}, logger, gcpClient)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
+		case serviceVertex:
+			collector, err = vertex.New(ctx, logger, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),
