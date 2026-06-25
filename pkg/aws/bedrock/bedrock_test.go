@@ -88,7 +88,7 @@ func TestCollect_EmitsInputAndOutputTokenMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 
-	inputMetric := metricByName(results, "cloudcost_aws_bedrock_input_usd_per_1k_tokens")
+	inputMetric := tokenMetricByType(results, "input")
 	require.NotNil(t, inputMetric)
 	assert.Equal(t, "us-east-1", inputMetric.Labels["region"])
 	// These fixtures omit the `model` attribute, so model_id is the normalized usagetype slug
@@ -96,16 +96,19 @@ func TestCollect_EmitsInputAndOutputTokenMetrics(t *testing.T) {
 	// TestCollect_StandardModelIDUsesModelAttribute.
 	assert.Equal(t, "claude3sonnet", inputMetric.Labels["model_id"])
 	assert.Equal(t, "anthropic", inputMetric.Labels["family"])
-	assert.Equal(t, "on_demand", inputMetric.Labels["price_tier"])
+	assert.Equal(t, "in", inputMetric.Labels["region_tier"])
+	assert.Equal(t, "standard", inputMetric.Labels["quota_tier"])
+	assert.Equal(t, "", inputMetric.Labels["cache_ttl"])
 	assert.Equal(t, "123456789012", inputMetric.Labels["account_id"])
 	assert.InDelta(t, 0.003, inputMetric.Value, 1e-9)
 
-	outputMetric := metricByName(results, "cloudcost_aws_bedrock_output_usd_per_1k_tokens")
+	outputMetric := tokenMetricByType(results, "output")
 	require.NotNil(t, outputMetric)
 	assert.Equal(t, "us-east-1", outputMetric.Labels["region"])
 	assert.Equal(t, "claude3sonnet", outputMetric.Labels["model_id"])
 	assert.Equal(t, "anthropic", outputMetric.Labels["family"])
-	assert.Equal(t, "on_demand", outputMetric.Labels["price_tier"])
+	assert.Equal(t, "in", outputMetric.Labels["region_tier"])
+	assert.Equal(t, "standard", outputMetric.Labels["quota_tier"])
 	assert.InDelta(t, 0.015, outputMetric.Value, 1e-9)
 }
 
@@ -168,7 +171,9 @@ func TestCollect_LabelsCrossRegionPriceTier(t *testing.T) {
 	require.Len(t, results, 1)
 
 	m := results[0]
-	assert.Equal(t, "cross_region", m.Labels["price_tier"])
+	assert.Equal(t, "cross", m.Labels["region_tier"])
+	assert.Equal(t, "standard", m.Labels["quota_tier"])
+	assert.Equal(t, "input", m.Labels["token_type"])
 	assert.Equal(t, "amazon", m.Labels["family"])
 	assert.Equal(t, "novapremier", m.Labels["model_id"])
 }
@@ -201,7 +206,9 @@ func TestCollect_LabelsBatchPriceTier(t *testing.T) {
 	require.Len(t, results, 1)
 
 	m := results[0]
-	assert.Equal(t, "on_demand_batch", m.Labels["price_tier"])
+	assert.Equal(t, "in", m.Labels["region_tier"])
+	assert.Equal(t, "batch", m.Labels["quota_tier"])
+	assert.Equal(t, "input", m.Labels["token_type"])
 	assert.Equal(t, "anthropic", m.Labels["family"])
 	assert.Equal(t, "claude3sonnet", m.Labels["model_id"])
 }
@@ -391,67 +398,36 @@ func TestClassifyInferenceType(t *testing.T) {
 }
 
 func TestParseBedrockModelID(t *testing.T) {
+	// Asserts the model slug plus the region/quota tiers decoded from the trailing suffix.
+	// Cross-region and a quota qualifier are captured independently (e.g. cross + batch).
 	tests := []struct {
-		usagetype     string
-		wantModelID   string
-		wantPriceTier string
+		usagetype      string
+		wantModelID    string
+		wantRegionTier string
+		wantQuotaTier  string
 	}{
-		{
-			"USE1-Claude3Sonnet-input-tokens",
-			"Claude3Sonnet", "on_demand",
-		},
-		{
-			"USE1-Claude2.0-input-tokens",
-			"Claude2.0", "on_demand",
-		},
-		{
-			"USE1-Llama4-Maverick-17B-input-tokens-batch",
-			"Llama4-Maverick-17B", "on_demand_batch",
-		},
-		{
-			"USE1-GPT-OSS-Safeguard-20B-input-tokens-priority",
-			"GPT-OSS-Safeguard-20B", "on_demand_priority",
-		},
-		{
-			"USE1-Gemma-3-4B-IT-input-tokens-flex",
-			"Gemma-3-4B-IT", "on_demand_flex",
-		},
-		{
-			"USE1-MistralSmall-input-tokens-batch",
-			"MistralSmall", "on_demand_batch",
-		},
-		{
-			"USE1-Nova2.0Lite-input-tokens-cross-region-global-batch",
-			"Nova2.0Lite", "cross_region",
-		},
-		{
-			"USE1-Nova2.0Pro-text-input-tokens-priority-cross-region-global",
-			"Nova2.0Pro", "cross_region",
-		},
-		{
-			"USE1-GPT-OSS-Safeguard-120B-output-tokens-batch",
-			"GPT-OSS-Safeguard-120B", "on_demand_batch",
-		},
-		{
-			"USE1-Llama3-2-1B-output-tokens",
-			"Llama3-2-1B", "on_demand",
-		},
-		{
-			"USE1-cohere.rerank-english-v3-search-units",
-			"cohere.rerank-english-v3", "on_demand",
-		},
+		{"USE1-Claude3Sonnet-input-tokens", "Claude3Sonnet", "in", "standard"},
+		{"USE1-Claude2.0-input-tokens", "Claude2.0", "in", "standard"},
+		{"USE1-Llama4-Maverick-17B-input-tokens-batch", "Llama4-Maverick-17B", "in", "batch"},
+		{"USE1-GPT-OSS-Safeguard-20B-input-tokens-priority", "GPT-OSS-Safeguard-20B", "in", "priority"},
+		{"USE1-Gemma-3-4B-IT-input-tokens-flex", "Gemma-3-4B-IT", "in", "flex"},
+		{"USE1-MistralSmall-input-tokens-batch", "MistralSmall", "in", "batch"},
+		{"USE1-Nova2.0Lite-input-tokens-cross-region-global-batch", "Nova2.0Lite", "cross", "batch"},
+		{"USE1-Nova2.0Pro-text-input-tokens-priority-cross-region-global", "Nova2.0Pro", "cross", "priority"},
+		{"USE1-GPT-OSS-Safeguard-120B-output-tokens-batch", "GPT-OSS-Safeguard-120B", "in", "batch"},
+		{"USE1-Llama3-2-1B-output-tokens", "Llama3-2-1B", "in", "standard"},
+		{"USE1-cohere.rerank-english-v3-search-units", "cohere.rerank-english-v3", "in", "standard"},
 		// Unrecognized format returns empty model ID.
-		{
-			"USE1-Guardrail-AutomatedReasoningPolicyUnitsConsumed",
-			"", "on_demand",
-		},
+		{"USE1-Guardrail-AutomatedReasoningPolicyUnitsConsumed", "", "in", "standard"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.usagetype, func(t *testing.T) {
-			modelID, priceTier := parseBedrockModelID(tt.usagetype)
+			modelID, suffix := parseBedrockModelID(tt.usagetype)
 			assert.Equal(t, tt.wantModelID, modelID)
-			assert.Equal(t, tt.wantPriceTier, priceTier)
+			regionTier, quotaTier := standardTier(suffix)
+			assert.Equal(t, tt.wantRegionTier, regionTier)
+			assert.Equal(t, tt.wantQuotaTier, quotaTier)
 		})
 	}
 }
@@ -543,9 +519,11 @@ func collectMetricResults(t *testing.T, collector *Collector) ([]*utils.MetricRe
 	return results, err
 }
 
-func metricByName(results []*utils.MetricResult, fqName string) *utils.MetricResult {
+// tokenMetricByType returns the token-cost metric for a given token_type (input, output,
+// cache_read, cache_write). Input and output now share one metric name, distinguished by label.
+func tokenMetricByType(results []*utils.MetricResult, tokenType string) *utils.MetricResult {
 	for _, result := range results {
-		if result.FqName == fqName {
+		if result.FqName == "cloudcost_aws_bedrock_usd_per_1k_tokens" && result.Labels["token_type"] == tokenType {
 			return result
 		}
 	}
@@ -595,13 +573,13 @@ func TestCollect_MergesLegacyClaudeAcrossSources(t *testing.T) {
 
 	var input, output *utils.MetricResult
 	for _, r := range results {
-		if r.Labels["model_id"] != "claude-3-sonnet" {
+		if r.FqName != "cloudcost_aws_bedrock_usd_per_1k_tokens" || r.Labels["model_id"] != "claude-3-sonnet" {
 			continue
 		}
-		switch r.FqName {
-		case "cloudcost_aws_bedrock_input_usd_per_1k_tokens":
+		switch r.Labels["token_type"] {
+		case "input":
 			input = r
-		case "cloudcost_aws_bedrock_output_usd_per_1k_tokens":
+		case "output":
 			output = r
 		}
 	}
@@ -761,66 +739,68 @@ func TestClassifyMarketplaceUsageType(t *testing.T) {
 	}
 }
 
-func TestExtractMarketplacePriceTier(t *testing.T) {
+func TestMarketplaceTier(t *testing.T) {
+	// region_tier and quota_tier are orthogonal and captured independently; the cache token_type
+	// is handled separately by marketplaceCacheOp, so it does not appear here.
 	tests := []struct {
-		usagetype string
-		cacheOp   string
-		want      string
+		usagetype      string
+		wantRegionTier string
+		wantQuotaTier  string
 	}{
-		{"USE1-MP:USE1_InputTokenCount-Units", "", "on_demand"},
-		{"USE1-MP:USE1_InputTokenCount_Global-Units", "", "cross_region"},
-		{"USE1-MP:USE1_InputTokenCount_Batch-Units", "", "on_demand_batch"},
-		{"USE1-MP:USE1_InputTokenCount_Global_Batch-Units", "", "cross_region_batch"},
-		{"USE1-MP:USE1_OutputTokenCount_Global-Units", "", "cross_region"},
-		{"USE1-MP:USE1_search_units-Units", "", "on_demand"},
-		// Latency-optimized is its own quota tier (does not collide with on_demand).
-		{"USE1-MP:USE1_InputTokenCount_LatencyOptimized-Units", "", "on_demand_latency_optimized"},
-		// Cache operations fold into the tier and stack with cross-region.
-		{"USE1-MP:USE1_CacheReadInputTokenCount-Units", "cache_read", "cache_read"},
-		{"USE1-MP:USE1_CacheReadInputTokenCount_Global-Units", "cache_read", "cross_region_cache_read"},
-		{"USE1-MP:USE1_CacheWriteInputTokenCount-Units", "cache_write_5m", "cache_write_5m"},
-		{"USE1-MP:USE1_CacheWrite1hInputTokenCount-Units", "cache_write_1h", "cache_write_1h"},
-		{"USE1-MP:USE1_CacheWrite1hInputTokenCount_Global-Units", "cache_write_1h", "cross_region_cache_write_1h"},
+		{"USE1-MP:USE1_InputTokenCount-Units", "in", "standard"},
+		{"USE1-MP:USE1_InputTokenCount_Global-Units", "cross", "standard"},
+		{"USE1-MP:USE1_InputTokenCount_Batch-Units", "in", "batch"},
+		{"USE1-MP:USE1_InputTokenCount_Global_Batch-Units", "cross", "batch"},
+		{"USE1-MP:USE1_OutputTokenCount_Global-Units", "cross", "standard"},
+		{"USE1-MP:USE1_search_units-Units", "in", "standard"},
+		{"USE1-MP:USE1_InputTokenCount_LatencyOptimized-Units", "in", "latency_optimized"},
+		// Cross-region is captured independently of the cache operation.
+		{"USE1-MP:USE1_CacheReadInputTokenCount_Global-Units", "cross", "standard"},
+		{"USE1-MP:USE1_CacheWrite1hInputTokenCount_Global-Units", "cross", "standard"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.usagetype, func(t *testing.T) {
-			assert.Equal(t, tt.want, extractMarketplacePriceTier(tt.usagetype, tt.cacheOp))
+			regionTier, quotaTier := marketplaceTier(tt.usagetype)
+			assert.Equal(t, tt.wantRegionTier, regionTier)
+			assert.Equal(t, tt.wantQuotaTier, quotaTier)
 		})
 	}
 }
 
 func TestMarketplaceCacheOp(t *testing.T) {
 	tests := []struct {
-		usagetype string
-		wantOp    string
-		wantSkip  bool
+		usagetype     string
+		wantTokenType string
+		wantCacheTTL  string
+		wantSkip      bool
 	}{
-		{"USE1-MP:USE1_CacheReadInputTokenCount-Units", "cache_read", false},
-		{"USE1-MP:USE1_CacheReadInputTokenCount_Global-Units", "cache_read", false},
-		{"USE1-MP:USE1_CacheWriteInputTokenCount-Units", "cache_write_5m", false},
-		{"USE1-MP:USE1_CacheWrite1hInputTokenCount-Units", "cache_write_1h", false},
-		{"USE1-MP:USE1_cache_write_tokens_1h_standard-Units", "cache_write_1h", false},
-		{"USE1-MP:USE1_InputTokenCount-Units", "", false}, // not cache, classified normally
-		{"USE1-MP:USE1_CacheStorage-Units", "", true},     // storage: skipped
+		{"USE1-MP:USE1_CacheReadInputTokenCount-Units", "cache_read", "", false},
+		{"USE1-MP:USE1_CacheReadInputTokenCount_Global-Units", "cache_read", "", false},
+		{"USE1-MP:USE1_CacheWriteInputTokenCount-Units", "cache_write", "5m", false},
+		{"USE1-MP:USE1_CacheWrite1hInputTokenCount-Units", "cache_write", "1h", false},
+		{"USE1-MP:USE1_cache_write_tokens_1h_standard-Units", "cache_write", "1h", false},
+		{"USE1-MP:USE1_InputTokenCount-Units", "", "", false}, // not cache, classified normally
+		{"USE1-MP:USE1_CacheStorage-Units", "", "", true},     // storage: skipped
 		// A cache shape that is neither read nor write must be skipped, not labeled a 5m write.
-		{"USE1-MP:USE1_CacheValidationCount-Units", "", true},
+		{"USE1-MP:USE1_CacheValidationCount-Units", "", "", true},
 		// A write with an unrecognized TTL must be skipped, not defaulted to 5m.
-		{"USE1-MP:USE1_CacheWrite30mInputTokenCount-Units", "", true},
+		{"USE1-MP:USE1_CacheWrite30mInputTokenCount-Units", "", "", true},
 		// An explicit 5m write is recognized as 5m.
-		{"USE1-MP:USE1_CacheWrite5mInputTokenCount-Units", "cache_write_5m", false},
+		{"USE1-MP:USE1_CacheWrite5mInputTokenCount-Units", "cache_write", "5m", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.usagetype, func(t *testing.T) {
-			op, skip := marketplaceCacheOp(tt.usagetype)
-			assert.Equal(t, tt.wantOp, op)
+			tokenType, cacheTTL, skip := marketplaceCacheOp(tt.usagetype)
+			assert.Equal(t, tt.wantTokenType, tokenType)
+			assert.Equal(t, tt.wantCacheTTL, cacheTTL)
 			assert.Equal(t, tt.wantSkip, skip)
 		})
 	}
 }
 
 func TestCollect_EmitsMarketplaceCacheMetrics(t *testing.T) {
-	// Cache read/write are emitted on the input metric with cache_* price_tier values; storage
-	// (per token-hour) is skipped.
+	// Cache read/write are emitted on the token metric with token_type=cache_read/cache_write and
+	// a cache_ttl label; storage (per token-hour) is skipped.
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -851,15 +831,18 @@ func TestCollect_EmitsMarketplaceCacheMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 3, "read + write_5m + write_1h emitted; storage skipped")
 
-	byTier := map[string]float64{}
+	// Key each cache price by (region_tier, token_type, cache_ttl) so the orthogonal labels are
+	// asserted directly instead of a composed string.
+	byKey := map[string]float64{}
 	for _, r := range results {
-		require.Equal(t, "cloudcost_aws_bedrock_input_usd_per_1k_tokens", r.FqName)
+		require.Equal(t, "cloudcost_aws_bedrock_usd_per_1k_tokens", r.FqName)
 		require.Equal(t, "claude-sonnet-4.6", r.Labels["model_id"])
-		byTier[r.Labels["price_tier"]] = r.Value
+		key := r.Labels["region_tier"] + "/" + r.Labels["token_type"] + "/" + r.Labels["cache_ttl"]
+		byKey[key] = r.Value
 	}
-	assert.InDelta(t, 0.0003, byTier["cache_read"], 1e-9)      // 0.3/1M
-	assert.InDelta(t, 0.00375, byTier["cache_write_5m"], 1e-9) // 3.75/1M
-	assert.InDelta(t, 0.006, byTier["cross_region_cache_write_1h"], 1e-9)
+	assert.InDelta(t, 0.0003, byKey["in/cache_read/"], 1e-9)      // 0.3/1M, reads carry no TTL
+	assert.InDelta(t, 0.00375, byKey["in/cache_write/5m"], 1e-9)  // 3.75/1M
+	assert.InDelta(t, 0.006, byKey["cross/cache_write/1h"], 1e-9) // 6.0/1M, cross-region 1h write
 }
 
 func TestCollect_EmitsMarketplaceTokenMetrics(t *testing.T) {
@@ -891,14 +874,15 @@ func TestCollect_EmitsMarketplaceTokenMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 
-	inputMetric := metricByName(results, "cloudcost_aws_bedrock_input_usd_per_1k_tokens")
+	inputMetric := tokenMetricByType(results, "input")
 	require.NotNil(t, inputMetric)
 	assert.Equal(t, "claude-sonnet-4.6", inputMetric.Labels["model_id"])
 	assert.Equal(t, "anthropic", inputMetric.Labels["family"])
-	assert.Equal(t, "on_demand", inputMetric.Labels["price_tier"])
+	assert.Equal(t, "in", inputMetric.Labels["region_tier"])
+	assert.Equal(t, "standard", inputMetric.Labels["quota_tier"])
 	assert.InDelta(t, 0.003, inputMetric.Value, 1e-9)
 
-	outputMetric := metricByName(results, "cloudcost_aws_bedrock_output_usd_per_1k_tokens")
+	outputMetric := tokenMetricByType(results, "output")
 	require.NotNil(t, outputMetric)
 	assert.InDelta(t, 0.015, outputMetric.Value, 1e-9)
 }
@@ -935,6 +919,8 @@ func TestCollect_EmitsMarketplaceSearchUnitMetrics(t *testing.T) {
 	assert.Equal(t, "cloudcost_aws_bedrock_search_unit_usd_per_1k_search_units", m.FqName)
 	assert.Equal(t, "cohere-rerank-v3.5", m.Labels["model_id"])
 	assert.Equal(t, "cohere", m.Labels["family"])
+	assert.Equal(t, "in", m.Labels["region_tier"])
+	assert.Equal(t, "standard", m.Labels["quota_tier"])
 	assert.InDelta(t, 2.0, m.Value, 1e-9)
 }
 
@@ -997,7 +983,7 @@ func TestNew_DegradesToStandardPricingWhenMarketplaceAPIUnavailable(t *testing.T
 	require.NoError(t, err)
 
 	// Standard pricing still flows through despite the marketplace failure.
-	inputMetric := metricByName(results, "cloudcost_aws_bedrock_input_usd_per_1k_tokens")
+	inputMetric := tokenMetricByType(results, "input")
 	require.NotNil(t, inputMetric)
 	assert.Equal(t, "claude3sonnet", inputMetric.Labels["model_id"])
 }

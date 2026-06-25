@@ -24,21 +24,39 @@ const (
 	subsystem   = "aws_bedrock"
 	serviceName = "bedrock"
 
-	priceTierOnDemand         = "on_demand"
-	priceTierOnDemandBatch    = "on_demand_batch"
-	priceTierOnDemandFlex     = "on_demand_flex"
-	priceTierOnDemandPriority = "on_demand_priority"
-	priceTierCrossRegion      = "cross_region"
+	// token_type label values. Prompt-cache read/write are input-side operations and so are
+	// emitted on the token metric alongside input/output.
+	tokenTypeInput      = "input"
+	tokenTypeOutput     = "output"
+	tokenTypeCacheRead  = "cache_read"
+	tokenTypeCacheWrite = "cache_write"
 
-	// Prompt-caching operations, emitted as price_tier values on the input metric. Reads are a
-	// single rate; writes split by cache TTL (5-minute default vs 1-hour).
-	priceTierCacheRead    = "cache_read"
-	priceTierCacheWrite5m = "cache_write_5m"
-	priceTierCacheWrite1h = "cache_write_1h"
+	// directionSearch routes a SKU to the search-unit metric. It is not a token_type value.
+	directionSearch = "search"
 
-	// compositeKeySep separates the four fields encoded in the pricingstore usagetype key:
-	// family|direction|model_id|price_tier
-	compositeKeySep = "|"
+	// region_tier label values: in-region vs cross-region inference.
+	regionTierIn    = "in"
+	regionTierCross = "cross"
+
+	// quota_tier label values: the on-demand quota a price applies to.
+	quotaTierStandard         = "standard"
+	quotaTierBatch            = "batch"
+	quotaTierFlex             = "flex"
+	quotaTierPriority         = "priority"
+	quotaTierLatencyOptimized = "latency_optimized"
+
+	// cache_ttl label values, set only for cache_write (empty otherwise).
+	cacheTTL5m = "5m"
+	cacheTTL1h = "1h"
+
+	// metricKind selects the output metric when a pricing key is decoded at collection time.
+	kindToken  = "token"
+	kindSearch = "search"
+
+	// compositeKeySep separates the fields encoded in the pricingstore usagetype key:
+	// kind|family|model_id|token_type|region_tier|quota_tier|cache_ttl
+	compositeKeySep    = "|"
+	compositeKeyFields = 7
 
 	// searchUnitsPerKilo converts from per-unit pricing (as published by the AWS Pricing API)
 	// to per-1000-units pricing (as emitted by SearchUnitCostDesc).
@@ -53,28 +71,57 @@ const (
 )
 
 var (
-	InputTokenCostDesc = utils.GenerateDesc(
+	// TokenCostDesc carries every per-token price (input, output, and prompt-cache read/write),
+	// distinguished by orthogonal labels rather than separate metric names or a composed price
+	// tier, so downstream joins key on (model_id, token_type, region_tier) directly.
+	TokenCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
-		utils.InputTokenCostSuffix,
-		"The cost of AWS Bedrock input tokens in USD per 1000 tokens",
-		[]string{"account_id", "region", "model_id", "family", "price_tier"},
-	)
-	OutputTokenCostDesc = utils.GenerateDesc(
-		cloudcostexporter.MetricPrefix,
-		subsystem,
-		utils.OutputTokenCostSuffix,
-		"The cost of AWS Bedrock output tokens in USD per 1000 tokens",
-		[]string{"account_id", "region", "model_id", "family", "price_tier"},
+		utils.TokenCostSuffix,
+		"The cost of AWS Bedrock tokens in USD per 1000 tokens, by token_type",
+		[]string{"account_id", "region", "model_id", "family", "token_type", "region_tier", "quota_tier", "cache_ttl"},
 	)
 	SearchUnitCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		utils.SearchUnitCostSuffix,
 		"The cost of AWS Bedrock search units in USD per 1000 search units (e.g. Cohere Rerank)",
-		[]string{"account_id", "region", "model_id", "family", "price_tier"},
+		[]string{"account_id", "region", "model_id", "family", "region_tier", "quota_tier"},
 	)
 )
+
+// pricePoint is the decomposed identity of a single Bedrock price. It is encoded into the
+// pricingstore usagetype key (the store's per-region map key, which must stay unique per price)
+// and expanded back into metric labels at collection time.
+type pricePoint struct {
+	kind       string // kindToken or kindSearch
+	family     string
+	modelID    string
+	tokenType  string // input|output|cache_read|cache_write; empty for search
+	regionTier string // in|cross
+	quotaTier  string // standard|batch|flex|priority|latency_optimized
+	cacheTTL   string // 5m|1h; empty for non-cache
+}
+
+func (p pricePoint) encode() string {
+	return strings.Join([]string{p.kind, p.family, p.modelID, p.tokenType, p.regionTier, p.quotaTier, p.cacheTTL}, compositeKeySep)
+}
+
+func decodePricePoint(key string) (pricePoint, bool) {
+	parts := strings.SplitN(key, compositeKeySep, compositeKeyFields)
+	if len(parts) != compositeKeyFields {
+		return pricePoint{}, false
+	}
+	return pricePoint{
+		kind:       parts[0],
+		family:     parts[1],
+		modelID:    parts[2],
+		tokenType:  parts[3],
+		regionTier: parts[4],
+		quotaTier:  parts[5],
+		cacheTTL:   parts[6],
+	}, true
+}
 
 type bedrockProductInfo struct {
 	Product struct {
@@ -181,27 +228,25 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 
 	for region, regionSnap := range snapshot.Regions() {
 		for compositeKey, price := range regionSnap.Entries() {
-			parts := strings.SplitN(compositeKey, compositeKeySep, 4)
-			if len(parts) != 4 {
+			pp, ok := decodePricePoint(compositeKey)
+			if !ok {
 				c.logger.LogAttrs(ctx, slog.LevelWarn, "malformed Bedrock pricing key, skipping",
 					slog.String("region", region),
 					slog.String("key", compositeKey))
 				continue
 			}
-			family, direction, modelID, priceTier := parts[0], parts[1], parts[2], parts[3]
-			labelVals := []string{c.accountID, region, modelID, family, priceTier}
 
-			switch direction {
-			case "input":
-				ch <- prometheus.MustNewConstMetric(InputTokenCostDesc, prometheus.GaugeValue, price, labelVals...)
-			case "output":
-				ch <- prometheus.MustNewConstMetric(OutputTokenCostDesc, prometheus.GaugeValue, price, labelVals...)
-			case "search":
-				ch <- prometheus.MustNewConstMetric(SearchUnitCostDesc, prometheus.GaugeValue, price, labelVals...)
+			switch pp.kind {
+			case kindToken:
+				ch <- prometheus.MustNewConstMetric(TokenCostDesc, prometheus.GaugeValue, price,
+					c.accountID, region, pp.modelID, pp.family, pp.tokenType, pp.regionTier, pp.quotaTier, pp.cacheTTL)
+			case kindSearch:
+				ch <- prometheus.MustNewConstMetric(SearchUnitCostDesc, prometheus.GaugeValue, price,
+					c.accountID, region, pp.modelID, pp.family, pp.regionTier, pp.quotaTier)
 			default:
-				c.logger.LogAttrs(ctx, slog.LevelWarn, "unknown direction in Bedrock pricing key, skipping",
+				c.logger.LogAttrs(ctx, slog.LevelWarn, "unknown kind in Bedrock pricing key, skipping",
 					slog.String("region", region),
-					slog.String("direction", direction))
+					slog.String("kind", pp.kind))
 			}
 		}
 	}
@@ -210,8 +255,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
-	ch <- InputTokenCostDesc
-	ch <- OutputTokenCostDesc
+	ch <- TokenCostDesc
 	ch <- SearchUnitCostDesc
 	return nil
 }
@@ -292,7 +336,7 @@ func encodeBedrockPriceJSON(raw string, familyFilter *regexp.Regexp) (string, bo
 		}
 	}
 
-	slug, priceTier := parseBedrockModelID(attrs.UsageType)
+	slug, suffix := parseBedrockModelID(attrs.UsageType)
 	if slug == "" {
 		return "", false, nil
 	}
@@ -315,13 +359,29 @@ func encodeBedrockPriceJSON(raw string, familyFilter *regexp.Regexp) (string, bo
 
 	// The Pricing API publishes search unit prices per single unit; scale to per-1k to match
 	// the SearchUnitCostDesc metric name.
-	if direction == "search" {
+	if direction == directionSearch {
 		if err := scaleSearchUnitPrices(&info); err != nil {
 			return "", false, fmt.Errorf("scaling search unit prices for %q: %w", attrs.UsageType, err)
 		}
 	}
 
-	attrs.UsageType = strings.Join([]string{family, direction, modelID, priceTier}, compositeKeySep)
+	regionTier, quotaTier := standardTier(suffix)
+	pp := pricePoint{
+		family:     family,
+		modelID:    modelID,
+		regionTier: regionTier,
+		quotaTier:  quotaTier,
+	}
+	// Standard SKUs carry no prompt-cache prices (classifyInferenceType skips "prompt cache"),
+	// so token_type is just the inference direction.
+	if direction == directionSearch {
+		pp.kind = kindSearch
+	} else {
+		pp.kind = kindToken
+		pp.tokenType = direction
+	}
+
+	attrs.UsageType = pp.encode()
 
 	modified, err := json.Marshal(&info)
 	if err != nil {
@@ -333,7 +393,7 @@ func encodeBedrockPriceJSON(raw string, familyFilter *regexp.Regexp) (string, bo
 // classifyByUsageType is a fallback for SKUs where inferenceType is absent.
 func classifyByUsageType(usagetype string) (direction string, ok bool) {
 	if strings.Contains(strings.ToLower(usagetype), "searchunits") {
-		return "search", true
+		return directionSearch, true
 	}
 	return "", false
 }
@@ -368,13 +428,13 @@ func classifyInferenceType(inferenceType string) (direction string, ok bool) {
 		}
 	}
 	if strings.Contains(lower, "input tokens") || strings.Contains(lower, "text input token") {
-		return "input", true
+		return tokenTypeInput, true
 	}
 	if strings.Contains(lower, "output tokens") {
-		return "output", true
+		return tokenTypeOutput, true
 	}
 	if strings.Contains(lower, "search unit") || strings.Contains(lower, "rerank") {
-		return "search", true
+		return directionSearch, true
 	}
 	return "", false
 }
@@ -389,7 +449,10 @@ var tokenTypeMarkers = []string{
 	"-searchunits", // Rerank usagetype format (e.g. AmazonRerank-v1-searchunits)
 }
 
-func parseBedrockModelID(usagetype string) (modelID, priceTier string) {
+// parseBedrockModelID splits a standard usagetype into the model slug and the trailing
+// qualifier suffix (everything after the token-type marker, e.g. "-batch",
+// "-cross-region-global"). Returns an empty slug if no token-type marker is present.
+func parseBedrockModelID(usagetype string) (modelID, suffix string) {
 	slug := usagetype
 	if i := strings.Index(usagetype, "-"); i >= 0 {
 		slug = usagetype[i+1:]
@@ -397,28 +460,32 @@ func parseBedrockModelID(usagetype string) (modelID, priceTier string) {
 
 	for _, marker := range tokenTypeMarkers {
 		if idx := strings.Index(slug, marker); idx >= 0 {
-			tierSuffix := slug[idx+len(marker):]
-			return slug[:idx], extractPriceTier(tierSuffix)
+			return slug[:idx], slug[idx+len(marker):]
 		}
 	}
-	return "", priceTierOnDemand
+	return "", ""
 }
 
-func extractPriceTier(suffix string) string {
+// standardTier decodes a standard usagetype qualifier suffix into region and quota tiers.
+// Cross-region and a quota qualifier can co-occur, so each is captured independently.
+func standardTier(suffix string) (regionTier, quotaTier string) {
 	lower := strings.ToLower(suffix)
+
+	regionTier = regionTierIn
 	if strings.Contains(lower, "cross-region") {
-		return priceTierCrossRegion
+		regionTier = regionTierCross
 	}
+
+	quotaTier = quotaTierStandard
 	switch {
-	case strings.HasSuffix(lower, "-batch"):
-		return priceTierOnDemandBatch
-	case strings.HasSuffix(lower, "-flex"):
-		return priceTierOnDemandFlex
-	case strings.HasSuffix(lower, "-priority"):
-		return priceTierOnDemandPriority
-	default:
-		return priceTierOnDemand
+	case strings.Contains(lower, "batch"):
+		quotaTier = quotaTierBatch
+	case strings.Contains(lower, "flex"):
+		quotaTier = quotaTierFlex
+	case strings.Contains(lower, "priority"):
+		quotaTier = quotaTierPriority
 	}
+	return regionTier, quotaTier
 }
 
 // Empty provider maps to "amazon" (Nova, Titan, and other Amazon-developed models).
@@ -466,7 +533,7 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 
 	// Cache read/write are input-token operations; storage is per token-hour (a different unit)
 	// so it is skipped. Non-cache SKUs fall through to the normal direction classifier.
-	cacheOp, skipCache := marketplaceCacheOp(attrs.UsageType)
+	cacheTokenType, cacheTTL, skipCache := marketplaceCacheOp(attrs.UsageType)
 	if skipCache {
 		// Storage (per token-hour, a different unit) is an expected skip; anything else is an
 		// unrecognized cache shape worth surfacing so we add it rather than mislabel it.
@@ -475,17 +542,32 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 		}
 		return "", false, nil
 	}
-	direction := "input"
-	if cacheOp == "" {
-		var ok bool
-		direction, ok = classifyMarketplaceUsageType(attrs.UsageType)
+
+	regionTier, quotaTier := marketplaceTier(attrs.UsageType)
+	pp := pricePoint{
+		family:     family,
+		modelID:    modelID,
+		regionTier: regionTier,
+		quotaTier:  quotaTier,
+	}
+	if cacheTokenType != "" {
+		pp.kind = kindToken
+		pp.tokenType = cacheTokenType
+		pp.cacheTTL = cacheTTL
+	} else {
+		direction, ok := classifyMarketplaceUsageType(attrs.UsageType)
 		if !ok {
 			return "", false, nil
 		}
+		if direction == directionSearch {
+			pp.kind = kindSearch
+		} else {
+			pp.kind = kindToken
+			pp.tokenType = direction
+		}
 	}
 
-	priceTier := extractMarketplacePriceTier(attrs.UsageType, cacheOp)
-
+	isSearch := pp.kind == kindSearch
 	for _, term := range info.Terms.OnDemand {
 		for _, pd := range term.PriceDimensions {
 			usd, ok := pd.PricePerUnit["USD"]
@@ -497,7 +579,7 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 				return "", false, fmt.Errorf("parsing price for %q: %w", attrs.UsageType, err)
 			}
 			var converted float64
-			if direction == "search" {
+			if isSearch {
 				// Marketplace publishes $/search unit; metric is $/1K search units.
 				converted = price * searchUnitsPerKilo
 			} else {
@@ -508,7 +590,7 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 		}
 	}
 
-	attrs.UsageType = strings.Join([]string{family, direction, modelID, priceTier}, compositeKeySep)
+	attrs.UsageType = pp.encode()
 
 	modified, err := json.Marshal(&info)
 	if err != nil {
@@ -596,88 +678,68 @@ func classifyMarketplaceUsageType(usagetype string) (direction string, ok bool) 
 	}
 	switch {
 	case strings.Contains(lower, "inputtokencount"), strings.Contains(lower, "input_tokens"):
-		return "input", true
+		return tokenTypeInput, true
 	case strings.Contains(lower, "outputtokencount"), strings.Contains(lower, "output_tokens"):
-		return "output", true
+		return tokenTypeOutput, true
 	case strings.Contains(lower, "search_units"):
-		return "search", true
+		return directionSearch, true
 	default:
 		return "", false
 	}
 }
 
-// extractMarketplacePriceTier derives price tier from the marketplace usagetype suffix.
-// Cross-region ("global") and quota-tier ("batch", "priority", "flex") can stack —
-// check batch/priority/flex before the global catch-all.
-// composeTier builds a price_tier from its parts: an optional cross-region prefix, the base
-// operation (on_demand or a cache_* op), and an optional quota tier suffix (batch/flex/priority/
-// latency_optimized). Components stack, e.g. cross_region_cache_read, cache_write_1h,
-// on_demand_batch. Each distinct combination gets a distinct value, so SKUs that differ only by a
-// qualifier do not collide on one key.
-func composeTier(crossRegion bool, op, quota string) string {
-	if op == "" {
-		op = priceTierOnDemand
+// marketplaceTier decodes a marketplace usagetype into region and quota tiers. Cross-region
+// ("_global") and a quota qualifier ("_batch", "_priority", "_flex", "latencyoptimized") are
+// captured independently, so a SKU carrying both keeps both.
+func marketplaceTier(usagetype string) (regionTier, quotaTier string) {
+	lower := strings.ToLower(usagetype)
+
+	regionTier = regionTierIn
+	if strings.Contains(lower, "_global") {
+		regionTier = regionTierCross
 	}
-	parts := make([]string, 0, 3)
-	if crossRegion {
-		parts = append(parts, priceTierCrossRegion)
+
+	quotaTier = quotaTierStandard
+	switch {
+	case strings.Contains(lower, "_batch"):
+		quotaTier = quotaTierBatch
+	case strings.Contains(lower, "_priority"):
+		quotaTier = quotaTierPriority
+	case strings.Contains(lower, "_flex"):
+		quotaTier = quotaTierFlex
+	case strings.Contains(lower, "latencyoptimized"):
+		quotaTier = quotaTierLatencyOptimized
 	}
-	// Drop a redundant on_demand when cross-region already carries the base meaning, matching the
-	// established names (cross_region, not cross_region_on_demand).
-	if !crossRegion || op != priceTierOnDemand {
-		parts = append(parts, op)
-	}
-	if quota != "" {
-		parts = append(parts, quota)
-	}
-	return strings.Join(parts, "_")
+	return regionTier, quotaTier
 }
 
-// marketplaceCacheOp returns the cache operation for a marketplace usagetype, and whether it is a
-// cache-storage SKU. Storage is priced per token-hour (a different unit), so the caller skips it.
-// Returns "" for non-cache SKUs. Reads are a single rate; writes split by 5-minute vs 1-hour TTL.
-func marketplaceCacheOp(usagetype string) (op string, skip bool) {
+// marketplaceCacheOp classifies a marketplace cache usagetype into a token_type and cache TTL.
+// Returns ("", "", false) for non-cache SKUs. skip=true marks cache SKUs we do not model
+// (storage, unrecognized shapes, unrecognized TTLs), so the caller drops them rather than
+// mislabel them. Reads are a single rate (no TTL); writes split by 5-minute vs 1-hour TTL.
+func marketplaceCacheOp(usagetype string) (tokenType, cacheTTL string, skip bool) {
 	lower := strings.ToLower(usagetype)
 	if !strings.Contains(lower, "cache") {
-		return "", false
+		return "", "", false
 	}
 	switch {
 	case strings.Contains(lower, "cacheread") || strings.Contains(lower, "cache_read"):
-		return priceTierCacheRead, false
+		return tokenTypeCacheRead, "", false
 	case strings.Contains(lower, "cachewrite") || strings.Contains(lower, "cache_write"):
 		// Recognize the write TTL explicitly. AWS bills the bare write (no TTL token) at the
 		// 5-minute default and tags the 1-hour write with "1h". Any other TTL token is one we do
 		// not model yet, so skip it and surface it rather than silently labeling it a 5m write.
 		switch cacheWriteTTL.FindString(lower) {
-		case "", "5m":
-			return priceTierCacheWrite5m, false
-		case "1h":
-			return priceTierCacheWrite1h, false
+		case "", cacheTTL5m:
+			return tokenTypeCacheWrite, cacheTTL5m, false
+		case cacheTTL1h:
+			return tokenTypeCacheWrite, cacheTTL1h, false
 		default:
-			return "", true
+			return "", "", true
 		}
 	default:
 		// Cache storage (per token-hour, a different unit) and any cache shape that is neither a
 		// read nor a write: drop it rather than mislabel it as a 5-minute write.
-		return "", true
+		return "", "", true
 	}
-}
-
-func extractMarketplacePriceTier(usagetype, cacheOp string) string {
-	lower := strings.ToLower(usagetype)
-	crossRegion := strings.Contains(lower, "_global")
-
-	var quota string
-	switch {
-	case strings.Contains(lower, "_batch"):
-		quota = "batch"
-	case strings.Contains(lower, "_priority"):
-		quota = "priority"
-	case strings.Contains(lower, "_flex"):
-		quota = "flex"
-	case strings.Contains(lower, "latencyoptimized"):
-		quota = "latency_optimized"
-	}
-
-	return composeTier(crossRegion, cacheOp, quota)
 }
