@@ -228,7 +228,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 
 	for region, regionSnap := range snapshot.Regions() {
 		for compositeKey, price := range regionSnap.Entries() {
-			pp, ok := decodePricePoint(compositeKey)
+			point, ok := decodePricePoint(compositeKey)
 			if !ok {
 				c.logger.LogAttrs(ctx, slog.LevelWarn, "malformed Bedrock pricing key, skipping",
 					slog.String("region", region),
@@ -236,17 +236,17 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				continue
 			}
 
-			switch pp.kind {
+			switch point.kind {
 			case kindToken:
 				ch <- prometheus.MustNewConstMetric(TokenCostDesc, prometheus.GaugeValue, price,
-					c.accountID, region, pp.modelID, pp.family, pp.tokenType, pp.regionTier, pp.quotaTier, pp.cacheTTL)
+					c.accountID, region, point.modelID, point.family, point.tokenType, point.regionTier, point.quotaTier, point.cacheTTL)
 			case kindSearch:
 				ch <- prometheus.MustNewConstMetric(SearchUnitCostDesc, prometheus.GaugeValue, price,
-					c.accountID, region, pp.modelID, pp.family, pp.regionTier, pp.quotaTier)
+					c.accountID, region, point.modelID, point.family, point.regionTier, point.quotaTier)
 			default:
 				c.logger.LogAttrs(ctx, slog.LevelWarn, "unknown kind in Bedrock pricing key, skipping",
 					slog.String("region", region),
-					slog.String("kind", pp.kind))
+					slog.String("kind", point.kind))
 			}
 		}
 	}
@@ -366,7 +366,7 @@ func encodeBedrockPriceJSON(raw string, familyFilter *regexp.Regexp) (string, bo
 	}
 
 	regionTier, quotaTier := standardTier(suffix)
-	pp := pricePoint{
+	point := pricePoint{
 		family:     family,
 		modelID:    modelID,
 		regionTier: regionTier,
@@ -375,13 +375,13 @@ func encodeBedrockPriceJSON(raw string, familyFilter *regexp.Regexp) (string, bo
 	// Standard SKUs carry no prompt-cache prices (classifyInferenceType skips "prompt cache"),
 	// so token_type is just the inference direction.
 	if direction == directionSearch {
-		pp.kind = kindSearch
+		point.kind = kindSearch
 	} else {
-		pp.kind = kindToken
-		pp.tokenType = direction
+		point.kind = kindToken
+		point.tokenType = direction
 	}
 
-	attrs.UsageType = pp.encode()
+	attrs.UsageType = point.encode()
 
 	modified, err := json.Marshal(&info)
 	if err != nil {
@@ -544,30 +544,30 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 	}
 
 	regionTier, quotaTier := marketplaceTier(attrs.UsageType)
-	pp := pricePoint{
+	point := pricePoint{
 		family:     family,
 		modelID:    modelID,
 		regionTier: regionTier,
 		quotaTier:  quotaTier,
 	}
 	if cacheTokenType != "" {
-		pp.kind = kindToken
-		pp.tokenType = cacheTokenType
-		pp.cacheTTL = cacheTTL
+		point.kind = kindToken
+		point.tokenType = cacheTokenType
+		point.cacheTTL = cacheTTL
 	} else {
 		direction, ok := classifyMarketplaceUsageType(attrs.UsageType)
 		if !ok {
 			return "", false, nil
 		}
 		if direction == directionSearch {
-			pp.kind = kindSearch
+			point.kind = kindSearch
 		} else {
-			pp.kind = kindToken
-			pp.tokenType = direction
+			point.kind = kindToken
+			point.tokenType = direction
 		}
 	}
 
-	isSearch := pp.kind == kindSearch
+	isSearch := point.kind == kindSearch
 	for _, term := range info.Terms.OnDemand {
 		for _, pd := range term.PriceDimensions {
 			usd, ok := pd.PricePerUnit["USD"]
@@ -590,7 +590,7 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 		}
 	}
 
-	attrs.UsageType = pp.encode()
+	attrs.UsageType = point.encode()
 
 	modified, err := json.Marshal(&info)
 	if err != nil {
