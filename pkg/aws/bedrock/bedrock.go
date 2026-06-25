@@ -49,14 +49,10 @@ const (
 	cacheTTL5m = "5m"
 	cacheTTL1h = "1h"
 
-	// metricKind selects the output metric when a pricing key is decoded at collection time.
-	kindToken  = "token"
-	kindSearch = "search"
-
 	// compositeKeySep separates the fields encoded in the pricingstore usagetype key:
-	// kind|family|model_id|token_type|region_tier|quota_tier|cache_ttl
+	// family|model_id|token_type|region_tier|quota_tier|cache_ttl
 	compositeKeySep    = "|"
-	compositeKeyFields = 7
+	compositeKeyFields = 6
 
 	// searchUnitsPerKilo converts from per-unit pricing (as published by the AWS Pricing API)
 	// to per-1000-units pricing (as emitted by SearchUnitCostDesc).
@@ -94,17 +90,20 @@ var (
 // pricingstore usagetype key (the store's per-region map key, which must stay unique per price)
 // and expanded back into metric labels at collection time.
 type pricePoint struct {
-	kind       string // kindToken or kindSearch
 	family     string
 	modelID    string
-	tokenType  string // input|output|cache_read|cache_write; empty for search
+	tokenType  string // input|output|cache_read|cache_write; empty marks a search price
 	regionTier string // in|cross
 	quotaTier  string // standard|batch|flex|priority|latency_optimized
 	cacheTTL   string // 5m|1h; empty for non-cache
 }
 
+// isSearch reports whether this is a search-unit price. Search SKUs carry no token_type, so an
+// empty token_type is the marker; token prices always set one (input/output/cache_read/cache_write).
+func (p pricePoint) isSearch() bool { return p.tokenType == "" }
+
 func (p pricePoint) encode() string {
-	return strings.Join([]string{p.kind, p.family, p.modelID, p.tokenType, p.regionTier, p.quotaTier, p.cacheTTL}, compositeKeySep)
+	return strings.Join([]string{p.family, p.modelID, p.tokenType, p.regionTier, p.quotaTier, p.cacheTTL}, compositeKeySep)
 }
 
 func decodePricePoint(key string) (pricePoint, bool) {
@@ -113,13 +112,12 @@ func decodePricePoint(key string) (pricePoint, bool) {
 		return pricePoint{}, false
 	}
 	return pricePoint{
-		kind:       parts[0],
-		family:     parts[1],
-		modelID:    parts[2],
-		tokenType:  parts[3],
-		regionTier: parts[4],
-		quotaTier:  parts[5],
-		cacheTTL:   parts[6],
+		family:     parts[0],
+		modelID:    parts[1],
+		tokenType:  parts[2],
+		regionTier: parts[3],
+		quotaTier:  parts[4],
+		cacheTTL:   parts[5],
 	}, true
 }
 
@@ -236,17 +234,12 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				continue
 			}
 
-			switch point.kind {
-			case kindToken:
-				ch <- prometheus.MustNewConstMetric(TokenCostDesc, prometheus.GaugeValue, price,
-					c.accountID, region, point.modelID, point.family, point.tokenType, point.regionTier, point.quotaTier, point.cacheTTL)
-			case kindSearch:
+			if point.isSearch() {
 				ch <- prometheus.MustNewConstMetric(SearchUnitCostDesc, prometheus.GaugeValue, price,
 					c.accountID, region, point.modelID, point.family, point.regionTier, point.quotaTier)
-			default:
-				c.logger.LogAttrs(ctx, slog.LevelWarn, "unknown kind in Bedrock pricing key, skipping",
-					slog.String("region", region),
-					slog.String("kind", point.kind))
+			} else {
+				ch <- prometheus.MustNewConstMetric(TokenCostDesc, prometheus.GaugeValue, price,
+					c.accountID, region, point.modelID, point.family, point.tokenType, point.regionTier, point.quotaTier, point.cacheTTL)
 			}
 		}
 	}
@@ -373,11 +366,9 @@ func encodeBedrockPriceJSON(raw string, familyFilter *regexp.Regexp) (string, bo
 		quotaTier:  quotaTier,
 	}
 	// Standard SKUs carry no prompt-cache prices (classifyInferenceType skips "prompt cache"),
-	// so token_type is just the inference direction.
-	if direction == directionSearch {
-		point.kind = kindSearch
-	} else {
-		point.kind = kindToken
+	// so token_type is just the inference direction. Search SKUs leave token_type empty, which
+	// marks them as search at collection time.
+	if direction != directionSearch {
 		point.tokenType = direction
 	}
 
@@ -551,7 +542,6 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 		quotaTier:  quotaTier,
 	}
 	if cacheTokenType != "" {
-		point.kind = kindToken
 		point.tokenType = cacheTokenType
 		point.cacheTTL = cacheTTL
 	} else {
@@ -559,15 +549,13 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 		if !ok {
 			return "", false, nil
 		}
-		if direction == directionSearch {
-			point.kind = kindSearch
-		} else {
-			point.kind = kindToken
+		// Search SKUs leave token_type empty (that marks them as search); token SKUs set it.
+		if direction != directionSearch {
 			point.tokenType = direction
 		}
 	}
 
-	isSearch := point.kind == kindSearch
+	isSearch := point.isSearch()
 	for _, term := range info.Terms.OnDemand {
 		for _, pd := range term.PriceDimensions {
 			usd, ok := pd.PricePerUnit["USD"]
