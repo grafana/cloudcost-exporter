@@ -475,6 +475,8 @@ func standardTier(suffix string) (regionTier, quotaTier string) {
 		quotaTier = quotaTierFlex
 	case strings.Contains(lower, "priority"):
 		quotaTier = quotaTierPriority
+	case strings.Contains(lower, "latency"):
+		quotaTier = quotaTierLatencyOptimized
 	}
 	return regionTier, quotaTier
 }

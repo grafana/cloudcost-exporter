@@ -411,6 +411,7 @@ func TestParseBedrockModelID(t *testing.T) {
 		{"USE1-Llama4-Maverick-17B-input-tokens-batch", "Llama4-Maverick-17B", "in", "batch"},
 		{"USE1-GPT-OSS-Safeguard-20B-input-tokens-priority", "GPT-OSS-Safeguard-20B", "in", "priority"},
 		{"USE1-Gemma-3-4B-IT-input-tokens-flex", "Gemma-3-4B-IT", "in", "flex"},
+		{"USE1-Claude3-5Haiku-input-tokens-latency-optimized", "Claude3-5Haiku", "in", "latency_optimized"},
 		{"USE1-MistralSmall-input-tokens-batch", "MistralSmall", "in", "batch"},
 		{"USE1-Nova2.0Lite-input-tokens-cross-region-global-batch", "Nova2.0Lite", "cross", "batch"},
 		{"USE1-Nova2.0Pro-text-input-tokens-priority-cross-region-global", "Nova2.0Pro", "cross", "priority"},
