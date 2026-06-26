@@ -77,11 +77,13 @@ func (c *Collector) Register(_ provider.Registry) error {
 }
 
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
+	var collectErr error
 	for _, project := range c.projects {
 		zones, err := c.gcpClient.GetZones(project)
 		if err != nil {
 			return err
 		}
+
 		// Two goroutines are launched per zone (ListInstances + ListDisks).
 		// zoneConcurrency caps the total across both, so at most
 		// zoneConcurrency/2 zones are queried in parallel.
@@ -89,6 +91,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		if zoneConcurrency <= 0 {
 			zoneConcurrency = DefaultZoneCollectConcurrency
 		}
+
 		eg, egCtx := errgroup.WithContext(ctx)
 		eg.SetLimit(zoneConcurrency)
 		instances := make(chan []*client.MachineSpec, len(zones))
@@ -111,7 +114,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 						slog.String("msg", err.Error()))
 
 					instances <- nil
-					return nil
+					return err
 				}
 				c.logger.LogAttrs(egCtx, slog.LevelInfo,
 					"finished listing instances in zone",
@@ -124,30 +127,29 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 			eg.Go(func() error {
 				results, err := c.gcpClient.ListDisks(egCtx, project, zone.Name)
 				if err != nil {
-					c.logger.Error("error listing disks in zone %s: %v",
+					c.logger.Error("error listing disks in zone",
 						slog.String("zone", zone.Name),
 						slog.String("msg", err.Error()))
-					return nil
+					disks <- nil
+					return err
 				}
 				disks <- results
 				return nil
 			})
 		}
 
-		go func() {
-			// Goroutines always return nil; Wait() will not return an error.
-			_ = eg.Wait()
-			close(instances)
-			close(disks)
-		}()
+		if err := eg.Wait(); err != nil && collectErr == nil {
+			collectErr = err
+		}
+		close(instances)
+		close(disks)
 
 		for group := range instances {
-			if instances == nil {
+			if group == nil {
 				continue
 			}
 			for _, instance := range group {
 				clusterName := instance.GetClusterName()
-				// We skip instances that do not have a clusterName because they are not associated with an GKE cluster
 				if clusterName == "" {
 					c.logger.LogAttrs(ctx,
 						slog.LevelDebug,
@@ -169,7 +171,6 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				}
 				cpuCost, ramCost, err := c.pricingMap.GetCostOfInstance(instance)
 				if err != nil {
-					// Log out the error and continue processing nodes
 					// TODO(@pokom): Should we set sane defaults here to emit _something_?
 					c.logger.LogAttrs(ctx,
 						slog.LevelError,
@@ -238,7 +239,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 			}
 		}
 	}
-	return nil
+	return collectErr
 }
 
 func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient client.Client) (*Collector, error) {

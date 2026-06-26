@@ -148,6 +148,9 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	wgVolumes.Add(numOfRegions)
 	volumeCh := make(chan []ec2Types.Volume, numOfRegions)
 
+	// Buffered to hold at most one error per region per fetch type.
+	fetchErrCh := make(chan error, numOfRegions*2)
+
 	for _, region := range c.regions {
 		regionName := *region.RegionName
 
@@ -157,12 +160,16 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		}
 
 		go func() {
-			c.fetchInstancesData(ctx, regionClient, regionName, instanceCh)
-			wgInstances.Done()
+			defer wgInstances.Done()
+			if err := c.fetchInstancesData(ctx, regionClient, regionName, instanceCh); err != nil {
+				fetchErrCh <- err
+			}
 		}()
 		go func() {
-			c.fetchVolumesData(ctx, regionClient, regionName, volumeCh)
-			wgVolumes.Done()
+			defer wgVolumes.Done()
+			if err := c.fetchVolumesData(ctx, regionClient, regionName, volumeCh); err != nil {
+				fetchErrCh <- err
+			}
 		}()
 	}
 	go func() {
@@ -175,10 +182,17 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	}()
 	c.emitMetricsFromReservationsChannel(instanceCh, ch)
 	c.emitMetricsFromVolumesChannel(volumeCh, ch)
-	return nil
+
+	// Both WaitGroups are complete (channels were closed then fully drained above).
+	close(fetchErrCh)
+	var fetchErrs []error
+	for err := range fetchErrCh {
+		fetchErrs = append(fetchErrs, err)
+	}
+	return errors.Join(fetchErrs...)
 }
 
-func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.Client, region string, instanceCh chan []ec2Types.Reservation) {
+func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.Client, region string, instanceCh chan []ec2Types.Reservation) error {
 	now := time.Now()
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching instances", slog.String("region", region))
 
@@ -187,7 +201,7 @@ func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.
 		c.logger.LogAttrs(ctx, slog.LevelError, "Could not list compute instances",
 			slog.String("region", region),
 			slog.String("message", err.Error()))
-		return
+		return err
 	}
 
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Successfully listed instances",
@@ -197,9 +211,10 @@ func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.
 	)
 
 	instanceCh <- reservations
+	return nil
 }
 
-func (c *Collector) fetchVolumesData(ctx context.Context, regionClient client.Client, region string, volumeCh chan []ec2Types.Volume) {
+func (c *Collector) fetchVolumesData(ctx context.Context, regionClient client.Client, region string, volumeCh chan []ec2Types.Volume) error {
 	now := time.Now()
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching volumes", slog.String("region", region))
 
@@ -208,7 +223,7 @@ func (c *Collector) fetchVolumesData(ctx context.Context, regionClient client.Cl
 		c.logger.LogAttrs(ctx, slog.LevelError, "Could not list EBS volumes",
 			slog.String("region", region),
 			slog.String("message", err.Error()))
-		return
+		return err
 	}
 
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Successfully listed volumes",
@@ -218,6 +233,7 @@ func (c *Collector) fetchVolumesData(ctx context.Context, regionClient client.Cl
 	)
 
 	volumeCh <- volumes
+	return nil
 }
 
 func (c *Collector) emitMetricsFromReservationsChannel(reservationsCh chan []ec2Types.Reservation, ch chan<- prometheus.Metric) {
