@@ -371,6 +371,7 @@ func encodeBedrockPriceJSON(raw string, familyFilter *regexp.Regexp) (string, bo
 	if direction != directionSearch {
 		point.tokenType = direction
 	}
+	point.modelID = stripRedundantLatency(point.modelID, point.quotaTier)
 
 	attrs.UsageType = point.encode()
 
@@ -481,6 +482,17 @@ func standardTier(suffix string) (regionTier, quotaTier string) {
 	return regionTier, quotaTier
 }
 
+// stripRedundantLatency removes a trailing "-latency-optimized" from a model_id when the quota
+// tier already records it. AWS's `model` attribute folds "Latency Optimized" into the model name
+// for some SKUs (e.g. Nova, Llama), which would double-encode the dimension (model_id + quota_tier);
+// keeping it only in quota_tier matches the SKUs whose model name omits it (e.g. claude-3.5-haiku).
+func stripRedundantLatency(modelID, quotaTier string) string {
+	if quotaTier == quotaTierLatencyOptimized {
+		return strings.TrimSuffix(modelID, "-latency-optimized")
+	}
+	return modelID
+}
+
 // Empty provider maps to "amazon" (Nova, Titan, and other Amazon-developed models).
 func normalizeProvider(provider string) string {
 	if provider == "" {
@@ -579,6 +591,7 @@ func encodeBedrockMarketplacePriceJSON(raw string, familyFilter *regexp.Regexp) 
 			pd.PricePerUnit["USD"] = strconv.FormatFloat(converted, 'f', -1, 64)
 		}
 	}
+	point.modelID = stripRedundantLatency(point.modelID, point.quotaTier)
 
 	attrs.UsageType = point.encode()
 

@@ -433,6 +433,28 @@ func TestParseBedrockModelID(t *testing.T) {
 	}
 }
 
+func TestStripRedundantLatency(t *testing.T) {
+	tests := []struct {
+		modelID   string
+		quotaTier string
+		want      string
+	}{
+		// Stripped only when quota_tier already records latency-optimized.
+		{"nova-pro-latency-optimized", "latency_optimized", "nova-pro"},
+		{"llama-3.1-405b-latency-optimized", "latency_optimized", "llama-3.1-405b"},
+		// Already clean: no-op.
+		{"claude-3.5-haiku", "latency_optimized", "claude-3.5-haiku"},
+		// Not latency-optimized: left untouched even if the name somehow contains the token.
+		{"nova-pro-latency-optimized", "standard", "nova-pro-latency-optimized"},
+		{"nova-pro", "standard", "nova-pro"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.modelID+"/"+tt.quotaTier, func(t *testing.T) {
+			assert.Equal(t, tt.want, stripRedundantLatency(tt.modelID, tt.quotaTier))
+		})
+	}
+}
+
 func TestNormalizeProvider(t *testing.T) {
 	tests := []struct {
 		provider string
