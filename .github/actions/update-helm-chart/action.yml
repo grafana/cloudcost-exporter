@@ -45,6 +45,7 @@ runs:
       uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
       with:
         token: ${{ steps.get-github-app-token.outputs.token }}
+        sign-commits: true
         add-paths: charts/cloudcost-exporter/Chart.yaml
         branch: helm-chart/update-to-${{ steps.update-versions.outputs.app_version }}
         delete-branch: true
