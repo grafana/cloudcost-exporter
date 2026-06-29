@@ -59,6 +59,24 @@ jobs:
       contents: read
       id-token: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Wait for chart to appear in Helm registry
+        run: |
+          VERSION=$(grep '^version:' charts/cloudcost-exporter/Chart.yaml | awk '{print $2}')
+          echo "Waiting for grafana/cloudcost-exporter ${VERSION} in Helm registry..."
+          for i in $(seq 1 20); do
+            if curl -sf https://grafana.github.io/helm-charts/index.yaml | grep -q "version: ${VERSION}"; then
+              echo "Chart ${VERSION} is available."
+              exit 0
+            fi
+            echo "Attempt ${i}/20: not available yet, retrying in 30s..."
+            sleep 30
+          done
+          echo "Timed out after 10 minutes waiting for chart ${VERSION}."
+          exit 1
+
       - name: Trigger chartfile version update in deployment-tools
         uses: grafana/shared-workflows/actions/trigger-argo-workflow@8269e9362f30c5458c2cad54510ea74fd053920c # trigger-argo-workflow/v1.3.0
         with:
