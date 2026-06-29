@@ -67,7 +67,7 @@ jobs:
           VERSION=$(grep '^version:' charts/cloudcost-exporter/Chart.yaml | awk '{print $2}')
           echo "Waiting for grafana/cloudcost-exporter ${VERSION} in Helm registry..."
           for i in $(seq 1 20); do
-            if curl -sf https://grafana.github.io/helm-charts/index.yaml | grep -q "version: ${VERSION}"; then
+            if curl -sf https://grafana.github.io/helm-charts/index.yaml | grep -q "cloudcost-exporter-${VERSION}.tgz"; then
               echo "Chart ${VERSION} is available."
               exit 0
             fi
