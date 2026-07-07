@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/pprof"
@@ -12,6 +13,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,6 +37,11 @@ func main() {
 	providerFlags(flag.CommandLine, &cfg)
 	operationalFlags(&cfg)
 	flag.Parse()
+
+	if cfg.ListServices {
+		printAvailableServices(os.Stdout)
+		return
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -73,22 +80,28 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	fs.StringVar(&cfg.Providers.AWS.Profile, "aws.profile", "", "AWS Profile to authenticate with.")
 	fs.Var(&cfg.Providers.GCP.Projects, "gcp.projects", "GCP project(s).")
 	fs.Var(config.NewDeprecatedStringSliceFlag(&cfg.Providers.GCP.Projects, &cfg.Providers.GCP.BucketProjectsDeprecated), "gcp.bucket-projects", "GCP project(s). (deprecated: use --gcp.projects instead)")
-	fs.Var(&cfg.Providers.AWS.Services, "aws.services", "AWS service(s).")
+	fs.Var(&cfg.Providers.AWS.Services, "aws.services", "AWS service(s). Run with -list-services to see available values.")
+	fs.Var(&cfg.Providers.AWS.ExperimentalServices, "aws.experimental.services", "Experimental AWS service(s); their metrics are not covered by the backward-compatibility contract and may change. Run with -list-services to see available values.")
 	fs.Var(&cfg.Providers.AWS.ExcludeRegions, "aws.exclude-regions", "AWS region(s) to exclude from cost collection.")
-	fs.Var(&cfg.Providers.Azure.Services, "azure.services", "Azure service(s): AKS, blob (comma-separated and/or repeat flag; case-insensitive).")
-	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s).")
+	fs.Var(&cfg.Providers.Azure.Services, "azure.services", "Azure service(s) (comma-separated and/or repeat flag; case-insensitive). Run with -list-services to see available values.")
+	fs.Var(&cfg.Providers.Azure.ExperimentalServices, "azure.experimental.services", "Experimental Azure service(s); their metrics are not covered by the backward-compatibility contract and may change. Run with -list-services to see available values.")
+	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s). Run with -list-services to see available values.")
+	fs.Var(&cfg.Providers.GCP.ExperimentalServices, "gcp.experimental.services", "Experimental GCP service(s); their metrics are not covered by the backward-compatibility contract and may change. Run with -list-services to see available values.")
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
 	flag.StringVar(&cfg.Providers.AWS.RoleARN, "aws.roleARN", "", "Optional AWS role ARN to assume for cross-account access.")
 	fs.StringVar(&cfg.Providers.AWS.BedrockFamilyFilter, "aws.bedrock.families", ".*", "Regex matched against the Bedrock model family label. Only matching families are emitted.")
+	flag.DurationVar(&cfg.Providers.AWS.RDSRegionListTimeout, "aws.rds.region-timeout", 0, "Per-region timeout for listing RDS instances. 0 (default) bounds each region only by -collector-interval. Set a positive value (e.g. 15s) to fail slow or unreachable regions fast and protect scrape availability.")
 	// TODO - PUT PROJECT-ID UNDER GCP
 	flag.StringVar(&cfg.ProjectID, "project-id", "", "Project ID to target.")
 	flag.StringVar(&cfg.Providers.Azure.SubscriptionID, "azure.subscription-id", "", "Azure subscription ID to pull data from.")
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
+	flag.IntVar(&cfg.Providers.GCP.GKEZoneConcurrency, "gcp.gke.zone-concurrency", 10, "Cap on concurrent API calls during a GKE scrape per project. Two goroutines run per zone (ListInstances + ListDisks), so the parallel-zone count is this value divided by 2.")
 }
 
 // operationalFlags is a helper method that is responsible for setting up the flags that are used to configure the operational aspects of the application.
 // TODO: This should probably be moved over to the config package.
 func operationalFlags(cfg *config.Config) {
+	flag.BoolVar(&cfg.ListServices, "list-services", false, "Print the services available per provider and exit. Does not require credentials.")
 	flag.DurationVar(&cfg.Collector.ScrapeInterval, "scrape-interval", 1*time.Hour, "Scrape interval")
 	flag.DurationVar(&cfg.Collector.Timeout, "collector-interval", 1*time.Minute, "Context timeout for collectors")
 	flag.DurationVar(&cfg.Server.Timeout, "server-timeout", 30*time.Second, "Server timeout")
@@ -241,38 +254,95 @@ func selectProviderWith(
 	switch cfg.Provider {
 	case "azure":
 		return newAzure(ctx, &azure.Config{
-			Logger:           cfg.Logger,
-			SubscriptionID:   cfg.Providers.Azure.SubscriptionID,
-			ScrapeInterval:   cfg.Collector.ScrapeInterval,
-			Services:         strings.Split(cfg.Providers.Azure.Services.String(), ","),
-			CollectorTimeout: collectorTimeout,
+			Logger:               cfg.Logger,
+			SubscriptionID:       cfg.Providers.Azure.SubscriptionID,
+			ScrapeInterval:       cfg.Collector.ScrapeInterval,
+			Services:             strings.Split(cfg.Providers.Azure.Services.String(), ","),
+			ExperimentalServices: strings.Split(cfg.Providers.Azure.ExperimentalServices.String(), ","),
+			CollectorTimeout:     collectorTimeout,
 		})
 	case "aws":
 		return newAWS(ctx, &aws.Config{
-			Logger:              cfg.Logger,
-			Region:              cfg.Providers.AWS.Region,
-			Profile:             cfg.Providers.AWS.Profile,
-			RoleARN:             cfg.Providers.AWS.RoleARN,
-			ScrapeInterval:      cfg.Collector.ScrapeInterval,
-			Services:            strings.Split(cfg.Providers.AWS.Services.String(), ","),
-			ExcludeRegions:      strings.Split(cfg.Providers.AWS.ExcludeRegions.String(), ","),
-			CollectorTimeout:    collectorTimeout,
-			BedrockFamilyFilter: cfg.Providers.AWS.BedrockFamilyFilter,
+			Logger:               cfg.Logger,
+			Region:               cfg.Providers.AWS.Region,
+			Profile:              cfg.Providers.AWS.Profile,
+			RoleARN:              cfg.Providers.AWS.RoleARN,
+			ScrapeInterval:       cfg.Collector.ScrapeInterval,
+			Services:             strings.Split(cfg.Providers.AWS.Services.String(), ","),
+			ExperimentalServices: strings.Split(cfg.Providers.AWS.ExperimentalServices.String(), ","),
+			ExcludeRegions:       strings.Split(cfg.Providers.AWS.ExcludeRegions.String(), ","),
+			CollectorTimeout:     collectorTimeout,
+			BedrockFamilyFilter:  cfg.Providers.AWS.BedrockFamilyFilter,
+			RDSRegionListTimeout: cfg.Providers.AWS.RDSRegionListTimeout,
 		})
 
 	case "gcp":
 		return newGCP(ctx, &google.Config{
-			Logger:           cfg.Logger,
-			ProjectId:        cfg.ProjectID,
-			Region:           cfg.Providers.GCP.Region,
-			Projects:         cfg.Providers.GCP.Projects.String(),
-			DefaultDiscount:  cfg.Providers.GCP.DefaultGCSDiscount,
-			ScrapeInterval:   cfg.Collector.ScrapeInterval,
-			Services:         strings.Split(cfg.Providers.GCP.Services.String(), ","),
-			CollectorTimeout: collectorTimeout,
+			Logger:               cfg.Logger,
+			ProjectId:            cfg.ProjectID,
+			Region:               cfg.Providers.GCP.Region,
+			Projects:             cfg.Providers.GCP.Projects.String(),
+			DefaultDiscount:      cfg.Providers.GCP.DefaultGCSDiscount,
+			ScrapeInterval:       cfg.Collector.ScrapeInterval,
+			Services:             strings.Split(cfg.Providers.GCP.Services.String(), ","),
+			ExperimentalServices: strings.Split(cfg.Providers.GCP.ExperimentalServices.String(), ","),
+			CollectorTimeout:     collectorTimeout,
+			GKEZoneConcurrency:   cfg.Providers.GCP.GKEZoneConcurrency,
 		})
 
 	default:
 		return nil, fmt.Errorf("unknown provider")
+	}
+}
+
+// printAvailableServices writes a human-readable summary of every collector
+// each provider supports, plus a ready-to-run example command per provider.
+// It does not initialize any provider and does not require credentials.
+func printAvailableServices(w io.Writer) {
+	groups := []struct {
+		label    string
+		flag     string
+		services []provider.ServiceInfo
+		example  string
+	}{
+		{
+			label:    "GCP",
+			flag:     "-gcp.services",
+			services: google.Services(),
+			example:  "cloudcost-exporter -provider gcp -gcp.projects <project> -gcp.services GKE,GCS",
+		},
+		{
+			label:    "AWS",
+			flag:     "-aws.services",
+			services: aws.Services(),
+			example:  "cloudcost-exporter -provider aws -aws.region <region> -aws.services EC2,S3",
+		},
+		{
+			label:    "Azure",
+			flag:     "-azure.services",
+			services: azure.Services(),
+			example:  "cloudcost-exporter -provider azure -azure.subscription-id <id> -azure.services AKS",
+		},
+	}
+
+	for i, g := range groups {
+		if i > 0 {
+			fmt.Fprintln(w)
+		}
+		fmt.Fprintf(w, "%s services (%s):\n", g.label, g.flag)
+		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		for _, s := range g.services {
+			name := s.Name
+			if len(s.Aliases) > 0 {
+				name = fmt.Sprintf("%s (alias: %s)", s.Name, strings.Join(s.Aliases, ", "))
+			}
+			desc := s.Description
+			if s.DisplayName != "" && !strings.EqualFold(s.DisplayName, s.Name) {
+				desc = fmt.Sprintf("%s: %s", s.DisplayName, s.Description)
+			}
+			fmt.Fprintf(tw, "  %s\t%s\n", name, desc)
+		}
+		_ = tw.Flush()
+		fmt.Fprintf(w, "\n  Example: %s\n", g.example)
 	}
 }

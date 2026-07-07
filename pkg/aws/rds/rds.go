@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -31,43 +32,43 @@ var (
 
 // Collector is a prometheus collector that collects metrics from AWS RDS clusters.
 type Collector struct {
-	regions        []types.Region
-	regionMap      map[string]client.Client
-	scrapeInterval time.Duration
-	Client         client.Client
-	pricingMap     *pricingMap
-	accountID      string
-	logger         *slog.Logger
+	regions           []types.Region
+	regionMap         map[string]client.Client
+	scrapeInterval    time.Duration
+	regionListTimeout time.Duration
+	Client            client.Client
+	pricingMap        *pricingMap
+	accountID         string
+	logger            *slog.Logger
 }
 
 type Config struct {
-	Regions        []types.Region
-	RegionMap      map[string]client.Client
-	Client         client.Client
-	ScrapeInterval time.Duration
-	AccountID      string
-}
-
-type listError struct {
-	region string
-	error  error
-	reason string
+	Regions           []types.Region
+	RegionMap         map[string]client.Client
+	Client            client.Client
+	ScrapeInterval    time.Duration
+	RegionListTimeout time.Duration
+	AccountID         string
 }
 
 const (
 	serviceName = "RDS"
 )
 
-// New creates an rds collector
+// New creates an rds collector. A RegionListTimeout of 0 leaves each region's
+// DescribeDBInstances call bounded only by the shared collector context
+// (-collector-interval); a positive value caps it per region so a slow or
+// unreachable region fails fast instead of overrunning the scrape.
 func New(_ context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
 	return &Collector{
-		pricingMap:     newPricingMap(),
-		regions:        config.Regions,
-		regionMap:      config.RegionMap,
-		scrapeInterval: config.ScrapeInterval,
-		Client:         config.Client,
-		accountID:      config.AccountID,
-		logger:         logger.With("collector", serviceName),
+		pricingMap:        newPricingMap(),
+		regions:           config.Regions,
+		regionMap:         config.RegionMap,
+		scrapeInterval:    config.ScrapeInterval,
+		regionListTimeout: config.RegionListTimeout,
+		Client:            config.Client,
+		accountID:         config.AccountID,
+		logger:            logger.With("collector", serviceName),
 	}, nil
 }
 
@@ -75,36 +76,34 @@ func New(_ context.Context, config *Config, logger *slog.Logger) (*Collector, er
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	logger := c.logger
 	var instances = []rdsTypes.DBInstance{}
-	var regionErrors []listError
+
+	// Fan out the per-region ListRDSInstances calls concurrently
+	numOfRegions := len(c.regions)
+	instanceCh := make(chan []rdsTypes.DBInstance, numOfRegions)
+
+	wg := sync.WaitGroup{}
 	for _, region := range c.regions {
 		regionName := *region.RegionName
 		regionClient, ok := c.regionMap[regionName]
 		if !ok {
-			regionErrors = append(regionErrors, listError{
-				region: regionName,
-				error:  fmt.Errorf("no client found for region"),
-				reason: "no client found",
-			})
+			logger.Error("no client found for region", "region", regionName)
 			continue
 		}
 
-		is, err := regionClient.ListRDSInstances(ctx)
-		if err != nil {
-			regionErrors = append(regionErrors, listError{
-				region: regionName,
-				error:  err,
-				reason: "error listing RDS instances",
-			})
-			continue
-		}
-
-		instances = append(instances, is...)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c.fetchInstancesData(ctx, regionClient, regionName, instanceCh)
+		}()
 	}
 
-	if len(regionErrors) > 0 {
-		for _, re := range regionErrors {
-			logger.Error(re.reason, "region", re.region, "error", re.error)
-		}
+	go func() {
+		wg.Wait()
+		close(instanceCh)
+	}()
+
+	for is := range instanceCh {
+		instances = append(instances, is...)
 	}
 
 	for _, instance := range instances {
@@ -154,6 +153,25 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		)
 	}
 	return nil
+}
+
+// fetchInstancesData lists RDS instances for a single region, sending the
+// result to instanceCh. On failure it logs the error and returns.
+func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.Client, region string, instanceCh chan []rdsTypes.DBInstance) {
+	// A positive regionListTimeout caps this region's call; 0 leaves it bounded
+	// only by the parent collector context (backwards-compatible default).
+	if c.regionListTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.regionListTimeout)
+		defer cancel()
+	}
+
+	is, err := regionClient.ListRDSInstances(ctx)
+	if err != nil {
+		c.logger.Error("error listing RDS instances", "region", region, "error", err)
+		return
+	}
+	instanceCh <- is
 }
 
 func multiOrSingleAZ(multiAZ bool) string {

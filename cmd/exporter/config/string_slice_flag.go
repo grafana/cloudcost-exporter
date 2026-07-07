@@ -26,6 +26,9 @@ func NewDeprecatedStringSliceFlag(values *StringSliceFlag, wasUsed *bool) *Depre
 }
 
 func (f *DeprecatedStringSliceFlag) String() string {
+	if f == nil || f.values == nil {
+		return ""
+	}
 	return f.values.String()
 }
 

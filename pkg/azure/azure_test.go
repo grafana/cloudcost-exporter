@@ -22,6 +22,49 @@ var (
 	testLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
 
+// recordingHandler captures emitted log records so a test can assert on them.
+type recordingHandler struct {
+	mu      *sync.Mutex
+	records *[]slog.Record
+}
+
+func (h recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	*h.records = append(*h.records, r)
+	return nil
+}
+func (h recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h recordingHandler) WithGroup(string) slog.Handler      { return h }
+
+// Test_New_experimentalService proves the experimental path end to end for Azure: New reads
+// ExperimentalServices, registers the collector, and emits the experimental warning.
+func Test_New_experimentalService(t *testing.T) {
+	var mu sync.Mutex
+	var records []slog.Record
+	logger := slog.New(recordingHandler{mu: &mu, records: &records})
+
+	a, err := New(t.Context(), &Config{
+		Logger:               logger,
+		SubscriptionID:       "asdf-1234",
+		ExperimentalServices: []string{"blob"},
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, a)
+	assert.Len(t, a.collectors, 1, "experimental blob service should register a collector")
+
+	mu.Lock()
+	defer mu.Unlock()
+	warned := false
+	for _, r := range records {
+		if r.Level == slog.LevelWarn && strings.Contains(r.Message, "experimental collector") {
+			warned = true
+		}
+	}
+	assert.True(t, warned, "expected an experimental-collector warning to be logged")
+}
+
 func Test_New(t *testing.T) {
 	testTable := map[string]struct {
 		expectedErr error
@@ -210,4 +253,25 @@ func Test_CollectMetrics(t *testing.T) {
 			assert.ElementsMatch(t, metrics, tt.expectedMetrics)
 		})
 	}
+}
+
+func TestServices(t *testing.T) {
+	got := Services()
+	wantNames := []string{serviceAKS, serviceBlob, serviceEventHubs}
+	gotNames := make([]string, 0, len(got))
+	for _, s := range got {
+		gotNames = append(gotNames, s.Name)
+		assert.NotEmpty(t, s.DisplayName, "DisplayName empty for %s", s.Name)
+		assert.NotEmpty(t, s.Description, "Description empty for %s", s.Name)
+	}
+	assert.ElementsMatch(t, wantNames, gotNames)
+
+	var eh provider.ServiceInfo
+	for _, s := range got {
+		if s.Name == serviceEventHubs {
+			eh = s
+			break
+		}
+	}
+	assert.Contains(t, eh.Aliases, serviceEventHubsAlias, "EVENTHUBS should carry EVENTHUB as alias")
 }

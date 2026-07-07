@@ -31,6 +31,15 @@ const (
 	InputTokenCostSuffix = "input_usd_per_1k_tokens"
 	// OutputTokenCostSuffix is the suffix for per-1k-output-token cost metrics.
 	OutputTokenCostSuffix = "output_usd_per_1k_tokens"
+	// TokenCostSuffix is the suffix for per-1k-token cost metrics that carry a token_type label
+	// (input, output, and prompt-cache read/write) instead of encoding direction in the name.
+	TokenCostSuffix = "usd_per_1k_tokens"
+	// CharacterInputCostSuffix is the suffix for per-1k-input-character cost metrics.
+	// Used for models billed per character rather than per token (e.g. translation models).
+	CharacterInputCostSuffix = "input_usd_per_1k_characters"
+	// CharacterOutputCostSuffix is the suffix for per-1k-output-character cost metrics.
+	// Used for models billed per character rather than per token (e.g. translation models).
+	CharacterOutputCostSuffix = "output_usd_per_1k_characters"
 	// SearchUnitCostSuffix is the suffix for per-1k-search-unit cost metrics (e.g. Cohere Rerank).
 	SearchUnitCostSuffix = "search_unit_usd_per_1k_search_units"
 )

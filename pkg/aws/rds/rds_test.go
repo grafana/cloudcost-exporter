@@ -1,6 +1,7 @@
 package rds
 
 import (
+	"context"
 	"log/slog"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -106,6 +108,203 @@ func TestMultiOrSingleAZ(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := multiOrSingleAZ(tt.multiAZ)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestCollector_Collect_MultiRegion(t *testing.T) {
+	const validPriceJSON = `{
+            "terms": {
+                "OnDemand": {
+                    "term1": {
+                        "priceDimensions": {
+                            "dim1": {
+                                "pricePerUnit": {"USD": "0.456"}
+                            }
+                        }
+                    }
+                }
+            }
+        }`
+
+	instanceFor := func(region, id string) rdsTypes.DBInstance {
+		return rdsTypes.DBInstance{
+			DBSubnetGroup:        &rdsTypes.DBSubnetGroup{},
+			AvailabilityZone:     aws.String(region + "a"),
+			DBInstanceClass:      aws.String("db.t3.medium"),
+			Engine:               aws.String("postgres"),
+			DBInstanceIdentifier: aws.String(id),
+			MultiAZ:              aws.Bool(false),
+			DbiResourceId:        aws.String(id),
+			DBInstanceArn:        aws.String("arn-" + id),
+		}
+	}
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	regionNames := []string{"us-east-1", "eu-west-1", "ap-southeast-7"}
+	regions := make([]types.Region, 0, len(regionNames))
+	regionMap := make(map[string]client.Client, len(regionNames))
+	for _, region := range regionNames {
+		regions = append(regions, types.Region{RegionName: aws.String(region)})
+		regionClient := mock.NewMockClient(mockCtrl)
+		regionClient.EXPECT().ListRDSInstances(gomock.Any()).
+			Return([]rdsTypes.DBInstance{instanceFor(region, "db-"+region)}, nil).
+			Times(1)
+		regionMap[region] = regionClient
+	}
+
+	// Pricing lookups go through the shared client; serve a valid price for any region.
+	pricingClient := mock.NewMockClient(mockCtrl)
+	pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(validPriceJSON, nil).
+		AnyTimes()
+
+	c := &Collector{
+		pricingMap:        newPricingMap(),
+		regions:           regions,
+		regionMap:         regionMap,
+		scrapeInterval:    time.Minute,
+		regionListTimeout: time.Minute,
+		Client:            pricingClient,
+		accountID:         "123456789012",
+		logger:            slog.Default(),
+	}
+
+	ch := make(chan prometheus.Metric, len(regionNames))
+	err := c.Collect(t.Context(), ch)
+	assert.NoError(t, err)
+	close(ch)
+
+	gotRegions := map[string]bool{}
+	for metric := range ch {
+		gotRegions[utils.ReadMetrics(metric).Labels["region"]] = true
+	}
+	for _, region := range regionNames {
+		assert.True(t, gotRegions[region], "expected a metric for region %s", region)
+	}
+}
+
+// TestCollector_Collect_SlowRegionFailsFast verifies a region whose
+// ListRDSInstances hangs is bounded by regionListTimeout and does not block the
+// healthy regions or the overall Collect.
+func TestCollector_Collect_SlowRegionFailsFast(t *testing.T) {
+	const validPriceJSON = `{"terms":{"OnDemand":{"t":{"priceDimensions":{"d":{"pricePerUnit":{"USD":"0.456"}}}}}}}`
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	healthyInstance := rdsTypes.DBInstance{
+		DBSubnetGroup:        &rdsTypes.DBSubnetGroup{},
+		AvailabilityZone:     aws.String("us-east-1a"),
+		DBInstanceClass:      aws.String("db.t3.medium"),
+		Engine:               aws.String("postgres"),
+		DBInstanceIdentifier: aws.String("healthy-db"),
+		MultiAZ:              aws.Bool(false),
+		DbiResourceId:        aws.String("healthy-db"),
+		DBInstanceArn:        aws.String("arn-healthy"),
+	}
+
+	healthy := mock.NewMockClient(mockCtrl)
+	healthy.EXPECT().ListRDSInstances(gomock.Any()).
+		Return([]rdsTypes.DBInstance{healthyInstance}, nil).
+		Times(1)
+
+	// The slow region blocks until its (timeout-bounded) context is canceled,
+	// then returns the context error — mimicking an unreachable endpoint.
+	slow := mock.NewMockClient(mockCtrl)
+	slow.EXPECT().ListRDSInstances(gomock.Any()).
+		DoAndReturn(func(ctx context.Context) ([]rdsTypes.DBInstance, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}).
+		Times(1)
+
+	pricingClient := mock.NewMockClient(mockCtrl)
+	pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(validPriceJSON, nil).
+		AnyTimes()
+
+	c := &Collector{
+		pricingMap: newPricingMap(),
+		regions: []types.Region{
+			{RegionName: aws.String("us-east-1")},
+			{RegionName: aws.String("ap-southeast-7")},
+		},
+		regionMap: map[string]client.Client{
+			"us-east-1":      healthy,
+			"ap-southeast-7": slow,
+		},
+		scrapeInterval:    time.Minute,
+		regionListTimeout: 50 * time.Millisecond,
+		Client:            pricingClient,
+		accountID:         "123456789012",
+		logger:            slog.Default(),
+	}
+
+	ch := make(chan prometheus.Metric, 2)
+	start := time.Now()
+	err := c.Collect(t.Context(), ch)
+	elapsed := time.Since(start)
+	assert.NoError(t, err)
+	close(ch)
+
+	// Collect returns shortly after the per-region timeout, not after the full
+	// collector budget; allow generous slack for CI scheduling.
+	assert.Less(t, elapsed, 5*time.Second, "slow region should not block Collect")
+
+	gotRegions := map[string]bool{}
+	for metric := range ch {
+		gotRegions[utils.ReadMetrics(metric).Labels["region"]] = true
+	}
+	assert.True(t, gotRegions["us-east-1"], "healthy region should still emit a metric")
+	assert.False(t, gotRegions["ap-southeast-7"], "slow region should be skipped, not block")
+}
+
+// TestCollector_Collect_RegionListTimeout verifies the wrap/no-wrap behavior:
+// a zero timeout leaves the region call bounded only by the parent context
+// (backwards-compatible default), while a positive timeout imposes a deadline.
+func TestCollector_Collect_RegionListTimeout(t *testing.T) {
+	tests := []struct {
+		name              string
+		regionListTimeout time.Duration
+		wantDeadline      bool
+	}{
+		{name: "zero disables per-region timeout", regionListTimeout: 0, wantDeadline: false},
+		{name: "positive imposes per-region timeout", regionListTimeout: 30 * time.Second, wantDeadline: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+
+			var gotDeadline bool
+			regionClient := mock.NewMockClient(mockCtrl)
+			regionClient.EXPECT().ListRDSInstances(gomock.Any()).
+				DoAndReturn(func(ctx context.Context) ([]rdsTypes.DBInstance, error) {
+					_, gotDeadline = ctx.Deadline()
+					return nil, nil
+				}).
+				Times(1)
+
+			c := &Collector{
+				pricingMap:        newPricingMap(),
+				regions:           []types.Region{{RegionName: aws.String("us-east-1")}},
+				regionMap:         map[string]client.Client{"us-east-1": regionClient},
+				scrapeInterval:    time.Minute,
+				regionListTimeout: tt.regionListTimeout,
+				Client:            regionClient,
+				accountID:         "123456789012",
+				logger:            slog.Default(),
+			}
+
+			// Parent context carries no deadline, so any deadline observed by the
+			// region call comes from the per-region timeout.
+			ch := make(chan prometheus.Metric, 1)
+			require.NoError(t, c.Collect(context.Background(), ch))
+			assert.Equal(t, tt.wantDeadline, gotDeadline)
 		})
 	}
 }
@@ -214,13 +413,14 @@ func TestCollector_Collect(t *testing.T) {
 			}
 
 			c := &Collector{
-				pricingMap:     &pricingMap{pricingMap: tt.initialCache},
-				regions:        []types.Region{{RegionName: aws.String("us-east-1")}},
-				regionMap:      map[string]client.Client{"us-east-1": mockClient},
-				scrapeInterval: time.Minute,
-				Client:         mockClient,
-				accountID:      "123456789012",
-				logger:         slog.Default(),
+				pricingMap:        &pricingMap{pricingMap: tt.initialCache},
+				regions:           []types.Region{{RegionName: aws.String("us-east-1")}},
+				regionMap:         map[string]client.Client{"us-east-1": mockClient},
+				scrapeInterval:    time.Minute,
+				regionListTimeout: time.Minute,
+				Client:            mockClient,
+				accountID:         "123456789012",
+				logger:            slog.Default(),
 			}
 
 			ch := make(chan prometheus.Metric, 1)

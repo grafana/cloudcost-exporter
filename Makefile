@@ -1,4 +1,4 @@
-.PHONY: build-image build-binary build test push push-dev generate help
+.PHONY: build-image build-binary build test push push-dev generate help lint
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
@@ -31,7 +31,7 @@ build: lint generate build-binary build-image ## Run lint, generate, and build b
 generate: ## Run go generate
 	go generate -v ./...
 
-test: lint generate build-dashboards build ## Run the full test suite
+test: lint generate build ## Run the full test suite
 	go test -v ./...
 
 lint: ## Run linter over the codebase
@@ -42,16 +42,3 @@ push-dev: build test ## Build, test, and push the versioned image
 
 push: build test push-dev ## Build, test, and push both versioned and latest images
 	docker push $(IMAGE_NAME_LATEST)
-
-grafanactl-serve: check-cli-grafanactl build-dashboards ## Serve dashboards locally with grafanactl
-	grafanactl resources serve --port 8080 ./cloudcost-exporter-dashboards/grafana
-
-build-dashboards: ## Build Grafana dashboards using grafana-foundation-sdk
-	go get github.com/grafana/grafana-foundation-sdk/go@latest
-	go mod tidy
-	go run ./cmd/dashboards/main.go  --output=file
-
-# Check for required CLI tools
-check-cli-grafanactl: ERR_MSG := "grafanactl is required. Install it from https://grafana.github.io/grafanactl/"
-check-cli-%:
-	@command -v $(*) > /dev/null || { echo $(ERR_MSG); exit 1; }

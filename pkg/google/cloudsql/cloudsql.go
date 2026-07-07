@@ -44,7 +44,7 @@ var (
 		subsystem,
 		"cost_usd_per_hour",
 		"Hourly cost of GCP cloudsql instances by instance name and region. Cost represented in USD/hour",
-		[]string{"instance", "region"},
+		[]string{"project", "instance", "region"},
 	)
 )
 
@@ -116,6 +116,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 			HourlyGaugeDesc,
 			prometheus.GaugeValue,
 			price.pricePerHour,
+			instance.Project,
 			instance.ConnectionName,
 			instance.Region,
 		)

@@ -92,7 +92,7 @@ jobs:
 
       - name: Build and Push Image
         id: build
-        uses: grafana/shared-workflows/actions/docker-build-push-image@34f27887c37cafe70d34af57dfc86b468a31b8c4 # docker-build-push-image/v0.3.3
+        uses: grafana/shared-workflows/actions/docker-build-push-image@c66d74df41cf4ed28a90da1d91c263f9d1609a21 # docker-build-push-image/v0.3.4
         with:
           registries: gar
           gar-environment: prod
@@ -108,7 +108,7 @@ jobs:
 
       - name: Export Docker Digest
         id: export
-        uses: grafana/shared-workflows/actions/docker-export-digest@89f8e44efc54500588fcdd9a4926c14051ef78da # docker-export-digest/v0.1.3
+        uses: grafana/shared-workflows/actions/docker-export-digest@015e80562a04751edab840263e21561807c88c76 # docker-export-digest/v0.1.4
         with:
           digest: ${{ steps.build.outputs.digest }}
           platform: ${{ matrix.platform }}
@@ -128,6 +128,24 @@ jobs:
           tags: |
             type=semver,pattern=v{{ version }}
         env:
+          version: ${{ needs.tag-and-goreleaser.outputs.version }}
+
+  update-helm-chart:
+    needs: [tag-and-goreleaser, push-manifest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Open Helm chart bump PR
+        uses: ./.github/actions/update-helm-chart
+        with:
           version: ${{ needs.tag-and-goreleaser.outputs.version }}
 
   deploy:

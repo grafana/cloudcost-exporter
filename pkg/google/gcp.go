@@ -3,6 +3,7 @@ package google
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
+	"github.com/grafana/cloudcost-exporter/pkg/google/vertex"
 	"github.com/grafana/cloudcost-exporter/pkg/google/vpc"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
@@ -29,7 +31,32 @@ const (
 	// many collectors are registered and keeps memory and rate-limit usage
 	// predictable. The value matches Azure's ConcurrentGoroutineLimit.
 	collectConcurrencyLimit = 10
+
+	// GCP service names used by -gcp.services.
+	serviceGCS          = "GCS"
+	serviceGKE          = "GKE"
+	serviceCLB          = "CLB"
+	serviceVPC          = "VPC"
+	serviceSQL          = "SQL"
+	serviceManagedKafka = "MANAGEDKAFKA"
+	serviceKafkaAlias   = "KAFKA"
+	serviceVertex       = "VERTEX"
 )
+
+// Services returns the collectors that can be enabled via -gcp.services.
+// The Name field is the canonical flag value; the dispatch switch in New
+// cases on the same constants.
+func Services() []provider.ServiceInfo {
+	return []provider.ServiceInfo{
+		{Name: serviceGKE, DisplayName: "GKE", Description: "Google Kubernetes Engine clusters"},
+		{Name: serviceGCS, DisplayName: "GCS", Description: "Google Cloud Storage buckets"},
+		{Name: serviceSQL, DisplayName: "Cloud SQL", Description: "Managed database instances"},
+		{Name: serviceManagedKafka, DisplayName: "Managed Kafka", Description: "Managed Service for Apache Kafka clusters", Aliases: []string{serviceKafkaAlias}},
+		{Name: serviceCLB, DisplayName: "CLB", Description: "Cloud Load Balancers via forwarding rules"},
+		{Name: serviceVPC, DisplayName: "VPC", Description: "Cloud NAT Gateway, VPN Gateway, Private Service Connect"},
+		{Name: serviceVertex, DisplayName: "Vertex AI", Description: "Vertex AI model token, character, compute, and reranking pricing"},
+	}
+}
 
 var (
 	collectorLastScrapeErrorDesc = prometheus.NewDesc(
@@ -61,14 +88,18 @@ type GCP struct {
 }
 
 type Config struct {
-	ProjectId        string // ProjectID is where the project is running. Used for authentication.
-	Region           string
-	Projects         string // Projects is a comma-separated list of projects to scrape metadata from
-	Services         []string
-	ScrapeInterval   time.Duration
-	DefaultDiscount  int
-	CollectorTimeout time.Duration
-	Logger           *slog.Logger
+	ProjectId            string // ProjectID is where the project is running. Used for authentication.
+	Region               string
+	Projects             string // Projects is a comma-separated list of projects to scrape metadata from
+	Services             []string
+	ExperimentalServices []string
+	ScrapeInterval       time.Duration
+	DefaultDiscount      int
+	CollectorTimeout     time.Duration
+	// GKEZoneConcurrency caps zone-level goroutines per project during a GKE scrape.
+	// Zero or negative values fall back to gke.DefaultZoneCollectConcurrency.
+	GKEZoneConcurrency int
+	Logger             *slog.Logger
 }
 
 // New is responsible for parsing out a configuration file and setting up the associated services that could be required.
@@ -83,13 +114,33 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 	}
 
 	var collectors []provider.Collector
-	for _, service := range config.Services {
+	// Register stable services followed by experimental ones. Experimental collectors are outside
+	// the backward-compatibility contract, so warn when registering them. A service already enabled
+	// as stable is not registered again as experimental; registering it twice would fail collector
+	// registration with a duplicate-descriptor error.
+	stableNames := make(map[string]bool, len(config.Services))
+	for _, s := range config.Services {
+		stableNames[strings.ToUpper(strings.TrimSpace(s))] = true
+	}
+	allServices := slices.Concat(config.Services, config.ExperimentalServices)
+	for i, service := range allServices {
+		service = strings.TrimSpace(service)
+		if service == "" {
+			continue
+		}
+		if i >= len(config.Services) {
+			if stableNames[strings.ToUpper(service)] {
+				continue
+			}
+			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
+				slog.String("service", service))
+		}
 		logger.LogAttrs(ctx, slog.LevelInfo, "Creating service",
 			slog.String("service", service))
 
 		var collector provider.Collector
 		switch strings.ToUpper(service) {
-		case "GCS":
+		case serviceGCS:
 			collector, err = gcs.New(ctx, &gcs.Config{
 				ProjectId:      config.ProjectId,
 				Projects:       config.Projects,
@@ -101,10 +152,11 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 					slog.String("message", err.Error()))
 				continue
 			}
-		case "GKE":
+		case serviceGKE:
 			collector, err = gke.New(ctx, &gke.Config{
-				Projects:       config.Projects,
-				ScrapeInterval: config.ScrapeInterval,
+				Projects:        config.Projects,
+				ScrapeInterval:  config.ScrapeInterval,
+				ZoneConcurrency: config.GKEZoneConcurrency,
 			}, logger, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
@@ -112,7 +164,7 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 					slog.String("message", err.Error()))
 				continue
 			}
-		case "CLB":
+		case serviceCLB:
 			// CLB = Cloud Load Balancer, but we use forwarding rules to calculate price
 			collector, err = networking.New(ctx, &networking.Config{
 				ScrapeInterval: config.ScrapeInterval,
@@ -127,7 +179,7 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 					slog.String("message", err.Error()))
 				continue
 			}
-		case "VPC":
+		case serviceVPC:
 			collector, err = vpc.New(ctx, &vpc.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
@@ -138,7 +190,7 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 					slog.String("message", err.Error()))
 				continue
 			}
-		case "SQL":
+		case serviceSQL:
 			collector, err = cloudsql.New(ctx, &cloudsql.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
@@ -149,11 +201,19 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 					slog.String("message", err.Error()))
 				continue
 			}
-		case "KAFKA", "MANAGEDKAFKA":
+		case serviceKafkaAlias, serviceManagedKafka:
 			collector, err = gcpmanagedkafka.New(ctx, &gcpmanagedkafka.Config{
 				Projects:       config.Projects,
 				ScrapeInterval: config.ScrapeInterval,
 			}, logger, gcpClient)
+			if err != nil {
+				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				continue
+			}
+		case serviceVertex:
+			collector, err = vertex.New(ctx, logger, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),

@@ -242,6 +242,10 @@ func (p *PricingStore) buildSnapshot(priceList []string) (*priceSnapshot, error)
 					p.logger.Error(fmt.Sprintf("error parsing price: %s, skipping", err))
 					continue
 				}
+				if existing, ok := regionPrices[unit]; ok && existing != price {
+					p.logger.Warn("overwriting price for usage type with a different value",
+						"region", region, "unit", unit, "old", existing, "new", price)
+				}
 				regionPrices[unit] = price
 			}
 		}

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -140,6 +142,68 @@ func Test_selectProvider(t *testing.T) {
 	}
 }
 
+// Test_selectProvider_forwardsExperimentalServices guards the per-provider wiring in
+// selectProviderWith: each provider's -{provider}.experimental.services flag must reach its
+// Config.ExperimentalServices. These three near-identical strings.Split lines are easy to
+// copy-paste wrong, so assert each provider independently.
+func Test_selectProvider_forwardsExperimentalServices(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockProv := mock_provider.NewMockProvider(ctrl)
+
+	noopAWS := func(context.Context, *aws.Config) (provider.Provider, error) { return mockProv, nil }
+	noopAzure := func(context.Context, *azure.Config) (provider.Provider, error) { return mockProv, nil }
+	noopGCP := func(context.Context, *google.Config) (provider.Provider, error) { return mockProv, nil }
+
+	t.Run("aws", func(t *testing.T) {
+		var got []string
+		cfg := &config.Config{Provider: "aws"}
+		cfg.Providers.AWS.ExperimentalServices = config.StringSliceFlag{"bedrock"}
+		capture := func(_ context.Context, c *aws.Config) (provider.Provider, error) {
+			got = c.ExperimentalServices
+			return mockProv, nil
+		}
+		if _, err := selectProviderWith(context.Background(), cfg, capture, noopAzure, noopGCP); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if strings.Join(got, ",") != "bedrock" {
+			t.Errorf("aws Config.ExperimentalServices = %v, want [bedrock]", got)
+		}
+	})
+
+	t.Run("azure", func(t *testing.T) {
+		var got []string
+		cfg := &config.Config{Provider: "azure"}
+		cfg.Providers.Azure.ExperimentalServices = config.StringSliceFlag{"blob"}
+		capture := func(_ context.Context, c *azure.Config) (provider.Provider, error) {
+			got = c.ExperimentalServices
+			return mockProv, nil
+		}
+		if _, err := selectProviderWith(context.Background(), cfg, noopAWS, capture, noopGCP); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if strings.Join(got, ",") != "blob" {
+			t.Errorf("azure Config.ExperimentalServices = %v, want [blob]", got)
+		}
+	})
+
+	t.Run("gcp", func(t *testing.T) {
+		var got []string
+		cfg := &config.Config{Provider: "gcp"}
+		cfg.Providers.GCP.ExperimentalServices = config.StringSliceFlag{"vertex"}
+		capture := func(_ context.Context, c *google.Config) (provider.Provider, error) {
+			got = c.ExperimentalServices
+			return mockProv, nil
+		}
+		if _, err := selectProviderWith(context.Background(), cfg, noopAWS, noopAzure, capture); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if strings.Join(got, ",") != "vertex" {
+			t.Errorf("gcp Config.ExperimentalServices = %v, want [vertex]", got)
+		}
+	})
+}
+
 func Test_regionFromConfig(t *testing.T) {
 	tests := map[string]struct {
 		provider  string
@@ -243,6 +307,44 @@ func Test_createPromRegistryHandler(t *testing.T) {
 
 			if rec.Code != tc.wantHTTPStatus {
 				t.Errorf("expected HTTP status %d, got %d", tc.wantHTTPStatus, rec.Code)
+			}
+		})
+	}
+}
+
+func TestPrintAvailableServices(t *testing.T) {
+	var buf bytes.Buffer
+	printAvailableServices(&buf)
+	out := buf.String()
+
+	cases := []struct {
+		name     string
+		services []provider.ServiceInfo
+		header   string
+		example  string
+	}{
+		{"AWS", aws.Services(), "AWS services (-aws.services):", "-provider aws"},
+		{"GCP", google.Services(), "GCP services (-gcp.services):", "-provider gcp"},
+		{"Azure", azure.Services(), "Azure services (-azure.services):", "-provider azure"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !strings.Contains(out, tc.header) {
+				t.Errorf("output missing header %q", tc.header)
+			}
+			if !strings.Contains(out, tc.example) {
+				t.Errorf("output missing example for %s", tc.name)
+			}
+			for _, s := range tc.services {
+				if !strings.Contains(out, s.Name) {
+					t.Errorf("output missing service %s", s.Name)
+				}
+				for _, a := range s.Aliases {
+					if !strings.Contains(out, a) {
+						t.Errorf("output missing alias %s for %s", a, s.Name)
+					}
+				}
 			}
 		})
 	}

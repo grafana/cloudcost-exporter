@@ -1,5 +1,5 @@
 # Build Go Binary
-FROM golang:1.26.3@sha256:2981696eed011d747340d7252620932677929cce7d2d539602f56a8d7e9b660b AS build
+FROM golang:1.26.4@sha256:32c0e6e5c4f6707717051091b4d0b077464a679eaab563e11474efc5328e2aa5 AS build
 
 WORKDIR /app
 COPY ["go.mod", "go.sum", "./"]
@@ -12,7 +12,7 @@ RUN  --mount=type=cache,target="/go/pkg/mod/" make build-binary
 
 # Build Image
 FROM scratch
-COPY --from=alpine:latest@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659 /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=alpine:latest@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /etc/passwd /etc/passwd
 
 WORKDIR /root

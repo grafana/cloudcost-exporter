@@ -39,6 +39,13 @@ func TestStringSliceFlag_Set(t *testing.T) {
 	}
 }
 
+func TestDeprecatedStringSliceFlag_StringZeroValue(t *testing.T) {
+	var f DeprecatedStringSliceFlag
+	if got := f.String(); got != "" {
+		t.Fatalf("expected empty string, got %q", got)
+	}
+}
+
 func TestStringSliceFlag_String(t *testing.T) {
 	tests := map[string]struct {
 		values []string

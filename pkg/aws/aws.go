@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,16 +38,18 @@ import (
 )
 
 type Config struct {
-	Services            []string
-	Region              string
-	Profile             string
-	RoleARN             string
-	ExcludeRegions      []string // AWS region names to skip (e.g. me-central-1)
-	ScrapeInterval      time.Duration
-	CollectorTimeout    time.Duration
-	Logger              *slog.Logger
-	AccountID           string
-	BedrockFamilyFilter string // regex matched against family label; default "anthropic|amazon"
+	Services             []string
+	ExperimentalServices []string
+	Region               string
+	Profile              string
+	RoleARN              string
+	ExcludeRegions       []string // AWS region names to skip (e.g. me-central-1)
+	ScrapeInterval       time.Duration
+	CollectorTimeout     time.Duration
+	RDSRegionListTimeout time.Duration // per-region timeout for RDS DescribeDBInstances; 0 uses the collector default
+	Logger               *slog.Logger
+	AccountID            string
+	BedrockFamilyFilter  string // regex matched against family label; default "anthropic|amazon"
 }
 
 type AWS struct {
@@ -98,6 +101,22 @@ const (
 	serviceMSK     = "MSK"
 	serviceBedrock = "BEDROCK"
 )
+
+// Services returns the collectors that can be enabled via -aws.services.
+// The Name field is the canonical flag value; the dispatch switch in
+// newWithDependencies cases on the same constants.
+func Services() []provider.ServiceInfo {
+	return []provider.ServiceInfo{
+		{Name: serviceS3, DisplayName: "S3", Description: "Simple Storage Service buckets"},
+		{Name: serviceEC2, DisplayName: "EC2", Description: "Elastic Compute Cloud instances (spot and on-demand pricing)"},
+		{Name: serviceRDS, DisplayName: "RDS", Description: "Relational Database Service instances"},
+		{Name: serviceMSK, DisplayName: "MSK", Description: "Managed Service for Apache Kafka clusters"},
+		{Name: serviceELB, DisplayName: "ELB", Description: "Elastic Load Balancers (ALB, NLB)"},
+		{Name: serviceNATGW, DisplayName: "NAT Gateway", Description: "Network Address Translation gateways"},
+		{Name: serviceVPC, DisplayName: "VPC", Description: "VPC endpoints and services"},
+		{Name: serviceBedrock, DisplayName: "Bedrock", Description: "Amazon Bedrock foundation model pricing"},
+	}
+}
 
 func New(ctx context.Context, config *Config) (*AWS, error) {
 	// There are two scenarios:
@@ -154,7 +173,27 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 	logger := config.Logger.With("provider", subsystem)
 	pricingAPI := awsPricing.NewFromConfig(pricingConfig)
 
-	for _, service := range config.Services {
+	// Register stable services followed by experimental ones. Experimental collectors are outside
+	// the backward-compatibility contract, so warn when registering them. A service already enabled
+	// as stable is not registered again as experimental; registering it twice would fail collector
+	// registration with a duplicate-descriptor error.
+	stableNames := make(map[string]bool, len(config.Services))
+	for _, s := range config.Services {
+		stableNames[strings.ToUpper(strings.TrimSpace(s))] = true
+	}
+	allServices := slices.Concat(config.Services, config.ExperimentalServices)
+	for i, service := range allServices {
+		service = strings.TrimSpace(service)
+		if service == "" {
+			continue
+		}
+		if i >= len(config.Services) {
+			if stableNames[strings.ToUpper(service)] {
+				continue
+			}
+			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
+				slog.String("service", service))
+		}
 		service = strings.ToUpper(service)
 
 		switch service {
@@ -190,11 +229,12 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				RDSService:     rds.NewFromConfig(awsConfig),
 			})
 			collector, err := rdsCollector.New(ctx, &rdsCollector.Config{
-				ScrapeInterval: config.ScrapeInterval,
-				Regions:        regions,
-				RegionMap:      regionClients,
-				Client:         awsRDSClient,
-				AccountID:      config.AccountID,
+				ScrapeInterval:    config.ScrapeInterval,
+				Regions:           regions,
+				RegionMap:         regionClients,
+				Client:            awsRDSClient,
+				AccountID:         config.AccountID,
+				RegionListTimeout: config.RDSRegionListTimeout,
 			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
@@ -281,10 +321,9 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			collector, err := bedrock.New(ctx, &bedrock.Config{
 				Regions:       regions,
 				PricingClient: awsBedrockClient,
-				Logger:        logger,
 				AccountID:     config.AccountID,
 				FamilyFilter:  config.BedrockFamilyFilter,
-			})
+			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),

@@ -28,7 +28,7 @@ func NewMetrics() *Metrics {
 		),
 		StorageDiscountGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "storage_discount_by_location_usd_per_gibyte_hour"),
-			Help: "Discount for storage cost of GCS objects by location and storage_class. Cost represented in USD/(GiB*h)",
+			Help: "DEPRECATED (removal in v2.0.0, no replacement): Discount for storage cost of GCS objects by location and storage_class. Cost represented in USD/(GiB*h)",
 		}, []string{"location", "storage_class"}),
 		OperationsGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "operation_by_location_usd_per_krequest"),
@@ -38,13 +38,13 @@ func NewMetrics() *Metrics {
 		),
 		OperationsDiscountGauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "operation_discount_by_location_usd_per_krequest"),
-			Help: "Discount for operation cost of GCS objects by location, storage_class, and opclass. Cost represented in USD/(1k req)",
+			Help: "DEPRECATED (removal in v2.0.0, no replacement): Discount for operation cost of GCS objects by location, storage_class, and opclass. Cost represented in USD/(1k req)",
 		}, []string{"location_type", "storage_class", "opclass"}),
 		BucketInfo: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: prometheus.BuildFQName(cloudcost_exporter.MetricPrefix, subsystem, "bucket_info"),
 			Help: "Location, location_type and storage class information for a GCS object by bucket_name",
 		},
-			[]string{"location", "location_type", "storage_class", "bucket_name"},
+			[]string{"project", "location", "location_type", "storage_class", "bucket_name"},
 		),
 		// todo: every module so far has a "next_scrape" metric. Should we have a metric cloudcost_exporter_next_scrape{module=<gcp_gcs,gcp_compute,aws...>}?
 		NextScrapeGauge: prometheus.NewGauge(prometheus.GaugeOpts{

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -23,7 +24,26 @@ import (
 
 const (
 	subsystem = "azure"
+
+	// Azure service names used by -azure.services. Matching is case-insensitive
+	// (see strings.EqualFold below), so these casings are canonical only for
+	// display and registry purposes.
+	serviceAKS            = "AKS"
+	serviceBlob           = "blob"
+	serviceEventHubs      = "EVENTHUBS"
+	serviceEventHubsAlias = "EVENTHUB"
 )
+
+// Services returns the collectors that can be enabled via -azure.services.
+// The Name field is the canonical flag value; the dispatch switch in New
+// matches case-insensitively against the same constants.
+func Services() []provider.ServiceInfo {
+	return []provider.ServiceInfo{
+		{Name: serviceAKS, DisplayName: "AKS", Description: "Azure Kubernetes Service VM instances and managed disks"},
+		{Name: serviceBlob, DisplayName: "Blob", Description: "Azure Blob Storage (cost metrics registered; no series until Cost Management)"},
+		{Name: serviceEventHubs, DisplayName: "Event Hubs", Description: "Kafka-compatible Azure Event Hubs namespaces", Aliases: []string{serviceEventHubsAlias}},
+	}
+}
 
 var errInvalidSubscriptionID = errors.New("subscription id was invalid")
 
@@ -62,8 +82,9 @@ type Config struct {
 	SubscriptionID string
 	ScrapeInterval time.Duration
 
-	CollectorTimeout time.Duration
-	Services         []string
+	CollectorTimeout     time.Duration
+	Services             []string
+	ExperimentalServices []string
 }
 
 func New(ctx context.Context, config *Config) (*Azure, error) {
@@ -86,14 +107,30 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 		return nil, err
 	}
 
-	// Collector Registration (--azure.services matching is case-insensitive).
-	for _, svc := range config.Services {
+	// Collector Registration (--azure.services matching is case-insensitive). Register stable
+	// services followed by experimental ones, which are outside the backward-compatibility
+	// contract, so warn when registering them. A service already enabled as stable is not
+	// registered again as experimental; registering it twice would fail collector registration
+	// with a duplicate-descriptor error.
+	stableNames := make(map[string]bool, len(config.Services))
+	for _, s := range config.Services {
+		stableNames[strings.ToUpper(strings.TrimSpace(s))] = true
+	}
+	allServices := slices.Concat(config.Services, config.ExperimentalServices)
+	for i, svc := range allServices {
 		svc = strings.TrimSpace(svc)
 		if svc == "" {
 			continue
 		}
+		if i >= len(config.Services) {
+			if stableNames[strings.ToUpper(svc)] {
+				continue
+			}
+			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
+				slog.String("service", svc))
+		}
 		switch {
-		case strings.EqualFold(svc, "AKS"):
+		case strings.EqualFold(svc, serviceAKS):
 			collector, err := aks.New(ctx, &aks.Config{
 				SubscriptionID: config.SubscriptionID,
 			}, logger, azClientWrapper)
@@ -104,7 +141,7 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 				continue
 			}
 			collectors = append(collectors, collector)
-		case strings.EqualFold(svc, "blob"):
+		case strings.EqualFold(svc, serviceBlob):
 			collector, err := blob.New(ctx, &blob.Config{
 				SubscriptionID: config.SubscriptionID,
 				ScrapeInterval: config.ScrapeInterval,
@@ -116,7 +153,7 @@ func New(ctx context.Context, config *Config) (*Azure, error) {
 				continue
 			}
 			collectors = append(collectors, collector)
-		case strings.EqualFold(svc, "EVENTHUBS"), strings.EqualFold(svc, "EVENTHUB"):
+		case strings.EqualFold(svc, serviceEventHubs), strings.EqualFold(svc, serviceEventHubsAlias):
 			collector, err := eventhubs.New(ctx, &eventhubs.Config{
 				Logger: logger,
 			}, azClientWrapper)

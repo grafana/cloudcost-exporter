@@ -242,3 +242,27 @@ func TestGCP_CollectMetrics(t *testing.T) {
 		})
 	}
 }
+
+func TestServices(t *testing.T) {
+	got := Services()
+	wantNames := []string{
+		serviceGCS, serviceGKE, serviceCLB, serviceVPC,
+		serviceSQL, serviceManagedKafka, serviceVertex,
+	}
+	gotNames := make([]string, 0, len(got))
+	for _, s := range got {
+		gotNames = append(gotNames, s.Name)
+		assert.NotEmpty(t, s.DisplayName, "DisplayName empty for %s", s.Name)
+		assert.NotEmpty(t, s.Description, "Description empty for %s", s.Name)
+	}
+	assert.ElementsMatch(t, wantNames, gotNames)
+
+	var kafka provider.ServiceInfo
+	for _, s := range got {
+		if s.Name == serviceManagedKafka {
+			kafka = s
+			break
+		}
+	}
+	assert.Contains(t, kafka.Aliases, serviceKafkaAlias, "MANAGEDKAFKA should carry KAFKA as alias")
+}
