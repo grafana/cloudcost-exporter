@@ -94,7 +94,7 @@ func TestCollect_EmitsInputAndOutputTokenMetrics(t *testing.T) {
 	// These fixtures omit the `model` attribute, so model_id is the normalized usagetype slug
 	// (fallback path). Real Claude SKUs carry `model`, yielding claude-3-sonnet; see
 	// TestCollect_StandardModelIDUsesModelAttribute.
-	assert.Equal(t, "claude3sonnet", inputMetric.Labels["model_id"])
+	assert.Equal(t, "claude3sonnet", inputMetric.Labels["gen_ai_request_model"])
 	assert.Equal(t, "anthropic", inputMetric.Labels["family"])
 	assert.Equal(t, "in", inputMetric.Labels["region_tier"])
 	assert.Equal(t, "standard", inputMetric.Labels["quota_tier"])
@@ -105,7 +105,7 @@ func TestCollect_EmitsInputAndOutputTokenMetrics(t *testing.T) {
 	outputMetric := tokenMetricByType(results, "output")
 	require.NotNil(t, outputMetric)
 	assert.Equal(t, "us-east-1", outputMetric.Labels["region"])
-	assert.Equal(t, "claude3sonnet", outputMetric.Labels["model_id"])
+	assert.Equal(t, "claude3sonnet", outputMetric.Labels["gen_ai_request_model"])
 	assert.Equal(t, "anthropic", outputMetric.Labels["family"])
 	assert.Equal(t, "in", outputMetric.Labels["region_tier"])
 	assert.Equal(t, "standard", outputMetric.Labels["quota_tier"])
@@ -173,9 +173,9 @@ func TestCollect_LabelsCrossRegionPriceTier(t *testing.T) {
 	m := results[0]
 	assert.Equal(t, "cross", m.Labels["region_tier"])
 	assert.Equal(t, "standard", m.Labels["quota_tier"])
-	assert.Equal(t, "input", m.Labels["token_type"])
+	assert.Equal(t, "input", m.Labels["gen_ai_token_type"])
 	assert.Equal(t, "amazon", m.Labels["family"])
-	assert.Equal(t, "novapremier", m.Labels["model_id"])
+	assert.Equal(t, "novapremier", m.Labels["gen_ai_request_model"])
 }
 
 func TestCollect_LabelsBatchPriceTier(t *testing.T) {
@@ -208,9 +208,9 @@ func TestCollect_LabelsBatchPriceTier(t *testing.T) {
 	m := results[0]
 	assert.Equal(t, "in", m.Labels["region_tier"])
 	assert.Equal(t, "batch", m.Labels["quota_tier"])
-	assert.Equal(t, "input", m.Labels["token_type"])
+	assert.Equal(t, "input", m.Labels["gen_ai_token_type"])
 	assert.Equal(t, "anthropic", m.Labels["family"])
-	assert.Equal(t, "claude3sonnet", m.Labels["model_id"])
+	assert.Equal(t, "claude3sonnet", m.Labels["gen_ai_request_model"])
 }
 
 func TestCollect_FamilyFilterRegexFiltersOtherFamilies(t *testing.T) {
@@ -245,7 +245,7 @@ func TestCollect_FamilyFilterRegexFiltersOtherFamilies(t *testing.T) {
 
 	m := results[0]
 	assert.Equal(t, "anthropic", m.Labels["family"])
-	assert.Equal(t, "claude3sonnet", m.Labels["model_id"])
+	assert.Equal(t, "claude3sonnet", m.Labels["gen_ai_request_model"])
 }
 
 func TestCollect_FamilyFilterDefaultEmitsAllFamilies(t *testing.T) {
@@ -546,7 +546,7 @@ func collectMetricResults(t *testing.T, collector *Collector) ([]*utils.MetricRe
 // cache_read, cache_write). Input and output now share one metric name, distinguished by label.
 func tokenMetricByType(results []*utils.MetricResult, tokenType string) *utils.MetricResult {
 	for _, result := range results {
-		if result.FqName == "cloudcost_aws_bedrock_usd_per_1k_tokens" && result.Labels["token_type"] == tokenType {
+		if result.FqName == "cloudcost_aws_bedrock_usd_per_1k_tokens" && result.Labels["gen_ai_token_type"] == tokenType {
 			return result
 		}
 	}
@@ -596,10 +596,10 @@ func TestCollect_MergesLegacyClaudeAcrossSources(t *testing.T) {
 
 	var input, output *utils.MetricResult
 	for _, r := range results {
-		if r.FqName != "cloudcost_aws_bedrock_usd_per_1k_tokens" || r.Labels["model_id"] != "claude-3-sonnet" {
+		if r.FqName != "cloudcost_aws_bedrock_usd_per_1k_tokens" || r.Labels["gen_ai_request_model"] != "claude-3-sonnet" {
 			continue
 		}
-		switch r.Labels["token_type"] {
+		switch r.Labels["gen_ai_token_type"] {
 		case "input":
 			input = r
 		case "output":
@@ -667,7 +667,7 @@ func TestCollect_StandardModelIDUsesModelAttribute(t *testing.T) {
 
 	ids := map[string]bool{}
 	for _, r := range results {
-		ids[r.Labels["model_id"]] = true
+		ids[r.Labels["gen_ai_request_model"]] = true
 	}
 	assert.True(t, ids["claude-3-sonnet"], "expected normalized claude-3-sonnet, got %v", ids)
 	assert.True(t, ids["llama-3.1-405b"], "expected normalized llama-3.1-405b, got %v", ids)
@@ -705,7 +705,7 @@ func TestCollect_StandardModelIDDisambiguatesNovaSonicModality(t *testing.T) {
 
 	byID := map[string]float64{}
 	for _, r := range results {
-		byID[r.Labels["model_id"]] = r.Value
+		byID[r.Labels["gen_ai_request_model"]] = r.Value
 	}
 	assert.InDelta(t, 0.00006, byID["nova-sonic-text"], 1e-9)
 	assert.InDelta(t, 0.00340, byID["nova-sonic-speech"], 1e-9)
@@ -859,8 +859,8 @@ func TestCollect_EmitsMarketplaceCacheMetrics(t *testing.T) {
 	byKey := map[string]float64{}
 	for _, r := range results {
 		require.Equal(t, "cloudcost_aws_bedrock_usd_per_1k_tokens", r.FqName)
-		require.Equal(t, "claude-sonnet-4.6", r.Labels["model_id"])
-		key := r.Labels["region_tier"] + "/" + r.Labels["token_type"] + "/" + r.Labels["cache_ttl"]
+		require.Equal(t, "claude-sonnet-4.6", r.Labels["gen_ai_request_model"])
+		key := r.Labels["region_tier"] + "/" + r.Labels["gen_ai_token_type"] + "/" + r.Labels["cache_ttl"]
 		byKey[key] = r.Value
 	}
 	assert.InDelta(t, 0.0003, byKey["in/cache_read/"], 1e-9)      // 0.3/1M, reads carry no TTL
@@ -899,7 +899,7 @@ func TestCollect_EmitsMarketplaceTokenMetrics(t *testing.T) {
 
 	inputMetric := tokenMetricByType(results, "input")
 	require.NotNil(t, inputMetric)
-	assert.Equal(t, "claude-sonnet-4.6", inputMetric.Labels["model_id"])
+	assert.Equal(t, "claude-sonnet-4.6", inputMetric.Labels["gen_ai_request_model"])
 	assert.Equal(t, "anthropic", inputMetric.Labels["family"])
 	assert.Equal(t, "in", inputMetric.Labels["region_tier"])
 	assert.Equal(t, "standard", inputMetric.Labels["quota_tier"])
@@ -940,7 +940,7 @@ func TestCollect_EmitsMarketplaceSearchUnitMetrics(t *testing.T) {
 
 	m := results[0]
 	assert.Equal(t, "cloudcost_aws_bedrock_search_unit_usd_per_1k_search_units", m.FqName)
-	assert.Equal(t, "cohere-rerank-v3.5", m.Labels["model_id"])
+	assert.Equal(t, "cohere-rerank-v3.5", m.Labels["gen_ai_request_model"])
 	assert.Equal(t, "cohere", m.Labels["family"])
 	assert.Equal(t, "in", m.Labels["region_tier"])
 	assert.Equal(t, "standard", m.Labels["quota_tier"])
@@ -1008,5 +1008,5 @@ func TestNew_DegradesToStandardPricingWhenMarketplaceAPIUnavailable(t *testing.T
 	// Standard pricing still flows through despite the marketplace failure.
 	inputMetric := tokenMetricByType(results, "input")
 	require.NotNil(t, inputMetric)
-	assert.Equal(t, "claude3sonnet", inputMetric.Labels["model_id"])
+	assert.Equal(t, "claude3sonnet", inputMetric.Labels["gen_ai_request_model"])
 }

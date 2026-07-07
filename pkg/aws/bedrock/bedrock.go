@@ -24,14 +24,14 @@ const (
 	subsystem   = "aws_bedrock"
 	serviceName = "bedrock"
 
-	// token_type label values. Prompt-cache read/write are input-side operations and so are
+	// gen_ai_token_type label values. Prompt-cache read/write are input-side operations and so are
 	// emitted on the token metric alongside input/output.
 	tokenTypeInput      = "input"
 	tokenTypeOutput     = "output"
 	tokenTypeCacheRead  = "cache_read"
 	tokenTypeCacheWrite = "cache_write"
 
-	// directionSearch routes a SKU to the search-unit metric. It is not a token_type value.
+	// directionSearch routes a SKU to the search-unit metric. It is not a gen_ai_token_type value.
 	directionSearch = "search"
 
 	// region_tier label values: in-region vs cross-region inference.
@@ -69,20 +69,20 @@ const (
 var (
 	// TokenCostDesc carries every per-token price (input, output, and prompt-cache read/write),
 	// distinguished by orthogonal labels rather than separate metric names or a composed price
-	// tier, so downstream joins key on (model_id, token_type, region_tier) directly.
+	// tier, so downstream joins key on (gen_ai_request_model, gen_ai_token_type, region_tier) directly.
 	TokenCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		utils.TokenCostSuffix,
-		"The cost of AWS Bedrock tokens in USD per 1000 tokens, by token_type",
-		[]string{"account_id", "region", "model_id", "family", "token_type", "region_tier", "quota_tier", "cache_ttl"},
+		"The cost of AWS Bedrock tokens in USD per 1000 tokens, by gen_ai_token_type",
+		[]string{"account_id", "region", "gen_ai_request_model", "family", "gen_ai_token_type", "region_tier", "quota_tier", "cache_ttl"},
 	)
 	SearchUnitCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		utils.SearchUnitCostSuffix,
 		"The cost of AWS Bedrock search units in USD per 1000 search units (e.g. Cohere Rerank)",
-		[]string{"account_id", "region", "model_id", "family", "region_tier", "quota_tier"},
+		[]string{"account_id", "region", "gen_ai_request_model", "family", "region_tier", "quota_tier"},
 	)
 )
 
