@@ -37,8 +37,30 @@ serviceAccount:
 # -- Annotations to add to the pod
 podAnnotations: {}
 
+# -- Additional labels to add to the pod
+podLabels: {}
+
+# -- Annotations to add to the Deployment object
+deploymentAnnotations: {}
+
 # -- Container arguments, usually to configure the deployment per CSP
 containerArgs: []
+
+# -- Additional environment variables for the container (list of `name`/`value`
+# or `name`/`valueFrom` entries)
+extraEnv: []
+  # - name: AWS_REGION
+  #   value: us-east-1
+  # - name: SECRET_TOKEN
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: my-secret
+  #       key: token
+
+# -- Sources to populate environment variables from (list of `configMapRef`/`secretRef`)
+extraEnvFrom: []
+  # - secretRef:
+  #     name: cloudcost-credentials
 
 securityContext:
   # -- Filesystem group to associate for each pod
@@ -64,6 +86,47 @@ resources:
     # -- Memory request
     memory: 1Gi
 
+# -- Liveness probe for the container. When left empty the chart renders its
+# default probe: an HTTP GET on `/` against the `portName` port with Kubernetes'
+# default timings. Set this to any probe shape (httpGet, tcpSocket, exec, grpc)
+# and/or timing fields to override it.
+# @default -- HTTP GET `/` on the `portName` port (see commented example below)
+livenessProbe: {}
+  # httpGet:
+  #   path: /
+  #   port: http
+  # initialDelaySeconds: 0
+  # periodSeconds: 10
+  # timeoutSeconds: 1
+  # failureThreshold: 3
+  # successThreshold: 1
+
+# -- Readiness probe for the container. Behaves like `livenessProbe`: empty
+# renders the chart default (HTTP GET `/` on the `portName` port).
+# @default -- HTTP GET `/` on the `portName` port (see commented example below)
+readinessProbe: {}
+  # httpGet:
+  #   path: /
+  #   port: http
+  # initialDelaySeconds: 0
+  # periodSeconds: 10
+  # timeoutSeconds: 1
+  # failureThreshold: 3
+  # successThreshold: 1
+
+# -- Startup probe for the container. Disabled by default. Useful when many
+# `--aws.services` are enabled: the initial pricing-map refresh from the AWS
+# Pricing API can exceed the liveness threshold and crashloop the pod, so a
+# startup probe with a generous `failureThreshold` keeps liveness from firing
+# during init.
+# @default -- `{}` (disabled)
+startupProbe: {}
+  # httpGet:
+  #   path: /
+  #   port: http
+  # periodSeconds: 5
+  # failureThreshold: 60
+
 # -- Node selector
 nodeSelector: {}
 
@@ -72,6 +135,24 @@ tolerations: []
 
 # -- Node/pod affinities
 affinity: {}
+
+# -- Pod topology spread constraints
+topologySpreadConstraints: []
+  # - maxSkew: 1
+  #   topologyKey: topology.kubernetes.io/zone
+  #   whenUnsatisfiable: ScheduleAnyway
+  #   labelSelector:
+  #     matchLabels:
+  #       app.kubernetes.io/name: cloudcost-exporter
+
+# -- Priority class name for the pod
+priorityClassName: ""
+
+# -- Init containers to add to the pod
+initContainers: []
+
+# -- Additional sidecar containers to add to the pod
+extraContainers: []
 
 # -- List of volumes
 volumes: []
