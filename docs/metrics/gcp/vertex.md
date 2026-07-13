@@ -16,6 +16,18 @@ The tier stays a single composed `price_tier` label rather than splitting into B
   them into a single `quota_tier` would let SKUs with different prices collide and overwrite each
   other, so the composed label is retained to keep every dimension.
 
+## Configuration
+
+Enable the Vertex collector by adding `vertex` to the experimental GCP services:
+
+```bash
+--gcp.experimental.services=vertex --gcp.projects=<project>[,<project>...]
+```
+
+Restrict which model families are emitted with `--gcp.vertex.families`, a regex matched against the
+`family` label. The default `.*` emits all families; set e.g. `google|anthropic` to drop the Model
+Garden long tail (`deepseek`, `alibaba`, `meta`, and so on). Mirrors Bedrock's `--aws.bedrock.families`.
+
 ## Token Pricing
 
 | Metric | Labels | Description |

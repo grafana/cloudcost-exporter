@@ -162,15 +162,26 @@ type PricingMap struct {
 	gcpClient client.Client
 	logger    *slog.Logger
 	current   atomic.Pointer[Snapshot]
+	// familyFilter, when non-nil, drops any model whose family does not match before it enters the
+	// map. A nil filter (e.g. in tests) keeps everything.
+	familyFilter *regexp.Regexp
 }
 
 // NewPricingMap initialises and populates a PricingMap.
-func NewPricingMap(ctx context.Context, logger *slog.Logger, gcpClient client.Client) (*PricingMap, error) {
-	pm := &PricingMap{gcpClient: gcpClient, logger: logger}
+func NewPricingMap(ctx context.Context, logger *slog.Logger, gcpClient client.Client, familyFilter *regexp.Regexp) (*PricingMap, error) {
+	pm := &PricingMap{gcpClient: gcpClient, logger: logger, familyFilter: familyFilter}
 	if err := pm.Populate(ctx); err != nil {
 		return nil, err
 	}
 	return pm, nil
+}
+
+// familyAllowed reports whether a model's family passes the configured family filter.
+func (pm *PricingMap) familyAllowed(model string) bool {
+	if pm.familyFilter == nil {
+		return true
+	}
+	return pm.familyFilter.MatchString(familyFromModelID(model))
 }
 
 // Snapshot returns an immutable copy of the current pricing data.
@@ -229,19 +240,22 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 				continue
 			}
 			model := normalizeModelName(matches[1])
-			price := normalizeToPerK(priceFromSku(sku), sku)
-			var target map[string]map[string]map[string]float64
-			switch {
-			case pat.direction == "input" && pat.billingType == "token":
-				target = snap.tokenInput
-			case pat.direction == "output" && pat.billingType == "token":
-				target = snap.tokenOutput
-			case pat.direction == "input" && pat.billingType == "char":
-				target = snap.charInput
-			default:
-				target = snap.charOutput
+			// Recognize the SKU (so it isn't logged as unknown) but skip storing a filtered family.
+			if pm.familyAllowed(model) {
+				price := normalizeToPerK(priceFromSku(sku), sku)
+				var target map[string]map[string]map[string]float64
+				switch {
+				case pat.direction == "input" && pat.billingType == "token":
+					target = snap.tokenInput
+				case pat.direction == "output" && pat.billingType == "token":
+					target = snap.tokenOutput
+				case pat.direction == "input" && pat.billingType == "char":
+					target = snap.charInput
+				default:
+					target = snap.charOutput
+				}
+				applyPrice(target, model, pat.tier, price, regions)
 			}
-			applyPrice(target, model, pat.tier, price, regions)
 			matched = true
 			break
 		}
@@ -279,6 +293,9 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 
 		if matches := rerankRegex.FindStringSubmatch(desc); len(matches) > 0 {
 			model := normalizeModelName(matches[1])
+			if !pm.familyAllowed(model) {
+				continue
+			}
 			price := normalizeToPerK(priceFromSku(sku), sku)
 			for _, region := range regions {
 				if region == "" {

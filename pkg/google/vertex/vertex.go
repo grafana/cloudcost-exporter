@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
@@ -58,8 +59,9 @@ var (
 
 // Config configures the Vertex AI collector.
 type Config struct {
-	ProjectId string // ProjectId is the auth project; used as the project_id fallback when Projects is empty.
-	Projects  string // Projects is a comma-separated list of projects to emit prices for.
+	ProjectId    string // ProjectId is the auth project; used as the project_id fallback when Projects is empty.
+	Projects     string // Projects is a comma-separated list of projects to emit prices for.
+	FamilyFilter string // FamilyFilter is a regex matched against the family label; only matching families are emitted. Mirrors Bedrock's --aws.bedrock.families.
 }
 
 // Collector collects Vertex AI pricing metrics.
@@ -81,13 +83,18 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 
 	logger = logger.With("collector", subsystem)
 
+	familyFilter, err := regexp.Compile(config.FamilyFilter)
+	if err != nil {
+		return nil, fmt.Errorf("invalid vertex family filter %q: %w", config.FamilyFilter, err)
+	}
+
 	projects := strings.Split(config.Projects, ",")
 	if len(projects) == 1 && projects[0] == "" {
 		logger.LogAttrs(ctx, slog.LevelInfo, "no vertex projects specified, defaulting to project", slog.String("projectId", config.ProjectId))
 		projects = []string{config.ProjectId}
 	}
 
-	pm, err := NewPricingMap(ctx, logger, gcpClient)
+	pm, err := NewPricingMap(ctx, logger, gcpClient, familyFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize pricing map: %w", err)
 	}

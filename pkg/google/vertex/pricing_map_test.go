@@ -1,6 +1,7 @@
 package vertex
 
 import (
+	"regexp"
 	"testing"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
@@ -8,6 +9,21 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/type/money"
 )
+
+func TestParseSkus_FamilyFilterDropsUnmatchedFamilies(t *testing.T) {
+	pm := &PricingMap{logger: testLogger(), familyFilter: regexp.MustCompile(`^google$`)}
+	err := pm.ParseSkus([]*billingpb.Sku{
+		newTokenSKU("Gemini 1.5 Flash Input tokens", "us-central1", "k{char}", 0, 1250000),
+		newTokenSKU("Llama 4 Maverick Input Tokens", "us-central1", "k{char}", 0, 1250000),
+	})
+	require.NoError(t, err)
+
+	snap := pm.Snapshot()
+	// google family is kept.
+	assert.NotNil(t, snap.tokenInput["us-central1"]["gemini-1.5-flash"])
+	// meta family (llama) is dropped before entering the map.
+	assert.Nil(t, snap.tokenInput["us-central1"]["llama-4-maverick"])
+}
 
 func TestParseSkus_TokenInputSKU(t *testing.T) {
 	pm := &PricingMap{logger: testLogger()}
