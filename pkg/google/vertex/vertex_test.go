@@ -20,21 +20,21 @@ import (
 )
 
 func TestNew_FailsIfPricingInitFails(t *testing.T) {
-	_, err := New(t.Context(), testLogger(),
+	_, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{serviceNameErr: fmt.Errorf("billing API down")})
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "failed to initialize pricing map")
 }
 
 func TestNew_FailsIfNoPricingDataReturned(t *testing.T) {
-	_, err := New(t.Context(), testLogger(),
+	_, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{serviceName: "services/vertex-ai", skus: nil})
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "failed to initialize pricing map")
 }
 
 func TestCollect_EmitsTokenMetrics(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{
@@ -48,25 +48,50 @@ func TestCollect_EmitsTokenMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 
-	inputMetric := metricByName(results, "cloudcost_gcp_vertex_input_usd_per_1k_tokens")
+	inputMetric := metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_tokens", "gen_ai_token_type", "input")
 	require.NotNil(t, inputMetric)
-	assert.Equal(t, "gemini-1.5-flash", inputMetric.Labels["model_id"])
+	assert.Equal(t, testProject, inputMetric.Labels["project_id"])
+	assert.Equal(t, "gemini-1.5-flash", inputMetric.Labels["gen_ai_request_model"])
 	assert.Equal(t, "google", inputMetric.Labels["family"])
 	assert.Equal(t, "us-central1", inputMetric.Labels["region"])
 	assert.Equal(t, "on_demand", inputMetric.Labels["price_tier"])
 	assert.InDelta(t, 0.00125, inputMetric.Value, 1e-9)
 
-	outputMetric := metricByName(results, "cloudcost_gcp_vertex_output_usd_per_1k_tokens")
+	outputMetric := metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_tokens", "gen_ai_token_type", "output")
 	require.NotNil(t, outputMetric)
-	assert.Equal(t, "gemini-1.5-flash", outputMetric.Labels["model_id"])
+	assert.Equal(t, testProject, outputMetric.Labels["project_id"])
+	assert.Equal(t, "gemini-1.5-flash", outputMetric.Labels["gen_ai_request_model"])
 	assert.Equal(t, "google", outputMetric.Labels["family"])
 	assert.Equal(t, "us-central1", outputMetric.Labels["region"])
 	assert.Equal(t, "on_demand", outputMetric.Labels["price_tier"])
 	assert.InDelta(t, 0.005, outputMetric.Value, 1e-9)
 }
 
+func TestCollect_EmitsOneSeriesPerProject(t *testing.T) {
+	c, err := New(t.Context(), &Config{ProjectId: "auth-project", Projects: "proj-a,proj-b"}, testLogger(),
+		&stubVertexClient{
+			serviceName: "services/vertex-ai",
+			skus: []*billingpb.Sku{
+				newTokenSKU("Gemini 1.5 Flash Input tokens", "us-central1", "k{char}", 0, 1250000),
+			},
+		})
+	require.NoError(t, err)
+
+	results, err := collectVertexMetrics(t, c)
+	require.NoError(t, err)
+
+	// One input-token SKU emitted once per configured project, with identical prices.
+	a := metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_tokens", "project_id", "proj-a")
+	b := metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_tokens", "project_id", "proj-b")
+	require.NotNil(t, a)
+	require.NotNil(t, b)
+	assert.InDelta(t, a.Value, b.Value, 1e-9)
+	// The auth project is only a fallback; it is not used when Projects is set.
+	assert.Nil(t, metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_tokens", "project_id", "auth-project"))
+}
+
 func TestCollect_EmitsCharacterMetrics(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{
@@ -80,17 +105,19 @@ func TestCollect_EmitsCharacterMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 
-	inputMetric := metricByName(results, "cloudcost_gcp_vertex_input_usd_per_1k_characters")
+	inputMetric := metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_characters", "gen_ai_token_type", "input")
 	require.NotNil(t, inputMetric)
-	assert.Equal(t, "translation-llm", inputMetric.Labels["model_id"])
+	assert.Equal(t, testProject, inputMetric.Labels["project_id"])
+	assert.Equal(t, "translation-llm", inputMetric.Labels["gen_ai_request_model"])
 	assert.Equal(t, "google", inputMetric.Labels["family"])
 	assert.Equal(t, "global", inputMetric.Labels["region"])
 	assert.Equal(t, "on_demand", inputMetric.Labels["price_tier"])
 	assert.InDelta(t, 0.05, inputMetric.Value, 1e-9)
 
-	outputMetric := metricByName(results, "cloudcost_gcp_vertex_output_usd_per_1k_characters")
+	outputMetric := metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_characters", "gen_ai_token_type", "output")
 	require.NotNil(t, outputMetric)
-	assert.Equal(t, "translation-llm", outputMetric.Labels["model_id"])
+	assert.Equal(t, testProject, outputMetric.Labels["project_id"])
+	assert.Equal(t, "translation-llm", outputMetric.Labels["gen_ai_request_model"])
 	assert.Equal(t, "google", outputMetric.Labels["family"])
 	assert.Equal(t, "global", outputMetric.Labels["region"])
 	assert.Equal(t, "on_demand", outputMetric.Labels["price_tier"])
@@ -126,7 +153,7 @@ func TestFamilyFromModelID(t *testing.T) {
 }
 
 func TestCollect_EmitsComputeMetrics(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{
@@ -153,7 +180,7 @@ func TestCollect_EmitsComputeMetrics(t *testing.T) {
 }
 
 func TestCollect_OmitsOnDemandComputeMetricWhenPriceIsZero(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{
@@ -170,7 +197,7 @@ func TestCollect_OmitsOnDemandComputeMetricWhenPriceIsZero(t *testing.T) {
 }
 
 func TestCollect_EmitsRerankingMetrics(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{
@@ -187,14 +214,16 @@ func TestCollect_EmitsRerankingMetrics(t *testing.T) {
 
 	rerank := metricByName(results, "cloudcost_gcp_vertex_search_unit_usd_per_1k_search_units")
 	require.NotNil(t, rerank)
-	assert.Equal(t, "semantic-ranker-api", rerank.Labels["model_id"])
+	assert.Equal(t, testProject, rerank.Labels["project_id"])
+	assert.Equal(t, "semantic-ranker-api", rerank.Labels["gen_ai_request_model"])
 	assert.Equal(t, "google", rerank.Labels["family"]) // "semantic" prefix maps to google
 	assert.Equal(t, "global", rerank.Labels["region"])
+	assert.Equal(t, "on_demand", rerank.Labels["price_tier"])
 	assert.InDelta(t, 0.001, rerank.Value, 1e-9)
 }
 
 func TestCollect_DiscoveryEngineUnavailable_RerankingOmitted(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{
 			serviceName:      "services/vertex-ai",
 			deServiceNameErr: fmt.Errorf("Discovery Engine Ranking API not found; check that Vertex AI Search is enabled in the GCP project"),
@@ -208,11 +237,11 @@ func TestCollect_DiscoveryEngineUnavailable_RerankingOmitted(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Nil(t, metricByName(results, "cloudcost_gcp_vertex_search_unit_usd_per_1k_search_units"))
-	assert.NotNil(t, metricByName(results, "cloudcost_gcp_vertex_input_usd_per_1k_tokens"))
+	assert.NotNil(t, metricByName(results, "cloudcost_gcp_vertex_usd_per_1k_tokens"))
 }
 
 func TestCollect_ContextCancellation(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{
@@ -305,6 +334,12 @@ func (s *stubVertexClient) ListManagedKafkaClusters(_ context.Context, _ string,
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
+
+func testConfig() *Config {
+	return &Config{ProjectId: testProject}
+}
+
+const testProject = "test-project"
 
 func collectVertexMetrics(t *testing.T, c *Collector) ([]*utils.MetricResult, error) {
 	t.Helper()
