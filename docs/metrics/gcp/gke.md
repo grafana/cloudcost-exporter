@@ -2,9 +2,28 @@
 
 | Metric name                                                | Metric type | Description                                                                                 | Labels                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 |------------------------------------------------------------|-------------|---------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| cloudcost_exporter_gcp_gke_populate_errors_total           | Counter     | Total errors during background store population. | `store`=&lt;nodes\|disks&gt; <br/> `project`=&lt;GCP project&gt; <br/> `operation`=&lt;get_zones\|list_instances\|list_disks&gt; |
 | cloudcost_gcp_gke_instance_cpu_usd_per_core_hour           | Gauge       | The processing cost of a GCP Compute Instance, associated to a GKE cluster, in USD/(core*h) | `cluster_name`=&lt;name of the cluster the instance is associated with&gt; <br/> `instance`=&lt;name of the compute instance&gt; <br/> `region`=&lt;GCP region code&gt; <br/> `family`=&lt;broader compute family (n1, n2, c3 ...) &gt; <br/> `machine_type`=&lt;specific machine type, e.g.: n2-standard-2&gt; <br/> `project`=&lt;GCP project, where the instance is provisioned&gt; <br/> `price_tier`=&lt;spot\|ondemand&gt;                                            |
-| cloudcost_gcp_gke_compute_instance_memory_usd_per_gib_hour | Gauge       | The memory cost of a GCP Compute Instance, associated to a GKE cluster, in USD/(GiB*h)      | `cluster_name`=&lt;name of the cluster the instance is associated with&gt; <br/> `instance`=&lt;name of the compute instance&gt; <br/> `region`=&lt;GCP region code&gt; <br/> `family`=&lt;broader compute family (n1, n2, c3 ...) &gt; <br/> `machine_type`=&lt;specific machine type, e.g.: n2-standard-2&gt; <br/> `project`=&lt;GCP project, where the instance is provisioned&gt; <br/> `price_tier`=&lt;spot\|ondemand&gt;                                            |
+| cloudcost_gcp_gke_instance_memory_usd_per_gib_hour         | Gauge       | The memory cost of a GCP Compute Instance, associated to a GKE cluster, in USD/(GiB*h)      | `cluster_name`=&lt;name of the cluster the instance is associated with&gt; <br/> `instance`=&lt;name of the compute instance&gt; <br/> `region`=&lt;GCP region code&gt; <br/> `family`=&lt;broader compute family (n1, n2, c3 ...) &gt; <br/> `machine_type`=&lt;specific machine type, e.g.: n2-standard-2&gt; <br/> `project`=&lt;GCP project, where the instance is provisioned&gt; <br/> `price_tier`=&lt;spot\|ondemand&gt;                                            |
 | cloudcost_gcp_gke_persistent_volume_usd_per_hour       | Gauge       | The total cost of a GCP Persistent Volume in USD/h. For Hyperdisk Balanced this includes capacity, IOPS, and throughput dimensions. | `cluster_name`=&lt;name of the cluster the instance is associated with&gt; <br/> `namespace`=&lt;The namespace the pvc was created for&gt; <br/> `persistentvolume`=&lt;Name of the persistent volume&gt; <br/> `region`=&lt;The region the pvc was created in&gt; <br/> `project`=&lt;GCP project, where the instance is provisioned&gt; <br/> `storage_class`=&lt;pd-standard\|pd-ssd\|pd-balanced\|pd-extreme\|hyperdisk-balanced&gt; <br/> `disk_type`=&lt;boot_disk\|persistent_volume&gt; <br/> `use_status`=&lt;in-use\|idle&gt; |
+
+## Collection model
+
+GKE inventory is collected by background goroutines and cached in memory. Each scrape reads from those caches, so scrape duration is independent of GCP API latency.
+
+- **Node inventory** refreshes every 5 minutes (`Compute.Zones.List` per project, `Instances.List` per zone).
+- **Disk inventory** refreshes every 15 minutes (`Compute.Zones.List` per project, `Disks.List` per zone). Disks are deduplicated by name.
+- **Pricing** refreshes on its own interval via the Cloud Billing Catalog API.
+
+Per-zone API calls within a project are issued in parallel, capped at 10 concurrent in-flight calls per store by default. Override with the `--gcp.gke.zone-concurrency` flag; the value is applied separately to the node store and disk store.
+
+### Staleness and partial-failure behaviour
+
+- Node metrics may be up to 5 minutes stale; disk metrics up to 15 minutes.
+- The first scrape after startup emits no GKE metrics until both stores complete their initial populate. The collector logs `node store not yet populated, skipping node metrics` (or the disk equivalent) and continues.
+- If `GetZones` fails for a project, that project's existing cache is preserved.
+- If a zone-level call fails (partial or total), the cache entry for that zone is left untouched. Subsequent populates that succeed for that zone will refresh it. Failures are logged and counted in `cloudcost_exporter_gcp_gke_populate_errors_total`.
+- During shutdown, populate goroutines exit promptly: queued per-zone iterations bail out on context cancellation, and goroutines that have not yet issued their GCP call skip it.
 
 ## Persistent Volumes
 

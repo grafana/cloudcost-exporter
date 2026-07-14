@@ -4,14 +4,13 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/api/compute/v1"
 
 	cloudcostexporter "github.com/grafana/cloudcost-exporter"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
@@ -28,6 +27,16 @@ const (
 	// Override via Config.ZoneConcurrency to trade burst rate for scrape latency.
 	DefaultZoneCollectConcurrency = 10
 )
+
+func newPopulateErrorsCounter() *prometheus.CounterVec {
+	return prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: prometheus.BuildFQName(cloudcostexporter.ExporterName, subsystem, "populate_errors_total"),
+			Help: "Total errors during background store population, by store, project, and operation.",
+		},
+		[]string{"store", "project", "operation"},
+	)
+}
 
 var (
 	gkeNodeMemoryHourlyCostDesc = utils.GenerateDesc(
@@ -64,180 +73,97 @@ type Config struct {
 }
 
 type Collector struct {
-	gcpClient  client.Client
-	config     *Config
-	projects   []string
-	regions    []string
-	pricingMap *PricingMap
-	logger     *slog.Logger
+	projects       []string
+	regions        []string
+	pricingMap     *PricingMap
+	nodeStore      *NodeStore
+	diskStore      *DiskStore
+	logger         *slog.Logger
+	populateErrors *prometheus.CounterVec
 }
 
-func (c *Collector) Register(_ provider.Registry) error {
+func (c *Collector) Register(r provider.Registry) error {
+	r.MustRegister(c.populateErrors)
 	return nil
 }
 
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
-	for _, project := range c.projects {
-		zones, err := c.gcpClient.GetZones(project)
-		if err != nil {
-			return err
-		}
-		// Two goroutines are launched per zone (ListInstances + ListDisks).
-		// zoneConcurrency caps the total across both, so at most
-		// zoneConcurrency/2 zones are queried in parallel.
-		zoneConcurrency := c.config.ZoneConcurrency
-		if zoneConcurrency <= 0 {
-			zoneConcurrency = DefaultZoneCollectConcurrency
-		}
-		eg, egCtx := errgroup.WithContext(ctx)
-		eg.SetLimit(zoneConcurrency)
-		instances := make(chan []*client.MachineSpec, len(zones))
-		disks := make(chan []*compute.Disk, len(zones))
-		for _, zone := range zones {
-			eg.Go(func() error {
-				now := time.Now()
-				c.logger.LogAttrs(egCtx, slog.LevelInfo,
-					"Listing instances for project %s in zone %s",
-					slog.String("project", project),
-					slog.String("zone", zone.Name))
+	now := time.Now()
+	// Single-writer per counter; wg.Wait below provides happens-before for the read.
+	var nodeCount, diskCount int64
 
-				results, err := c.gcpClient.ListInstancesInZone(project, zone.Name)
-				if err != nil {
-					c.logger.LogAttrs(egCtx, slog.LevelError,
-						"error listing instances in zone",
-						slog.String("project", project),
-						slog.String("zone", zone.Name),
-						slog.Duration("duration", time.Since(now)),
-						slog.String("msg", err.Error()))
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-					instances <- nil
-					return nil
+	go func() {
+		defer wg.Done()
+		select {
+		case <-c.nodeStore.Done():
+			for _, project := range c.projects {
+				for _, instance := range c.nodeStore.GetNodes(project) {
+					clusterName := instance.GetClusterName()
+					if clusterName == "" {
+						c.logger.LogAttrs(ctx, slog.LevelDebug, "instance does not have a cluster name",
+							slog.String("region", instance.Region),
+							slog.String("machine_type", instance.MachineType),
+							slog.String("project", project))
+						continue
+					}
+					cpuCost, ramCost, err := c.pricingMap.GetCostOfInstance(instance)
+					if err != nil {
+						c.logger.LogAttrs(ctx, slog.LevelError, err.Error(),
+							slog.String("machine_type", instance.MachineType),
+							slog.String("region", instance.Region),
+							slog.String("project", project))
+						continue
+					}
+					labelValues := []string{clusterName, instance.Instance, instance.Region, instance.Family, instance.MachineType, project, instance.PriceTier}
+					ch <- prometheus.MustNewConstMetric(gkeNodeCPUHourlyCostDesc, prometheus.GaugeValue, cpuCost, labelValues...)
+					ch <- prometheus.MustNewConstMetric(gkeNodeMemoryHourlyCostDesc, prometheus.GaugeValue, ramCost, labelValues...)
+					nodeCount++
 				}
-				c.logger.LogAttrs(egCtx, slog.LevelInfo,
-					"finished listing instances in zone",
-					slog.String("project", project),
-					slog.String("zone", zone.Name),
-					slog.Duration("duration", time.Since(now)))
-				instances <- results
-				return nil
-			})
-			eg.Go(func() error {
-				results, err := c.gcpClient.ListDisks(egCtx, project, zone.Name)
-				if err != nil {
-					c.logger.Error("error listing disks in zone %s: %v",
-						slog.String("zone", zone.Name),
-						slog.String("msg", err.Error()))
-					return nil
-				}
-				disks <- results
-				return nil
-			})
-		}
-
-		go func() {
-			// Goroutines always return nil; Wait() will not return an error.
-			_ = eg.Wait()
-			close(instances)
-			close(disks)
-		}()
-
-		for group := range instances {
-			if instances == nil {
-				continue
 			}
-			for _, instance := range group {
-				clusterName := instance.GetClusterName()
-				// We skip instances that do not have a clusterName because they are not associated with an GKE cluster
-				if clusterName == "" {
-					c.logger.LogAttrs(ctx,
-						slog.LevelDebug,
-						"instance does not have a clustername",
-						slog.String("region", instance.Region),
-						slog.String("machine_type", instance.MachineType),
-						slog.String("project", project),
-					)
-					continue
-				}
-				labelValues := []string{
-					clusterName,
-					instance.Instance,
-					instance.Region,
-					instance.Family,
-					instance.MachineType,
-					project,
-					instance.PriceTier,
-				}
-				cpuCost, ramCost, err := c.pricingMap.GetCostOfInstance(instance)
-				if err != nil {
-					// Log out the error and continue processing nodes
-					// TODO(@pokom): Should we set sane defaults here to emit _something_?
-					c.logger.LogAttrs(ctx,
-						slog.LevelError,
-						err.Error(),
-						slog.String("machine_type", instance.MachineType),
-						slog.String("region", instance.Region),
-						slog.String("project", project),
-					)
-					continue
-				}
-				ch <- prometheus.MustNewConstMetric(
-					gkeNodeCPUHourlyCostDesc,
-					prometheus.GaugeValue,
-					cpuCost,
-					labelValues...,
-				)
-				ch <- prometheus.MustNewConstMetric(
-					gkeNodeMemoryHourlyCostDesc,
-					prometheus.GaugeValue,
-					ramCost,
-					labelValues...,
-				)
-			}
+		default:
+			c.logger.LogAttrs(ctx, slog.LevelInfo, "node store not yet populated, skipping node metrics")
 		}
-		seenDisks := make(map[string]bool)
-		for group := range disks {
-			for _, disk := range group {
-				d := NewDisk(disk, project)
-				// This an effort to deduplicate disks that have duplicate names
-				// See https://github.com/grafana/cloudcost-exporter/issues/143
-				if _, ok := seenDisks[d.Name()]; ok {
-					continue
-				}
-				seenDisks[d.Name()] = true
+	}()
 
-				labelValues := []string{
-					d.Cluster,
-					d.Namespace(),
-					d.Name(),
-					d.Region(),
-					d.Project,
-					d.StorageClass(),
-					d.DiskType(),
-					d.UseStatus(),
-				}
-
-				prices, err := c.pricingMap.GetCostOfStorage(d.Region(), d.StorageClass())
-				if err != nil {
-					c.logger.LogAttrs(ctx,
-						slog.LevelError,
-						err.Error(),
-						slog.String("disk_name", disk.Name),
-						slog.String("project", project),
-						slog.String("region", d.Region()),
-						slog.String("cluster_name", d.Cluster),
-						slog.String("storage_class", d.StorageClass()),
+	go func() {
+		defer wg.Done()
+		select {
+		case <-c.diskStore.Done():
+			for _, project := range c.projects {
+				for _, d := range c.diskStore.GetDisks(project) {
+					prices, err := c.pricingMap.GetCostOfStorage(d.Region(), d.StorageClass())
+					if err != nil {
+						c.logger.LogAttrs(ctx, slog.LevelError, err.Error(),
+							slog.String("persistentvolume", d.Name()),
+							slog.String("project", project),
+							slog.String("region", d.Region()),
+							slog.String("cluster_name", d.Cluster),
+							slog.String("storage_class", d.StorageClass()))
+						continue
+					}
+					ch <- prometheus.MustNewConstMetric(
+						persistentVolumeHourlyCostDesc,
+						prometheus.GaugeValue,
+						computeDiskCost(d, prices),
+						d.Cluster, d.Namespace(), d.Name(), d.Region(), d.Project, d.StorageClass(), d.DiskType(), d.UseStatus(),
 					)
-					continue
+					diskCount++
 				}
-				ch <- prometheus.MustNewConstMetric(
-					persistentVolumeHourlyCostDesc,
-					prometheus.GaugeValue,
-					computeDiskCost(d, prices),
-					labelValues...,
-				)
 			}
+		default:
+			c.logger.LogAttrs(ctx, slog.LevelInfo, "disk store not yet populated, skipping disk metrics")
 		}
-	}
+	}()
+
+	wg.Wait()
+
+	c.logger.LogAttrs(ctx, slog.LevelInfo, "metrics collected",
+		slog.Duration("duration", time.Since(now)),
+		slog.Int64("nodes_emitted", nodeCount),
+		slog.Int64("disks_emitted", diskCount))
 	return nil
 }
 
@@ -249,33 +175,45 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 		return nil, err
 	}
 
+	projects := strings.Split(config.Projects, ",")
+	regions := client.RegionsFromZonesForProjects(gcpClient, projects, logger)
+
+	populateErrors := newPopulateErrorsCounter()
+	nodeStore := NewNodeStore(ctx, logger, gcpClient, projects, config.ZoneConcurrency, populateErrors)
+	diskStore := NewDiskStore(ctx, logger, gcpClient, projects, config.ZoneConcurrency, populateErrors)
+
+	startRefreshTicker(ctx, PriceRefreshInterval, func() {
+		if err := pm.Populate(ctx); err != nil {
+			logger.Error(err.Error())
+		}
+	})
+	startRefreshTicker(ctx, nodeRefreshInterval, func() { nodeStore.Populate(ctx) })
+	startRefreshTicker(ctx, diskRefreshInterval, func() { diskStore.Populate(ctx) })
+
+	return &Collector{
+		projects:       projects,
+		regions:        regions,
+		logger:         logger,
+		pricingMap:     pm,
+		nodeStore:      nodeStore,
+		diskStore:      diskStore,
+		populateErrors: populateErrors,
+	}, nil
+}
+
+func startRefreshTicker(ctx context.Context, interval time.Duration, run func()) {
 	go func() {
-		priceTicker := time.NewTicker(PriceRefreshInterval)
-		defer priceTicker.Stop()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-priceTicker.C:
-				err := pm.Populate(ctx)
-				if err != nil {
-					logger.Error(err.Error())
-				}
+			case <-ticker.C:
+				run()
 			}
 		}
 	}()
-
-	projects := strings.Split(config.Projects, ",")
-	regions := client.RegionsFromZonesForProjects(gcpClient, projects, logger)
-
-	return &Collector{
-		config:     config,
-		projects:   projects,
-		regions:    regions,
-		logger:     logger,
-		pricingMap: pm,
-		gcpClient:  gcpClient,
-	}, nil
 }
 
 func (c *Collector) Regions() []string {
@@ -289,5 +227,6 @@ func (c *Collector) Name() string {
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- gkeNodeCPUHourlyCostDesc
 	ch <- gkeNodeMemoryHourlyCostDesc
+	ch <- persistentVolumeHourlyCostDesc
 	return nil
 }
