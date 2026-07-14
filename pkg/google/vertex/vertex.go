@@ -45,11 +45,6 @@ var (
 		"Vertex AI cost in USD per 1k characters, by gen_ai_token_type, for models billed per character (e.g. translation models).",
 		[]string{"project_id", "region", "gen_ai_request_model", "family", "gen_ai_token_type", "price_tier"},
 	)
-	vertexComputeCostDesc = utils.GenerateDesc(
-		cloudcostexporter.MetricPrefix, subsystem, utils.InstanceTotalCostSuffix,
-		"Vertex AI custom training and online prediction node cost in USD per hour.",
-		[]string{"project_id", "machine_type", "use_case", "region", "price_tier"},
-	)
 	vertexRerankCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix, subsystem, utils.SearchUnitCostSuffix,
 		"Vertex AI reranking cost in USD per 1k ranking requests.",
@@ -123,7 +118,6 @@ func (c *Collector) Register(_ provider.Registry) error {
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- vertexTokenCostDesc
 	ch <- vertexCharacterCostDesc
-	ch <- vertexComputeCostDesc
 	ch <- vertexRerankCostDesc
 	return nil
 }
@@ -143,21 +137,6 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	emitTokenCost(ch, vertexTokenCostDesc, project, snapshot.tokenOutput, tokenTypeOutput)
 	emitTokenCost(ch, vertexCharacterCostDesc, project, snapshot.charInput, tokenTypeInput)
 	emitTokenCost(ch, vertexCharacterCostDesc, project, snapshot.charOutput, tokenTypeOutput)
-
-	for region, machines := range snapshot.compute {
-		for machineType, useCases := range machines {
-			for useCase, pricing := range useCases {
-				if pricing.OnDemandPerHour > 0 {
-					ch <- prometheus.MustNewConstMetric(vertexComputeCostDesc, prometheus.GaugeValue,
-						pricing.OnDemandPerHour, project, machineType, useCase, region, "on_demand")
-				}
-				if pricing.SpotPerHour > 0 {
-					ch <- prometheus.MustNewConstMetric(vertexComputeCostDesc, prometheus.GaugeValue,
-						pricing.SpotPerHour, project, machineType, useCase, region, "spot")
-				}
-			}
-		}
-	}
 
 	for region, models := range snapshot.reranking {
 		for model, price := range models {

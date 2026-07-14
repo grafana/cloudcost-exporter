@@ -27,11 +27,6 @@ const (
 )
 
 var (
-	// computeRegex matches custom training/prediction compute SKU descriptions.
-	// Example: "Custom Training n1-standard-4 running in us-central1"
-	// Example: "Spot Custom Prediction n1-highmem-8 running in europe-west1"
-	// NOTE: Exact SKU description strings must be verified against the live GCP Billing API.
-	computeRegex = regexp.MustCompile(`(?i)^(Spot\s+)?Custom\s+(Training|Prediction)\s+(\S+)\s+running\s+in`)
 	// rerankRegex matches Discovery Engine Ranking API SKU descriptions.
 	// Example: "Semantic Ranker API Ranking Requests"
 	// NOTE: Exact SKU description strings must be verified against the live GCP Billing API.
@@ -135,12 +130,6 @@ var skuPatterns = []skuPattern{
 	{regexp.MustCompile(`(?i)^(.+?)\s+Output\s+Characters?$`), "output", "char", "on_demand"},
 }
 
-// ComputePricing holds per-hour prices for a Vertex AI compute node.
-type ComputePricing struct {
-	OnDemandPerHour float64
-	SpotPerHour     float64
-}
-
 // Snapshot is an immutable view of the Vertex AI pricing data.
 type Snapshot struct {
 	// tokenInput[region][model][tier] = price per 1k input tokens (only set if a SKU exists)
@@ -151,8 +140,6 @@ type Snapshot struct {
 	charInput map[string]map[string]map[string]float64
 	// charOutput[region][model][tier] = price per 1k output characters (only set if a SKU exists)
 	charOutput map[string]map[string]map[string]float64
-	// compute[region][machineType][useCase] = ComputePricing
-	compute map[string]map[string]map[string]*ComputePricing
 	// reranking[region][model] = price per 1k ranking requests (USD)
 	reranking map[string]map[string]float64
 }
@@ -222,7 +209,6 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 		tokenOutput: make(map[string]map[string]map[string]float64),
 		charInput:   make(map[string]map[string]map[string]float64),
 		charOutput:  make(map[string]map[string]map[string]float64),
-		compute:     make(map[string]map[string]map[string]*ComputePricing),
 		reranking:   make(map[string]map[string]float64),
 	}
 
@@ -260,34 +246,6 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 			break
 		}
 		if matched {
-			continue
-		}
-
-		if matches := computeRegex.FindStringSubmatch(desc); len(matches) > 0 {
-			isSpot := strings.TrimSpace(matches[1]) != ""
-			useCase := strings.ToLower(matches[2])
-			machineType := strings.ToLower(matches[3])
-			price := priceFromSku(sku)
-			for _, region := range regions {
-				if region == "" {
-					continue
-				}
-				if snap.compute[region] == nil {
-					snap.compute[region] = make(map[string]map[string]*ComputePricing)
-				}
-				if snap.compute[region][machineType] == nil {
-					snap.compute[region][machineType] = make(map[string]*ComputePricing)
-				}
-				if snap.compute[region][machineType][useCase] == nil {
-					snap.compute[region][machineType][useCase] = &ComputePricing{}
-				}
-				cp := snap.compute[region][machineType][useCase]
-				if isSpot {
-					cp.SpotPerHour = price
-				} else {
-					cp.OnDemandPerHour = price
-				}
-			}
 			continue
 		}
 

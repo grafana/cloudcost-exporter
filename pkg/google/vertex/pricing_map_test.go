@@ -60,34 +60,6 @@ func TestParseSkus_TokenSKUNormalizesPerUnitPrice(t *testing.T) {
 	assert.InDelta(t, 0.00125, snap.tokenInput["us-central1"]["gemini-1.0-pro"]["on_demand"], 1e-9)
 }
 
-func TestParseSkus_ComputeOnDemand(t *testing.T) {
-	pm := &PricingMap{logger: testLogger()}
-	err := pm.ParseSkus([]*billingpb.Sku{
-		newComputeSKU("Custom Training n1-standard-4 running in us-central1", "us-central1", 0, 500000000),
-	})
-	require.NoError(t, err)
-
-	snap := pm.Snapshot()
-	require.NotNil(t, snap.compute["us-central1"])
-	require.NotNil(t, snap.compute["us-central1"]["n1-standard-4"])
-	require.NotNil(t, snap.compute["us-central1"]["n1-standard-4"]["training"])
-	assert.InDelta(t, 0.5, snap.compute["us-central1"]["n1-standard-4"]["training"].OnDemandPerHour, 1e-9)
-	assert.Equal(t, 0.0, snap.compute["us-central1"]["n1-standard-4"]["training"].SpotPerHour)
-}
-
-func TestParseSkus_ComputeSpot(t *testing.T) {
-	pm := &PricingMap{logger: testLogger()}
-	err := pm.ParseSkus([]*billingpb.Sku{
-		newComputeSKU("Spot Custom Prediction n1-highmem-8 running in europe-west1", "europe-west1", 0, 150000000),
-	})
-	require.NoError(t, err)
-
-	snap := pm.Snapshot()
-	require.NotNil(t, snap.compute["europe-west1"]["n1-highmem-8"]["prediction"])
-	assert.InDelta(t, 0.15, snap.compute["europe-west1"]["n1-highmem-8"]["prediction"].SpotPerHour, 1e-9)
-	assert.Equal(t, 0.0, snap.compute["europe-west1"]["n1-highmem-8"]["prediction"].OnDemandPerHour)
-}
-
 func TestParseSkus_CharacterSKUsRoutedSeparately(t *testing.T) {
 	// Character-priced models must land in snap.characters, not snap.tokens.
 	pm := &PricingMap{logger: testLogger()}
@@ -145,14 +117,13 @@ func TestParseSkus_ModelGardenMaaSPrefixStripped(t *testing.T) {
 func TestParseSkus_UnknownSKUsIgnored(t *testing.T) {
 	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
-		newComputeSKU("Some Unknown Vertex AI SKU", "us-central1", 0, 100000000),
+		newTokenSKU("Some Unknown Vertex AI SKU", "us-central1", "count", 0, 100000000),
 		newTokenSKU("Gemini 1.5 Flash Input tokens", "us-central1", "k{char}", 0, 1250000),
 	})
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
 	assert.Len(t, snap.tokenInput["us-central1"], 1)
-	assert.Empty(t, snap.compute)
 }
 
 func TestParseSkus_NilSKUIgnored(t *testing.T) {
@@ -301,24 +272,6 @@ func TestParseSkus_MaaSOnDemandSKU(t *testing.T) {
 }
 
 func TestRegexPatterns(t *testing.T) {
-	t.Run("computeRegex", func(t *testing.T) {
-		cases := []struct {
-			input string
-			match bool
-		}{
-			{"Custom Training n1-standard-4 running in us-central1", true},
-			{"Spot Custom Prediction n1-highmem-8 running in europe-west1", true},
-			{"Custom Prediction n2-standard-8 running in asia-east1", true},
-			{"SPOT CUSTOM TRAINING n1-standard-4 RUNNING IN us-central1", true},         // case insensitive
-			{"Custom n1-standard-4 running in us-central1", false},                      // missing Training/Prediction
-			{"Preemptible Custom Training n1-standard-4 running in us-central1", false}, // wrong preemptible prefix
-			{"Gemini 1.5 Flash Input tokens", false},
-		}
-		for _, tc := range cases {
-			assert.Equal(t, tc.match, computeRegex.MatchString(tc.input), "input: %q", tc.input)
-		}
-	})
-
 	t.Run("rerankRegex", func(t *testing.T) {
 		cases := []struct {
 			input string
@@ -344,22 +297,6 @@ func newTokenSKU(description, region, usageUnit string, units int64, nanos int32
 			{
 				PricingExpression: &billingpb.PricingExpression{
 					UsageUnit: usageUnit,
-					TieredRates: []*billingpb.PricingExpression_TierRate{
-						{UnitPrice: &money.Money{Units: units, Nanos: nanos}},
-					},
-				},
-			},
-		},
-	}
-}
-
-func newComputeSKU(description, region string, units int64, nanos int32) *billingpb.Sku {
-	return &billingpb.Sku{
-		Description:    description,
-		ServiceRegions: []string{region},
-		PricingInfo: []*billingpb.PricingInfo{
-			{
-				PricingExpression: &billingpb.PricingExpression{
 					TieredRates: []*billingpb.PricingExpression_TierRate{
 						{UnitPrice: &money.Money{Units: units, Nanos: nanos}},
 					},

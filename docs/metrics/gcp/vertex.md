@@ -102,24 +102,6 @@ Tiers are composed from up to three modifiers: a `thinking_` prefix, a `cached_`
 | `gen_ai_token_type` | `input`, `output` | Whether the price is for input or output characters |
 | `price_tier` | `on_demand` | GCP Translation is flat-rate; no batch tier exists in the billing API |
 
-## Compute Pricing
-
-| Metric | Labels | Description |
-|--------|--------|-------------|
-| `cloudcost_gcp_vertex_instance_total_usd_per_hour` | `project_id`, `machine_type`, `use_case`, `region`, `price_tier` | Vertex AI custom training and prediction node cost in USD per hour |
-
-### Labels
-
-| Label | Values | Description |
-|-------|--------|-------------|
-| `project_id` | e.g. `my-gcp-project` | Billing-scope project (see Token Pricing) |
-| `machine_type` | e.g. `n1-standard-4` | Machine type used for the compute node |
-| `use_case` | `training`, `prediction` | Whether the node is used for custom training or online prediction |
-| `region` | e.g. `us-central1` | GCP region |
-| `price_tier` | `on_demand`, `spot` | Pricing tier; spot metrics are only emitted when a spot price exists |
-
-Compute nodes are not models, so this metric carries no `gen_ai_request_model` / `gen_ai_token_type`.
-
 ## Reranking
 
 | Metric | Labels | Description |

@@ -148,50 +148,6 @@ func TestFamilyFromModelID(t *testing.T) {
 	}
 }
 
-func TestCollect_EmitsComputeMetrics(t *testing.T) {
-	c, err := New(t.Context(), testConfig(), testLogger(),
-		&stubVertexClient{
-			serviceName: "services/vertex-ai",
-			skus: []*billingpb.Sku{
-				newComputeSKU("Custom Training n1-standard-4 running in us-central1", "us-central1", 0, 500000000),
-				newComputeSKU("Spot Custom Training n1-standard-4 running in us-central1", "us-central1", 0, 150000000),
-			},
-		})
-	require.NoError(t, err)
-
-	results, err := collectVertexMetrics(t, c)
-	require.NoError(t, err)
-	require.Len(t, results, 2)
-
-	onDemand := metricByLabel(results, "cloudcost_gcp_vertex_instance_total_usd_per_hour", "price_tier", "on_demand")
-	require.NotNil(t, onDemand)
-	assert.Equal(t, "n1-standard-4", onDemand.Labels["machine_type"])
-	assert.Equal(t, "training", onDemand.Labels["use_case"])
-	assert.Equal(t, "us-central1", onDemand.Labels["region"])
-	assert.InDelta(t, 0.5, onDemand.Value, 1e-9)
-
-	spot := metricByLabel(results, "cloudcost_gcp_vertex_instance_total_usd_per_hour", "price_tier", "spot")
-	require.NotNil(t, spot)
-	assert.InDelta(t, 0.15, spot.Value, 1e-9)
-}
-
-func TestCollect_OmitsOnDemandComputeMetricWhenPriceIsZero(t *testing.T) {
-	c, err := New(t.Context(), testConfig(), testLogger(),
-		&stubVertexClient{
-			serviceName: "services/vertex-ai",
-			skus: []*billingpb.Sku{
-				newComputeSKU("Spot Custom Training n1-standard-4 running in us-central1", "us-central1", 0, 150000000),
-			},
-		})
-	require.NoError(t, err)
-
-	results, err := collectVertexMetrics(t, c)
-	require.NoError(t, err)
-
-	assert.Nil(t, metricByLabel(results, "cloudcost_gcp_vertex_instance_total_usd_per_hour", "price_tier", "on_demand"))
-	assert.NotNil(t, metricByLabel(results, "cloudcost_gcp_vertex_instance_total_usd_per_hour", "price_tier", "spot"))
-}
-
 func TestCollect_EmitsRerankingMetrics(t *testing.T) {
 	c, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{
