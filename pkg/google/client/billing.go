@@ -11,9 +11,14 @@ import (
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
+	"golang.org/x/sync/errgroup"
 	cloudbillingv1beta "google.golang.org/api/cloudbilling/v1beta"
 	"google.golang.org/api/iterator"
 )
+
+// billingPriceConcurrency bounds the concurrent per-SKU price fetches for account-scoped pricing.
+// Those calls dominate the fetch latency, so they run in parallel rather than one at a time.
+const billingPriceConcurrency = 16
 
 // ServiceNotFound indicates the requested GCP service was not found in the Cloud Catalog.
 var errServiceNotFound = errors.New("service not found")
@@ -98,27 +103,49 @@ func (b *Billing) listBillingAccountPrices(ctx context.Context, billingAccount, 
 		return nil, fmt.Errorf("listing billing account services: %w", err)
 	}
 
-	var prices []BillingAccountPrice
+	// Collect the SKUs across matching services (metadata only; price is a separate sub-resource).
+	type skuRef struct{ name, description string }
+	var skus []skuRef
 	for _, serviceName := range serviceNames {
 		// The filter value must be double-quoted per the API.
 		filter := fmt.Sprintf("billing_account_service=%q", serviceName)
 		err := b.pricing.BillingAccounts.Skus.List(parent).Filter(filter).PageSize(5000).Pages(ctx,
 			func(resp *cloudbillingv1beta.GoogleCloudBillingBillingaccountskusV1betaListBillingAccountSkusResponse) error {
 				for _, sku := range resp.BillingAccountSkus {
-					price, err := b.pricing.BillingAccounts.Skus.Price.Get(sku.Name + "/price").Context(ctx).Do()
-					if err != nil {
-						return fmt.Errorf("fetching price for %q: %w", sku.DisplayName, err)
-					}
-					usd, qty, ok := listPriceFromRate(price.Rate)
-					if !ok {
-						continue
-					}
-					prices = append(prices, BillingAccountPrice{Description: sku.DisplayName, USDPerUnit: usd, UnitQuantity: qty})
+					skus = append(skus, skuRef{name: sku.Name, description: sku.DisplayName})
 				}
 				return nil
 			})
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	// The per-SKU price calls dominate latency, so fetch them concurrently. Results go to a
+	// pre-sized, index-aligned slice (no lock needed); unpriced entries stay empty and are dropped.
+	out := make([]BillingAccountPrice, len(skus))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(billingPriceConcurrency)
+	for i, s := range skus {
+		g.Go(func() error {
+			price, err := b.pricing.BillingAccounts.Skus.Price.Get(s.name + "/price").Context(gctx).Do()
+			if err != nil {
+				return fmt.Errorf("fetching price for %q: %w", s.description, err)
+			}
+			if usd, qty, ok := listPriceFromRate(price.Rate); ok {
+				out[i] = BillingAccountPrice{Description: s.description, USDPerUnit: usd, UnitQuantity: qty}
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	prices := make([]BillingAccountPrice, 0, len(out))
+	for _, p := range out {
+		if p.Description != "" {
+			prices = append(prices, p)
 		}
 	}
 	return prices, nil
