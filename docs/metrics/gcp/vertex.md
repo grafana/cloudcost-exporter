@@ -21,7 +21,7 @@ The tier stays a single composed `price_tier` label rather than splitting into B
 Enable the Vertex collector by adding `vertex` to the experimental GCP services:
 
 ```bash
---gcp.experimental.services=vertex --gcp.projects=<project>[,<project>...]
+--project-id=<project> --gcp.experimental.services=vertex
 ```
 
 Restrict which model families are emitted with `--gcp.vertex.families`, a regex matched against the
@@ -38,7 +38,7 @@ Garden long tail (`deepseek`, `alibaba`, `meta`, and so on). Mirrors Bedrock's `
 
 | Label | Values | Description |
 |-------|--------|-------------|
-| `project_id` | e.g. `my-gcp-project` | Billing-scope project. Prices are project-independent; each series is emitted once per configured project (`--gcp.projects`), defaulting to the auth project |
+| `project_id` | e.g. `my-gcp-project` | Billing-scope project: the single auth project (`--project-id`). Prices are project-independent, so one value is stamped on every series, mirroring the single `account_id` on the Bedrock metrics |
 | `region` | e.g. `us-central1` | GCP region |
 | `gen_ai_request_model` | e.g. `gemini-1.5-flash`, `gemma-4`, `llama-4-maverick` | Model name, normalised to lowercase with spaces replaced by hyphens |
 | `family` | `google`, `meta`, `alibaba`, `deepseek`, `minimax`, `moonshot`, `unknown` | Model provider family; `unknown` for unrecognised model prefixes |

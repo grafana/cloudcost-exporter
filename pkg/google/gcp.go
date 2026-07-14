@@ -218,7 +218,6 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 		case serviceVertex:
 			collector, err = vertex.New(ctx, &vertex.Config{
 				ProjectId:    config.ProjectId,
-				Projects:     config.Projects,
 				FamilyFilter: config.VertexFamilyFilter,
 			}, logger, gcpClient)
 			if err != nil {

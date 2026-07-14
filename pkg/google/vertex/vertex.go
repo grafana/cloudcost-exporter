@@ -59,8 +59,7 @@ var (
 
 // Config configures the Vertex AI collector.
 type Config struct {
-	ProjectId    string // ProjectId is the auth project; used as the project_id fallback when Projects is empty.
-	Projects     string // Projects is a comma-separated list of projects to emit prices for.
+	ProjectId    string // ProjectId is the auth project, emitted as the single project_id label (mirrors Bedrock's account_id).
 	FamilyFilter string // FamilyFilter is a regex matched against the family label; only matching families are emitted. Mirrors Bedrock's --aws.bedrock.families.
 }
 
@@ -68,10 +67,10 @@ type Config struct {
 type Collector struct {
 	pricingMap *PricingMap
 	logger     *slog.Logger
-	// projects is the list of project_id label values each price series is emitted under. Vertex
-	// pricing is project-independent, so a price is repeated once per configured project so
-	// downstream rules can join it against per-project usage.
-	projects []string
+	// projectID is the single project_id label value stamped on every series. Vertex pricing is
+	// project-independent, so it carries one billing-scope project like Bedrock's single account_id
+	// rather than duplicating every price across a list of projects.
+	projectID string
 }
 
 // New creates and initialises a Vertex AI Collector.
@@ -86,12 +85,6 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 	familyFilter, err := regexp.Compile(config.FamilyFilter)
 	if err != nil {
 		return nil, fmt.Errorf("invalid vertex family filter %q: %w", config.FamilyFilter, err)
-	}
-
-	projects := strings.Split(config.Projects, ",")
-	if len(projects) == 1 && projects[0] == "" {
-		logger.LogAttrs(ctx, slog.LevelInfo, "no vertex projects specified, defaulting to project", slog.String("projectId", config.ProjectId))
-		projects = []string{config.ProjectId}
 	}
 
 	pm, err := NewPricingMap(ctx, logger, gcpClient, familyFilter)
@@ -117,7 +110,7 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 	return &Collector{
 		pricingMap: pm,
 		logger:     logger,
-		projects:   projects,
+		projectID:  config.ProjectId,
 	}, nil
 }
 
@@ -140,40 +133,36 @@ func (c *Collector) Name() string {
 	return subsystem
 }
 
-// Collect emits Vertex AI pricing metrics. Prices are project-independent, so each series is
-// emitted once per configured project under a project_id label.
+// Collect emits Vertex AI pricing metrics. Prices are project-independent, so every series carries
+// the single project_id (the auth project), mirroring the single account_id on the Bedrock metrics.
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	snapshot := c.pricingMap.Snapshot()
-	for _, project := range c.projects {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
+	project := c.projectID
 
-		emitTokenCost(ch, vertexTokenCostDesc, project, snapshot.tokenInput, tokenTypeInput)
-		emitTokenCost(ch, vertexTokenCostDesc, project, snapshot.tokenOutput, tokenTypeOutput)
-		emitTokenCost(ch, vertexCharacterCostDesc, project, snapshot.charInput, tokenTypeInput)
-		emitTokenCost(ch, vertexCharacterCostDesc, project, snapshot.charOutput, tokenTypeOutput)
+	emitTokenCost(ch, vertexTokenCostDesc, project, snapshot.tokenInput, tokenTypeInput)
+	emitTokenCost(ch, vertexTokenCostDesc, project, snapshot.tokenOutput, tokenTypeOutput)
+	emitTokenCost(ch, vertexCharacterCostDesc, project, snapshot.charInput, tokenTypeInput)
+	emitTokenCost(ch, vertexCharacterCostDesc, project, snapshot.charOutput, tokenTypeOutput)
 
-		for region, machines := range snapshot.compute {
-			for machineType, useCases := range machines {
-				for useCase, pricing := range useCases {
-					if pricing.OnDemandPerHour > 0 {
-						ch <- prometheus.MustNewConstMetric(vertexComputeCostDesc, prometheus.GaugeValue,
-							pricing.OnDemandPerHour, project, machineType, useCase, region, "on_demand")
-					}
-					if pricing.SpotPerHour > 0 {
-						ch <- prometheus.MustNewConstMetric(vertexComputeCostDesc, prometheus.GaugeValue,
-							pricing.SpotPerHour, project, machineType, useCase, region, "spot")
-					}
+	for region, machines := range snapshot.compute {
+		for machineType, useCases := range machines {
+			for useCase, pricing := range useCases {
+				if pricing.OnDemandPerHour > 0 {
+					ch <- prometheus.MustNewConstMetric(vertexComputeCostDesc, prometheus.GaugeValue,
+						pricing.OnDemandPerHour, project, machineType, useCase, region, "on_demand")
+				}
+				if pricing.SpotPerHour > 0 {
+					ch <- prometheus.MustNewConstMetric(vertexComputeCostDesc, prometheus.GaugeValue,
+						pricing.SpotPerHour, project, machineType, useCase, region, "spot")
 				}
 			}
 		}
+	}
 
-		for region, models := range snapshot.reranking {
-			for model, price := range models {
-				ch <- prometheus.MustNewConstMetric(vertexRerankCostDesc, prometheus.GaugeValue,
-					price, project, region, model, familyFromModelID(model), rerankPriceTier)
-			}
+	for region, models := range snapshot.reranking {
+		for model, price := range models {
+			ch <- prometheus.MustNewConstMetric(vertexRerankCostDesc, prometheus.GaugeValue,
+				price, project, region, model, familyFromModelID(model), rerankPriceTier)
 		}
 	}
 	return ctx.Err()

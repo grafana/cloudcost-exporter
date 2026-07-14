@@ -67,8 +67,8 @@ func TestCollect_EmitsTokenMetrics(t *testing.T) {
 	assert.InDelta(t, 0.005, outputMetric.Value, 1e-9)
 }
 
-func TestCollect_EmitsOneSeriesPerProject(t *testing.T) {
-	c, err := New(t.Context(), &Config{ProjectId: "auth-project", Projects: "proj-a,proj-b"}, testLogger(),
+func TestCollect_StampsSingleAuthProjectID(t *testing.T) {
+	c, err := New(t.Context(), &Config{ProjectId: "auth-project"}, testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{
@@ -80,14 +80,10 @@ func TestCollect_EmitsOneSeriesPerProject(t *testing.T) {
 	results, err := collectVertexMetrics(t, c)
 	require.NoError(t, err)
 
-	// One input-token SKU emitted once per configured project, with identical prices.
-	a := metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_tokens", "project_id", "proj-a")
-	b := metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_tokens", "project_id", "proj-b")
-	require.NotNil(t, a)
-	require.NotNil(t, b)
-	assert.InDelta(t, a.Value, b.Value, 1e-9)
-	// The auth project is only a fallback; it is not used when Projects is set.
-	assert.Nil(t, metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_tokens", "project_id", "auth-project"))
+	// Prices are project-independent: every series carries the single auth project_id (like
+	// Bedrock's single account_id), not a per-project fan-out.
+	require.Len(t, results, 1)
+	assert.Equal(t, "auth-project", results[0].Labels["project_id"])
 }
 
 func TestCollect_EmitsCharacterMetrics(t *testing.T) {
