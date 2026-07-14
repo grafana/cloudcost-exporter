@@ -21,8 +21,11 @@ const (
 
 	// gen_ai_token_type label values. Vertex prices input and output separately; the two are
 	// emitted on one metric distinguished by this label, matching the Bedrock token metric.
-	tokenTypeInput  = "input"
-	tokenTypeOutput = "output"
+	// Prompt-cache read/write apply to Claude-on-Vertex SKUs only.
+	tokenTypeInput      = "input"
+	tokenTypeOutput     = "output"
+	tokenTypeCacheRead  = "cache_read"
+	tokenTypeCacheWrite = "cache_write"
 
 	// rerankPriceTier is the price_tier value for reranking. The Ranking API is a single flat
 	// rate with no tiering, so the label is constant. It exists to keep price_tier present on
@@ -82,7 +85,17 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 		return nil, fmt.Errorf("invalid vertex family filter %q: %w", config.FamilyFilter, err)
 	}
 
-	pm, err := NewPricingMap(ctx, logger, gcpClient, familyFilter)
+	// Claude-on-Vertex prices are account-scoped (not in the public catalog). Resolve the billing
+	// account from the auth project so it needs no configuration, the way the AWS collectors derive
+	// the account from STS. Best-effort: if it cannot be resolved, Claude is left unpriced.
+	billingAccount, err := gcpClient.GetProjectBillingAccount(ctx, config.ProjectId)
+	if err != nil {
+		logger.LogAttrs(ctx, slog.LevelWarn, "could not resolve billing account; Claude-on-Vertex pricing will be unavailable",
+			slog.String("projectId", config.ProjectId), slog.String("error", err.Error()))
+		billingAccount = ""
+	}
+
+	pm, err := NewPricingMap(ctx, logger, gcpClient, familyFilter, billingAccount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize pricing map: %w", err)
 	}
@@ -135,6 +148,8 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 
 	emitTokenCost(ch, vertexTokenCostDesc, project, snapshot.tokenInput, tokenTypeInput)
 	emitTokenCost(ch, vertexTokenCostDesc, project, snapshot.tokenOutput, tokenTypeOutput)
+	emitTokenCost(ch, vertexTokenCostDesc, project, snapshot.tokenCacheRead, tokenTypeCacheRead)
+	emitTokenCost(ch, vertexTokenCostDesc, project, snapshot.tokenCacheWrite, tokenTypeCacheWrite)
 	emitTokenCost(ch, vertexCharacterCostDesc, project, snapshot.charInput, tokenTypeInput)
 	emitTokenCost(ch, vertexCharacterCostDesc, project, snapshot.charOutput, tokenTypeOutput)
 
@@ -166,6 +181,8 @@ func emitTokenCost(ch chan<- prometheus.Metric, desc *prometheus.Desc, project s
 // throughout. Unknown prefixes return "unknown" rather than assuming a provider.
 func familyFromModelID(model string) string {
 	switch {
+	case strings.HasPrefix(model, "claude"):
+		return "anthropic" // Claude-on-Vertex, priced from the account-scoped billing API
 	case strings.HasPrefix(model, "gemini"):
 		return "google"
 	case strings.Contains(model, "gemma"):

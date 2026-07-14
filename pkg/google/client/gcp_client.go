@@ -12,7 +12,9 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client/cache"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
+	cloudbillingv1beta "google.golang.org/api/cloudbilling/v1beta"
 	computev1 "google.golang.org/api/compute/v1"
+	"google.golang.org/api/option"
 	sqladmin "google.golang.org/api/sqladmin/v1beta4"
 )
 
@@ -42,6 +44,22 @@ func NewGCPClient(ctx context.Context, cfg Config) (*GCPClient, error) {
 		return nil, fmt.Errorf("error creating cloudCatalogClient: %w", err)
 	}
 
+	// v1beta Cloud Billing client for account-scoped pricing (e.g. Claude on Vertex). The quota
+	// project is the auth project; account-scoped price calls require it.
+	billingOpts := []option.ClientOption{}
+	if cfg.ProjectId != "" {
+		billingOpts = append(billingOpts, option.WithQuotaProject(cfg.ProjectId))
+	}
+	pricingService, err := cloudbillingv1beta.NewService(ctx, billingOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating billing pricing client: %w", err)
+	}
+
+	cloudBillingClient, err := billingv1.NewCloudBillingClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error creating cloud billing client: %w", err)
+	}
+
 	regionsClient, err := computeapiv1.NewRegionsRESTClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not create regions client: %w", err)
@@ -64,7 +82,7 @@ func NewGCPClient(ctx context.Context, cfg Config) (*GCPClient, error) {
 
 	return &GCPClient{
 		compute:      newCompute(computeService),
-		billing:      newBilling(cloudCatalogClient),
+		billing:      newBilling(cloudCatalogClient, pricingService, cloudBillingClient),
 		regions:      newRegion(cfg.ProjectId, cfg.Discount, regionsClient),
 		bucket:       newBucket(storageClient, cache.NewBucketCache()),
 		sqlAdmin:     newSQLAdmin(sqlAdminClient, cfg.ProjectId),
@@ -86,6 +104,14 @@ func (c *GCPClient) ExportGCPCostData(ctx context.Context, serviceName string, m
 
 func (c *GCPClient) GetPricing(ctx context.Context, serviceName string) []*billingpb.Sku {
 	return c.billing.getPricing(ctx, serviceName)
+}
+
+func (c *GCPClient) ListBillingAccountPrices(ctx context.Context, billingAccount, displayNamePrefix string) ([]BillingAccountPrice, error) {
+	return c.billing.listBillingAccountPrices(ctx, billingAccount, displayNamePrefix)
+}
+
+func (c *GCPClient) GetProjectBillingAccount(ctx context.Context, projectID string) (string, error) {
+	return c.billing.getProjectBillingAccount(ctx, projectID)
 }
 
 func (c *GCPClient) ExportBucketInfo(ctx context.Context, projects []string, m *metrics.Metrics) error {

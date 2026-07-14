@@ -28,6 +28,12 @@ Restrict which model families are emitted with `--gcp.vertex.families`, a regex 
 `family` label. The default `.*` emits all families; set e.g. `google|anthropic` to drop the Model
 Garden long tail (`deepseek`, `alibaba`, `meta`, and so on). Mirrors Bedrock's `--aws.bedrock.families`.
 
+Claude on Vertex (`family="anthropic"`) is priced automatically, no extra configuration. Its prices
+are account-scoped rather than public catalog SKUs, so the collector resolves the billing account
+from `--project-id` (via `getBillingInfo`) and reads them from the Cloud Billing v1beta pricing API.
+The lookup is best-effort: if the billing account cannot be resolved or has no Claude SKUs, Claude is
+left unpriced and the other Vertex prices are still emitted.
+
 ## Token Pricing
 
 | Metric | Labels | Description |
@@ -40,9 +46,9 @@ Garden long tail (`deepseek`, `alibaba`, `meta`, and so on). Mirrors Bedrock's `
 |-------|--------|-------------|
 | `project_id` | e.g. `my-gcp-project` | Billing-scope project: the single auth project (`--project-id`). Prices are project-independent, so one value is stamped on every series, mirroring the single `account_id` on the Bedrock metrics |
 | `region` | e.g. `us-central1` | GCP region |
-| `gen_ai_request_model` | e.g. `gemini-1.5-flash`, `gemma-4`, `llama-4-maverick` | Model name, normalised to lowercase with spaces replaced by hyphens |
-| `family` | `google`, `meta`, `alibaba`, `deepseek`, `minimax`, `moonshot`, `unknown` | Model provider family; `unknown` for unrecognised model prefixes |
-| `gen_ai_token_type` | `input`, `output` | Whether the price is for input or output tokens |
+| `gen_ai_request_model` | e.g. `gemini-1.5-flash`, `gemma-4`, `llama-4-maverick`, `claude-sonnet-4-6` | Model name, normalised to lowercase with spaces replaced by hyphens (Claude names match the Sigil `gen_ai_request_model` form) |
+| `family` | `google`, `anthropic`, `meta`, `alibaba`, `deepseek`, `minimax`, `moonshot`, `unknown` | Model provider family; `anthropic` (Claude on Vertex) requires the project's billing account to be resolvable; `unknown` for unrecognised model prefixes |
+| `gen_ai_token_type` | `input`, `output`, `cache_read`, `cache_write` | Token direction / prompt-cache operation. `cache_read`/`cache_write` apply to Claude-on-Vertex only |
 | `price_tier` | see below | Running mode or pricing tier derived from the GCP SKU description |
 
 #### `price_tier` Values for Token Metrics
@@ -84,6 +90,12 @@ Tiers are composed from up to three modifiers: a `thinking_` prefix, a `cached_`
 | `thinking_batch_long_context` | Thinking + batch + long context |
 | `thinking_flex_long_context` | Thinking + flex + long context |
 | `thinking_priority_long_context` | Thinking + priority + long context |
+
+**Claude on Vertex** (`family="anthropic"`, when the account-scoped prices are available) uses a smaller set:
+`on_demand`, `long_context` (context window above 200k tokens), and `on_demand_1h` (the 1-hour
+prompt-cache write; the 5-minute write is `on_demand`). Its `gen_ai_token_type` spans `input`,
+`output`, `cache_read`, and `cache_write`. Regional and multi-region endpoints carry a 10% premium
+over `global`, captured by the per-`region` price (no separate tier), so `region` distinguishes them.
 
 ## Character Pricing
 

@@ -5,10 +5,49 @@ import (
 	"testing"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
+	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/type/money"
 )
+
+func TestApplyClaudeAccountPrice(t *testing.T) {
+	pm := &PricingMap{logger: testLogger()}
+	snap := pm.buildSnapshot(nil)
+
+	pm.applyClaudeAccountPrice(snap, client.BillingAccountPrice{
+		Description:  "Claude Sonnet 4.6 — Input Tokens — global — Context Window Size from 0 to 200000 Tokens",
+		USDPerUnit:   3,
+		UnitQuantity: 1_000_000,
+	})
+	// Space-munged model name (Opus/Haiku SKUs), long-context band, 1-hour cache write, regional.
+	pm.applyClaudeAccountPrice(snap, client.BillingAccountPrice{
+		Description:  "Claude Opus 4 8 — Input Cache Write Tokens (TTL 3600 seconds) — us-east5 — Context Window Size from 200001 to 1000000 Tokens",
+		USDPerUnit:   10,
+		UnitQuantity: 1_000_000,
+	})
+
+	// $3/1M -> $0.003/1k; model normalized to Sigil's form.
+	assert.InDelta(t, 0.003, snap.tokenInput["global"]["claude-sonnet-4-6"]["on_demand"], 1e-12)
+	// $10/1M -> $0.01/1k; routed to cache-write, tier captures long context + 1h TTL.
+	assert.InDelta(t, 0.01, snap.tokenCacheWrite["us-east5"]["claude-opus-4-8"]["long_context_1h"], 1e-12)
+}
+
+func TestApplyClaudeAccountPrice_FamilyFilterAndBadFormatSkipped(t *testing.T) {
+	pm := &PricingMap{logger: testLogger(), familyFilter: regexp.MustCompile(`^google$`)}
+	snap := pm.buildSnapshot(nil)
+
+	// Filtered family (anthropic) is dropped.
+	pm.applyClaudeAccountPrice(snap, client.BillingAccountPrice{
+		Description: "Claude Sonnet 4.6 — Input Tokens — global — Context Window Size from 0 to 200000 Tokens", USDPerUnit: 3, UnitQuantity: 1_000_000,
+	})
+	// Legacy format without the em-dash structure is skipped, not mis-parsed.
+	pm.applyClaudeAccountPrice(snap, client.BillingAccountPrice{
+		Description: "Claude 3 Haiku Input Tokens", USDPerUnit: 1, UnitQuantity: 1_000_000,
+	})
+
+	assert.Empty(t, snap.tokenInput)
+}
 
 func TestParseSkus_FamilyFilterDropsUnmatchedFamilies(t *testing.T) {
 	pm := &PricingMap{logger: testLogger(), familyFilter: regexp.MustCompile(`^google$`)}

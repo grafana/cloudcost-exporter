@@ -98,6 +98,14 @@ func (m *mockGCPClient) GetPricing(ctx context.Context, serviceName string) []*b
 	return []*billingpb.Sku{} // Return empty SKUs for testing
 }
 
+func (m *mockGCPClient) ListBillingAccountPrices(context.Context, string, string) ([]client.BillingAccountPrice, error) {
+	return nil, nil
+}
+
+func (m *mockGCPClient) GetProjectBillingAccount(context.Context, string) (string, error) {
+	return "", nil
+}
+
 func (m *mockGCPClient) ExportRegionalDiscounts(ctx context.Context, m2 *metrics.Metrics) error {
 	return nil
 }

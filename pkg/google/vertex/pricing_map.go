@@ -147,6 +147,10 @@ type Snapshot struct {
 	tokenInput map[string]map[string]map[string]float64
 	// tokenOutput[region][model][tier] = price per 1k output tokens (only set if a SKU exists)
 	tokenOutput map[string]map[string]map[string]float64
+	// tokenCacheRead[region][model][tier] = price per 1k prompt-cache read tokens (Claude-on-Vertex)
+	tokenCacheRead map[string]map[string]map[string]float64
+	// tokenCacheWrite[region][model][tier] = price per 1k prompt-cache write tokens (Claude-on-Vertex)
+	tokenCacheWrite map[string]map[string]map[string]float64
 	// charInput[region][model][tier] = price per 1k input characters (only set if a SKU exists)
 	charInput map[string]map[string]map[string]float64
 	// charOutput[region][model][tier] = price per 1k output characters (only set if a SKU exists)
@@ -163,11 +167,13 @@ type PricingMap struct {
 	// familyFilter, when non-nil, drops any model whose family does not match before it enters the
 	// map. A nil filter (e.g. in tests) keeps everything.
 	familyFilter *regexp.Regexp
+	// billingAccount, when non-empty, enables the account-scoped Claude-on-Vertex price fetch.
+	billingAccount string
 }
 
 // NewPricingMap initialises and populates a PricingMap.
-func NewPricingMap(ctx context.Context, logger *slog.Logger, gcpClient client.Client, familyFilter *regexp.Regexp) (*PricingMap, error) {
-	pm := &PricingMap{gcpClient: gcpClient, logger: logger, familyFilter: familyFilter}
+func NewPricingMap(ctx context.Context, logger *slog.Logger, gcpClient client.Client, familyFilter *regexp.Regexp, billingAccount string) (*PricingMap, error) {
+	pm := &PricingMap{gcpClient: gcpClient, logger: logger, familyFilter: familyFilter, billingAccount: billingAccount}
 	if err := pm.Populate(ctx); err != nil {
 		return nil, err
 	}
@@ -209,18 +215,44 @@ func (pm *PricingMap) Populate(ctx context.Context) error {
 		skus = append(skus, pm.gcpClient.GetPricing(ctx, deSvcName)...)
 	}
 
-	return pm.ParseSkus(skus)
+	snap := pm.buildSnapshot(skus)
+
+	// Claude-on-Vertex prices are account-scoped (not in the public catalog), so they are fetched
+	// from the v1beta pricing API and layered in non-fatally: omitted with a warning if the billing
+	// account is unset or the lookup fails, rather than dropping the catalog pricing already parsed.
+	if pm.billingAccount != "" {
+		prices, err := pm.gcpClient.ListBillingAccountPrices(ctx, pm.billingAccount, claudeDisplayPrefix)
+		if err != nil {
+			pm.logger.Warn("failed to fetch Claude-on-Vertex prices, they will be unavailable", "error", err)
+		} else {
+			for _, p := range prices {
+				pm.applyClaudeAccountPrice(snap, p)
+			}
+		}
+	}
+
+	pm.current.Store(snap)
+	return nil
 }
 
 // ParseSkus parses the provided SKUs and updates the pricing map atomically.
 // Unknown SKUs are logged at debug level and skipped.
 func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
+	pm.current.Store(pm.buildSnapshot(skus))
+	return nil
+}
+
+// buildSnapshot parses SKUs into a Snapshot without publishing it, so callers can layer in
+// account-scoped Claude prices before storing atomically.
+func (pm *PricingMap) buildSnapshot(skus []*billingpb.Sku) *Snapshot {
 	snap := &Snapshot{
-		tokenInput:  make(map[string]map[string]map[string]float64),
-		tokenOutput: make(map[string]map[string]map[string]float64),
-		charInput:   make(map[string]map[string]map[string]float64),
-		charOutput:  make(map[string]map[string]map[string]float64),
-		reranking:   make(map[string]map[string]float64),
+		tokenInput:      make(map[string]map[string]map[string]float64),
+		tokenOutput:     make(map[string]map[string]map[string]float64),
+		tokenCacheRead:  make(map[string]map[string]map[string]float64),
+		tokenCacheWrite: make(map[string]map[string]map[string]float64),
+		charInput:       make(map[string]map[string]map[string]float64),
+		charOutput:      make(map[string]map[string]map[string]float64),
+		reranking:       make(map[string]map[string]float64),
 	}
 
 	for _, sku := range skus {
@@ -286,8 +318,81 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 		pm.logger.Debug("skipping unknown Vertex AI SKU", "description", desc)
 	}
 
-	pm.current.Store(snap)
-	return nil
+	return snap
+}
+
+// claudeDisplayPrefix matches Claude-on-Vertex account-scoped SKU display names
+// (e.g. "Claude Sonnet 4.6 — Input Tokens — global — Context Window Size from 0 to 200000 Tokens").
+const claudeDisplayPrefix = "Claude "
+
+// claudeContextBand captures the lower bound of the "Context Window Size from X to Y Tokens" clause.
+// A non-zero lower bound marks the long-context (>200k) band.
+var claudeContextBand = regexp.MustCompile(`context window size from (\d+) to`)
+
+// applyClaudeAccountPrice parses one account-scoped Claude SKU and stores it. The display name is
+// em-dash delimited: "{model} — {token kind} — {region} — Context Window Size from {lo} to {hi}
+// Tokens". Model normalizes to Sigil's form (claude-sonnet-4-6); input/output and prompt-cache
+// read/write route to their token maps; the context band and cache-write TTL fold into price_tier.
+// SKUs missing the expected structure (e.g. legacy Claude 3 formats) are skipped.
+func (pm *PricingMap) applyClaudeAccountPrice(snap *Snapshot, p client.BillingAccountPrice) {
+	parts := strings.Split(p.Description, "—")
+	if len(parts) < 3 {
+		return
+	}
+	model := normalizeClaudeModel(parts[0])
+	if !pm.familyAllowed(model) {
+		return
+	}
+
+	kind := strings.ToLower(parts[1])
+	var target map[string]map[string]map[string]float64
+	var tokenType string
+	switch {
+	case strings.Contains(kind, "cache read"):
+		tokenType, target = tokenTypeCacheRead, snap.tokenCacheRead
+	case strings.Contains(kind, "cache write"):
+		tokenType, target = tokenTypeCacheWrite, snap.tokenCacheWrite
+	case strings.Contains(kind, "output"):
+		tokenType, target = tokenTypeOutput, snap.tokenOutput
+	case strings.Contains(kind, "input"):
+		tokenType, target = tokenTypeInput, snap.tokenInput
+	default:
+		return
+	}
+
+	region := strings.TrimSpace(parts[2])
+	if region == "" {
+		region = "global"
+	}
+	// Prices are per UnitQuantity of usage (Claude token SKUs are per-1M); scale to per-1k.
+	perK := 0.0
+	if p.UnitQuantity > 0 {
+		perK = p.USDPerUnit * 1000 / p.UnitQuantity
+	}
+	applyPrice(target, model, claudeTier(strings.ToLower(p.Description), tokenType), perK, []string{region})
+}
+
+// normalizeClaudeModel converts a Claude SKU model segment into a slug matching Sigil's
+// gen_ai_request_model. Dots and spaces both become hyphens, so "Claude Sonnet 4.6" and the
+// space-munged "Claude Opus 4 8" both normalize correctly ("claude-sonnet-4-6", "claude-opus-4-8").
+func normalizeClaudeModel(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	s = strings.NewReplacer(".", "-", " ", "-").Replace(s)
+	return strings.Trim(s, "-")
+}
+
+// claudeTier composes price_tier from the dimensions not held by other labels: the context-window
+// band (standard, or long_context above 200k) and, for cache writes, the TTL (5-minute is the base;
+// 1-hour is marked with a _1h suffix).
+func claudeTier(lowerDesc, tokenType string) string {
+	tier := "on_demand"
+	if m := claudeContextBand.FindStringSubmatch(lowerDesc); len(m) == 2 && m[1] != "0" {
+		tier = "long_context"
+	}
+	if tokenType == tokenTypeCacheWrite && strings.Contains(lowerDesc, "3600 second") {
+		tier += "_1h"
+	}
+	return tier
 }
 
 // applyPrice writes a price into the target region/model/tier map for each region.

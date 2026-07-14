@@ -86,6 +86,36 @@ func TestCollect_StampsSingleAuthProjectID(t *testing.T) {
 	assert.Equal(t, "auth-project", results[0].Labels["project_id"])
 }
 
+func TestCollect_EmitsClaudeOnVertexPrices(t *testing.T) {
+	c, err := New(t.Context(), testConfig(), testLogger(),
+		&stubVertexClient{
+			serviceName:    "services/vertex-ai",
+			billingAccount: "test-account", // resolved from the project; triggers the Claude fetch
+			skus:           []*billingpb.Sku{newTokenSKU("Gemini 1.5 Flash Input tokens", "us-central1", "k{char}", 0, 1250000)},
+			claudePrices: []client.BillingAccountPrice{
+				{Description: "Claude Sonnet 4.6 — Input Tokens — global — Context Window Size from 0 to 200000 Tokens", USDPerUnit: 3, UnitQuantity: 1_000_000},
+				{Description: "Claude Sonnet 4.6 — Input Cache Read Tokens — global — Context Window Size from 0 to 200000 Tokens", USDPerUnit: 0.3, UnitQuantity: 1_000_000},
+			},
+		})
+	require.NoError(t, err)
+
+	results, err := collectVertexMetrics(t, c)
+	require.NoError(t, err)
+
+	// The Claude series carries family=anthropic and the Sigil-matching model slug.
+	claudeInput := findMetric(results, func(m *utils.MetricResult) bool {
+		return m.Labels["family"] == "anthropic" && m.Labels["gen_ai_token_type"] == "input"
+	})
+	require.NotNil(t, claudeInput)
+	assert.Equal(t, "claude-sonnet-4-6", claudeInput.Labels["gen_ai_request_model"])
+	assert.InDelta(t, 0.003, claudeInput.Value, 1e-12)
+
+	cacheRead := metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_tokens", "gen_ai_token_type", "cache_read")
+	require.NotNil(t, cacheRead)
+	assert.Equal(t, "claude-sonnet-4-6", cacheRead.Labels["gen_ai_request_model"])
+	assert.InDelta(t, 0.0003, cacheRead.Value, 1e-12)
+}
+
 func TestCollect_EmitsCharacterMetrics(t *testing.T) {
 	c, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{
@@ -218,6 +248,9 @@ type stubVertexClient struct {
 	deServiceNameErr error
 	skus             []*billingpb.Sku
 	deSkus           []*billingpb.Sku // Discovery Engine SKUs
+	billingAccount   string           // resolved by GetProjectBillingAccount; empty skips the Claude fetch
+	claudePrices     []client.BillingAccountPrice
+	claudePricesErr  error
 }
 
 func (s *stubVertexClient) GetServiceName(_ context.Context, svc string) (string, error) {
@@ -250,6 +283,14 @@ func (s *stubVertexClient) GetPricing(_ context.Context, svcName string) []*bill
 		return s.deSkus
 	}
 	return s.skus
+}
+
+func (s *stubVertexClient) ListBillingAccountPrices(_ context.Context, _, _ string) ([]client.BillingAccountPrice, error) {
+	return s.claudePrices, s.claudePricesErr
+}
+
+func (s *stubVertexClient) GetProjectBillingAccount(_ context.Context, _ string) (string, error) {
+	return s.billingAccount, nil
 }
 
 func (s *stubVertexClient) GetZones(_ string) ([]*compute.Zone, error) {
@@ -314,6 +355,15 @@ func collectVertexMetrics(t *testing.T, c *Collector) ([]*utils.MetricResult, er
 func metricByName(metrics []*utils.MetricResult, fqName string) *utils.MetricResult {
 	for _, m := range metrics {
 		if m.FqName == fqName {
+			return m
+		}
+	}
+	return nil
+}
+
+func findMetric(metrics []*utils.MetricResult, pred func(*utils.MetricResult) bool) *utils.MetricResult {
+	for _, m := range metrics {
+		if pred(m) {
 			return m
 		}
 	}

@@ -52,6 +52,12 @@ func (c *regionsStubClient) ExportBucketInfo(_ context.Context, _ []string, _ *m
 func (c *regionsStubClient) GetPricing(_ context.Context, _ string) []*billingpb.Sku {
 	panic("not implemented")
 }
+func (c *regionsStubClient) ListBillingAccountPrices(_ context.Context, _, _ string) ([]BillingAccountPrice, error) {
+	panic("not implemented")
+}
+func (c *regionsStubClient) GetProjectBillingAccount(_ context.Context, _ string) (string, error) {
+	panic("not implemented")
+}
 func (c *regionsStubClient) ListInstancesInZone(_, _ string) ([]*MachineSpec, error) {
 	panic("not implemented")
 }
