@@ -174,7 +174,9 @@ type PricingMap struct {
 // NewPricingMap initialises and populates a PricingMap.
 func NewPricingMap(ctx context.Context, logger *slog.Logger, gcpClient client.Client, familyFilter *regexp.Regexp, billingAccount string) (*PricingMap, error) {
 	pm := &PricingMap{gcpClient: gcpClient, logger: logger, familyFilter: familyFilter, billingAccount: billingAccount}
-	if err := pm.Populate(ctx); err != nil {
+	// Catalog only, to keep construction (and thus startup) fast; account-scoped Claude prices are
+	// layered in by the background refresh, off the startup path.
+	if err := pm.PopulateCatalog(ctx); err != nil {
 		return nil, err
 	}
 	return pm, nil
@@ -196,17 +198,41 @@ func (pm *PricingMap) Snapshot() Snapshot {
 	return Snapshot{}
 }
 
-// Populate fetches the latest Vertex AI SKUs and updates the pricing map.
-// Discovery Engine SKUs (reranking) are fetched non-fatally; reranking metrics
-// are omitted if the service is unavailable.
+// PopulateCatalog fetches the public Cloud Catalog SKUs (Gemini and other Model Garden models,
+// translation, reranking) and stores them. It excludes the account-scoped Claude prices, which are
+// slow to fetch, so it stays fast enough to run on the startup path.
+func (pm *PricingMap) PopulateCatalog(ctx context.Context) error {
+	skus, err := pm.fetchCatalogSKUs(ctx)
+	if err != nil {
+		return err
+	}
+	pm.current.Store(pm.buildSnapshot(skus))
+	return nil
+}
+
+// Populate refreshes the full pricing map: the public catalog plus account-scoped Claude prices.
+// Used by the background refresh loop, where the slower Claude fetch is off the startup path.
 func (pm *PricingMap) Populate(ctx context.Context) error {
+	skus, err := pm.fetchCatalogSKUs(ctx)
+	if err != nil {
+		return err
+	}
+	snap := pm.buildSnapshot(skus)
+	pm.applyClaudePrices(ctx, snap)
+	pm.current.Store(snap)
+	return nil
+}
+
+// fetchCatalogSKUs collects the Vertex AI SKUs plus the Discovery Engine SKUs (reranking). Discovery
+// Engine is non-fatal: reranking is omitted if that service is unavailable.
+func (pm *PricingMap) fetchCatalogSKUs(ctx context.Context) ([]*billingpb.Sku, error) {
 	serviceName, err := pm.gcpClient.GetServiceName(ctx, vertexAIServiceName)
 	if err != nil {
-		return fmt.Errorf("failed to get Vertex AI service name: %w", err)
+		return nil, fmt.Errorf("failed to get Vertex AI service name: %w", err)
 	}
 	skus := pm.gcpClient.GetPricing(ctx, serviceName)
 	if len(skus) == 0 {
-		return fmt.Errorf("no SKUs found for Vertex AI service")
+		return nil, fmt.Errorf("no SKUs found for Vertex AI service")
 	}
 
 	if deSvcName, err := pm.gcpClient.GetServiceName(ctx, discoveryEngineServiceName); err != nil {
@@ -214,25 +240,24 @@ func (pm *PricingMap) Populate(ctx context.Context) error {
 	} else {
 		skus = append(skus, pm.gcpClient.GetPricing(ctx, deSvcName)...)
 	}
+	return skus, nil
+}
 
-	snap := pm.buildSnapshot(skus)
-
-	// Claude-on-Vertex prices are account-scoped (not in the public catalog), so they are fetched
-	// from the v1beta pricing API and layered in non-fatally: omitted with a warning if the billing
-	// account is unset or the lookup fails, rather than dropping the catalog pricing already parsed.
-	if pm.billingAccount != "" {
-		prices, err := pm.gcpClient.ListBillingAccountPrices(ctx, pm.billingAccount, claudeDisplayPrefix)
-		if err != nil {
-			pm.logger.Warn("failed to fetch Claude-on-Vertex prices, they will be unavailable", "error", err)
-		} else {
-			for _, p := range prices {
-				pm.applyClaudeAccountPrice(snap, p)
-			}
-		}
+// applyClaudePrices layers account-scoped Claude-on-Vertex prices into snap. Best-effort: skipped
+// when no billing account is configured, and a fetch failure is logged rather than propagated so
+// the catalog prices already in snap are preserved.
+func (pm *PricingMap) applyClaudePrices(ctx context.Context, snap *Snapshot) {
+	if pm.billingAccount == "" {
+		return
 	}
-
-	pm.current.Store(snap)
-	return nil
+	prices, err := pm.gcpClient.ListBillingAccountPrices(ctx, pm.billingAccount, claudeDisplayPrefix)
+	if err != nil {
+		pm.logger.Warn("failed to fetch Claude-on-Vertex prices, they will be unavailable", "error", err)
+		return
+	}
+	for _, p := range prices {
+		pm.applyClaudeAccountPrice(snap, p)
+	}
 }
 
 // ParseSkus parses the provided SKUs and updates the pricing map atomically.

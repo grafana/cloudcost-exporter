@@ -87,17 +87,22 @@ func TestCollect_StampsSingleAuthProjectID(t *testing.T) {
 }
 
 func TestCollect_EmitsClaudeOnVertexPrices(t *testing.T) {
-	c, err := New(t.Context(), testConfig(), testLogger(),
-		&stubVertexClient{
-			serviceName:    "services/vertex-ai",
-			billingAccount: "test-account", // resolved from the project; triggers the Claude fetch
-			skus:           []*billingpb.Sku{newTokenSKU("Gemini 1.5 Flash Input tokens", "us-central1", "k{char}", 0, 1250000)},
-			claudePrices: []client.BillingAccountPrice{
-				{Description: "Claude Sonnet 4.6 — Input Tokens — global — Context Window Size from 0 to 200000 Tokens", USDPerUnit: 3, UnitQuantity: 1_000_000},
-				{Description: "Claude Sonnet 4.6 — Input Cache Read Tokens — global — Context Window Size from 0 to 200000 Tokens", USDPerUnit: 0.3, UnitQuantity: 1_000_000},
-			},
-		})
+	stub := &stubVertexClient{
+		serviceName:    "services/vertex-ai",
+		billingAccount: "test-account",
+		skus:           []*billingpb.Sku{newTokenSKU("Gemini 1.5 Flash Input tokens", "us-central1", "k{char}", 0, 1250000)},
+		claudePrices: []client.BillingAccountPrice{
+			{Description: "Claude Sonnet 4.6 — Input Tokens — global — Context Window Size from 0 to 200000 Tokens", USDPerUnit: 3, UnitQuantity: 1_000_000},
+			{Description: "Claude Sonnet 4.6 — Input Cache Read Tokens — global — Context Window Size from 0 to 200000 Tokens", USDPerUnit: 0.3, UnitQuantity: 1_000_000},
+		},
+	}
+	// In production the account-scoped Claude prices load off the startup path (New populates the
+	// catalog, then a background refresh adds Claude). Run a full Populate synchronously here so the
+	// Claude prices are deterministically present.
+	pm, err := NewPricingMap(t.Context(), testLogger(), stub, nil, "test-account")
 	require.NoError(t, err)
+	require.NoError(t, pm.Populate(t.Context()))
+	c := &Collector{pricingMap: pm, logger: testLogger(), projectID: testProject}
 
 	results, err := collectVertexMetrics(t, c)
 	require.NoError(t, err)

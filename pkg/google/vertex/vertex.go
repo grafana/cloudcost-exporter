@@ -101,6 +101,13 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 	}
 
 	go func() {
+		// Layer in account-scoped Claude prices off the startup path: New returned with the catalog
+		// already populated, so this only adds Claude (skipped when no billing account was resolved).
+		if billingAccount != "" {
+			if err := pm.Populate(ctx); err != nil {
+				logger.Error("failed to load Claude-on-Vertex pricing", "error", err)
+			}
+		}
 		ticker := time.NewTicker(PriceRefreshInterval)
 		defer ticker.Stop()
 		for {

@@ -32,7 +32,9 @@ Claude on Vertex (`family="anthropic"`) is priced automatically, no extra config
 are account-scoped rather than public catalog SKUs, so the collector resolves the billing account
 from `--project-id` (via `getBillingInfo`) and reads them from the Cloud Billing v1beta pricing API.
 The lookup is best-effort: if the billing account cannot be resolved or has no Claude SKUs, Claude is
-left unpriced and the other Vertex prices are still emitted.
+left unpriced and the other Vertex prices are still emitted. It runs off the startup path (the
+collector starts with catalog prices and adds Claude on the first background refresh), so Claude
+series appear a few seconds after start.
 
 ## Token Pricing
 
