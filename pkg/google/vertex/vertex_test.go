@@ -156,7 +156,8 @@ func TestCollect_EmitsRerankingMetrics(t *testing.T) {
 				newTokenSKU("Gemini 1.5 Flash Input tokens", "us-central1", "k{char}", 0, 1250000),
 			},
 			deSkus: []*billingpb.Sku{
-				newTokenSKU("Semantic Ranker API Ranking Requests", "global", "k{request}", 0, 1000000),
+				// Per-request ("count") price scaled to per-1k: 0.001 -> 1.0.
+				newTokenSKU("Vertex AI Search: Ranking", "global", "count", 0, 1000000),
 			},
 		})
 	require.NoError(t, err)
@@ -167,11 +168,11 @@ func TestCollect_EmitsRerankingMetrics(t *testing.T) {
 	rerank := metricByName(results, "cloudcost_gcp_vertex_search_unit_usd_per_1k_search_units")
 	require.NotNil(t, rerank)
 	assert.Equal(t, testProject, rerank.Labels["project_id"])
-	assert.Equal(t, "semantic-ranker-api", rerank.Labels["gen_ai_request_model"])
+	assert.Equal(t, "semantic-ranker", rerank.Labels["gen_ai_request_model"])
 	assert.Equal(t, "google", rerank.Labels["family"]) // "semantic" prefix maps to google
 	assert.Equal(t, "global", rerank.Labels["region"])
 	assert.Equal(t, "on_demand", rerank.Labels["price_tier"])
-	assert.InDelta(t, 0.001, rerank.Value, 1e-9)
+	assert.InDelta(t, 1.0, rerank.Value, 1e-9)
 }
 
 func TestCollect_DiscoveryEngineUnavailable_RerankingOmitted(t *testing.T) {

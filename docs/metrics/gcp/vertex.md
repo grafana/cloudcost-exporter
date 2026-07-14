@@ -108,7 +108,7 @@ Tiers are composed from up to three modifiers: a `thinking_` prefix, a `cached_`
 |--------|--------|-------------|
 | `cloudcost_gcp_vertex_search_unit_usd_per_1k_search_units` | `project_id`, `region`, `gen_ai_request_model`, `family`, `price_tier` | Vertex AI reranking cost in USD per 1k ranking requests |
 
-Reranking SKUs are fetched from the Cloud Discovery Engine billing service. If that service is unavailable at startup, reranking metrics are omitted and a warning is logged.
+Reranking is priced from the `Vertex AI Search: Ranking` SKU (the Semantic Ranker the Assistant uses), fetched from the Cloud Discovery Engine billing service. If that service is unavailable at startup, reranking metrics are omitted and a warning is logged. Agent Builder (`AI Dev Tools:`) SKUs share this service but price a different product and are skipped.
 
 ### Labels
 
@@ -116,8 +116,8 @@ Reranking SKUs are fetched from the Cloud Discovery Engine billing service. If t
 |-------|--------|-------------|
 | `project_id` | e.g. `my-gcp-project` | Billing-scope project (see Token Pricing) |
 | `region` | e.g. `global` | GCP region |
-| `gen_ai_request_model` | e.g. `semantic-ranker-api` | Ranker model name, normalised to lowercase with spaces replaced by hyphens |
-| `family` | `google` | Model provider family; Discovery Engine reranking models are Google's |
+| `gen_ai_request_model` | `semantic-ranker` | GCP catalogs ranking as a service SKU with no model name; this recognizable slug stands in |
+| `family` | `google` | Model provider family; the Ranking API is a Google service |
 | `price_tier` | `on_demand` | The Ranking API is a single flat rate; the label is constant and mirrors the other Vertex metrics. Analogous to Bedrock's search-unit metric, this carries no `gen_ai_token_type` |
 
 ## Notes

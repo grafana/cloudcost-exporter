@@ -26,11 +26,22 @@ const (
 	modalityGroup = `(?:text)`
 )
 
+// rerankModel is the gen_ai_request_model label for the reranker. GCP catalogs the price as a
+// service SKU ("Vertex AI Search: Ranking") with no model name, so this recognizable slug (the
+// Semantic Ranker the Assistant uses) stands in; familyFromModelID maps the "semantic" prefix to
+// google.
+const rerankModel = "semantic-ranker"
+
 var (
-	// rerankRegex matches Discovery Engine Ranking API SKU descriptions.
-	// Example: "Semantic Ranker API Ranking Requests"
-	// NOTE: Exact SKU description strings must be verified against the live GCP Billing API.
-	rerankRegex = regexp.MustCompile(`(?i)^(.+?)\s+[Rr]anking\s+[Rr]equests?$`)
+	// rerankRegex matches the Vertex AI Search Ranking (Semantic Ranker) SKU. Verified against the
+	// live catalog: the SKU description is exactly "Vertex AI Search: Ranking" (GenAppBuilder), not
+	// the "... Ranking Requests" form assumed previously.
+	rerankRegex = regexp.MustCompile(`(?i)^Vertex AI Search: Ranking$`)
+
+	// agentBuilderPrefix marks Agent Builder ("AI Dev Tools: ...") token SKUs. They price a
+	// different product and share the Discovery Engine service, so they are skipped to keep them out
+	// of the token metric.
+	agentBuilderPrefix = "AI Dev Tools:"
 )
 
 // skuPattern maps a compiled regex to the billing direction, billing type, and price tier.
@@ -219,6 +230,12 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 		desc := strings.TrimSpace(sku.GetDescription())
 		regions := skuRegions(sku)
 
+		// Agent Builder token SKUs share the Discovery Engine service but price a different product;
+		// skip them so they do not leak into the token metric as junk models.
+		if strings.HasPrefix(desc, agentBuilderPrefix) {
+			continue
+		}
+
 		matched := false
 		for _, pat := range skuPatterns {
 			matches := pat.re.FindStringSubmatch(desc)
@@ -249,9 +266,8 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 			continue
 		}
 
-		if matches := rerankRegex.FindStringSubmatch(desc); len(matches) > 0 {
-			model := normalizeModelName(matches[1])
-			if !pm.familyAllowed(model) {
+		if rerankRegex.MatchString(desc) {
+			if !pm.familyAllowed(rerankModel) {
 				continue
 			}
 			price := normalizeToPerK(priceFromSku(sku), sku)
@@ -262,7 +278,7 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 				if snap.reranking[region] == nil {
 					snap.reranking[region] = make(map[string]float64)
 				}
-				snap.reranking[region][model] = price
+				snap.reranking[region][rerankModel] = price
 			}
 			continue
 		}

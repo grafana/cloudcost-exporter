@@ -87,14 +87,25 @@ func TestParseSkus_CharacterSKUsRoutedSeparately(t *testing.T) {
 func TestParseSkus_RerankingSKU(t *testing.T) {
 	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
-		// usageUnit "k{request}" is already per-1k, price passes through unchanged.
-		newTokenSKU("Semantic Ranker API Ranking Requests", "global", "k{request}", 0, 1000000),
+		// The real SKU is "Vertex AI Search: Ranking", priced per request ("count") -> per-1k.
+		newTokenSKU("Vertex AI Search: Ranking", "global", "count", 0, 1000000),
 	})
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
 	require.NotNil(t, snap.reranking["global"])
-	assert.InDelta(t, 0.001, snap.reranking["global"]["semantic-ranker-api"], 1e-9)
+	assert.InDelta(t, 1.0, snap.reranking["global"]["semantic-ranker"], 1e-9)
+}
+
+func TestParseSkus_AgentBuilderTokenSKUsSkipped(t *testing.T) {
+	pm := &PricingMap{logger: testLogger()}
+	err := pm.ParseSkus([]*billingpb.Sku{
+		newTokenSKU("AI Dev Tools: Claude Sonnet 4.6 Input Tokens", "global", "count", 0, 3000),
+	})
+	require.NoError(t, err)
+
+	// Agent Builder SKUs must not leak into the token metric as junk models.
+	assert.Empty(t, pm.Snapshot().tokenInput)
 }
 
 func TestParseSkus_ModelGardenMaaSPrefixStripped(t *testing.T) {
@@ -277,11 +288,10 @@ func TestRegexPatterns(t *testing.T) {
 			input string
 			match bool
 		}{
-			{"Semantic Ranker API Ranking Requests", true},
-			{"Semantic Ranker API Ranking Request", true}, // singular
-			{"Some Model Ranking requests", true},         // case insensitive
+			{"Vertex AI Search: Ranking", true},
+			{"vertex ai search: ranking", true},             // case insensitive
+			{"Semantic Ranker API Ranking Requests", false}, // old assumed form no longer matched
 			{"Gemini 1.5 Flash Input tokens", false},
-			{"Ranking Requests", false}, // no model prefix
 		}
 		for _, tc := range cases {
 			assert.Equal(t, tc.match, rerankRegex.MatchString(tc.input), "input: %q", tc.input)
