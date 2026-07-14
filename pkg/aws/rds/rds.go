@@ -2,6 +2,7 @@ package rds
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -30,7 +31,6 @@ var (
 	)
 )
 
-// Collector is a prometheus collector that collects metrics from AWS RDS clusters.
 type Collector struct {
 	regions           []types.Region
 	regionMap         map[string]client.Client
@@ -72,14 +72,13 @@ func New(_ context.Context, config *Config, logger *slog.Logger) (*Collector, er
 	}, nil
 }
 
-// Collect satisfies the provider.Collector interface.
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
 	logger := c.logger
 	var instances = []rdsTypes.DBInstance{}
 
-	// Fan out the per-region ListRDSInstances calls concurrently
 	numOfRegions := len(c.regions)
 	instanceCh := make(chan []rdsTypes.DBInstance, numOfRegions)
+	errCh := make(chan error, numOfRegions)
 
 	wg := sync.WaitGroup{}
 	for _, region := range c.regions {
@@ -93,17 +92,25 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c.fetchInstancesData(ctx, regionClient, regionName, instanceCh)
+			if err := c.fetchInstancesData(ctx, regionClient, regionName, instanceCh); err != nil {
+				errCh <- err
+			}
 		}()
 	}
 
 	go func() {
 		wg.Wait()
 		close(instanceCh)
+		close(errCh)
 	}()
 
 	for is := range instanceCh {
 		instances = append(instances, is...)
+	}
+
+	var fetchErrs []error
+	for err := range errCh {
+		fetchErrs = append(fetchErrs, err)
 	}
 
 	for _, instance := range instances {
@@ -122,7 +129,6 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		hourlyPrice, ok := c.pricingMap.Get(createPricingKey)
 
 		if !ok {
-			// Compute price without holding the lock
 			v, err := c.Client.GetRDSUnitData(ctx, *instance.DBInstanceClass, region, depOption, *instance.Engine, locationType)
 			if err != nil {
 				logger.Error("error listing rds prices", "error", err)
@@ -152,12 +158,11 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 			*instance.DBInstanceArn,
 		)
 	}
-	return nil
+
+	return errors.Join(fetchErrs...)
 }
 
-// fetchInstancesData lists RDS instances for a single region, sending the
-// result to instanceCh. On failure it logs the error and returns.
-func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.Client, region string, instanceCh chan []rdsTypes.DBInstance) {
+func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.Client, region string, instanceCh chan []rdsTypes.DBInstance) error {
 	// A positive regionListTimeout caps this region's call; 0 leaves it bounded
 	// only by the parent collector context (backwards-compatible default).
 	if c.regionListTimeout > 0 {
@@ -169,9 +174,10 @@ func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.
 	is, err := regionClient.ListRDSInstances(ctx)
 	if err != nil {
 		c.logger.Error("error listing RDS instances", "region", region, "error", err)
-		return
+		return err
 	}
 	instanceCh <- is
+	return nil
 }
 
 func multiOrSingleAZ(multiAZ bool) string {
@@ -186,7 +192,6 @@ func multiOrSingleAZ(multiAZ bool) string {
 func isOutpostsInstance(instance rdsTypes.DBInstance) string {
 	if instance.DBSubnetGroup != nil {
 		for _, subnet := range instance.DBSubnetGroup.Subnets {
-			// If SubnetOutpost.Arn is not null, the subnet is on Outposts
 			if subnet.SubnetOutpost != nil && subnet.SubnetOutpost.Arn != nil {
 				return "AWS Outposts"
 			}

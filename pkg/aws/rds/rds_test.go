@@ -2,6 +2,7 @@ package rds
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -155,7 +156,6 @@ func TestCollector_Collect_MultiRegion(t *testing.T) {
 		regionMap[region] = regionClient
 	}
 
-	// Pricing lookups go through the shared client; serve a valid price for any region.
 	pricingClient := mock.NewMockClient(mockCtrl)
 	pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(validPriceJSON, nil).
@@ -186,9 +186,6 @@ func TestCollector_Collect_MultiRegion(t *testing.T) {
 	}
 }
 
-// TestCollector_Collect_SlowRegionFailsFast verifies a region whose
-// ListRDSInstances hangs is bounded by regionListTimeout and does not block the
-// healthy regions or the overall Collect.
 func TestCollector_Collect_SlowRegionFailsFast(t *testing.T) {
 	const validPriceJSON = `{"terms":{"OnDemand":{"t":{"priceDimensions":{"d":{"pricePerUnit":{"USD":"0.456"}}}}}}}`
 
@@ -247,7 +244,6 @@ func TestCollector_Collect_SlowRegionFailsFast(t *testing.T) {
 	start := time.Now()
 	err := c.Collect(t.Context(), ch)
 	elapsed := time.Since(start)
-	assert.NoError(t, err)
 	close(ch)
 
 	// Collect returns shortly after the per-region timeout, not after the full
@@ -260,11 +256,11 @@ func TestCollector_Collect_SlowRegionFailsFast(t *testing.T) {
 	}
 	assert.True(t, gotRegions["us-east-1"], "healthy region should still emit a metric")
 	assert.False(t, gotRegions["ap-southeast-7"], "slow region should be skipped, not block")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
-// TestCollector_Collect_RegionListTimeout verifies the wrap/no-wrap behavior:
-// a zero timeout leaves the region call bounded only by the parent context
-// (backwards-compatible default), while a positive timeout imposes a deadline.
 func TestCollector_Collect_RegionListTimeout(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -450,4 +446,30 @@ func TestCollector_Collect(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCollector_Collect_RegionErrors(t *testing.T) {
+	listErr := errors.New("simulated ListRDS error")
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	mockClient := mock.NewMockClient(mockCtrl)
+	mockClient.EXPECT().ListRDSInstances(gomock.Any()).Return(nil, listErr).Times(1)
+
+	c := &Collector{
+		pricingMap:        &pricingMap{pricingMap: map[string]float64{}},
+		regions:           []types.Region{{RegionName: aws.String("us-east-1")}},
+		regionMap:         map[string]client.Client{"us-east-1": mockClient},
+		scrapeInterval:    time.Minute,
+		regionListTimeout: time.Minute,
+		Client:            mockClient,
+		accountID:         "123456789012",
+		logger:            slog.Default(),
+	}
+
+	ch := make(chan prometheus.Metric, 10)
+	err := c.Collect(t.Context(), ch)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, listErr)
 }
