@@ -123,6 +123,8 @@ func (b *Billing) listBillingAccountPrices(ctx context.Context, billingAccount, 
 
 	// The per-SKU price calls dominate latency, so fetch them concurrently. Results go to a
 	// pre-sized, index-aligned slice (no lock needed); unpriced entries stay empty and are dropped.
+	// A single SKU fetch error aborts the whole batch via errgroup: the caller (applyClaudePrices)
+	// treats any error as best-effort and preserves the already-populated catalog prices.
 	out := make([]BillingAccountPrice, len(skus))
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(billingPriceConcurrency)
