@@ -19,6 +19,12 @@ import (
 	sqladmin "google.golang.org/api/sqladmin/v1beta4"
 )
 
+func TestNew_FailsIfProjectIDEmpty(t *testing.T) {
+	_, err := New(t.Context(), &Config{ProjectId: ""}, testLogger(), &stubVertexClient{})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "projectID cannot be empty")
+}
+
 func TestNew_FailsIfPricingInitFails(t *testing.T) {
 	_, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{serviceNameErr: fmt.Errorf("billing API down")})
