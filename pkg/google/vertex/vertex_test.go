@@ -19,22 +19,28 @@ import (
 	sqladmin "google.golang.org/api/sqladmin/v1beta4"
 )
 
+func TestNew_FailsIfProjectIDEmpty(t *testing.T) {
+	_, err := New(t.Context(), &Config{ProjectId: ""}, testLogger(), &stubVertexClient{})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "projectID cannot be empty")
+}
+
 func TestNew_FailsIfPricingInitFails(t *testing.T) {
-	_, err := New(t.Context(), testLogger(),
+	_, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{serviceNameErr: fmt.Errorf("billing API down")})
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "failed to initialize pricing map")
 }
 
 func TestNew_FailsIfNoPricingDataReturned(t *testing.T) {
-	_, err := New(t.Context(), testLogger(),
+	_, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{serviceName: "services/vertex-ai", skus: nil})
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "failed to initialize pricing map")
 }
 
 func TestCollect_EmitsTokenMetrics(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{
@@ -48,25 +54,81 @@ func TestCollect_EmitsTokenMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 
-	inputMetric := metricByName(results, "cloudcost_gcp_vertex_input_usd_per_1k_tokens")
+	inputMetric := metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_tokens", "gen_ai_token_type", "input")
 	require.NotNil(t, inputMetric)
-	assert.Equal(t, "gemini-1.5-flash", inputMetric.Labels["model_id"])
+	assert.Equal(t, testProject, inputMetric.Labels["project_id"])
+	assert.Equal(t, "gemini-1.5-flash", inputMetric.Labels["gen_ai_request_model"])
 	assert.Equal(t, "google", inputMetric.Labels["family"])
 	assert.Equal(t, "us-central1", inputMetric.Labels["region"])
 	assert.Equal(t, "on_demand", inputMetric.Labels["price_tier"])
 	assert.InDelta(t, 0.00125, inputMetric.Value, 1e-9)
 
-	outputMetric := metricByName(results, "cloudcost_gcp_vertex_output_usd_per_1k_tokens")
+	outputMetric := metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_tokens", "gen_ai_token_type", "output")
 	require.NotNil(t, outputMetric)
-	assert.Equal(t, "gemini-1.5-flash", outputMetric.Labels["model_id"])
+	assert.Equal(t, testProject, outputMetric.Labels["project_id"])
+	assert.Equal(t, "gemini-1.5-flash", outputMetric.Labels["gen_ai_request_model"])
 	assert.Equal(t, "google", outputMetric.Labels["family"])
 	assert.Equal(t, "us-central1", outputMetric.Labels["region"])
 	assert.Equal(t, "on_demand", outputMetric.Labels["price_tier"])
 	assert.InDelta(t, 0.005, outputMetric.Value, 1e-9)
 }
 
+func TestCollect_StampsSingleAuthProjectID(t *testing.T) {
+	c, err := New(t.Context(), &Config{ProjectId: "auth-project"}, testLogger(),
+		&stubVertexClient{
+			serviceName: "services/vertex-ai",
+			skus: []*billingpb.Sku{
+				newTokenSKU("Gemini 1.5 Flash Input tokens", "us-central1", "k{char}", 0, 1250000),
+			},
+		})
+	require.NoError(t, err)
+
+	results, err := collectVertexMetrics(t, c)
+	require.NoError(t, err)
+
+	// Prices are project-independent: every series carries the single auth project_id (like
+	// Bedrock's single account_id), not a per-project fan-out.
+	require.Len(t, results, 1)
+	assert.Equal(t, "auth-project", results[0].Labels["project_id"])
+}
+
+func TestCollect_EmitsClaudeOnVertexPrices(t *testing.T) {
+	stub := &stubVertexClient{
+		serviceName:    "services/vertex-ai",
+		billingAccount: "test-account",
+		skus:           []*billingpb.Sku{newTokenSKU("Gemini 1.5 Flash Input tokens", "us-central1", "k{char}", 0, 1250000)},
+		claudePrices: []client.BillingAccountPrice{
+			{Description: "Claude Sonnet 4.6 — Input Tokens — global — Context Window Size from 0 to 200000 Tokens", USDPerUnit: 3, UnitQuantity: 1_000_000},
+			{Description: "Claude Sonnet 4.6 — Input Cache Read Tokens — global — Context Window Size from 0 to 200000 Tokens", USDPerUnit: 0.3, UnitQuantity: 1_000_000},
+		},
+	}
+	// In production the account-scoped Claude prices load off the startup path (New populates the
+	// catalog, then a background refresh adds Claude). Run a full Populate synchronously here so the
+	// Claude prices are deterministically present.
+	pm, err := NewPricingMap(t.Context(), testLogger(), stub, nil, "test-account")
+	require.NoError(t, err)
+	require.NoError(t, pm.Populate(t.Context()))
+	c := &Collector{pricingMap: pm, logger: testLogger(), projectID: testProject}
+
+	results, err := collectVertexMetrics(t, c)
+	require.NoError(t, err)
+
+	// The Claude series carries family=anthropic and the Sigil-matching model slug.
+	claudeInput := findMetric(results, func(m *utils.MetricResult) bool {
+		return m.Labels["family"] == "anthropic" && m.Labels["gen_ai_token_type"] == "input"
+	})
+	require.NotNil(t, claudeInput)
+	assert.Equal(t, "claude-sonnet-4-6", claudeInput.Labels["gen_ai_request_model"])
+	assert.InDelta(t, 0.003, claudeInput.Value, 1e-12)
+
+	cacheRead := metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_tokens", "gen_ai_token_type", "cache_read")
+	require.NotNil(t, cacheRead)
+	assert.Equal(t, "claude-sonnet-4-6", cacheRead.Labels["gen_ai_request_model"])
+	assert.InDelta(t, 0.0003, cacheRead.Value, 1e-12)
+}
+
 func TestCollect_EmitsCharacterMetrics(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{
@@ -80,17 +142,19 @@ func TestCollect_EmitsCharacterMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 
-	inputMetric := metricByName(results, "cloudcost_gcp_vertex_input_usd_per_1k_characters")
+	inputMetric := metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_characters", "gen_ai_token_type", "input")
 	require.NotNil(t, inputMetric)
-	assert.Equal(t, "translation-llm", inputMetric.Labels["model_id"])
+	assert.Equal(t, testProject, inputMetric.Labels["project_id"])
+	assert.Equal(t, "translation-llm", inputMetric.Labels["gen_ai_request_model"])
 	assert.Equal(t, "google", inputMetric.Labels["family"])
 	assert.Equal(t, "global", inputMetric.Labels["region"])
 	assert.Equal(t, "on_demand", inputMetric.Labels["price_tier"])
 	assert.InDelta(t, 0.05, inputMetric.Value, 1e-9)
 
-	outputMetric := metricByName(results, "cloudcost_gcp_vertex_output_usd_per_1k_characters")
+	outputMetric := metricByLabel(results, "cloudcost_gcp_vertex_usd_per_1k_characters", "gen_ai_token_type", "output")
 	require.NotNil(t, outputMetric)
-	assert.Equal(t, "translation-llm", outputMetric.Labels["model_id"])
+	assert.Equal(t, testProject, outputMetric.Labels["project_id"])
+	assert.Equal(t, "translation-llm", outputMetric.Labels["gen_ai_request_model"])
 	assert.Equal(t, "google", outputMetric.Labels["family"])
 	assert.Equal(t, "global", outputMetric.Labels["region"])
 	assert.Equal(t, "on_demand", outputMetric.Labels["price_tier"])
@@ -125,59 +189,16 @@ func TestFamilyFromModelID(t *testing.T) {
 	}
 }
 
-func TestCollect_EmitsComputeMetrics(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
-		&stubVertexClient{
-			serviceName: "services/vertex-ai",
-			skus: []*billingpb.Sku{
-				newComputeSKU("Custom Training n1-standard-4 running in us-central1", "us-central1", 0, 500000000),
-				newComputeSKU("Spot Custom Training n1-standard-4 running in us-central1", "us-central1", 0, 150000000),
-			},
-		})
-	require.NoError(t, err)
-
-	results, err := collectVertexMetrics(t, c)
-	require.NoError(t, err)
-	require.Len(t, results, 2)
-
-	onDemand := metricByLabel(results, "cloudcost_gcp_vertex_instance_total_usd_per_hour", "price_tier", "on_demand")
-	require.NotNil(t, onDemand)
-	assert.Equal(t, "n1-standard-4", onDemand.Labels["machine_type"])
-	assert.Equal(t, "training", onDemand.Labels["use_case"])
-	assert.Equal(t, "us-central1", onDemand.Labels["region"])
-	assert.InDelta(t, 0.5, onDemand.Value, 1e-9)
-
-	spot := metricByLabel(results, "cloudcost_gcp_vertex_instance_total_usd_per_hour", "price_tier", "spot")
-	require.NotNil(t, spot)
-	assert.InDelta(t, 0.15, spot.Value, 1e-9)
-}
-
-func TestCollect_OmitsOnDemandComputeMetricWhenPriceIsZero(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
-		&stubVertexClient{
-			serviceName: "services/vertex-ai",
-			skus: []*billingpb.Sku{
-				newComputeSKU("Spot Custom Training n1-standard-4 running in us-central1", "us-central1", 0, 150000000),
-			},
-		})
-	require.NoError(t, err)
-
-	results, err := collectVertexMetrics(t, c)
-	require.NoError(t, err)
-
-	assert.Nil(t, metricByLabel(results, "cloudcost_gcp_vertex_instance_total_usd_per_hour", "price_tier", "on_demand"))
-	assert.NotNil(t, metricByLabel(results, "cloudcost_gcp_vertex_instance_total_usd_per_hour", "price_tier", "spot"))
-}
-
 func TestCollect_EmitsRerankingMetrics(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{
 				newTokenSKU("Gemini 1.5 Flash Input tokens", "us-central1", "k{char}", 0, 1250000),
 			},
 			deSkus: []*billingpb.Sku{
-				newTokenSKU("Semantic Ranker API Ranking Requests", "global", "k{request}", 0, 1000000),
+				// Per-request ("count") price scaled to per-1k: 0.001 -> 1.0.
+				newTokenSKU("Vertex AI Search: Ranking", "global", "count", 0, 1000000),
 			},
 		})
 	require.NoError(t, err)
@@ -187,14 +208,16 @@ func TestCollect_EmitsRerankingMetrics(t *testing.T) {
 
 	rerank := metricByName(results, "cloudcost_gcp_vertex_search_unit_usd_per_1k_search_units")
 	require.NotNil(t, rerank)
-	assert.Equal(t, "semantic-ranker-api", rerank.Labels["model_id"])
+	assert.Equal(t, testProject, rerank.Labels["project_id"])
+	assert.Equal(t, "semantic-ranker", rerank.Labels["gen_ai_request_model"])
 	assert.Equal(t, "google", rerank.Labels["family"]) // "semantic" prefix maps to google
 	assert.Equal(t, "global", rerank.Labels["region"])
-	assert.InDelta(t, 0.001, rerank.Value, 1e-9)
+	assert.Equal(t, "on_demand", rerank.Labels["price_tier"])
+	assert.InDelta(t, 1.0, rerank.Value, 1e-9)
 }
 
 func TestCollect_DiscoveryEngineUnavailable_RerankingOmitted(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{
 			serviceName:      "services/vertex-ai",
 			deServiceNameErr: fmt.Errorf("Discovery Engine Ranking API not found; check that Vertex AI Search is enabled in the GCP project"),
@@ -208,11 +231,11 @@ func TestCollect_DiscoveryEngineUnavailable_RerankingOmitted(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Nil(t, metricByName(results, "cloudcost_gcp_vertex_search_unit_usd_per_1k_search_units"))
-	assert.NotNil(t, metricByName(results, "cloudcost_gcp_vertex_input_usd_per_1k_tokens"))
+	assert.NotNil(t, metricByName(results, "cloudcost_gcp_vertex_usd_per_1k_tokens"))
 }
 
 func TestCollect_ContextCancellation(t *testing.T) {
-	c, err := New(t.Context(), testLogger(),
+	c, err := New(t.Context(), testConfig(), testLogger(),
 		&stubVertexClient{
 			serviceName: "services/vertex-ai",
 			skus: []*billingpb.Sku{
@@ -236,6 +259,9 @@ type stubVertexClient struct {
 	deServiceNameErr error
 	skus             []*billingpb.Sku
 	deSkus           []*billingpb.Sku // Discovery Engine SKUs
+	billingAccount   string           // resolved by GetProjectBillingAccount; empty skips the Claude fetch
+	claudePrices     []client.BillingAccountPrice
+	claudePricesErr  error
 }
 
 func (s *stubVertexClient) GetServiceName(_ context.Context, svc string) (string, error) {
@@ -268,6 +294,14 @@ func (s *stubVertexClient) GetPricing(_ context.Context, svcName string) []*bill
 		return s.deSkus
 	}
 	return s.skus
+}
+
+func (s *stubVertexClient) ListBillingAccountPrices(_ context.Context, _, _ string) ([]client.BillingAccountPrice, error) {
+	return s.claudePrices, s.claudePricesErr
+}
+
+func (s *stubVertexClient) GetProjectBillingAccount(_ context.Context, _ string) (string, error) {
+	return s.billingAccount, nil
 }
 
 func (s *stubVertexClient) GetZones(_ string) ([]*compute.Zone, error) {
@@ -306,6 +340,12 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+func testConfig() *Config {
+	return &Config{ProjectId: testProject}
+}
+
+const testProject = "test-project"
+
 func collectVertexMetrics(t *testing.T, c *Collector) ([]*utils.MetricResult, error) {
 	t.Helper()
 	ch := make(chan prometheus.Metric, 10)
@@ -326,6 +366,15 @@ func collectVertexMetrics(t *testing.T, c *Collector) ([]*utils.MetricResult, er
 func metricByName(metrics []*utils.MetricResult, fqName string) *utils.MetricResult {
 	for _, m := range metrics {
 		if m.FqName == fqName {
+			return m
+		}
+	}
+	return nil
+}
+
+func findMetric(metrics []*utils.MetricResult, pred func(*utils.MetricResult) bool) *utils.MetricResult {
+	for _, m := range metrics {
+		if pred(m) {
 			return m
 		}
 	}

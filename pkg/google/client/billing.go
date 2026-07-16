@@ -5,13 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
+	"golang.org/x/sync/errgroup"
+	cloudbillingv1beta "google.golang.org/api/cloudbilling/v1beta"
 	"google.golang.org/api/iterator"
 )
+
+// billingPriceConcurrency bounds the concurrent per-SKU price fetches for account-scoped pricing.
+// Those calls dominate the fetch latency, so they run in parallel rather than one at a time.
+const billingPriceConcurrency = 16
 
 // ServiceNotFound indicates the requested GCP service was not found in the Cloud Catalog.
 var errServiceNotFound = errors.New("service not found")
@@ -30,12 +37,140 @@ var (
 
 type Billing struct {
 	billingService *billingv1.CloudCatalogClient
+	// pricing is the v1beta Cloud Billing client, used for account-scoped SKUs (e.g. Anthropic
+	// Claude on Vertex) that are not in the public Cloud Catalog. May be nil (e.g. in the mock).
+	pricing *cloudbillingv1beta.Service
+	// cloudBilling resolves a project's billing account (for account-scoped pricing). May be nil.
+	cloudBilling *billingv1.CloudBillingClient
 }
 
-func newBilling(billingService *billingv1.CloudCatalogClient) *Billing {
+func newBilling(billingService *billingv1.CloudCatalogClient, pricing *cloudbillingv1beta.Service, cloudBilling *billingv1.CloudBillingClient) *Billing {
 	return &Billing{
 		billingService: billingService,
+		pricing:        pricing,
+		cloudBilling:   cloudBilling,
 	}
+}
+
+// getProjectBillingAccount resolves the billing account a project bills to (e.g. "01330B-..."),
+// stripped of the "billingAccounts/" prefix. Read-only. Used to locate account-scoped pricing
+// without extra configuration, the way the AWS collectors derive the account from STS.
+func (b *Billing) getProjectBillingAccount(ctx context.Context, projectID string) (string, error) {
+	if b.cloudBilling == nil {
+		return "", fmt.Errorf("cloud billing client not configured")
+	}
+	info, err := b.cloudBilling.GetProjectBillingInfo(ctx, &billingpb.GetProjectBillingInfoRequest{
+		Name: "projects/" + projectID,
+	})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(info.GetBillingAccountName(), "billingAccounts/"), nil
+}
+
+// BillingAccountPrice is the list price of a single account-scoped SKU. Account-scoped SKUs are not
+// in the public Cloud Catalog; they are only available under a Cloud Billing account via v1beta.
+type BillingAccountPrice struct {
+	Description  string  // SKU display name (e.g. "Claude Sonnet 4.6 — Input Tokens — global — ...")
+	USDPerUnit   float64 // list price for one UnitQuantity of usage
+	UnitQuantity float64 // units the price applies to (e.g. 1000000 for per-1M-token SKUs)
+}
+
+// listBillingAccountPrices returns the list price of every account-scoped SKU belonging to a service
+// whose display name starts with displayNamePrefix (e.g. the per-model "Claude ..." services).
+//
+// It resolves matching services first, then lists only those services' SKUs (server-side filtered by
+// billing_account_service). This avoids scanning the account's full SKU catalog (tens of thousands of
+// entries). The SKU list carries only metadata, so each SKU's price is fetched from its per-SKU price
+// sub-resource.
+func (b *Billing) listBillingAccountPrices(ctx context.Context, billingAccount, displayNamePrefix string) ([]BillingAccountPrice, error) {
+	if b.pricing == nil {
+		return nil, fmt.Errorf("v1beta pricing client not configured")
+	}
+	parent := fmt.Sprintf("billingAccounts/%s", billingAccount)
+
+	var serviceNames []string
+	err := b.pricing.BillingAccounts.Services.List(parent).PageSize(5000).Pages(ctx,
+		func(resp *cloudbillingv1beta.GoogleCloudBillingBillingaccountservicesV1betaListBillingAccountServicesResponse) error {
+			for _, svc := range resp.BillingAccountServices {
+				if strings.HasPrefix(svc.DisplayName, displayNamePrefix) {
+					serviceNames = append(serviceNames, svc.Name)
+				}
+			}
+			return nil
+		})
+	if err != nil {
+		return nil, fmt.Errorf("listing billing account services: %w", err)
+	}
+
+	// Collect the SKUs across matching services (metadata only; price is a separate sub-resource).
+	type skuRef struct{ name, description string }
+	var skus []skuRef
+	for _, serviceName := range serviceNames {
+		// The filter value must be double-quoted per the API.
+		filter := fmt.Sprintf("billing_account_service=%q", serviceName)
+		err := b.pricing.BillingAccounts.Skus.List(parent).Filter(filter).PageSize(5000).Pages(ctx,
+			func(resp *cloudbillingv1beta.GoogleCloudBillingBillingaccountskusV1betaListBillingAccountSkusResponse) error {
+				for _, sku := range resp.BillingAccountSkus {
+					skus = append(skus, skuRef{name: sku.Name, description: sku.DisplayName})
+				}
+				return nil
+			})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// The per-SKU price calls dominate latency, so fetch them concurrently. Results go to a
+	// pre-sized, index-aligned slice (no lock needed); unpriced entries stay empty and are dropped.
+	// A single SKU fetch error aborts the whole batch via errgroup: the caller (applyClaudePrices)
+	// treats any error as best-effort and preserves the already-populated catalog prices.
+	out := make([]BillingAccountPrice, len(skus))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(billingPriceConcurrency)
+	for i, s := range skus {
+		g.Go(func() error {
+			price, err := b.pricing.BillingAccounts.Skus.Price.Get(s.name + "/price").Context(gctx).Do()
+			if err != nil {
+				return fmt.Errorf("fetching price for %q: %w", s.description, err)
+			}
+			if usd, qty, ok := listPriceFromRate(price.Rate); ok {
+				out[i] = BillingAccountPrice{Description: s.description, USDPerUnit: usd, UnitQuantity: qty}
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	prices := make([]BillingAccountPrice, 0, len(out))
+	for _, p := range out {
+		if p.Description != "" {
+			prices = append(prices, p)
+		}
+	}
+	return prices, nil
+}
+
+// listPriceFromRate extracts the steady-state list price and its unit quantity. The last tier is the
+// paid rate (earlier tiers are free allowances), matching getPriceFromSku.
+func listPriceFromRate(rate *cloudbillingv1beta.GoogleCloudBillingBillingaccountpricesV1betaRate) (usdPerUnit, unitQuantity float64, ok bool) {
+	if rate == nil || len(rate.Tiers) == 0 {
+		return 0, 0, false
+	}
+	tier := rate.Tiers[len(rate.Tiers)-1]
+	if tier.ListPrice == nil {
+		return 0, 0, false
+	}
+	usdPerUnit = float64(tier.ListPrice.Units) + float64(tier.ListPrice.Nanos)/1e9
+	unitQuantity = 1
+	if rate.UnitInfo != nil && rate.UnitInfo.UnitQuantity != nil {
+		if v, err := strconv.ParseFloat(rate.UnitInfo.UnitQuantity.Value, 64); err == nil && v > 0 {
+			unitQuantity = v
+		}
+	}
+	return usdPerUnit, unitQuantity, true
 }
 
 // getServiceName will search for a service by the display name and return the full name.

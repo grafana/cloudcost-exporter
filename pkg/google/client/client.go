@@ -16,6 +16,8 @@ type Client interface {
 	ExportGCPCostData(ctx context.Context, serviceName string, m *metrics.Metrics) float64
 	ExportBucketInfo(ctx context.Context, projects []string, m *metrics.Metrics) error
 	GetPricing(ctx context.Context, serviceName string) []*billingpb.Sku
+	ListBillingAccountPrices(ctx context.Context, billingAccount, displayNamePrefix string) ([]BillingAccountPrice, error)
+	GetProjectBillingAccount(ctx context.Context, projectID string) (string, error)
 	GetZones(project string) ([]*compute.Zone, error)
 	GetRegions(project string) ([]*compute.Region, error)
 	ListInstancesInZone(projectId, zone string) ([]*MachineSpec, error)

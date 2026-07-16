@@ -1,13 +1,68 @@
 package vertex
 
 import (
+	"regexp"
 	"testing"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
+	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/type/money"
 )
+
+func TestApplyClaudeAccountPrice(t *testing.T) {
+	pm := &PricingMap{logger: testLogger()}
+	snap := pm.buildSnapshot(nil)
+
+	pm.applyClaudeAccountPrice(snap, client.BillingAccountPrice{
+		Description:  "Claude Sonnet 4.6 — Input Tokens — global — Context Window Size from 0 to 200000 Tokens",
+		USDPerUnit:   3,
+		UnitQuantity: 1_000_000,
+	})
+	// Space-munged model name (Opus/Haiku SKUs), long-context band, 1-hour cache write, regional.
+	pm.applyClaudeAccountPrice(snap, client.BillingAccountPrice{
+		Description:  "Claude Opus 4 8 — Input Cache Write Tokens (TTL 3600 seconds) — us-east5 — Context Window Size from 200001 to 1000000 Tokens",
+		USDPerUnit:   10,
+		UnitQuantity: 1_000_000,
+	})
+
+	// $3/1M -> $0.003/1k; model normalized to Sigil's form.
+	assert.InDelta(t, 0.003, snap.tokenInput["global"]["claude-sonnet-4-6"]["on_demand"], 1e-12)
+	// $10/1M -> $0.01/1k; routed to cache-write, tier captures long context + 1h TTL.
+	assert.InDelta(t, 0.01, snap.tokenCacheWrite["us-east5"]["claude-opus-4-8"]["long_context_1h"], 1e-12)
+}
+
+func TestApplyClaudeAccountPrice_FamilyFilterAndBadFormatSkipped(t *testing.T) {
+	pm := &PricingMap{logger: testLogger(), familyFilter: regexp.MustCompile(`^google$`)}
+	snap := pm.buildSnapshot(nil)
+
+	// Filtered family (anthropic) is dropped.
+	pm.applyClaudeAccountPrice(snap, client.BillingAccountPrice{
+		Description: "Claude Sonnet 4.6 — Input Tokens — global — Context Window Size from 0 to 200000 Tokens", USDPerUnit: 3, UnitQuantity: 1_000_000,
+	})
+	// Legacy format without the em-dash structure is skipped, not mis-parsed.
+	pm.applyClaudeAccountPrice(snap, client.BillingAccountPrice{
+		Description: "Claude 3 Haiku Input Tokens", USDPerUnit: 1, UnitQuantity: 1_000_000,
+	})
+
+	assert.Empty(t, snap.tokenInput)
+}
+
+func TestParseSkus_FamilyFilterDropsUnmatchedFamilies(t *testing.T) {
+	pm := &PricingMap{logger: testLogger(), familyFilter: regexp.MustCompile(`^google$`)}
+	err := pm.ParseSkus([]*billingpb.Sku{
+		newTokenSKU("Gemini 1.5 Flash Input tokens", "us-central1", "k{char}", 0, 1250000),
+		newTokenSKU("Llama 4 Maverick Input Tokens", "us-central1", "k{char}", 0, 1250000),
+	})
+	require.NoError(t, err)
+
+	snap := pm.Snapshot()
+	// google family is kept.
+	assert.NotNil(t, snap.tokenInput["us-central1"]["gemini-1.5-flash"])
+	// meta family (llama) is dropped before entering the map.
+	assert.Nil(t, snap.tokenInput["us-central1"]["llama-4-maverick"])
+}
 
 func TestParseSkus_TokenInputSKU(t *testing.T) {
 	pm := &PricingMap{logger: testLogger()}
@@ -44,34 +99,6 @@ func TestParseSkus_TokenSKUNormalizesPerUnitPrice(t *testing.T) {
 	assert.InDelta(t, 0.00125, snap.tokenInput["us-central1"]["gemini-1.0-pro"]["on_demand"], 1e-9)
 }
 
-func TestParseSkus_ComputeOnDemand(t *testing.T) {
-	pm := &PricingMap{logger: testLogger()}
-	err := pm.ParseSkus([]*billingpb.Sku{
-		newComputeSKU("Custom Training n1-standard-4 running in us-central1", "us-central1", 0, 500000000),
-	})
-	require.NoError(t, err)
-
-	snap := pm.Snapshot()
-	require.NotNil(t, snap.compute["us-central1"])
-	require.NotNil(t, snap.compute["us-central1"]["n1-standard-4"])
-	require.NotNil(t, snap.compute["us-central1"]["n1-standard-4"]["training"])
-	assert.InDelta(t, 0.5, snap.compute["us-central1"]["n1-standard-4"]["training"].OnDemandPerHour, 1e-9)
-	assert.Equal(t, 0.0, snap.compute["us-central1"]["n1-standard-4"]["training"].SpotPerHour)
-}
-
-func TestParseSkus_ComputeSpot(t *testing.T) {
-	pm := &PricingMap{logger: testLogger()}
-	err := pm.ParseSkus([]*billingpb.Sku{
-		newComputeSKU("Spot Custom Prediction n1-highmem-8 running in europe-west1", "europe-west1", 0, 150000000),
-	})
-	require.NoError(t, err)
-
-	snap := pm.Snapshot()
-	require.NotNil(t, snap.compute["europe-west1"]["n1-highmem-8"]["prediction"])
-	assert.InDelta(t, 0.15, snap.compute["europe-west1"]["n1-highmem-8"]["prediction"].SpotPerHour, 1e-9)
-	assert.Equal(t, 0.0, snap.compute["europe-west1"]["n1-highmem-8"]["prediction"].OnDemandPerHour)
-}
-
 func TestParseSkus_CharacterSKUsRoutedSeparately(t *testing.T) {
 	// Character-priced models must land in snap.characters, not snap.tokens.
 	pm := &PricingMap{logger: testLogger()}
@@ -99,14 +126,25 @@ func TestParseSkus_CharacterSKUsRoutedSeparately(t *testing.T) {
 func TestParseSkus_RerankingSKU(t *testing.T) {
 	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
-		// usageUnit "k{request}" is already per-1k, price passes through unchanged.
-		newTokenSKU("Semantic Ranker API Ranking Requests", "global", "k{request}", 0, 1000000),
+		// The real SKU is "Vertex AI Search: Ranking", priced per request ("count") -> per-1k.
+		newTokenSKU("Vertex AI Search: Ranking", "global", "count", 0, 1000000),
 	})
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
 	require.NotNil(t, snap.reranking["global"])
-	assert.InDelta(t, 0.001, snap.reranking["global"]["semantic-ranker-api"], 1e-9)
+	assert.InDelta(t, 1.0, snap.reranking["global"]["semantic-ranker"], 1e-9)
+}
+
+func TestParseSkus_AgentBuilderTokenSKUsSkipped(t *testing.T) {
+	pm := &PricingMap{logger: testLogger()}
+	err := pm.ParseSkus([]*billingpb.Sku{
+		newTokenSKU("AI Dev Tools: Claude Sonnet 4.6 Input Tokens", "global", "count", 0, 3000),
+	})
+	require.NoError(t, err)
+
+	// Agent Builder SKUs must not leak into the token metric as junk models.
+	assert.Empty(t, pm.Snapshot().tokenInput)
 }
 
 func TestParseSkus_ModelGardenMaaSPrefixStripped(t *testing.T) {
@@ -129,14 +167,13 @@ func TestParseSkus_ModelGardenMaaSPrefixStripped(t *testing.T) {
 func TestParseSkus_UnknownSKUsIgnored(t *testing.T) {
 	pm := &PricingMap{logger: testLogger()}
 	err := pm.ParseSkus([]*billingpb.Sku{
-		newComputeSKU("Some Unknown Vertex AI SKU", "us-central1", 0, 100000000),
+		newTokenSKU("Some Unknown Vertex AI SKU", "us-central1", "count", 0, 100000000),
 		newTokenSKU("Gemini 1.5 Flash Input tokens", "us-central1", "k{char}", 0, 1250000),
 	})
 	require.NoError(t, err)
 
 	snap := pm.Snapshot()
 	assert.Len(t, snap.tokenInput["us-central1"], 1)
-	assert.Empty(t, snap.compute)
 }
 
 func TestParseSkus_NilSKUIgnored(t *testing.T) {
@@ -285,34 +322,15 @@ func TestParseSkus_MaaSOnDemandSKU(t *testing.T) {
 }
 
 func TestRegexPatterns(t *testing.T) {
-	t.Run("computeRegex", func(t *testing.T) {
-		cases := []struct {
-			input string
-			match bool
-		}{
-			{"Custom Training n1-standard-4 running in us-central1", true},
-			{"Spot Custom Prediction n1-highmem-8 running in europe-west1", true},
-			{"Custom Prediction n2-standard-8 running in asia-east1", true},
-			{"SPOT CUSTOM TRAINING n1-standard-4 RUNNING IN us-central1", true},         // case insensitive
-			{"Custom n1-standard-4 running in us-central1", false},                      // missing Training/Prediction
-			{"Preemptible Custom Training n1-standard-4 running in us-central1", false}, // wrong preemptible prefix
-			{"Gemini 1.5 Flash Input tokens", false},
-		}
-		for _, tc := range cases {
-			assert.Equal(t, tc.match, computeRegex.MatchString(tc.input), "input: %q", tc.input)
-		}
-	})
-
 	t.Run("rerankRegex", func(t *testing.T) {
 		cases := []struct {
 			input string
 			match bool
 		}{
-			{"Semantic Ranker API Ranking Requests", true},
-			{"Semantic Ranker API Ranking Request", true}, // singular
-			{"Some Model Ranking requests", true},         // case insensitive
+			{"Vertex AI Search: Ranking", true},
+			{"vertex ai search: ranking", true},             // case insensitive
+			{"Semantic Ranker API Ranking Requests", false}, // old assumed form no longer matched
 			{"Gemini 1.5 Flash Input tokens", false},
-			{"Ranking Requests", false}, // no model prefix
 		}
 		for _, tc := range cases {
 			assert.Equal(t, tc.match, rerankRegex.MatchString(tc.input), "input: %q", tc.input)
@@ -328,22 +346,6 @@ func newTokenSKU(description, region, usageUnit string, units int64, nanos int32
 			{
 				PricingExpression: &billingpb.PricingExpression{
 					UsageUnit: usageUnit,
-					TieredRates: []*billingpb.PricingExpression_TierRate{
-						{UnitPrice: &money.Money{Units: units, Nanos: nanos}},
-					},
-				},
-			},
-		},
-	}
-}
-
-func newComputeSKU(description, region string, units int64, nanos int32) *billingpb.Sku {
-	return &billingpb.Sku{
-		Description:    description,
-		ServiceRegions: []string{region},
-		PricingInfo: []*billingpb.PricingInfo{
-			{
-				PricingExpression: &billingpb.PricingExpression{
 					TieredRates: []*billingpb.PricingExpression_TierRate{
 						{UnitPrice: &money.Money{Units: units, Nanos: nanos}},
 					},

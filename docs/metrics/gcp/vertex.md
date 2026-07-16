@@ -2,20 +2,55 @@
 
 Metrics exported for the GCP Vertex AI service.
 
+## Alignment with the Bedrock collector
+
+These metrics mirror the AWS Bedrock collector's shape where GCP pricing allows: input and output are
+one metric distinguished by `gen_ai_token_type`, the model label is `gen_ai_request_model`, and every
+metric carries a billing-scope label (`project_id` here, `account_id` on Bedrock).
+
+The tier stays a single composed `price_tier` label rather than splitting into Bedrock's orthogonal
+`region_tier` / `quota_tier` / `cache_ttl`, because Vertex pricing does not decompose the same way:
+
+- Vertex has no cross-region inference pricing, so there is no `region_tier` equivalent.
+- `price_tier` composes four independent dimensions (quota, caching, long context, thinking). Folding
+  them into a single `quota_tier` would let SKUs with different prices collide and overwrite each
+  other, so the composed label is retained to keep every dimension.
+
+## Configuration
+
+Enable the Vertex collector by adding `vertex` to the experimental GCP services:
+
+```bash
+--project-id=<project> --gcp.experimental.services=vertex
+```
+
+Restrict which model families are emitted with `--gcp.vertex.families`, a regex matched against the
+`family` label. The default `.*` emits all families; set e.g. `google|anthropic` to drop the Model
+Garden long tail (`deepseek`, `alibaba`, `meta`, and so on). Mirrors Bedrock's `--aws.bedrock.families`.
+
+Claude on Vertex (`family="anthropic"`) is priced automatically, no extra configuration. Its prices
+are account-scoped rather than public catalog SKUs, so the collector resolves the billing account
+from `--project-id` (via `getBillingInfo`) and reads them from the Cloud Billing v1beta pricing API.
+The lookup is best-effort: if the billing account cannot be resolved or has no Claude SKUs, Claude is
+left unpriced and the other Vertex prices are still emitted. It runs off the startup path (the
+collector starts with catalog prices and adds Claude on the first background refresh), so Claude
+series appear a few seconds after start.
+
 ## Token Pricing
 
 | Metric | Labels | Description |
 |--------|--------|-------------|
-| `cloudcost_gcp_vertex_input_usd_per_1k_tokens` | `model_id`, `family`, `region`, `price_tier` | Input cost in USD per 1k tokens, for models billed by token. Character-billed models use the character metric. |
-| `cloudcost_gcp_vertex_output_usd_per_1k_tokens` | `model_id`, `family`, `region`, `price_tier` | Output cost in USD per 1k tokens, for models billed by token. Character-billed models use the character metric. |
+| `cloudcost_gcp_vertex_usd_per_1k_tokens` | `project_id`, `region`, `gen_ai_request_model`, `family`, `gen_ai_token_type`, `price_tier` | Cost in USD per 1k tokens, by `gen_ai_token_type`, for models billed by token. Character-billed models use the character metric. |
 
 ### Labels
 
 | Label | Values | Description |
 |-------|--------|-------------|
-| `model_id` | e.g. `gemini-1.5-flash`, `gemma-4`, `llama-4-maverick` | Model name, normalised to lowercase with spaces replaced by hyphens |
-| `family` | `google`, `meta`, `alibaba`, `deepseek`, `minimax`, `moonshot`, `unknown` | Model provider family; `unknown` for unrecognised model prefixes |
+| `project_id` | e.g. `my-gcp-project` | Billing-scope project: the single auth project (`--project-id`). Prices are project-independent, so one value is stamped on every series, mirroring the single `account_id` on the Bedrock metrics |
 | `region` | e.g. `us-central1` | GCP region |
+| `gen_ai_request_model` | e.g. `gemini-1.5-flash`, `gemma-4`, `llama-4-maverick`, `claude-sonnet-4-6` | Model name, normalised to lowercase with spaces replaced by hyphens (Claude names match the Sigil `gen_ai_request_model` form) |
+| `family` | `google`, `anthropic`, `meta`, `alibaba`, `deepseek`, `minimax`, `moonshot`, `unknown` | Model provider family; `anthropic` (Claude on Vertex) requires the project's billing account to be resolvable; `unknown` for unrecognised model prefixes |
+| `gen_ai_token_type` | `input`, `output`, `cache_read`, `cache_write` | Token direction / prompt-cache operation. `cache_read`/`cache_write` apply to Claude-on-Vertex only |
 | `price_tier` | see below | Running mode or pricing tier derived from the GCP SKU description |
 
 #### `price_tier` Values for Token Metrics
@@ -58,52 +93,46 @@ Tiers are composed from up to three modifiers: a `thinking_` prefix, a `cached_`
 | `thinking_flex_long_context` | Thinking + flex + long context |
 | `thinking_priority_long_context` | Thinking + priority + long context |
 
+**Claude on Vertex** (`family="anthropic"`, when the account-scoped prices are available) uses a smaller set:
+`on_demand`, `long_context` (context window above 200k tokens), and `on_demand_1h` (the 1-hour
+prompt-cache write; the 5-minute write is `on_demand`). Its `gen_ai_token_type` spans `input`,
+`output`, `cache_read`, and `cache_write`. Regional and multi-region endpoints carry a 10% premium
+over `global`, captured by the per-`region` price (no separate tier), so `region` distinguishes them.
+
 ## Character Pricing
 
 | Metric | Labels | Description |
 |--------|--------|-------------|
-| `cloudcost_gcp_vertex_input_usd_per_1k_characters` | `model_id`, `family`, `region`, `price_tier` | Input cost in USD per 1k characters, for models billed by character (e.g. translation models). |
-| `cloudcost_gcp_vertex_output_usd_per_1k_characters` | `model_id`, `family`, `region`, `price_tier` | Output cost in USD per 1k characters, for models billed by character (e.g. translation models). |
+| `cloudcost_gcp_vertex_usd_per_1k_characters` | `project_id`, `region`, `gen_ai_request_model`, `family`, `gen_ai_token_type`, `price_tier` | Cost in USD per 1k characters, by `gen_ai_token_type`, for models billed by character (e.g. translation models). |
 
 ### Labels
 
 | Label | Values | Description |
 |-------|--------|-------------|
-| `model_id` | e.g. `translation-llm` | Model name, normalised to lowercase with spaces replaced by hyphens |
-| `family` | `google`, `unknown` | Model provider family; `unknown` for unrecognised model prefixes |
+| `project_id` | e.g. `my-gcp-project` | Billing-scope project (see Token Pricing) |
 | `region` | e.g. `global` | GCP region |
+| `gen_ai_request_model` | e.g. `translation-llm` | Model name, normalised to lowercase with spaces replaced by hyphens |
+| `family` | `google`, `unknown` | Model provider family; `unknown` for unrecognised model prefixes |
+| `gen_ai_token_type` | `input`, `output` | Whether the price is for input or output characters |
 | `price_tier` | `on_demand` | GCP Translation is flat-rate; no batch tier exists in the billing API |
-
-## Compute Pricing
-
-| Metric | Labels | Description |
-|--------|--------|-------------|
-| `cloudcost_gcp_vertex_instance_total_usd_per_hour` | `machine_type`, `use_case`, `region`, `price_tier` | Vertex AI custom training and prediction node cost in USD per hour |
-
-### Labels
-
-| Label | Values | Description |
-|-------|--------|-------------|
-| `machine_type` | e.g. `n1-standard-4` | Machine type used for the compute node |
-| `use_case` | `training`, `prediction` | Whether the node is used for custom training or online prediction |
-| `region` | e.g. `us-central1` | GCP region |
-| `price_tier` | `on_demand`, `spot` | Pricing tier; spot metrics are only emitted when a spot price exists |
 
 ## Reranking
 
 | Metric | Labels | Description |
 |--------|--------|-------------|
-| `cloudcost_gcp_vertex_search_unit_usd_per_1k_search_units` | `model_id`, `family`, `region` | Vertex AI reranking cost in USD per 1k ranking requests |
+| `cloudcost_gcp_vertex_search_unit_usd_per_1k_search_units` | `project_id`, `region`, `gen_ai_request_model`, `family`, `price_tier` | Vertex AI reranking cost in USD per 1k ranking requests |
 
-Reranking SKUs are fetched from the Cloud Discovery Engine billing service. If that service is unavailable at startup, reranking metrics are omitted and a warning is logged.
+Reranking is priced from the `Vertex AI Search: Ranking` SKU (the Semantic Ranker the Assistant uses), fetched from the Cloud Discovery Engine billing service. If that service is unavailable at startup, reranking metrics are omitted and a warning is logged. Agent Builder (`AI Dev Tools:`) SKUs share this service but price a different product and are skipped.
 
 ### Labels
 
 | Label | Values | Description |
 |-------|--------|-------------|
-| `model_id` | e.g. `semantic-ranker-api` | Ranker model name, normalised to lowercase with spaces replaced by hyphens |
-| `family` | `google` | Model provider family; Discovery Engine reranking models are Google's |
+| `project_id` | e.g. `my-gcp-project` | Billing-scope project (see Token Pricing) |
 | `region` | e.g. `global` | GCP region |
+| `gen_ai_request_model` | `semantic-ranker` | GCP catalogs ranking as a service SKU with no model name; this recognizable slug stands in |
+| `family` | `google` | Model provider family; the Ranking API is a Google service |
+| `price_tier` | `on_demand` | The Ranking API is a single flat rate; the label is constant and mirrors the other Vertex metrics. Analogous to Bedrock's search-unit metric, this carries no `gen_ai_token_type` |
 
 ## Notes
 

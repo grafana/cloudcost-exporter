@@ -26,16 +26,22 @@ const (
 	modalityGroup = `(?:text)`
 )
 
+// rerankModel is the gen_ai_request_model label for the reranker. GCP catalogs the price as a
+// service SKU ("Vertex AI Search: Ranking") with no model name, so this recognizable slug (the
+// Semantic Ranker the Assistant uses) stands in; familyFromModelID maps the "semantic" prefix to
+// google.
+const rerankModel = "semantic-ranker"
+
 var (
-	// computeRegex matches custom training/prediction compute SKU descriptions.
-	// Example: "Custom Training n1-standard-4 running in us-central1"
-	// Example: "Spot Custom Prediction n1-highmem-8 running in europe-west1"
-	// NOTE: Exact SKU description strings must be verified against the live GCP Billing API.
-	computeRegex = regexp.MustCompile(`(?i)^(Spot\s+)?Custom\s+(Training|Prediction)\s+(\S+)\s+running\s+in`)
-	// rerankRegex matches Discovery Engine Ranking API SKU descriptions.
-	// Example: "Semantic Ranker API Ranking Requests"
-	// NOTE: Exact SKU description strings must be verified against the live GCP Billing API.
-	rerankRegex = regexp.MustCompile(`(?i)^(.+?)\s+[Rr]anking\s+[Rr]equests?$`)
+	// rerankRegex matches the Vertex AI Search Ranking (Semantic Ranker) SKU. Verified against the
+	// live catalog: the SKU description is exactly "Vertex AI Search: Ranking" (GenAppBuilder), not
+	// the "... Ranking Requests" form assumed previously.
+	rerankRegex = regexp.MustCompile(`(?i)^Vertex AI Search: Ranking$`)
+
+	// agentBuilderPrefix marks Agent Builder ("AI Dev Tools: ...") token SKUs. They price a
+	// different product and share the Discovery Engine service, so they are skipped to keep them out
+	// of the token metric.
+	agentBuilderPrefix = "AI Dev Tools:"
 )
 
 // skuPattern maps a compiled regex to the billing direction, billing type, and price tier.
@@ -135,24 +141,20 @@ var skuPatterns = []skuPattern{
 	{regexp.MustCompile(`(?i)^(.+?)\s+Output\s+Characters?$`), "output", "char", "on_demand"},
 }
 
-// ComputePricing holds per-hour prices for a Vertex AI compute node.
-type ComputePricing struct {
-	OnDemandPerHour float64
-	SpotPerHour     float64
-}
-
 // Snapshot is an immutable view of the Vertex AI pricing data.
 type Snapshot struct {
 	// tokenInput[region][model][tier] = price per 1k input tokens (only set if a SKU exists)
 	tokenInput map[string]map[string]map[string]float64
 	// tokenOutput[region][model][tier] = price per 1k output tokens (only set if a SKU exists)
 	tokenOutput map[string]map[string]map[string]float64
+	// tokenCacheRead[region][model][tier] = price per 1k prompt-cache read tokens (Claude-on-Vertex)
+	tokenCacheRead map[string]map[string]map[string]float64
+	// tokenCacheWrite[region][model][tier] = price per 1k prompt-cache write tokens (Claude-on-Vertex)
+	tokenCacheWrite map[string]map[string]map[string]float64
 	// charInput[region][model][tier] = price per 1k input characters (only set if a SKU exists)
 	charInput map[string]map[string]map[string]float64
 	// charOutput[region][model][tier] = price per 1k output characters (only set if a SKU exists)
 	charOutput map[string]map[string]map[string]float64
-	// compute[region][machineType][useCase] = ComputePricing
-	compute map[string]map[string]map[string]*ComputePricing
 	// reranking[region][model] = price per 1k ranking requests (USD)
 	reranking map[string]map[string]float64
 }
@@ -162,15 +164,30 @@ type PricingMap struct {
 	gcpClient client.Client
 	logger    *slog.Logger
 	current   atomic.Pointer[Snapshot]
+	// familyFilter, when non-nil, drops any model whose family does not match before it enters the
+	// map. A nil filter (e.g. in tests) keeps everything.
+	familyFilter *regexp.Regexp
+	// billingAccount, when non-empty, enables the account-scoped Claude-on-Vertex price fetch.
+	billingAccount string
 }
 
 // NewPricingMap initialises and populates a PricingMap.
-func NewPricingMap(ctx context.Context, logger *slog.Logger, gcpClient client.Client) (*PricingMap, error) {
-	pm := &PricingMap{gcpClient: gcpClient, logger: logger}
-	if err := pm.Populate(ctx); err != nil {
+func NewPricingMap(ctx context.Context, logger *slog.Logger, gcpClient client.Client, familyFilter *regexp.Regexp, billingAccount string) (*PricingMap, error) {
+	pm := &PricingMap{gcpClient: gcpClient, logger: logger, familyFilter: familyFilter, billingAccount: billingAccount}
+	// Catalog only, to keep construction (and thus startup) fast; account-scoped Claude prices are
+	// layered in by the background refresh, off the startup path.
+	if err := pm.PopulateCatalog(ctx); err != nil {
 		return nil, err
 	}
 	return pm, nil
+}
+
+// familyAllowed reports whether a model's family passes the configured family filter.
+func (pm *PricingMap) familyAllowed(model string) bool {
+	if pm.familyFilter == nil {
+		return true
+	}
+	return pm.familyFilter.MatchString(familyFromModelID(model))
 }
 
 // Snapshot returns an immutable copy of the current pricing data.
@@ -181,17 +198,41 @@ func (pm *PricingMap) Snapshot() Snapshot {
 	return Snapshot{}
 }
 
-// Populate fetches the latest Vertex AI SKUs and updates the pricing map.
-// Discovery Engine SKUs (reranking) are fetched non-fatally; reranking metrics
-// are omitted if the service is unavailable.
+// PopulateCatalog fetches the public Cloud Catalog SKUs (Gemini and other Model Garden models,
+// translation, reranking) and stores them. It excludes the account-scoped Claude prices, which are
+// slow to fetch, so it stays fast enough to run on the startup path.
+func (pm *PricingMap) PopulateCatalog(ctx context.Context) error {
+	skus, err := pm.fetchCatalogSKUs(ctx)
+	if err != nil {
+		return err
+	}
+	pm.current.Store(pm.buildSnapshot(skus))
+	return nil
+}
+
+// Populate refreshes the full pricing map: the public catalog plus account-scoped Claude prices.
+// Used by the background refresh loop, where the slower Claude fetch is off the startup path.
 func (pm *PricingMap) Populate(ctx context.Context) error {
+	skus, err := pm.fetchCatalogSKUs(ctx)
+	if err != nil {
+		return err
+	}
+	snap := pm.buildSnapshot(skus)
+	pm.applyClaudePrices(ctx, snap)
+	pm.current.Store(snap)
+	return nil
+}
+
+// fetchCatalogSKUs collects the Vertex AI SKUs plus the Discovery Engine SKUs (reranking). Discovery
+// Engine is non-fatal: reranking is omitted if that service is unavailable.
+func (pm *PricingMap) fetchCatalogSKUs(ctx context.Context) ([]*billingpb.Sku, error) {
 	serviceName, err := pm.gcpClient.GetServiceName(ctx, vertexAIServiceName)
 	if err != nil {
-		return fmt.Errorf("failed to get Vertex AI service name: %w", err)
+		return nil, fmt.Errorf("failed to get Vertex AI service name: %w", err)
 	}
 	skus := pm.gcpClient.GetPricing(ctx, serviceName)
 	if len(skus) == 0 {
-		return fmt.Errorf("no SKUs found for Vertex AI service")
+		return nil, fmt.Errorf("no SKUs found for Vertex AI service")
 	}
 
 	if deSvcName, err := pm.gcpClient.GetServiceName(ctx, discoveryEngineServiceName); err != nil {
@@ -199,20 +240,44 @@ func (pm *PricingMap) Populate(ctx context.Context) error {
 	} else {
 		skus = append(skus, pm.gcpClient.GetPricing(ctx, deSvcName)...)
 	}
+	return skus, nil
+}
 
-	return pm.ParseSkus(skus)
+// applyClaudePrices layers account-scoped Claude-on-Vertex prices into snap. Best-effort: skipped
+// when no billing account is configured, and a fetch failure is logged rather than propagated so
+// the catalog prices already in snap are preserved.
+func (pm *PricingMap) applyClaudePrices(ctx context.Context, snap *Snapshot) {
+	if pm.billingAccount == "" {
+		return
+	}
+	prices, err := pm.gcpClient.ListBillingAccountPrices(ctx, pm.billingAccount, claudeDisplayPrefix)
+	if err != nil {
+		pm.logger.Warn("failed to fetch Claude-on-Vertex prices, they will be unavailable", "error", err)
+		return
+	}
+	for _, p := range prices {
+		pm.applyClaudeAccountPrice(snap, p)
+	}
 }
 
 // ParseSkus parses the provided SKUs and updates the pricing map atomically.
 // Unknown SKUs are logged at debug level and skipped.
 func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
+	pm.current.Store(pm.buildSnapshot(skus))
+	return nil
+}
+
+// buildSnapshot parses SKUs into a Snapshot without publishing it, so callers can layer in
+// account-scoped Claude prices before storing atomically.
+func (pm *PricingMap) buildSnapshot(skus []*billingpb.Sku) *Snapshot {
 	snap := &Snapshot{
-		tokenInput:  make(map[string]map[string]map[string]float64),
-		tokenOutput: make(map[string]map[string]map[string]float64),
-		charInput:   make(map[string]map[string]map[string]float64),
-		charOutput:  make(map[string]map[string]map[string]float64),
-		compute:     make(map[string]map[string]map[string]*ComputePricing),
-		reranking:   make(map[string]map[string]float64),
+		tokenInput:      make(map[string]map[string]map[string]float64),
+		tokenOutput:     make(map[string]map[string]map[string]float64),
+		tokenCacheRead:  make(map[string]map[string]map[string]float64),
+		tokenCacheWrite: make(map[string]map[string]map[string]float64),
+		charInput:       make(map[string]map[string]map[string]float64),
+		charOutput:      make(map[string]map[string]map[string]float64),
+		reranking:       make(map[string]map[string]float64),
 	}
 
 	for _, sku := range skus {
@@ -222,6 +287,12 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 		desc := strings.TrimSpace(sku.GetDescription())
 		regions := skuRegions(sku)
 
+		// Agent Builder token SKUs share the Discovery Engine service but price a different product;
+		// skip them so they do not leak into the token metric as junk models.
+		if strings.HasPrefix(desc, agentBuilderPrefix) {
+			continue
+		}
+
 		matched := false
 		for _, pat := range skuPatterns {
 			matches := pat.re.FindStringSubmatch(desc)
@@ -229,19 +300,22 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 				continue
 			}
 			model := normalizeModelName(matches[1])
-			price := normalizeToPerK(priceFromSku(sku), sku)
-			var target map[string]map[string]map[string]float64
-			switch {
-			case pat.direction == "input" && pat.billingType == "token":
-				target = snap.tokenInput
-			case pat.direction == "output" && pat.billingType == "token":
-				target = snap.tokenOutput
-			case pat.direction == "input" && pat.billingType == "char":
-				target = snap.charInput
-			default:
-				target = snap.charOutput
+			// Recognize the SKU (so it isn't logged as unknown) but skip storing a filtered family.
+			if pm.familyAllowed(model) {
+				price := normalizeToPerK(priceFromSku(sku), sku)
+				var target map[string]map[string]map[string]float64
+				switch {
+				case pat.direction == "input" && pat.billingType == "token":
+					target = snap.tokenInput
+				case pat.direction == "output" && pat.billingType == "token":
+					target = snap.tokenOutput
+				case pat.direction == "input" && pat.billingType == "char":
+					target = snap.charInput
+				default:
+					target = snap.charOutput
+				}
+				applyPrice(target, model, pat.tier, price, regions)
 			}
-			applyPrice(target, model, pat.tier, price, regions)
 			matched = true
 			break
 		}
@@ -249,36 +323,10 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 			continue
 		}
 
-		if matches := computeRegex.FindStringSubmatch(desc); len(matches) > 0 {
-			isSpot := strings.TrimSpace(matches[1]) != ""
-			useCase := strings.ToLower(matches[2])
-			machineType := strings.ToLower(matches[3])
-			price := priceFromSku(sku)
-			for _, region := range regions {
-				if region == "" {
-					continue
-				}
-				if snap.compute[region] == nil {
-					snap.compute[region] = make(map[string]map[string]*ComputePricing)
-				}
-				if snap.compute[region][machineType] == nil {
-					snap.compute[region][machineType] = make(map[string]*ComputePricing)
-				}
-				if snap.compute[region][machineType][useCase] == nil {
-					snap.compute[region][machineType][useCase] = &ComputePricing{}
-				}
-				cp := snap.compute[region][machineType][useCase]
-				if isSpot {
-					cp.SpotPerHour = price
-				} else {
-					cp.OnDemandPerHour = price
-				}
+		if rerankRegex.MatchString(desc) {
+			if !pm.familyAllowed(rerankModel) {
+				continue
 			}
-			continue
-		}
-
-		if matches := rerankRegex.FindStringSubmatch(desc); len(matches) > 0 {
-			model := normalizeModelName(matches[1])
 			price := normalizeToPerK(priceFromSku(sku), sku)
 			for _, region := range regions {
 				if region == "" {
@@ -287,7 +335,7 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 				if snap.reranking[region] == nil {
 					snap.reranking[region] = make(map[string]float64)
 				}
-				snap.reranking[region][model] = price
+				snap.reranking[region][rerankModel] = price
 			}
 			continue
 		}
@@ -295,8 +343,81 @@ func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
 		pm.logger.Debug("skipping unknown Vertex AI SKU", "description", desc)
 	}
 
-	pm.current.Store(snap)
-	return nil
+	return snap
+}
+
+// claudeDisplayPrefix matches Claude-on-Vertex account-scoped SKU display names
+// (e.g. "Claude Sonnet 4.6 — Input Tokens — global — Context Window Size from 0 to 200000 Tokens").
+const claudeDisplayPrefix = "Claude "
+
+// claudeContextBand captures the lower bound of the "Context Window Size from X to Y Tokens" clause.
+// A non-zero lower bound marks the long-context (>200k) band.
+var claudeContextBand = regexp.MustCompile(`context window size from (\d+) to`)
+
+// applyClaudeAccountPrice parses one account-scoped Claude SKU and stores it. The display name is
+// em-dash delimited: "{model} — {token kind} — {region} — Context Window Size from {lo} to {hi}
+// Tokens". Model normalizes to Sigil's form (claude-sonnet-4-6); input/output and prompt-cache
+// read/write route to their token maps; the context band and cache-write TTL fold into price_tier.
+// SKUs missing the expected structure (e.g. legacy Claude 3 formats) are skipped.
+func (pm *PricingMap) applyClaudeAccountPrice(snap *Snapshot, p client.BillingAccountPrice) {
+	parts := strings.Split(p.Description, "—")
+	if len(parts) < 3 {
+		return
+	}
+	model := normalizeClaudeModel(parts[0])
+	if !pm.familyAllowed(model) {
+		return
+	}
+
+	kind := strings.ToLower(parts[1])
+	var target map[string]map[string]map[string]float64
+	var tokenType string
+	switch {
+	case strings.Contains(kind, "cache read"):
+		tokenType, target = tokenTypeCacheRead, snap.tokenCacheRead
+	case strings.Contains(kind, "cache write"):
+		tokenType, target = tokenTypeCacheWrite, snap.tokenCacheWrite
+	case strings.Contains(kind, "output"):
+		tokenType, target = tokenTypeOutput, snap.tokenOutput
+	case strings.Contains(kind, "input"):
+		tokenType, target = tokenTypeInput, snap.tokenInput
+	default:
+		return
+	}
+
+	region := strings.TrimSpace(parts[2])
+	if region == "" {
+		region = "global"
+	}
+	// Prices are per UnitQuantity of usage (Claude token SKUs are per-1M); scale to per-1k.
+	perK := 0.0
+	if p.UnitQuantity > 0 {
+		perK = p.USDPerUnit * 1000 / p.UnitQuantity
+	}
+	applyPrice(target, model, claudeTier(strings.ToLower(p.Description), tokenType), perK, []string{region})
+}
+
+// normalizeClaudeModel converts a Claude SKU model segment into a slug matching Sigil's
+// gen_ai_request_model. Dots and spaces both become hyphens, so "Claude Sonnet 4.6" and the
+// space-munged "Claude Opus 4 8" both normalize correctly ("claude-sonnet-4-6", "claude-opus-4-8").
+func normalizeClaudeModel(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	s = strings.NewReplacer(".", "-", " ", "-").Replace(s)
+	return strings.Trim(s, "-")
+}
+
+// claudeTier composes price_tier from the dimensions not held by other labels: the context-window
+// band (standard, or long_context above 200k) and, for cache writes, the TTL (5-minute is the base;
+// 1-hour is marked with a _1h suffix).
+func claudeTier(lowerDesc, tokenType string) string {
+	tier := "on_demand"
+	if m := claudeContextBand.FindStringSubmatch(lowerDesc); len(m) == 2 && m[1] != "0" {
+		tier = "long_context"
+	}
+	if tokenType == tokenTypeCacheWrite && strings.Contains(lowerDesc, "3600 second") {
+		tier += "_1h"
+	}
+	return tier
 }
 
 // applyPrice writes a price into the target region/model/tier map for each region.

@@ -87,6 +87,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	fs.Var(&cfg.Providers.Azure.ExperimentalServices, "azure.experimental.services", "Experimental Azure service(s); their metrics are not covered by the backward-compatibility contract and may change. Run with -list-services to see available values.")
 	fs.Var(&cfg.Providers.GCP.Services, "gcp.services", "GCP service(s). Run with -list-services to see available values.")
 	fs.Var(&cfg.Providers.GCP.ExperimentalServices, "gcp.experimental.services", "Experimental GCP service(s); their metrics are not covered by the backward-compatibility contract and may change. Run with -list-services to see available values.")
+	fs.StringVar(&cfg.Providers.GCP.VertexFamilyFilter, "gcp.vertex.families", ".*", "Regex matched against the Vertex model family label. Only matching families are emitted.")
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
 	flag.StringVar(&cfg.Providers.AWS.RoleARN, "aws.roleARN", "", "Optional AWS role ARN to assume for cross-account access.")
 	fs.StringVar(&cfg.Providers.AWS.BedrockFamilyFilter, "aws.bedrock.families", ".*", "Regex matched against the Bedrock model family label. Only matching families are emitted.")
@@ -288,6 +289,7 @@ func selectProviderWith(
 			ExperimentalServices: strings.Split(cfg.Providers.GCP.ExperimentalServices.String(), ","),
 			CollectorTimeout:     collectorTimeout,
 			GKEZoneConcurrency:   cfg.Providers.GCP.GKEZoneConcurrency,
+			VertexFamilyFilter:   cfg.Providers.GCP.VertexFamilyFilter,
 		})
 
 	default:

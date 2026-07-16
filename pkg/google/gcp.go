@@ -99,6 +99,9 @@ type Config struct {
 	// GKEZoneConcurrency caps zone-level goroutines per project during a GKE scrape.
 	// Zero or negative values fall back to gke.DefaultZoneCollectConcurrency.
 	GKEZoneConcurrency int
+	// VertexFamilyFilter is a regex matched against the Vertex model family label; only matching
+	// families are emitted. Mirrors --aws.bedrock.families. Empty or ".*" emits all families.
+	VertexFamilyFilter string
 	Logger             *slog.Logger
 }
 
@@ -213,7 +216,10 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 				continue
 			}
 		case serviceVertex:
-			collector, err = vertex.New(ctx, logger, gcpClient)
+			collector, err = vertex.New(ctx, &vertex.Config{
+				ProjectId:    config.ProjectId,
+				FamilyFilter: config.VertexFamilyFilter,
+			}, logger, gcpClient)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
 					slog.String("service", service),

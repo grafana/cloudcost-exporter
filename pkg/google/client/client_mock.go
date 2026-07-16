@@ -29,7 +29,7 @@ type Mock struct {
 func NewMock(projectId string, discount int, regionsClient RegionsClient, bucketClient StorageClientInterface, billingClient *billingv1.CloudCatalogClient, computeService *compute.Service, sqladminService *sqladmin.Service, managedKafkaClient ManagedKafkaClient) *Mock {
 	return &Mock{
 		region:       newRegion(projectId, discount, regionsClient),
-		billing:      newBilling(billingClient),
+		billing:      newBilling(billingClient, nil, nil),
 		bucket:       newBucket(bucketClient, cache.NewNoopCache[[]*storage.BucketAttrs]()),
 		compute:      newCompute(computeService),
 		sqladmin:     newSQLAdmin(sqladminService, projectId),
@@ -55,6 +55,14 @@ func (c *Mock) ExportBucketInfo(ctx context.Context, projects []string, m *metri
 
 func (c *Mock) GetPricing(ctx context.Context, serviceName string) []*billingpb.Sku {
 	return c.billing.getPricing(ctx, serviceName)
+}
+
+func (c *Mock) ListBillingAccountPrices(ctx context.Context, billingAccount, displayNamePrefix string) ([]BillingAccountPrice, error) {
+	return c.billing.listBillingAccountPrices(ctx, billingAccount, displayNamePrefix)
+}
+
+func (c *Mock) GetProjectBillingAccount(ctx context.Context, projectID string) (string, error) {
+	return c.billing.getProjectBillingAccount(ctx, projectID)
 }
 
 func (c *Mock) GetZones(projectId string) ([]*compute.Zone, error) {

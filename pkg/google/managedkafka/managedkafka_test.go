@@ -298,6 +298,14 @@ func (s *stubClient) GetPricing(context.Context, string) []*billingpb.Sku {
 	return s.skus
 }
 
+func (s *stubClient) ListBillingAccountPrices(context.Context, string, string) ([]client.BillingAccountPrice, error) {
+	return nil, nil
+}
+
+func (s *stubClient) GetProjectBillingAccount(context.Context, string) (string, error) {
+	return "", nil
+}
+
 func (s *stubClient) GetZones(string) ([]*compute.Zone, error) {
 	return nil, nil
 }
