@@ -413,3 +413,57 @@ func TestNameFromVolume(t *testing.T) {
 		})
 	}
 }
+
+func TestListActiveCapacityReservations(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	client := mocks.NewMockEC2(ctrl)
+
+	page1 := &ec2.DescribeCapacityReservationsOutput{
+		CapacityReservations: []types.CapacityReservation{
+			{CapacityReservationId: aws.String("cr-block-1"), ReservationType: types.CapacityReservationTypeCapacityBlock, InstanceType: aws.String("p5.48xlarge")},
+			{CapacityReservationId: aws.String("cr-default"), ReservationType: types.CapacityReservationTypeDefault, InstanceType: aws.String("m7i.large")},
+		},
+		NextToken: aws.String("page2"),
+	}
+	page2 := &ec2.DescribeCapacityReservationsOutput{
+		CapacityReservations: []types.CapacityReservation{
+			{CapacityReservationId: aws.String("cr-block-2"), ReservationType: types.CapacityReservationTypeCapacityBlock, InstanceType: aws.String("p5e.48xlarge")},
+		},
+	}
+
+	client.EXPECT().
+		DescribeCapacityReservations(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, in *ec2.DescribeCapacityReservationsInput, _ ...func(*ec2.Options)) (*ec2.DescribeCapacityReservationsOutput, error) {
+			// The active-state filter is always applied server-side.
+			assert.True(t, hasStateFilter(in.Filters, "active"), "expected state=active filter")
+			if in.NextToken == nil {
+				return page1, nil
+			}
+			return page2, nil
+		}).
+		Times(2)
+
+	c := newCompute(client)
+	got, err := c.listActiveCapacityReservations(t.Context())
+	assert.NoError(t, err)
+
+	// Only the capacity-block reservations survive; the default RI is dropped.
+	var ids []string
+	for _, cr := range got {
+		ids = append(ids, *cr.CapacityReservationId)
+	}
+	assert.Equal(t, []string{"cr-block-1", "cr-block-2"}, ids)
+}
+
+func hasStateFilter(filters []types.Filter, state string) bool {
+	for _, f := range filters {
+		if f.Name != nil && *f.Name == "state" {
+			for _, v := range f.Values {
+				if v == state {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}

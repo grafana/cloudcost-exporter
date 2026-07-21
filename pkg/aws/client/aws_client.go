@@ -66,6 +66,10 @@ func (c *AWSClient) ListComputeInstances(ctx context.Context) ([]types.Reservati
 	return c.computeService.listComputeInstances(ctx)
 }
 
+func (c *AWSClient) ListActiveCapacityReservations(ctx context.Context) ([]types.CapacityReservation, error) {
+	return c.computeService.listActiveCapacityReservations(ctx)
+}
+
 func (c *AWSClient) ListEBSVolumes(ctx context.Context) ([]types.Volume, error) {
 	return c.computeService.listEBSVolumes(ctx)
 }
