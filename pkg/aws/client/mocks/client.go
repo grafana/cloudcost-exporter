@@ -93,6 +93,21 @@ func (mr *MockClientMockRecorder) GetBillingData(ctx, startDate, endDate any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBillingData", reflect.TypeOf((*MockClient)(nil).GetBillingData), ctx, startDate, endDate)
 }
 
+// GetCapacityBlockCosts mocks base method.
+func (m *MockClient) GetCapacityBlockCosts(ctx context.Context, startDate, endDate time.Time) (*client.CapacityBlockCosts, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCapacityBlockCosts", ctx, startDate, endDate)
+	ret0, _ := ret[0].(*client.CapacityBlockCosts)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetCapacityBlockCosts indicates an expected call of GetCapacityBlockCosts.
+func (mr *MockClientMockRecorder) GetCapacityBlockCosts(ctx, startDate, endDate any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCapacityBlockCosts", reflect.TypeOf((*MockClient)(nil).GetCapacityBlockCosts), ctx, startDate, endDate)
+}
+
 // GetRDSUnitData mocks base method.
 func (m *MockClient) GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, engineCode, isOutpost string) (string, error) {
 	m.ctrl.T.Helper()
