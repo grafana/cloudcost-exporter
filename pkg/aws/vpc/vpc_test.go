@@ -43,6 +43,11 @@ func (m *MockClient) ListComputeInstances(ctx context.Context) ([]ec2Types.Reser
 	return args.Get(0).([]ec2Types.Reservation), args.Error(1)
 }
 
+func (m *MockClient) ListActiveCapacityReservations(ctx context.Context) ([]ec2Types.CapacityReservation, error) {
+	args := m.Called(ctx)
+	return args.Get(0).([]ec2Types.CapacityReservation), args.Error(1)
+}
+
 func (m *MockClient) ListEBSVolumes(ctx context.Context) ([]ec2Types.Volume, error) {
 	args := m.Called(ctx)
 	return args.Get(0).([]ec2Types.Volume), args.Error(1)

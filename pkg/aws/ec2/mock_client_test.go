@@ -23,6 +23,10 @@ type mockClient struct {
 	// Storage pricing fields
 	storagePrices []string
 	storageErr    error
+
+	// Capacity block fields
+	capacityReservations []ec2Types.CapacityReservation
+	capacityReservErr    error
 }
 
 func (m *mockClient) ListOnDemandPrices(ctx context.Context, region string) ([]string, error) {
@@ -47,6 +51,10 @@ func (m *mockClient) DescribeRegions(ctx context.Context, allRegions bool) ([]ec
 
 func (m *mockClient) ListComputeInstances(ctx context.Context) ([]ec2Types.Reservation, error) {
 	panic("not implemented")
+}
+
+func (m *mockClient) ListActiveCapacityReservations(ctx context.Context) ([]ec2Types.CapacityReservation, error) {
+	return m.capacityReservations, m.capacityReservErr
 }
 
 func (m *mockClient) ListEBSVolumes(ctx context.Context) ([]ec2Types.Volume, error) {
