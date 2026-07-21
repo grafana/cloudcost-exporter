@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/grafana/cloudcost-exporter/pkg/aws/services/mocks"
@@ -583,4 +584,62 @@ cloudcost_exporter_aws_s3_cost_api_requests_total 1
 			assert.NoError(t, err)
 		})
 	}
+}
+
+func Test_parseCapacityBlockUsageType(t *testing.T) {
+	tests := []struct {
+		usageType    string
+		wantRegion   string
+		wantInstance string
+		wantOK       bool
+	}{
+		{"USE2-CapacityBlockFee:p5.48xlarge", "us-east-2", "p5.48xlarge", true},
+		{"USE1-CapacityBlockFee:p5.48xlarge", "us-east-1", "p5.48xlarge", true},
+		{"CapacityBlockFee:p5.48xlarge", "us-east-1", "p5.48xlarge", true}, // no region prefix -> us-east-1
+		{"USE2-BoxUsage:m7i.large", "", "", false},                         // not a capacity block fee
+		{"ZZZ9-CapacityBlockFee:p5.48xlarge", "", "", false},               // unknown billing region
+		{"USE2-CapacityBlockFee:", "", "", false},                          // missing instance type
+	}
+	for _, tt := range tests {
+		region, instance, ok := parseCapacityBlockUsageType(tt.usageType)
+		assert.Equal(t, tt.wantOK, ok, tt.usageType)
+		assert.Equal(t, tt.wantRegion, region, tt.usageType)
+		assert.Equal(t, tt.wantInstance, instance, tt.usageType)
+	}
+}
+
+func Test_parseCapacityBlockCosts_netsRefunds(t *testing.T) {
+	group := func(usageType, amount string) types.Group {
+		return types.Group{
+			Keys:    []string{usageType},
+			Metrics: map[string]types.MetricValue{"UnblendedCost": {Amount: aws.String(amount)}},
+		}
+	}
+	outputs := []*costexplorer.GetCostAndUsageOutput{
+		{
+			ResultsByTime: []types.ResultByTime{
+				// Day 1: cancelled us-east-2b reservation booked as an upfront fee.
+				{Groups: []types.Group{group("USE2-CapacityBlockFee:p5.48xlarge", "11628.29")}},
+				// Day 2: the real reservation, the refund of the cancelled one, and
+				// an unrelated usage type that must be ignored.
+				{Groups: []types.Group{
+					group("USE2-CapacityBlockFee:p5.48xlarge", "14710.60"),
+					group("USE2-CapacityBlockFee:p5.48xlarge", "-11628.29"),
+					group("USE2-BoxUsage:m7i.large", "5.00"),
+				}},
+			},
+		},
+	}
+
+	costs := parseCapacityBlockCosts(outputs)
+
+	// The cancelled reservation's fee is netted out by its refund, leaving only
+	// the real reservation's fee.
+	fee, ok := costs.GetFee("us-east-2", "p5.48xlarge")
+	assert.True(t, ok)
+	assert.InDelta(t, 14710.60, fee, 0.001)
+
+	// Unrelated usage types are not captured.
+	_, ok = costs.GetFee("us-east-2", "m7i.large")
+	assert.False(t, ok)
 }

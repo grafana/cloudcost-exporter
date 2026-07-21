@@ -134,6 +134,33 @@ type PricingModel struct {
 	Model map[string]*Pricing
 }
 
+// CapacityBlockCosts holds the net upfront fee (USD) paid for EC2 Capacity Block
+// for ML reservations, keyed by region then instance type. Fees are netted across
+// Cost Explorer record types (Upfront minus Refunds) so cancelled or
+// refunded reservations discount out of the total.
+type CapacityBlockCosts struct {
+	// Regions maps a region code to a map of instance type -> net fee in USD.
+	Regions map[string]map[string]float64
+}
+
+// addFee accumulates a fee for a region+instance type. Refunds rows
+// carry negative amounts, so accumulating across record types nets them out.
+func (c *CapacityBlockCosts) addFee(region, instanceType string, fee float64) {
+	if c.Regions[region] == nil {
+		c.Regions[region] = make(map[string]float64)
+	}
+	c.Regions[region][instanceType] += fee
+}
+
+// GetFee returns the net fee for a region+instance type, and whether one exists.
+func (c *CapacityBlockCosts) GetFee(region, instanceType string) (float64, bool) {
+	if c.Regions[region] == nil {
+		return 0, false
+	}
+	fee, ok := c.Regions[region][instanceType]
+	return fee, ok
+}
+
 type Pricing struct {
 	Usage    float64
 	Cost     float64
