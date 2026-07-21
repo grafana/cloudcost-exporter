@@ -33,6 +33,11 @@ func (m *MockClient) GetBillingData(ctx context.Context, startDate, endDate time
 	return args.Get(0).(*awsclient.BillingData), args.Error(1)
 }
 
+func (m *MockClient) GetCapacityBlockCosts(ctx context.Context, startDate, endDate time.Time) (*awsclient.CapacityBlockCosts, error) {
+	args := m.Called(ctx, startDate, endDate)
+	return args.Get(0).(*awsclient.CapacityBlockCosts), args.Error(1)
+}
+
 func (m *MockClient) DescribeRegions(ctx context.Context, allRegions bool) ([]ec2Types.Region, error) {
 	args := m.Called(ctx, allRegions)
 	return args.Get(0).([]ec2Types.Region), args.Error(1)

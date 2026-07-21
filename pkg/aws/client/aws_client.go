@@ -58,6 +58,10 @@ func (c *AWSClient) GetBillingData(ctx context.Context, startDate time.Time, end
 	return c.billing.getBillingData(ctx, startDate, endDate)
 }
 
+func (c *AWSClient) GetCapacityBlockCosts(ctx context.Context, startDate time.Time, endDate time.Time) (*CapacityBlockCosts, error) {
+	return c.billing.getCapacityBlockCosts(ctx, startDate, endDate)
+}
+
 func (c *AWSClient) DescribeRegions(ctx context.Context, allRegions bool) ([]types.Region, error) {
 	return c.computeService.describeRegions(ctx, allRegions)
 }

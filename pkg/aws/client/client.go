@@ -16,6 +16,7 @@ import (
 
 type Client interface {
 	GetBillingData(ctx context.Context, startDate time.Time, endDate time.Time) (*BillingData, error)
+	GetCapacityBlockCosts(ctx context.Context, startDate time.Time, endDate time.Time) (*CapacityBlockCosts, error)
 	DescribeRegions(ctx context.Context, allRegions bool) ([]types.Region, error)
 	ListComputeInstances(ctx context.Context) ([]types.Reservation, error)
 	ListActiveCapacityReservations(ctx context.Context) ([]types.CapacityReservation, error)
