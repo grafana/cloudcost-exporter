@@ -18,6 +18,7 @@ type Client interface {
 	GetBillingData(ctx context.Context, startDate time.Time, endDate time.Time) (*BillingData, error)
 	DescribeRegions(ctx context.Context, allRegions bool) ([]types.Region, error)
 	ListComputeInstances(ctx context.Context) ([]types.Reservation, error)
+	ListActiveCapacityReservations(ctx context.Context) ([]types.CapacityReservation, error)
 	ListEBSVolumes(ctx context.Context) ([]types.Volume, error)
 	ListSpotPrices(ctx context.Context) ([]types.SpotPrice, error)
 	ListOnDemandPrices(ctx context.Context, region string) ([]string, error)

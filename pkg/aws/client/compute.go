@@ -135,6 +135,40 @@ func (e *compute) getAvailabilityZones(ctx context.Context) ([]string, error) {
 	return azs, nil
 }
 
+// listActiveCapacityReservations returns EC2 Capacity Block for ML reservations
+// that are currently active. State is filtered server-side; reservation type is
+// filtered client-side because DescribeCapacityReservations has no server-side
+// reservation-type filter.
+func (e *compute) listActiveCapacityReservations(ctx context.Context) ([]types.CapacityReservation, error) {
+	input := &awsEc2.DescribeCapacityReservationsInput{
+		Filters: []types.Filter{
+			{
+				Name:   aws.String("state"),
+				Values: []string{string(types.CapacityReservationStateActive)},
+			},
+		},
+	}
+
+	var reservations []types.CapacityReservation
+	for {
+		resp, err := e.client.DescribeCapacityReservations(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		for _, cr := range resp.CapacityReservations {
+			if cr.ReservationType == types.CapacityReservationTypeCapacityBlock {
+				reservations = append(reservations, cr)
+			}
+		}
+		if resp.NextToken == nil || *resp.NextToken == "" {
+			break
+		}
+		input.NextToken = resp.NextToken
+	}
+
+	return reservations, nil
+}
+
 // DISK
 
 func (e *compute) listEBSVolumes(ctx context.Context) ([]types.Volume, error) {
