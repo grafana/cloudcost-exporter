@@ -50,6 +50,10 @@ type Config struct {
 	Logger               *slog.Logger
 	AccountID            string
 	BedrockFamilyFilter  string // regex matched against family label; default "anthropic|amazon"
+	// CapacityBlocksEnabled turns on pricing of EC2 Capacity Block for ML
+	// reservations in the EC2 collector. Off by default: it adds Cost Explorer
+	// calls (ce:GetCostAndUsage) and only applies to accounts that buy them.
+	CapacityBlocksEnabled bool
 }
 
 type AWS struct {
@@ -211,10 +215,11 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 			collectors = append(collectors, collector)
 		case serviceEC2:
 			collector, err := ec2Collector.New(ctx, &ec2Collector.Config{
-				Regions:        regions,
-				ScrapeInterval: config.ScrapeInterval,
-				RegionMap:      regionClients,
-				AccountID:      config.AccountID,
+				Regions:               regions,
+				ScrapeInterval:        config.ScrapeInterval,
+				RegionMap:             regionClients,
+				AccountID:             config.AccountID,
+				CapacityBlocksEnabled: config.CapacityBlocksEnabled,
 			}, logger)
 			if err != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",

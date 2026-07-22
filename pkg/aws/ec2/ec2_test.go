@@ -182,7 +182,7 @@ func TestCollector_Collect(t *testing.T) {
 									Placement: &ec2Types.Placement{
 										AvailabilityZone: aws.String("not-existent"),
 									},
-									InstanceLifecycle: ec2Types.InstanceLifecycleTypeCapacityBlock,
+									InstanceLifecycle: ec2Types.InstanceLifecycleTypeScheduled,
 								},
 								{
 									InstanceId:   aws.String("i-1234567891abcdef0"),
@@ -197,7 +197,7 @@ func TestCollector_Collect(t *testing.T) {
 									Placement: &ec2Types.Placement{
 										AvailabilityZone: aws.String("us-east-1a"),
 									},
-									InstanceLifecycle: ec2Types.InstanceLifecycleTypeCapacityBlock,
+									InstanceLifecycle: ec2Types.InstanceLifecycleTypeScheduled,
 								},
 							},
 						},
@@ -468,4 +468,90 @@ func Test_EmitMetricsFromVolumesChannel(t *testing.T) {
 		assert.NotNil(t, receivedMsg)
 		assert.Contains(t, receivedMsg.Desc().String(), "persistent_volume_usd_per_hour")
 	})
+}
+
+func TestCollector_Collect_CapacityBlock(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	regions := []ec2Types.Region{{RegionName: aws.String("us-east-1")}}
+
+	start := time.Date(2026, 7, 10, 17, 16, 0, 0, time.UTC)
+	end := start.Add(100 * time.Hour) // 100h block, count 1
+
+	c := mock_client.NewMockClient(ctrl)
+	// Compute/storage pricing so New() succeeds and InstanceDetails has m5.large
+	// (needed to weight the capacity-block total into cpu/ram).
+	c.EXPECT().ListSpotPrices(gomock.Any()).
+		DoAndReturn(func(ctx context.Context) ([]ec2Types.SpotPrice, error) {
+			return []ec2Types.SpotPrice{}, nil
+		}).MinTimes(1)
+	c.EXPECT().ListOnDemandPrices(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, region string) ([]string, error) {
+			return []string{
+				`{"product":{"productFamily":"Compute Instance","attributes":{"memory":"8 GiB","vcpu":"2","regionCode":"us-east-1","instanceFamily":"General purpose","operatingSystem":"Linux","instanceType":"m5.large","tenancy":"Shared","usagetype":"BoxUsage:m5.large","marketoption":"OnDemand"}},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"O.JRTCKXETXF":{"priceDimensions":{"O.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","pricePerUnit":{"USD":"0.0960000000"}}}}}}}`,
+			}, nil
+		}).MinTimes(1)
+	c.EXPECT().ListStoragePrices(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, region string) ([]string, error) {
+			return []string{}, nil
+		}).MinTimes(1)
+	// Capacity block inputs.
+	c.EXPECT().ListActiveCapacityReservations(gomock.Any()).
+		DoAndReturn(func(ctx context.Context) ([]ec2Types.CapacityReservation, error) {
+			return []ec2Types.CapacityReservation{{
+				CapacityReservationId: aws.String("cr-test"),
+				InstanceType:          aws.String("m5.large"),
+				AvailabilityZone:      aws.String("us-east-1a"),
+				TotalInstanceCount:    aws.Int32(1),
+				StartDate:             &start,
+				EndDate:               &end,
+			}}, nil
+		}).MinTimes(1)
+	c.EXPECT().GetCapacityBlockCosts(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, s, e time.Time) (*client.CapacityBlockCosts, error) {
+			return &client.CapacityBlockCosts{Regions: map[string]map[string]float64{
+				"us-east-1": {"m5.large": 1000.0},
+			}}, nil
+		}).MinTimes(1)
+	c.EXPECT().ListComputeInstances(gomock.Any()).
+		DoAndReturn(func(ctx context.Context) ([]ec2Types.Reservation, error) {
+			return []ec2Types.Reservation{{Instances: []ec2Types.Instance{{
+				InstanceId:            aws.String("i-cap"),
+				InstanceType:          ec2Types.InstanceTypeM5Large,
+				PrivateDnsName:        aws.String("ip-10-0-0-1.ec2.internal"),
+				Placement:             &ec2Types.Placement{AvailabilityZone: aws.String("us-east-1a")},
+				InstanceLifecycle:     ec2Types.InstanceLifecycleTypeCapacityBlock,
+				CapacityReservationId: aws.String("cr-test"),
+			}}}}, nil
+		}).Times(1)
+	c.EXPECT().ListEBSVolumes(gomock.Any()).
+		DoAndReturn(func(ctx context.Context) ([]ec2Types.Volume, error) { return nil, nil }).Times(1)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	collector, err := New(ctx, &Config{
+		Regions:               regions,
+		ScrapeInterval:        time.Minute,
+		AccountID:             "123456789012",
+		RegionMap:             map[string]client.Client{"us-east-1": c},
+		CapacityBlocksEnabled: true,
+	}, logger)
+	require.NoError(t, err)
+
+	ch := make(chan prometheus.Metric)
+	go func() {
+		require.NoError(t, collector.Collect(t.Context(), ch))
+		close(ch)
+	}()
+
+	var total *utils.MetricResult
+	for metric := range ch {
+		m := utils.ReadMetrics(metric)
+		if m.FqName == "cloudcost_aws_ec2_instance_total_usd_per_hour" {
+			total = m
+		}
+	}
+	require.NotNil(t, total, "expected a total cost metric for the capacity block instance")
+	assert.Equal(t, "capacityblock", total.Labels["price_tier"])
+	// 1000 USD / (1 instance * 100h) = 10 USD/instance-hour.
+	assert.InDelta(t, 10.0, total.Value, 0.0001)
 }
