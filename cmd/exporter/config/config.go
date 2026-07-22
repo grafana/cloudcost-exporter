@@ -19,6 +19,7 @@ type Config struct {
 			ExcludeRegions       StringSliceFlag
 			BedrockFamilyFilter  string
 			RDSRegionListTimeout time.Duration
+			CapacityBlocks       bool
 		}
 		GCP struct {
 			DefaultGCSDiscount       int
