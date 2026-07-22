@@ -64,20 +64,22 @@ var (
 
 // Collector is a prometheus collector that collects metrics from AWS EKS clusters.
 type Collector struct {
-	regions            []ec2Types.Region
-	ScrapeInterval     time.Duration
-	computePricingMap  *ComputePricingMap
-	storagePricingMap  *StoragePricingMap
-	awsRegionClientMap map[string]client.Client
-	logger             *slog.Logger
-	accountID          string
+	regions                 []ec2Types.Region
+	ScrapeInterval          time.Duration
+	computePricingMap       *ComputePricingMap
+	storagePricingMap       *StoragePricingMap
+	capacityBlockPricingMap *CapacityBlockPricingMap // nil when capacity blocks are disabled
+	awsRegionClientMap      map[string]client.Client
+	logger                  *slog.Logger
+	accountID               string
 }
 
 type Config struct {
-	ScrapeInterval time.Duration
-	Regions        []ec2Types.Region
-	RegionMap      map[string]client.Client
-	AccountID      string
+	ScrapeInterval        time.Duration
+	Regions               []ec2Types.Region
+	RegionMap             map[string]client.Client
+	AccountID             string
+	CapacityBlocksEnabled bool
 }
 
 // New creates an ec2 collector
@@ -123,14 +125,41 @@ func New(ctx context.Context, config *Config, logger *slog.Logger) (*Collector, 
 		}
 	}()
 
+	// Capacity block pricing is opt-in: it adds Cost Explorer calls and only
+	// applies to accounts that purchase Capacity Blocks. Init failures are
+	// non-fatal so a Cost Explorer hiccup (e.g. missing ce:GetCostAndUsage)
+	// never takes down on-demand/spot/EBS pricing.
+	var capacityBlockMap *CapacityBlockPricingMap
+	if config.CapacityBlocksEnabled {
+		capacityBlockMap = NewCapacityBlockPricingMap(logger, config)
+		if err := capacityBlockMap.GenerateCapacityBlockPricingMap(ctx); err != nil {
+			logger.Error("failed initial capacity block pricing", "error", err)
+		}
+		go func() {
+			capacityBlockTicker := time.NewTicker(config.ScrapeInterval)
+			defer capacityBlockTicker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-capacityBlockTicker.C:
+					if err := capacityBlockMap.GenerateCapacityBlockPricingMap(ctx); err != nil {
+						logger.Error("failed to refresh capacity block pricing map", "error", err)
+					}
+				}
+			}
+		}()
+	}
+
 	return &Collector{
-		ScrapeInterval:     config.ScrapeInterval,
-		regions:            config.Regions,
-		logger:             logger,
-		awsRegionClientMap: config.RegionMap,
-		computePricingMap:  computeMap,
-		storagePricingMap:  storageMap,
-		accountID:          config.AccountID,
+		ScrapeInterval:          config.ScrapeInterval,
+		regions:                 config.Regions,
+		logger:                  logger,
+		awsRegionClientMap:      config.RegionMap,
+		computePricingMap:       computeMap,
+		storagePricingMap:       storageMap,
+		capacityBlockPricingMap: capacityBlockMap,
+		accountID:               config.AccountID,
 	}, nil
 }
 
@@ -268,14 +297,30 @@ func (c *Collector) processInstance(instance ec2Types.Instance, ch chan<- promet
 
 	region := *instance.Placement.AvailabilityZone
 
-	pricetier := "spot"
-	if instance.InstanceLifecycle != ec2Types.InstanceLifecycleTypeSpot {
-		pricetier = "ondemand"
-		// Ondemand instances are keyed based upon their Region, so we need to remove the availability zone
+	var pricetier string
+	var price *Prices
+	var err error
+	switch instance.InstanceLifecycle {
+	case ec2Types.InstanceLifecycleTypeSpot:
+		// Spot prices are keyed by availability zone.
+		pricetier = "spot"
+		price, err = c.computePricingMap.GetPriceForInstanceType(region, string(instance.InstanceType))
+	case ec2Types.InstanceLifecycleTypeCapacityBlock:
+		// Capacity block prices are per reservation; match the instance to its
+		// reservation by ID. The region is only used for the metric label.
+		pricetier = "capacityblock"
 		region = region[:len(region)-1]
+		if instance.CapacityReservationId == nil {
+			c.logger.Debug(fmt.Sprintf("capacity block instance %s has no reservation id, skipping", *instance.InstanceId))
+			return
+		}
+		price, err = c.capacityBlockPrice(*instance.CapacityReservationId, string(instance.InstanceType))
+	default:
+		// On-demand prices are keyed by region, so remove the availability zone.
+		pricetier = "ondemand"
+		region = region[:len(region)-1]
+		price, err = c.computePricingMap.GetPriceForInstanceType(region, string(instance.InstanceType))
 	}
-
-	price, err := c.computePricingMap.GetPriceForInstanceType(region, string(instance.InstanceType))
 	if err != nil {
 		c.logger.Error(fmt.Sprintf("error getting price for instance type %s: %s", instance.InstanceType, err))
 		return
@@ -296,6 +341,33 @@ func (c *Collector) processInstance(instance ec2Types.Instance, ch chan<- promet
 	ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.Cpu, labelValues...)
 	ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.Ram, labelValues...)
 	ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.Total, labelValues...)
+}
+
+// capacityBlockPrice returns the amortized price of a Capacity Block instance,
+// weighting the per-instance-hour total into CPU and RAM with the same ratio
+// model as on-demand/spot so the per-core/per-GiB metrics the bottom-up cost
+// model consumes are populated. If instance attributes are unavailable (no
+// on-demand price to source vCPU/memory from), the total is still emitted with
+// zero CPU/RAM split rather than dropping the instance.
+func (c *Collector) capacityBlockPrice(reservationID, instanceType string) (*Prices, error) {
+	if c.capacityBlockPricingMap == nil {
+		return nil, ErrCapacityBlockPriceNotFound
+	}
+	total, err := c.capacityBlockPricingMap.GetPriceForReservation(reservationID)
+	if err != nil {
+		return nil, err
+	}
+	attributes, ok := c.computePricingMap.GetInstanceAttributes(instanceType)
+	if !ok {
+		c.logger.Debug(fmt.Sprintf("no instance attributes for %s, emitting capacity block total only", instanceType))
+		return &Prices{Total: total}, nil
+	}
+	weighted, err := weightedPriceForInstance(total, attributes)
+	if err != nil {
+		c.logger.Debug(fmt.Sprintf("could not weight capacity block price for %s: %s", instanceType, err))
+		return &Prices{Total: total}, nil
+	}
+	return &Prices{Cpu: weighted.Cpu, Ram: weighted.Ram, Total: total}, nil
 }
 
 func (c *Collector) emitMetricsFromVolumesChannel(volumesCh chan []ec2Types.Volume, ch chan<- prometheus.Metric) {

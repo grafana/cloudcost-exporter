@@ -469,7 +469,7 @@ func weightedPriceForInstance(price float64, attributes InstanceAttributes) (*Pr
 	}
 	ratio, ok := cpuToCostRatio[attributes.InstanceFamily]
 	if !ok {
-		slog.Warn("no ratio found for instance type, defaulting", "instanceType", attributes.InstanceType, "default", defaultInstanceFamily)
+		slog.Warn("no ratio found for instance family, defaulting", "instanceType", attributes.InstanceType, "default", defaultInstanceFamily)
 		ratio = cpuToCostRatio[defaultInstanceFamily]
 	}
 
@@ -501,6 +501,17 @@ func (cpm *ComputePricingMap) GetInstanceFamily(instanceType string) string {
 		return details.InstanceFamily
 	}
 	return ""
+}
+
+// GetInstanceAttributes returns the cached attributes (vCPU, memory, family) for
+// an instance type, and whether they were found. Attributes are populated from
+// on-demand pricing, so they may be absent for instance types with no on-demand
+// price.
+func (cpm *ComputePricingMap) GetInstanceAttributes(instanceType string) (InstanceAttributes, bool) {
+	cpm.m.RLock()
+	defer cpm.m.RUnlock()
+	details, ok := cpm.InstanceDetails[instanceType]
+	return details, ok
 }
 
 func (spm *StoragePricingMap) GetPriceForVolumeType(region string, volumeType string, size int32) (float64, error) {
