@@ -46,6 +46,13 @@ var (
 		"The memory cost of a ec2 instance in USD/(GiB*h)",
 		[]string{"account_id", "instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier", "architecture"},
 	)
+	InstanceGPUHourlyCostDesc = utils.GenerateDesc(
+		cloudcostexporter.MetricPrefix,
+		subsystem,
+		utils.InstanceGPUCostSuffix,
+		"The gpu cost of a ec2 instance in USD/(gpu*h)",
+		[]string{"account_id", "instance", "instance_id", "region", "family", "machine_type", "cluster_name", "price_tier", "architecture"},
+	)
 	InstanceTotalHourlyCostDesc = utils.GenerateDesc(
 		cloudcostexporter.MetricPrefix,
 		subsystem,
@@ -341,14 +348,20 @@ func (c *Collector) processInstance(instance ec2Types.Instance, ch chan<- promet
 	ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.Cpu, labelValues...)
 	ch <- prometheus.MustNewConstMetric(InstanceMemoryHourlyCostDesc, prometheus.GaugeValue, price.Ram, labelValues...)
 	ch <- prometheus.MustNewConstMetric(InstanceTotalHourlyCostDesc, prometheus.GaugeValue, price.Total, labelValues...)
+	// Only GPU instances carry a GPU rate; emit it to avoid zero-valued series for
+	// the vast majority of instance types that have no accelerators.
+	if price.Gpu > 0 {
+		ch <- prometheus.MustNewConstMetric(InstanceGPUHourlyCostDesc, prometheus.GaugeValue, price.Gpu, labelValues...)
+	}
 }
 
 // capacityBlockPrice returns the amortized price of a Capacity Block instance,
-// weighting the per-instance-hour total into CPU and RAM with the same ratio
-// model as on-demand/spot so the per-core/per-GiB metrics the bottom-up cost
-// model consumes are populated. If instance attributes are unavailable (no
+// weighting the per-instance-hour total into GPU, CPU and RAM with the same ratio
+// model as on-demand/spot so the per-gpu/per-core/per-GiB metrics the bottom-up
+// cost model consumes are populated. Capacity blocks are GPU instances, so the
+// GPU share carries most of the cost. If instance attributes are unavailable (no
 // on-demand price to source vCPU/memory from), the total is still emitted with
-// zero CPU/RAM split rather than dropping the instance.
+// zero GPU/CPU/RAM split rather than dropping the instance.
 func (c *Collector) capacityBlockPrice(reservationID, instanceType string) (*Prices, error) {
 	if c.capacityBlockPricingMap == nil {
 		return nil, ErrCapacityBlockPriceNotFound
@@ -367,7 +380,7 @@ func (c *Collector) capacityBlockPrice(reservationID, instanceType string) (*Pri
 		c.logger.Debug(fmt.Sprintf("could not weight capacity block price for %s: %s", instanceType, err))
 		return &Prices{Total: total}, nil
 	}
-	return &Prices{Cpu: weighted.Cpu, Ram: weighted.Ram, Total: total}, nil
+	return &Prices{Cpu: weighted.Cpu, Gpu: weighted.Gpu, Ram: weighted.Ram, Total: total}, nil
 }
 
 func (c *Collector) emitMetricsFromVolumesChannel(volumesCh chan []ec2Types.Volume, ch chan<- prometheus.Metric) {
@@ -441,6 +454,7 @@ func (c *Collector) processVolume(volume ec2Types.Volume, ch chan<- prometheus.M
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- InstanceCPUHourlyCostDesc
 	ch <- InstanceMemoryHourlyCostDesc
+	ch <- InstanceGPUHourlyCostDesc
 	ch <- InstanceTotalHourlyCostDesc
 	ch <- PersistentVolumeHourlyCostDesc
 	return nil

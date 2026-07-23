@@ -17,6 +17,15 @@ import (
 
 const (
 	defaultInstanceFamily = "General purpose"
+	// gpuCostRatio is the fraction of a GPU instance's total cost attributed to its
+	// accelerators; the remainder is split across cpu/ram with cpuToCostRatio. Like
+	// cpuToCostRatio it's an imperfect approximation. It was derived from AWS list
+	// prices: pricing a p5.48xlarge's cpu+ram at the marginal $/vCPU and $/GiB of
+	// comparable non-GPU instances accounts for ~30% of its hourly cost, leaving ~0.70
+	// for the 8 H100s. Tuned to p-series (training) GPUs; g-series inference GPUs skew
+	// lower and would need a per-type ratio. The total is preserved regardless of the
+	// split.
+	gpuCostRatio = 0.70
 )
 
 var (
@@ -57,9 +66,11 @@ type FamilyPricing struct {
 	Family map[string]*Prices // Each Family can have many PriceTiers
 }
 
-// ComputePrices holds the price of a ec2 instances CPU and RAM. The price is in USD
+// ComputePrices holds the price of a ec2 instances CPU, GPU and RAM. The price is in USD.
+// Gpu is per-GPU-hour and is only non-zero for instance types with accelerators.
 type Prices struct {
 	Cpu   float64
+	Gpu   float64
 	Ram   float64
 	Total float64
 }
@@ -441,6 +452,7 @@ func (cpm *ComputePricingMap) AddToComputePricingMap(price float64, attribute In
 	}
 	cpm.Regions[attribute.Region].Family[attribute.InstanceType] = &Prices{
 		Cpu:   weightedPrice.Cpu,
+		Gpu:   weightedPrice.Gpu,
 		Ram:   weightedPrice.Ram,
 		Total: price,
 	}
@@ -473,10 +485,36 @@ func weightedPriceForInstance(price float64, attributes InstanceAttributes) (*Pr
 		ratio = cpuToCostRatio[defaultInstanceFamily]
 	}
 
+	// Carve the GPU share off the total first, then split the remainder across
+	// cpu/ram with the family ratio. Non-GPU instances (gpus == 0) keep the
+	// original two-way split. The total is preserved either way:
+	//   gpu*gpus + cpu*cpus + ram*ram == price
+	gpuPrice := 0.0
+	remaining := price
+	if gpus := gpuCountFromAttributes(attributes); gpus > 0 {
+		gpuPrice = price * gpuCostRatio / gpus
+		remaining = price * (1 - gpuCostRatio)
+	}
+
 	return &Prices{
-		Cpu: price * ratio / cpus,
-		Ram: price * (1 - ratio) / ram,
+		Gpu: gpuPrice,
+		Cpu: remaining * ratio / cpus,
+		Ram: remaining * (1 - ratio) / ram,
 	}, nil
+}
+
+// gpuCountFromAttributes parses the GPU count from the pricing product's gpu
+// attribute. Non-GPU instance types carry no gpu attribute, so an empty or
+// unparseable value yields 0.
+func gpuCountFromAttributes(attributes InstanceAttributes) float64 {
+	if attributes.GPU == "" {
+		return 0
+	}
+	gpus, err := strconv.ParseFloat(attributes.GPU, 64)
+	if err != nil {
+		return 0
+	}
+	return gpus
 }
 
 func (cpm *ComputePricingMap) GetPriceForInstanceType(region string, instanceType string) (*Prices, error) {
@@ -537,6 +575,7 @@ type InstanceAttributes struct {
 	Region            string `json:"regionCode"`
 	InstanceType      string `json:"instanceType"`
 	VCPU              string `json:"vcpu"`
+	GPU               string `json:"gpu"`
 	Memory            string `json:"memory"`
 	InstanceFamily    string `json:"instanceFamily"`
 	PhysicalProcessor string `json:"physicalProcessor"`
