@@ -491,6 +491,49 @@ func Test_weightedPriceForInstance(t *testing.T) {
 				Ram: 0.35,
 			},
 		},
+		"GPU instance carves the gpu share off the total, splitting the remainder cpu/ram": {
+			// gpuCostRatio (0.88) of the total goes to the 8 GPUs; the remaining 0.12
+			// splits by the default ratio (GPU instance family is not in cpuToCostRatio).
+			price: 1.0,
+			attributes: InstanceAttributes{
+				VCPU:           "1",
+				Memory:         "1 GiB",
+				GPU:            "8",
+				InstanceFamily: "GPU instance",
+			},
+			want: &Prices{
+				Gpu: 1.0 * gpuCostRatio / 8,
+				Cpu: 1.0 * (1 - gpuCostRatio) * 0.65,
+				Ram: 1.0 * (1 - gpuCostRatio) * 0.35,
+			},
+		},
+		"GPU instance with a single accelerator": {
+			price: 1.0,
+			attributes: InstanceAttributes{
+				VCPU:           "2",
+				Memory:         "4 GiB",
+				GPU:            "1",
+				InstanceFamily: "GPU instance",
+			},
+			want: &Prices{
+				Gpu: 1.0 * gpuCostRatio / 1,
+				Cpu: 1.0 * (1 - gpuCostRatio) * 0.65 / 2,
+				Ram: 1.0 * (1 - gpuCostRatio) * 0.35 / 4,
+			},
+		},
+		"A gpu count of zero is treated as a non-gpu instance": {
+			price: 1.0,
+			attributes: InstanceAttributes{
+				VCPU:           "1",
+				Memory:         "1 GiB",
+				GPU:            "0",
+				InstanceFamily: "General purpose",
+			},
+			want: &Prices{
+				Cpu: 0.65,
+				Ram: 0.35,
+			},
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -500,7 +543,12 @@ func Test_weightedPriceForInstance(t *testing.T) {
 				return
 			}
 			assert.NoError(t, err)
-			assert.Equal(t, tt.want, got)
+			// Prices are computed floats; compare with a tight tolerance rather than
+			// exact equality to avoid constant-folding vs runtime-rounding mismatches.
+			assert.InDelta(t, tt.want.Gpu, got.Gpu, 1e-9)
+			assert.InDelta(t, tt.want.Cpu, got.Cpu, 1e-9)
+			assert.InDelta(t, tt.want.Ram, got.Ram, 1e-9)
+			assert.InDelta(t, tt.want.Total, got.Total, 1e-9)
 		})
 	}
 }
