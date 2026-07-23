@@ -543,15 +543,85 @@ func TestCollector_Collect_CapacityBlock(t *testing.T) {
 		close(ch)
 	}()
 
-	var total *utils.MetricResult
+	var total, gpu *utils.MetricResult
 	for metric := range ch {
 		m := utils.ReadMetrics(metric)
-		if m.FqName == "cloudcost_aws_ec2_instance_total_usd_per_hour" {
+		switch m.FqName {
+		case "cloudcost_aws_ec2_instance_total_usd_per_hour":
 			total = m
+		case "cloudcost_aws_ec2_instance_gpu_usd_per_gpu_hour":
+			gpu = m
 		}
 	}
 	require.NotNil(t, total, "expected a total cost metric for the capacity block instance")
+	assert.Nil(t, gpu, "m5.large has no GPUs, so no gpu metric should be emitted")
 	assert.Equal(t, "capacityblock", total.Labels["price_tier"])
 	// 1000 USD / (1 instance * 100h) = 10 USD/instance-hour.
 	assert.InDelta(t, 10.0, total.Value, 0.0001)
+}
+
+func TestCollector_Collect_GPU(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	regions := []ec2Types.Region{{RegionName: aws.String("us-east-1")}}
+
+	c := mock_client.NewMockClient(ctrl)
+	c.EXPECT().ListSpotPrices(gomock.Any()).
+		DoAndReturn(func(ctx context.Context) ([]ec2Types.SpotPrice, error) {
+			return []ec2Types.SpotPrice{}, nil
+		}).MinTimes(1)
+	// A GPU instance: the pricing product carries gpu="8" for the 8 accelerators.
+	// On-demand price is 8.0 USD/hr for round numbers.
+	c.EXPECT().ListOnDemandPrices(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, region string) ([]string, error) {
+			return []string{
+				`{"product":{"productFamily":"Compute Instance","attributes":{"memory":"2048 GiB","vcpu":"192","gpu":"8","regionCode":"us-east-1","instanceFamily":"GPU instance","operatingSystem":"Linux","instanceType":"p5.48xlarge","tenancy":"Shared","usagetype":"BoxUsage:p5.48xlarge","marketoption":"OnDemand"}},"serviceCode":"AmazonEC2","terms":{"OnDemand":{"O.JRTCKXETXF":{"priceDimensions":{"O.JRTCKXETXF.6YS6EN2CT7":{"unit":"Hrs","pricePerUnit":{"USD":"8.0000000000"}}}}}}}`,
+			}, nil
+		}).MinTimes(1)
+	c.EXPECT().ListStoragePrices(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, region string) ([]string, error) {
+			return []string{}, nil
+		}).MinTimes(1)
+	c.EXPECT().ListComputeInstances(gomock.Any()).
+		DoAndReturn(func(ctx context.Context) ([]ec2Types.Reservation, error) {
+			return []ec2Types.Reservation{{Instances: []ec2Types.Instance{{
+				InstanceId:     aws.String("i-gpu"),
+				InstanceType:   ec2Types.InstanceType("p5.48xlarge"),
+				PrivateDnsName: aws.String("ip-10-0-0-2.ec2.internal"),
+				Placement:      &ec2Types.Placement{AvailabilityZone: aws.String("us-east-1a")},
+			}}}}, nil
+		}).Times(1)
+	c.EXPECT().ListEBSVolumes(gomock.Any()).
+		DoAndReturn(func(ctx context.Context) ([]ec2Types.Volume, error) { return nil, nil }).Times(1)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	collector, err := New(ctx, &Config{
+		Regions:        regions,
+		ScrapeInterval: time.Minute,
+		AccountID:      "123456789012",
+		RegionMap:      map[string]client.Client{"us-east-1": c},
+	}, logger)
+	require.NoError(t, err)
+
+	ch := make(chan prometheus.Metric)
+	go func() {
+		require.NoError(t, collector.Collect(t.Context(), ch))
+		close(ch)
+	}()
+
+	metrics := map[string]*utils.MetricResult{}
+	for metric := range ch {
+		m := utils.ReadMetrics(metric)
+		metrics[m.FqName] = m
+	}
+
+	gpu := metrics["cloudcost_aws_ec2_instance_gpu_usd_per_gpu_hour"]
+	require.NotNil(t, gpu, "expected a gpu cost metric for the GPU instance")
+	assert.Equal(t, "ondemand", gpu.Labels["price_tier"])
+	assert.Equal(t, "p5.48xlarge", gpu.Labels["machine_type"])
+	// gpuCostRatio (0.88) of the 8.0 total, spread over 8 GPUs = 0.88 USD/gpu-hour.
+	assert.InDelta(t, 8.0*gpuCostRatio/8, gpu.Value, 1e-9)
+	// Total is preserved regardless of the split.
+	require.NotNil(t, metrics["cloudcost_aws_ec2_instance_total_usd_per_hour"])
+	assert.InDelta(t, 8.0, metrics["cloudcost_aws_ec2_instance_total_usd_per_hour"].Value, 1e-9)
 }
