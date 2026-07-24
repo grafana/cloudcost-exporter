@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/aws"
 	"github.com/grafana/cloudcost-exporter/pkg/azure"
 	"github.com/grafana/cloudcost-exporter/pkg/google"
+	"github.com/grafana/cloudcost-exporter/pkg/leaderelection"
 	"github.com/grafana/cloudcost-exporter/pkg/logger"
 	"github.com/grafana/cloudcost-exporter/pkg/provider"
 )
@@ -57,20 +58,100 @@ func main() {
 		logs.LogAttrs(ctx, slog.LevelWarn, "'gcp.bucket-projects' is deprecated and will be removed in a future version. Use '--gcp.projects' instead.")
 	}
 
-	csp, err := selectProvider(ctx, &cfg)
-	if err != nil {
-		logs.LogAttrs(ctx, slog.LevelError, "Error selecting provider",
-			slog.String("message", err.Error()),
-			slog.String("provider", cfg.Provider),
-		)
-		os.Exit(1)
+	var err error
+	if cfg.LeaderElection.Enabled {
+		err = runWithLeaderElection(ctx, &cfg, logs)
+	} else {
+		err = run(ctx, &cfg, logs)
 	}
-
-	err = runServer(ctx, &cfg, csp, logs)
 	if err != nil {
 		logs.LogAttrs(ctx, slog.LevelError, "Error running server", slog.String("message", err.Error()))
 		os.Exit(1)
 	}
+}
+
+// run selects the provider, registers its collectors, and serves metrics. This
+// is the default path: every replica collects independently.
+func run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
+	csp, err := selectProvider(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("selecting provider %q: %w", cfg.Provider, err)
+	}
+
+	registry, handler := createPromRegistryHandler(regionFromConfig(cfg))
+	if err := registerProvider(registry, csp); err != nil {
+		return err
+	}
+
+	return runServer(ctx, cfg, handler, log)
+}
+
+// runWithLeaderElection serves up/down metrics on every replica but only
+// registers the provider's collectors on the replica holding the leader lease,
+// so a single set of cloud provider API calls is made regardless of replica
+// count. Losing leadership stops collection and shuts the replica down so it
+// rejoins as a candidate.
+func runWithLeaderElection(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
+	registry, handler := createPromRegistryHandler(regionFromConfig(cfg))
+
+	isLeader := leaderelection.NewIsLeaderGauge()
+	registry.MustRegister(isLeader)
+
+	client, err := leaderelection.NewInClusterClient()
+	if err != nil {
+		return fmt.Errorf("initializing leader election: %w", err)
+	}
+
+	identity, err := leaderelection.ResolveIdentity(cfg.LeaderElection.Identity)
+	if err != nil {
+		return err
+	}
+
+	opts := leaderelection.Options{
+		LeaseName:     cfg.LeaderElection.LeaseName,
+		Namespace:     leaderelection.ResolveNamespace(cfg.LeaderElection.Namespace),
+		Identity:      identity,
+		LeaseDuration: cfg.LeaderElection.LeaseDuration,
+		RenewDeadline: cfg.LeaderElection.RenewDeadline,
+		RetryPeriod:   cfg.LeaderElection.RetryPeriod,
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	serverErr := make(chan error, 1)
+	go func() {
+		// A server exit (bind failure or shutdown) also stops the election.
+		defer cancel()
+		serverErr <- runServer(runCtx, cfg, handler, log)
+	}()
+
+	leaderelection.Run(runCtx, client, opts, log, isLeader, func(leaderCtx context.Context) {
+		csp, err := selectProvider(leaderCtx, cfg)
+		if err != nil {
+			log.LogAttrs(leaderCtx, slog.LevelError, "Error selecting provider after acquiring leadership",
+				slog.String("message", err.Error()),
+				slog.String("provider", cfg.Provider),
+			)
+			return
+		}
+		if err := registerProvider(registry, csp); err != nil {
+			log.LogAttrs(leaderCtx, slog.LevelError, "Error registering collectors after acquiring leadership",
+				slog.String("message", err.Error()),
+			)
+			return
+		}
+		log.LogAttrs(leaderCtx, slog.LevelInfo, "Collecting cloud provider metrics as leader")
+	})
+
+	// Run returns when ctx is cancelled or leadership is lost. Either way, stop
+	// the server so the process exits; the orchestrator restarts the replica,
+	// which rejoins as a candidate.
+	if ctx.Err() == nil {
+		log.LogAttrs(ctx, slog.LevelInfo, "Lost leadership, shutting down to rejoin as a candidate")
+	}
+	cancel()
+	return <-serverErr
 }
 
 // providerFlags is a helper method that is responsible for setting up the flags that are used to configure the provider.
@@ -112,6 +193,13 @@ func operationalFlags(cfg *config.Config) {
 	flag.StringVar(&cfg.LoggerOpts.Level, "log.level", "info", "Log level: debug, info, warn, error")
 	flag.StringVar(&cfg.LoggerOpts.Output, "log.output", "stdout", "Log output stream: stdout, stderr, file")
 	flag.StringVar(&cfg.LoggerOpts.Type, "log.type", "text", "Log type: json, text")
+	flag.BoolVar(&cfg.LeaderElection.Enabled, "leader-election.enabled", false, "Enable lease-based leader election so only the leader replica collects from cloud provider APIs. Requires running in a Kubernetes cluster. Default off preserves single-replica behavior.")
+	flag.StringVar(&cfg.LeaderElection.LeaseName, "leader-election.lease-name", "cloudcost-exporter", "Name of the Lease object used for leader election.")
+	flag.StringVar(&cfg.LeaderElection.Namespace, "leader-election.namespace", "", "Namespace of the Lease object. Defaults to the pod's service account namespace, then \"default\".")
+	flag.StringVar(&cfg.LeaderElection.Identity, "leader-election.id", "", "Unique identity for this replica in leader election. Defaults to the hostname.")
+	flag.DurationVar(&cfg.LeaderElection.LeaseDuration, "leader-election.lease-duration", 15*time.Second, "Duration a non-leader waits before it can acquire leadership.")
+	flag.DurationVar(&cfg.LeaderElection.RenewDeadline, "leader-election.renew-deadline", 10*time.Second, "Duration the leader retries refreshing the lease before giving up leadership.")
+	flag.DurationVar(&cfg.LeaderElection.RetryPeriod, "leader-election.retry-period", 2*time.Second, "Interval between leader-election attempts.")
 }
 
 // setupLogger is a helper method that is responsible for creating a structured logger that is used throughout the application.
@@ -122,7 +210,7 @@ func setupLogger(level string, output string, logtype string) *slog.Logger {
 }
 
 // runServer is a helper method that is responsible for starting the metrics server and handling shutdown signals.
-func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, log *slog.Logger) error {
+func runServer(ctx context.Context, cfg *config.Config, registryHandler http.Handler, log *slog.Logger) error {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
@@ -132,12 +220,7 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
 	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path)) // landing page
-
-	registryHandler, err := createPromRegistryHandler(csp, regionFromConfig(cfg)) // prom metrics handler
-	if err != nil {
-		return err
-	}
-	mux.Handle(cfg.Server.Path, registryHandler) // prom metrics handler (/metrics)
+	mux.Handle(cfg.Server.Path, registryHandler)              // prom metrics handler (/metrics)
 
 	server := &http.Server{Addr: cfg.Server.Address, Handler: mux}
 	errChan := make(chan error)
@@ -180,7 +263,12 @@ func regionFromConfig(cfg *config.Config) string {
 	}
 }
 
-func createPromRegistryHandler(csp provider.Provider, region string) (http.Handler, error) {
+// createPromRegistryHandler builds the metrics registry with the base
+// operational collectors (build info, Go runtime, process, version, request
+// instrumentation) and returns it alongside the instrumented HTTP handler. The
+// registry is returned so the caller can register the provider's collectors,
+// either up front or once the replica becomes leader.
+func createPromRegistryHandler(region string) (*prometheus.Registry, http.Handler) {
 	var subsystem = "metrics_handler"
 	requestDuration := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -208,26 +296,28 @@ func createPromRegistryHandler(csp provider.Provider, region string) (http.Handl
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		version.NewCollector(cloudcost_exporter.ExporterName),
-		csp,
 		requestCounter,
 		requestDuration,
 	)
-	err := csp.RegisterCollectors(registry)
-	if err != nil {
-		return nil, err
-	}
 
 	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	})
 
-	return promhttp.InstrumentHandlerDuration(
+	return registry, promhttp.InstrumentHandlerDuration(
 		requestDuration,
 		promhttp.InstrumentHandlerCounter(
 			requestCounter,
 			handler,
 		),
-	), nil
+	)
+}
+
+// registerProvider registers the provider and its collectors into the registry,
+// which starts cloud provider metric collection.
+func registerProvider(registry *prometheus.Registry, csp provider.Provider) error {
+	registry.MustRegister(csp)
+	return csp.RegisterCollectors(registry)
 }
 
 func selectProvider(ctx context.Context, cfg *config.Config) (provider.Provider, error) {

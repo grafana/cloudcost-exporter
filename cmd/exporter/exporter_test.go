@@ -251,10 +251,29 @@ func Test_regionFromConfig(t *testing.T) {
 }
 
 func Test_createPromRegistryHandler(t *testing.T) {
+	// The handler serves the base operational metrics even before any provider
+	// is registered, which is what non-leader replicas rely on.
+	registry, handler := createPromRegistryHandler("us-east-1")
+	if registry == nil {
+		t.Fatal("expected non-nil registry")
+	}
+	if handler == nil {
+		t.Fatal("expected non-nil handler")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected HTTP status %d, got %d", http.StatusOK, rec.Code)
+	}
+}
+
+func Test_registerProvider(t *testing.T) {
 	tests := map[string]struct {
-		setupMock      func(m *mock_provider.MockProvider)
-		wantErr        bool
-		wantHTTPStatus int
+		setupMock func(m *mock_provider.MockProvider)
+		wantErr   bool
 	}{
 		"returns error when RegisterCollectors fails": {
 			setupMock: func(m *mock_provider.MockProvider) {
@@ -263,14 +282,13 @@ func Test_createPromRegistryHandler(t *testing.T) {
 			},
 			wantErr: true,
 		},
-		"returns working handler on success": {
+		"registers provider on success": {
 			setupMock: func(m *mock_provider.MockProvider) {
 				m.EXPECT().Describe(gomock.Any()).AnyTimes()
 				m.EXPECT().RegisterCollectors(gomock.Any()).Return(nil)
 				m.EXPECT().Collect(gomock.Any()).AnyTimes()
 			},
-			wantErr:        false,
-			wantHTTPStatus: http.StatusOK,
+			wantErr: false,
 		},
 	}
 
@@ -282,14 +300,12 @@ func Test_createPromRegistryHandler(t *testing.T) {
 			mockProv := mock_provider.NewMockProvider(ctrl)
 			tc.setupMock(mockProv)
 
-			handler, err := createPromRegistryHandler(mockProv, "us-east-1")
+			registry, handler := createPromRegistryHandler("us-east-1")
+			err := registerProvider(registry, mockProv)
 
 			if tc.wantErr {
 				if err == nil {
 					t.Error("expected error, got nil")
-				}
-				if handler != nil {
-					t.Error("expected nil handler on error")
 				}
 				return
 			}
@@ -297,16 +313,13 @@ func Test_createPromRegistryHandler(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if handler == nil {
-				t.Fatal("expected non-nil handler")
-			}
 
 			req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
-			if rec.Code != tc.wantHTTPStatus {
-				t.Errorf("expected HTTP status %d, got %d", tc.wantHTTPStatus, rec.Code)
+			if rec.Code != http.StatusOK {
+				t.Errorf("expected HTTP status %d, got %d", http.StatusOK, rec.Code)
 			}
 		})
 	}
