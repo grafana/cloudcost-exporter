@@ -619,9 +619,21 @@ func TestCollector_Collect_GPU(t *testing.T) {
 	require.NotNil(t, gpu, "expected a gpu cost metric for the GPU instance")
 	assert.Equal(t, "ondemand", gpu.Labels["price_tier"])
 	assert.Equal(t, "p5.48xlarge", gpu.Labels["machine_type"])
-	// gpuCostRatio (0.88) of the 8.0 total, spread over 8 GPUs = 0.88 USD/gpu-hour.
+	// gpuCostRatio of the 8.0 total, spread over 8 GPUs.
 	assert.InDelta(t, 8.0*gpuCostRatio/8, gpu.Value, 1e-9)
-	// Total is preserved regardless of the split.
-	require.NotNil(t, metrics["cloudcost_aws_ec2_instance_total_usd_per_hour"])
-	assert.InDelta(t, 8.0, metrics["cloudcost_aws_ec2_instance_total_usd_per_hour"].Value, 1e-9)
+
+	cpu := metrics["cloudcost_aws_ec2_instance_cpu_usd_per_core_hour"]
+	mem := metrics["cloudcost_aws_ec2_instance_memory_usd_per_gib_hour"]
+	total := metrics["cloudcost_aws_ec2_instance_total_usd_per_hour"]
+	require.NotNil(t, cpu)
+	require.NotNil(t, mem)
+	require.NotNil(t, total)
+	// The remaining (1-gpuCostRatio) is split cpu/ram by the default 0.65 ratio
+	// ("GPU instance" family is not in cpuToCostRatio).
+	assert.InDelta(t, 8.0*(1-gpuCostRatio)*0.65/192, cpu.Value, 1e-9)
+	assert.InDelta(t, 8.0*(1-gpuCostRatio)*0.35/2048, mem.Value, 1e-9)
+	// The headline invariant: the split preserves the total exactly.
+	// gpu*gpus + cpu*vcpus + ram*gib == total.
+	assert.InDelta(t, 8.0, total.Value, 1e-9)
+	assert.InDelta(t, total.Value, gpu.Value*8+cpu.Value*192+mem.Value*2048, 1e-9)
 }

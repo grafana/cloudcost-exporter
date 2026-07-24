@@ -492,7 +492,7 @@ func Test_weightedPriceForInstance(t *testing.T) {
 			},
 		},
 		"GPU instance carves the gpu share off the total, splitting the remainder cpu/ram": {
-			// gpuCostRatio (0.88) of the total goes to the 8 GPUs; the remaining 0.12
+			// gpuCostRatio (0.70) of the total goes to the 8 GPUs; the remaining 0.30
 			// splits by the default ratio (GPU instance family is not in cpuToCostRatio).
 			price: 1.0,
 			attributes: InstanceAttributes{

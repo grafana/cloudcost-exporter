@@ -46,6 +46,11 @@ var cpuToCostRatio = map[string]float64{
 	"Memory optimized":  0.48,
 	"General purpose":   0.65,
 	"Storage optimized": 0.48,
+	// GPU instances report instanceFamily "GPU instance". The gpu share is carved
+	// out first (see gpuCostRatio); this only splits the cpu/ram remainder, for
+	// which the General purpose default is fine. Listed explicitly so GPU
+	// instances don't log a "no ratio found, defaulting" warn on every refresh.
+	"GPU instance": 0.65,
 }
 
 // ComputePricingMap collects a map of FamilyPricing structs where the key is the region
