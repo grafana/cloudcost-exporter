@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -32,14 +31,13 @@ var (
 
 // Collector is a prometheus collector that collects metrics from AWS RDS clusters.
 type Collector struct {
-	regions           []types.Region
-	regionMap         map[string]client.Client
-	scrapeInterval    time.Duration
-	regionListTimeout time.Duration
-	Client            client.Client
-	pricingMap        *pricingMap
-	accountID         string
-	logger            *slog.Logger
+	regions        []types.Region
+	regionMap      map[string]client.Client
+	pricingMap     *pricingMap
+	store          *instanceStore
+	accountID      string
+	populateErrors *prometheus.CounterVec
+	logger         *slog.Logger
 }
 
 type Config struct {
@@ -55,123 +53,79 @@ const (
 	serviceName = "RDS"
 )
 
-// New creates an rds collector. A RegionListTimeout of 0 leaves each region's
-// DescribeDBInstances call bounded only by the shared collector context
-// (-collector-interval); a positive value caps it per region so a slow or
-// unreachable region fails fast instead of overrunning the scrape.
-func New(_ context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
+// New creates an rds collector.
+//
+// Instance inventory and pricing are refreshed in the background on a ticker
+// rather than on the scrape path (see background-store-pattern.md). New()
+// kicks off the first populate immediately via the store constructor and
+// returns without blocking, so a slow AWS API never delays startup. Collect()
+// makes zero AWS calls and serves metrics from the warm store and pricing map.
+// A positive RegionListTimeout caps each region's background work; 0 falls back
+// to an internal safety ceiling so a slow region never wedges the refresh.
+func New(ctx context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
+	logger = logger.With("collector", serviceName)
+	pm := newPricingMap()
+	populateErrors := newPopulateErrorsCounter()
+	store := newInstanceStore(ctx, logger, config, pm, populateErrors)
+
+	startRefreshTicker(ctx, config.ScrapeInterval, func() { store.Populate(ctx) })
+
 	return &Collector{
-		pricingMap:        newPricingMap(),
-		regions:           config.Regions,
-		regionMap:         config.RegionMap,
-		scrapeInterval:    config.ScrapeInterval,
-		regionListTimeout: config.RegionListTimeout,
-		Client:            config.Client,
-		accountID:         config.AccountID,
-		logger:            logger.With("collector", serviceName),
+		regions:        config.Regions,
+		regionMap:      config.RegionMap,
+		pricingMap:     pm,
+		store:          store,
+		accountID:      config.AccountID,
+		populateErrors: populateErrors,
+		logger:         logger,
 	}, nil
 }
 
-// Collect satisfies the provider.Collector interface.
+// Collect satisfies the provider.Collector interface. It makes no AWS calls:
+// instances come from the background store and prices from the pre-warmed
+// pricing map. A cold store (no populate finished yet) or a pricing miss emits
+// nothing for the affected instances and logs, rather than failing the scrape.
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
-	logger := c.logger
-	var instances = []rdsTypes.DBInstance{}
+	select {
+	case <-c.store.Done():
+	default:
+		c.logger.LogAttrs(ctx, slog.LevelInfo, "instance store not yet populated, skipping metrics")
+		return nil
+	}
 
-	// Fan out the per-region ListRDSInstances calls concurrently
-	numOfRegions := len(c.regions)
-	instanceCh := make(chan []rdsTypes.DBInstance, numOfRegions)
-
-	wg := sync.WaitGroup{}
 	for _, region := range c.regions {
-		regionName := *region.RegionName
-		regionClient, ok := c.regionMap[regionName]
-		if !ok {
-			logger.Error("no client found for region", "region", regionName)
-			continue
-		}
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			c.fetchInstancesData(ctx, regionClient, regionName, instanceCh)
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		close(instanceCh)
-	}()
-
-	for is := range instanceCh {
-		instances = append(instances, is...)
-	}
-
-	for _, instance := range instances {
-		// we need to get the region from the availability zone as there is no field for region
-		if instance.AvailabilityZone == nil {
-			// sometimes the availability zone is empty, possibly when an RDS instance is introduced or being removed, skipping them for the time being
-			logger.Warn("no availability zone found for RDS instance")
-			continue
-		}
-		var az = *instance.AvailabilityZone
-		var region = az[:len(az)-1]
-		depOption := multiOrSingleAZ(*instance.MultiAZ)
-		locationType := isOutpostsInstance(instance) // outposts locations have a different unit price
-		createPricingKey := createPricingKey(region, *instance.DBInstanceClass, *instance.Engine, depOption, locationType)
-
-		hourlyPrice, ok := c.pricingMap.Get(createPricingKey)
-
-		if !ok {
-			// Compute price without holding the lock
-			v, err := c.Client.GetRDSUnitData(ctx, *instance.DBInstanceClass, region, depOption, *instance.Engine, locationType)
-			if err != nil {
-				logger.Error("error listing rds prices", "error", err)
-				return err
-			}
-			if v == "" {
-				logger.Warn("no pricing data found for RDS instance, skipping", "instanceType", *instance.DBInstanceClass, "region", region, "engine", *instance.Engine)
+		for _, instance := range c.store.Get(*region.RegionName) {
+			// AWS can return partial instances (missing AZ, class, engine, or
+			// multi-AZ) mid create or delete; skip rather than deref a nil.
+			key, azRegion, ok := pricingKeyFor(instance)
+			if !ok {
+				c.logger.Warn("incomplete RDS instance, skipping")
 				continue
 			}
-			validatedPrice, err := validateRDSPriceData(ctx, v)
-			if err != nil {
-				logger.Error("error validating RDS price data", "error", err)
-				return err
+			if instance.DbiResourceId == nil || instance.DBInstanceArn == nil {
+				c.logger.Warn("RDS instance missing identifiers, skipping", "region", azRegion)
+				continue
 			}
-			c.pricingMap.Set(createPricingKey, validatedPrice)
-			hourlyPrice = validatedPrice
-		}
 
-		ch <- prometheus.MustNewConstMetric(
-			HourlyGaugeDesc,
-			prometheus.GaugeValue,
-			hourlyPrice,
-			c.accountID,
-			region,
-			*instance.DBInstanceClass,
-			*instance.DbiResourceId,
-			*instance.DBInstanceArn,
-		)
+			hourlyPrice, ok := c.pricingMap.Get(key)
+			if !ok {
+				c.logger.Warn("no pricing data found for RDS instance, skipping", "instanceType", *instance.DBInstanceClass, "region", azRegion, "engine", *instance.Engine)
+				continue
+			}
+
+			ch <- prometheus.MustNewConstMetric(
+				HourlyGaugeDesc,
+				prometheus.GaugeValue,
+				hourlyPrice,
+				c.accountID,
+				azRegion,
+				*instance.DBInstanceClass,
+				*instance.DbiResourceId,
+				*instance.DBInstanceArn,
+			)
+		}
 	}
 	return nil
-}
-
-// fetchInstancesData lists RDS instances for a single region, sending the
-// result to instanceCh. On failure it logs the error and returns.
-func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.Client, region string, instanceCh chan []rdsTypes.DBInstance) {
-	// A positive regionListTimeout caps this region's call; 0 leaves it bounded
-	// only by the parent collector context (backwards-compatible default).
-	if c.regionListTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, c.regionListTimeout)
-		defer cancel()
-	}
-
-	is, err := regionClient.ListRDSInstances(ctx)
-	if err != nil {
-		c.logger.Error("error listing RDS instances", "region", region, "error", err)
-		return
-	}
-	instanceCh <- is
 }
 
 func multiOrSingleAZ(multiAZ bool) string {
@@ -199,6 +153,24 @@ func createPricingKey(region, tier, engine, depOption, locationType string) stri
 	return fmt.Sprintf("%s-%s-%s-%s-%s", region, tier, engine, depOption, locationType)
 }
 
+// pricingKeyFor derives the pricing-map key and the region (from the instance's
+// availability zone) for an instance. It returns ok=false when a field the key
+// depends on is missing, which AWS can return while an instance is mid create
+// or delete. Callers must skip such instances rather than dereference the nils.
+func pricingKeyFor(instance rdsTypes.DBInstance) (key, region string, ok bool) {
+	if instance.AvailabilityZone == nil || instance.DBInstanceClass == nil || instance.Engine == nil || instance.MultiAZ == nil {
+		return "", "", false
+	}
+	az := *instance.AvailabilityZone
+	if az == "" {
+		return "", "", false
+	}
+	region = az[:len(az)-1]
+	depOption := multiOrSingleAZ(*instance.MultiAZ)
+	locationType := isOutpostsInstance(instance) // outposts locations have a different unit price
+	return createPricingKey(region, *instance.DBInstanceClass, *instance.Engine, depOption, locationType), region, true
+}
+
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	return nil
 }
@@ -212,5 +184,6 @@ func (c *Collector) Regions() []string {
 }
 
 func (c *Collector) Register(registry provider.Registry) error {
+	registry.MustRegister(c.populateErrors)
 	return nil
 }

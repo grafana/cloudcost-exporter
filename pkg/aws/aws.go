@@ -46,7 +46,7 @@ type Config struct {
 	ExcludeRegions       []string // AWS region names to skip (e.g. me-central-1)
 	ScrapeInterval       time.Duration
 	CollectorTimeout     time.Duration
-	RDSRegionListTimeout time.Duration // per-region timeout for RDS DescribeDBInstances; 0 uses the collector default
+	RDSRegionListTimeout time.Duration // per-region timeout for the background RDS refresh; 0 uses an internal safety ceiling
 	Logger               *slog.Logger
 	AccountID            string
 	BedrockFamilyFilter  string // regex matched against family label; default "anthropic|amazon"

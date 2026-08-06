@@ -91,7 +91,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.StringVar(&cfg.Providers.AWS.Region, "aws.region", "", "AWS region")
 	flag.StringVar(&cfg.Providers.AWS.RoleARN, "aws.roleARN", "", "Optional AWS role ARN to assume for cross-account access.")
 	fs.StringVar(&cfg.Providers.AWS.BedrockFamilyFilter, "aws.bedrock.families", ".*", "Regex matched against the Bedrock model family label. Only matching families are emitted.")
-	flag.DurationVar(&cfg.Providers.AWS.RDSRegionListTimeout, "aws.rds.region-timeout", 0, "Per-region timeout for listing RDS instances. 0 (default) bounds each region only by -collector-interval. Set a positive value (e.g. 15s) to fail slow or unreachable regions fast and protect scrape availability.")
+	flag.DurationVar(&cfg.Providers.AWS.RDSRegionListTimeout, "aws.rds.region-timeout", 0, "Per-region timeout for the background RDS refresh (listing plus pricing). 0 (default) uses an internal safety ceiling. Set a positive value (e.g. 15s) to fail slow or unreachable regions faster.")
 	fs.BoolVar(&cfg.Providers.AWS.CapacityBlocks, "aws.ec2.capacity-blocks", false, "Price EC2 Capacity Block for ML reservations. Requires ce:GetCostAndUsage on the EC2 role; off by default since it adds Cost Explorer calls and only applies to accounts that purchase Capacity Blocks.")
 	// TODO - PUT PROJECT-ID UNDER GCP
 	flag.StringVar(&cfg.ProjectID, "project-id", "", "Project ID to target.")
