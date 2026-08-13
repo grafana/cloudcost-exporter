@@ -8,7 +8,7 @@
 
 | Metric name                                      | Metric type | Description                                                              | Labels                                                                                                                              |
 |--------------------------------------------------|-------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
-| cloudcost_exporter_aws_rds_populate_errors_total | Counter     | Errors during background store population, by store, region, and operation | `store`=&lt;always `instances`&gt; <br/> `region`=&lt;AWS region&gt; <br/> `operation`=&lt;`lookup_client`, `list_instances`, `get_pricing`, `validate_pricing`&gt; |
+| cloudcost_exporter_aws_rds_populate_errors_total | Counter     | Errors during background store population by store, region, and operation | `store`=&lt;always `instances`&gt; <br/> `region`=&lt;AWS region&gt; <br/> `operation`=&lt;`lookup_client`, `list_instances`, `get_pricing`, `validate_pricing`&gt; |
 
 ## Overview
 
