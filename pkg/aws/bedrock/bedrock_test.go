@@ -719,7 +719,8 @@ func TestFamilyFromServiceName(t *testing.T) {
 		{"Claude Sonnet 4.6 (Amazon Bedrock Edition)", "anthropic"},
 		{"Claude Opus 4 (Amazon Bedrock Edition)", "anthropic"},
 		{"OpenAI GPT-5.6 Luna (Amazon Bedrock Edition)", "openai"},
-		{"GPT OSS Safeguard 120B (Amazon Bedrock Edition)", "openai"},
+		// A bare GPT prefix is deliberately not matched: these are not OpenAI models.
+		{"GPT-NeoX 20B (Amazon Bedrock Edition)", "unknown"},
 		{"Cohere Rerank v3.5 (Amazon Bedrock Edition)", "cohere"},
 		{"Cohere Embed 4 Model (Amazon Bedrock Edition)", "cohere"},
 		{"Meta Llama 2 Chat 70B (Amazon Bedrock Edition)", "meta"},
