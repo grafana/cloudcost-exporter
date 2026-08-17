@@ -650,6 +650,8 @@ func familyFromServiceName(servicename string) string {
 	switch {
 	case strings.HasPrefix(lower, "claude"):
 		return "anthropic"
+	case strings.HasPrefix(lower, "openai"), strings.HasPrefix(lower, "gpt"):
+		return "openai"
 	case strings.HasPrefix(lower, "cohere"):
 		return "cohere"
 	case strings.HasPrefix(lower, "meta"):
