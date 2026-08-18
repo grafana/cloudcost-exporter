@@ -108,21 +108,6 @@ func (mr *MockClientMockRecorder) GetCapacityBlockCosts(ctx, startDate, endDate 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCapacityBlockCosts", reflect.TypeOf((*MockClient)(nil).GetCapacityBlockCosts), ctx, startDate, endDate)
 }
 
-// GetRDSUnitData mocks base method.
-func (m *MockClient) GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, engineCode, isOutpost string) (string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRDSUnitData", ctx, instType, region, deploymentOption, engineCode, isOutpost)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetRDSUnitData indicates an expected call of GetRDSUnitData.
-func (mr *MockClientMockRecorder) GetRDSUnitData(ctx, instType, region, deploymentOption, engineCode, isOutpost any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRDSUnitData", reflect.TypeOf((*MockClient)(nil).GetRDSUnitData), ctx, instType, region, deploymentOption, engineCode, isOutpost)
-}
-
 // ListActiveCapacityReservations mocks base method.
 func (m *MockClient) ListActiveCapacityReservations(ctx context.Context) ([]types.CapacityReservation, error) {
 	m.ctrl.T.Helper()
@@ -286,6 +271,21 @@ func (m *MockClient) ListRDSInstances(ctx context.Context) ([]types3.DBInstance,
 func (mr *MockClientMockRecorder) ListRDSInstances(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRDSInstances", reflect.TypeOf((*MockClient)(nil).ListRDSInstances), ctx)
+}
+
+// ListRDSPrices mocks base method.
+func (m *MockClient) ListRDSPrices(ctx context.Context, region string) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListRDSPrices", ctx, region)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListRDSPrices indicates an expected call of ListRDSPrices.
+func (mr *MockClientMockRecorder) ListRDSPrices(ctx, region any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRDSPrices", reflect.TypeOf((*MockClient)(nil).ListRDSPrices), ctx, region)
 }
 
 // ListSpotPrices mocks base method.

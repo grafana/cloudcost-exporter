@@ -63,8 +63,9 @@ func startRefreshTicker(ctx context.Context, interval time.Duration, run func())
 // instanceStore refreshes RDS instance inventory and pricing in the background
 // and serves both to Collect from memory. Listing (the scrape average) and
 // pricing lookups (the cold-start p99 tail) both move off the scrape path.
-// Instances and prices are refreshed together because RDS prices are keyed by
-// attributes only known from the live instances, unlike EC2's bulk pricing.
+// Inventory and pricing are refreshed independently: prices are listed in bulk
+// from the Pricing API and keyed by product attributes, then joined to instances
+// by pricing key at Collect.
 type instanceStore struct {
 	logger            *slog.Logger
 	regions           []types.Region
@@ -159,7 +160,10 @@ func (s *instanceStore) Populate(ctx context.Context) {
 	eg.Wait()
 }
 
-// populateRegion lists a single region's instances and warms their prices.
+// populateRegion refreshes a single region's instance inventory and pricing.
+// The two are independent: pricing is listed in bulk from the Pricing API and
+// keyed by product attributes, not driven by the listed instances. Collect
+// joins them by pricing key.
 func (s *instanceStore) populateRegion(ctx context.Context, regionName string, regionClient client.Client) {
 	// Bound every AWS call for this region. A configured RegionListTimeout wins
 	// so operators can fail slow regions fast; otherwise a safety ceiling keeps
@@ -171,6 +175,12 @@ func (s *instanceStore) populateRegion(ctx context.Context, regionName string, r
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	s.populateInstances(ctx, regionName, regionClient)
+	s.populatePricing(ctx, regionName)
+}
+
+// populateInstances lists a region's instances and caches them.
+func (s *instanceStore) populateInstances(ctx context.Context, regionName string, regionClient client.Client) {
 	instances, err := regionClient.ListRDSInstances(ctx)
 	if err != nil {
 		s.logger.LogAttrs(ctx, slog.LevelError, "error listing RDS instances",
@@ -183,54 +193,26 @@ func (s *instanceStore) populateRegion(ctx context.Context, regionName string, r
 	s.mu.Lock()
 	s.instances[regionName] = instances
 	s.mu.Unlock()
-
-	s.warmPricing(ctx, regionName, instances)
 }
 
-// warmPricing fetches a price for each distinct pricing key among the region's
-// instances and writes it to the shared pricing map, so Collect never issues a
-// pricing call. Keys already fetched this pass are skipped to collapse the
-// serialized fan-in that caused the cold-start p99.
-func (s *instanceStore) warmPricing(ctx context.Context, regionName string, instances []rdsTypes.DBInstance) {
-	seen := make(map[string]struct{})
-	for _, instance := range instances {
-		key, region, ok := pricingKeyFor(instance)
-		if !ok {
-			// AWS can return partial instances mid create or delete; skip them
-			// rather than panic in this background goroutine.
-			continue
-		}
-		if _, dup := seen[key]; dup {
-			continue
-		}
-		seen[key] = struct{}{}
+// populatePricing lists every RDS Database Instance price in a region and writes
+// each keyed price to the shared pricing map, so Collect never issues a pricing
+// call. It goes through the dedicated pricing client and lists prices in bulk,
+// keeping pricing independent of the instance inventory.
+func (s *instanceStore) populatePricing(ctx context.Context, regionName string) {
+	priceList, err := s.pricingClient.ListRDSPrices(ctx, regionName)
+	if err != nil {
+		s.logger.LogAttrs(ctx, slog.LevelError, "error listing RDS prices",
+			slog.String("region", regionName),
+			slog.String("error", err.Error()))
+		s.populateErrors.WithLabelValues("instances", regionName, "list_prices").Inc()
+		return
+	}
 
-		depOption := multiOrSingleAZ(*instance.MultiAZ)
-		locationType := isOutpostsInstance(instance)
-		v, err := s.pricingClient.GetRDSUnitData(ctx, *instance.DBInstanceClass, region, depOption, *instance.Engine, locationType)
-		if err != nil {
-			s.logger.LogAttrs(ctx, slog.LevelError, "error fetching RDS price",
-				slog.String("region", region),
-				slog.String("instanceType", *instance.DBInstanceClass),
-				slog.String("engine", *instance.Engine),
-				slog.String("error", err.Error()))
-			s.populateErrors.WithLabelValues("instances", regionName, "get_pricing").Inc()
-			continue
-		}
-		if v == "" {
-			s.logger.LogAttrs(ctx, slog.LevelWarn, "no pricing data found for RDS instance, skipping",
-				slog.String("region", region),
-				slog.String("instanceType", *instance.DBInstanceClass),
-				slog.String("engine", *instance.Engine))
-			continue
-		}
-		price, err := validateRDSPriceData(ctx, v)
-		if err != nil {
-			s.logger.LogAttrs(ctx, slog.LevelError, "error validating RDS price data",
-				slog.String("region", region),
-				slog.String("instanceType", *instance.DBInstanceClass),
-				slog.String("error", err.Error()))
-			s.populateErrors.WithLabelValues("instances", regionName, "validate_pricing").Inc()
+	for _, product := range priceList {
+		key, price, ok := parseRDSPriceProduct(ctx, product)
+		if !ok {
+			s.populateErrors.WithLabelValues("instances", regionName, "parse_pricing").Inc()
 			continue
 		}
 		s.pricingMap.Set(key, price)

@@ -56,10 +56,10 @@ const (
 // New creates an rds collector.
 //
 // Instance inventory and pricing are refreshed in the background on a ticker
-// rather than on the scrape path (see background-store-pattern.md). New()
-// kicks off the first populate immediately via the store constructor and
-// returns without blocking, so a slow AWS API never delays startup. Collect()
-// makes zero AWS calls and serves metrics from the warm store and pricing map.
+// rather than on the scrape path. New() kicks off the first populate immediately
+// via the store constructor and returns without blocking, so a slow AWS API
+// never delays startup. Collect() makes zero AWS calls and serves metrics from
+// the warm store and pricing map.
 // A positive RegionListTimeout caps each region's background work; 0 falls back
 // to an internal safety ceiling so a slow region never wedges the refresh.
 func New(ctx context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
@@ -95,11 +95,13 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 
 	for _, region := range c.regions {
 		for _, instance := range c.store.Get(*region.RegionName) {
-			// AWS can return partial instances (missing AZ, class, engine, or
-			// multi-AZ) mid create or delete; skip rather than deref a nil.
+			// pricingKeyFor returns ok=false for a partial instance (AWS can
+			// return one missing its AZ, class, engine, or multi-AZ flag mid
+			// create or delete) or an engine we cannot map to a price; skip
+			// either rather than deref a nil.
 			key, azRegion, ok := pricingKeyFor(instance)
 			if !ok {
-				c.logger.Warn("incomplete RDS instance, skipping")
+				c.logger.Warn("cannot derive pricing key for RDS instance, skipping")
 				continue
 			}
 			if instance.DbiResourceId == nil || instance.DBInstanceArn == nil {
@@ -149,14 +151,61 @@ func isOutpostsInstance(instance rdsTypes.DBInstance) string {
 	return "AWS Region"
 }
 
-func createPricingKey(region, tier, engine, depOption, locationType string) string {
-	return fmt.Sprintf("%s-%s-%s-%s-%s", region, tier, engine, depOption, locationType)
+// engineAttributes maps an RDS instance Engine code to the AmazonRDS pricing
+// databaseEngine and databaseEdition attribute values that key its price. The
+// instance Engine field ("postgres", "oracle-ee") differs from the Pricing
+// API's display names ("PostgreSQL", "Oracle" plus edition "Enterprise"), so we
+// translate explicitly. Engines absent from this map cannot be priced and are
+// skipped by pricingKeyFor.
+//
+// VERIFY: the open-source rows (MySQL/MariaDB/PostgreSQL/Aurora) are confirmed,
+// but the Oracle and SQL Server databaseEdition strings are best-effort and
+// should be checked against a real GetProducts response before relying on their
+// prices.
+var engineAttributes = map[string]struct {
+	databaseEngine  string
+	databaseEdition string
+}{
+	"mysql":             {databaseEngine: "MySQL"},
+	"mariadb":           {databaseEngine: "MariaDB"},
+	"postgres":          {databaseEngine: "PostgreSQL"},
+	"aurora-mysql":      {databaseEngine: "Aurora MySQL"},
+	"aurora-postgresql": {databaseEngine: "Aurora PostgreSQL"},
+	"oracle-ee":         {databaseEngine: "Oracle", databaseEdition: "Enterprise"},
+	"oracle-ee-cdb":     {databaseEngine: "Oracle", databaseEdition: "Enterprise"},
+	"oracle-se2":        {databaseEngine: "Oracle", databaseEdition: "Standard Two"},
+	"oracle-se2-cdb":    {databaseEngine: "Oracle", databaseEdition: "Standard Two"},
+	"sqlserver-ee":      {databaseEngine: "SQL Server", databaseEdition: "Enterprise"},
+	"sqlserver-se":      {databaseEngine: "SQL Server", databaseEdition: "Standard"},
+	"sqlserver-web":     {databaseEngine: "SQL Server", databaseEdition: "Web"},
+	"sqlserver-ex":      {databaseEngine: "SQL Server", databaseEdition: "Express"},
+}
+
+// openSourceLicense is the pricing licenseModel attribute shared by every
+// open-source RDS engine, so those engines never depend on the instance's
+// LicenseModel field.
+const openSourceLicense = "No license required"
+
+// licenseModelAttributes maps an RDS instance LicenseModel to the pricing
+// licenseModel attribute value. Only the licensed engines (Oracle, SQL Server)
+// consult this map; see pricingKeyFor.
+//
+// VERIFY: the "License included" / "Bring your own license" strings are
+// best-effort and should be checked against a real GetProducts response.
+var licenseModelAttributes = map[string]string{
+	"license-included":       "License included",
+	"bring-your-own-license": "Bring your own license",
+}
+
+func createPricingKey(region, instanceType, databaseEngine, databaseEdition, depOption, licenseModel, locationType string) string {
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s", region, instanceType, databaseEngine, databaseEdition, depOption, licenseModel, locationType)
 }
 
 // pricingKeyFor derives the pricing-map key and the region (from the instance's
 // availability zone) for an instance. It returns ok=false when a field the key
-// depends on is missing, which AWS can return while an instance is mid create
-// or delete. Callers must skip such instances rather than dereference the nils.
+// depends on is missing (AWS can return partial instances mid create or delete)
+// or the engine is not in engineAttributes. Callers must skip such instances
+// rather than dereference the nils.
 func pricingKeyFor(instance rdsTypes.DBInstance) (key, region string, ok bool) {
 	if instance.AvailabilityZone == nil || instance.DBInstanceClass == nil || instance.Engine == nil || instance.MultiAZ == nil {
 		return "", "", false
@@ -166,9 +215,29 @@ func pricingKeyFor(instance rdsTypes.DBInstance) (key, region string, ok bool) {
 		return "", "", false
 	}
 	region = az[:len(az)-1]
+
+	engine, ok := engineAttributes[*instance.Engine]
+	if !ok {
+		return "", region, false
+	}
+
+	// Open-source engines all price under a single license; only the licensed
+	// engines (Oracle, SQL Server) key on the instance's LicenseModel.
+	license := openSourceLicense
+	if engine.databaseEdition != "" {
+		lm := ""
+		if instance.LicenseModel != nil {
+			lm = *instance.LicenseModel
+		}
+		license, ok = licenseModelAttributes[lm]
+		if !ok {
+			return "", region, false
+		}
+	}
+
 	depOption := multiOrSingleAZ(*instance.MultiAZ)
 	locationType := isOutpostsInstance(instance) // outposts locations have a different unit price
-	return createPricingKey(region, *instance.DBInstanceClass, *instance.Engine, depOption, locationType), region, true
+	return createPricingKey(region, *instance.DBInstanceClass, engine.databaseEngine, engine.databaseEdition, depOption, license, locationType), region, true
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {

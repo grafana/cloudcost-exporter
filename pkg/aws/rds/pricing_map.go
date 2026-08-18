@@ -10,7 +10,26 @@ import (
 )
 
 type AWSPriceData struct {
-	Terms *AWSTerms `json:"terms"`
+	Product *AWSProduct `json:"product"`
+	Terms   *AWSTerms   `json:"terms"`
+}
+
+type AWSProduct struct {
+	Attributes *AWSProductAttributes `json:"attributes"`
+}
+
+// AWSProductAttributes holds the RDS Database Instance product attributes that
+// make up a pricing key. These come straight from the AWS Pricing API, so the
+// engine and edition are display names ("PostgreSQL", "Oracle"), not the
+// instance Engine codes ("postgres", "oracle-ee").
+type AWSProductAttributes struct {
+	InstanceType     string `json:"instanceType"`
+	RegionCode       string `json:"regionCode"`
+	DatabaseEngine   string `json:"databaseEngine"`
+	DatabaseEdition  string `json:"databaseEdition"`
+	DeploymentOption string `json:"deploymentOption"`
+	LicenseModel     string `json:"licenseModel"`
+	LocationType     string `json:"locationType"`
 }
 
 type AWSTerms struct {
@@ -50,24 +69,20 @@ func (pm *pricingMap) Get(key string) (float64, bool) {
 	return v, ok
 }
 
-func validateRDSPriceData(ctx context.Context, priceList string) (float64, error) {
-	var priceData AWSPriceData
-	if err := json.Unmarshal([]byte(priceList), &priceData); err != nil {
-		slog.ErrorContext(ctx, "error unmarshaling price JSON", "error", err)
-		return 0, err
-	}
-
-	if priceData.Terms == nil {
+// priceFromTerms extracts the single on-demand USD price from a product's
+// pricing terms.
+func priceFromTerms(ctx context.Context, terms *AWSTerms) (float64, error) {
+	if terms == nil {
 		slog.ErrorContext(ctx, "Terms is nil")
 		return 0, fmt.Errorf("terms is nil")
 	}
-	if priceData.Terms.OnDemand == nil {
+	if terms.OnDemand == nil {
 		slog.ErrorContext(ctx, "OnDemand is nil")
 		return 0, fmt.Errorf("OnDemand is nil")
 	}
 
 	var term *AWSTerm
-	for _, t := range priceData.Terms.OnDemand {
+	for _, t := range terms.OnDemand {
 		if t == nil || t.PriceDimensions == nil {
 			slog.ErrorContext(ctx, "PriceDimensions is nil")
 			return 0, fmt.Errorf("PriceDimensions is nil")
@@ -99,4 +114,46 @@ func validateRDSPriceData(ctx context.Context, priceList string) (float64, error
 	}
 
 	return price, nil
+}
+
+// parseRDSPriceProduct turns a single Pricing API product into its pricing key
+// and on-demand USD price. ok is false when the product lacks the attributes or
+// on-demand price needed to key it, so the caller can count and skip it.
+func parseRDSPriceProduct(ctx context.Context, priceList string) (key string, price float64, ok bool) {
+	var priceData AWSPriceData
+	if err := json.Unmarshal([]byte(priceList), &priceData); err != nil {
+		slog.ErrorContext(ctx, "error unmarshaling RDS price JSON", "error", err)
+		return "", 0, false
+	}
+
+	key, ok = priceKeyFromAttributes(priceData.Product)
+	if !ok {
+		return "", 0, false
+	}
+
+	price, err := priceFromTerms(ctx, priceData.Terms)
+	if err != nil {
+		return "", 0, false
+	}
+	return key, price, true
+}
+
+// priceKeyFromAttributes builds the pricing key from a product's attributes. It
+// returns ok=false when an attribute the key depends on is missing.
+func priceKeyFromAttributes(product *AWSProduct) (string, bool) {
+	if product == nil || product.Attributes == nil {
+		return "", false
+	}
+	a := product.Attributes
+	if a.RegionCode == "" || a.InstanceType == "" || a.DatabaseEngine == "" || a.DeploymentOption == "" || a.LocationType == "" {
+		return "", false
+	}
+	license := a.LicenseModel
+	if a.DatabaseEdition == "" {
+		// Open-source engines carry no edition; normalize their license to the
+		// same token the instance side uses so the key matches without either
+		// side depending on the raw licenseModel attribute string.
+		license = openSourceLicense
+	}
+	return createPricingKey(a.RegionCode, a.InstanceType, a.DatabaseEngine, a.DatabaseEdition, a.DeploymentOption, license, a.LocationType), true
 }

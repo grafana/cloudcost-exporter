@@ -1,6 +1,8 @@
 package rds
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"testing"
 
@@ -15,19 +17,25 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-const validPriceJSON = `{
-	"terms": {
-		"OnDemand": {
-			"term1": {
-				"priceDimensions": {
-					"dim1": {
-						"pricePerUnit": {"USD": "0.456"}
-					}
-				}
-			}
-		}
-	}
-}`
+// rdsPriceProduct builds a Pricing API product JSON for the given attributes.
+func rdsPriceProduct(region, instanceType, databaseEngine, deploymentOption, locationType, usd string) string {
+	return fmt.Sprintf(`{"product":{"attributes":{"instanceType":%q,"regionCode":%q,"databaseEngine":%q,"deploymentOption":%q,"locationType":%q}},"terms":{"OnDemand":{"t":{"priceDimensions":{"d":{"pricePerUnit":{"USD":%q}}}}}}}`,
+		instanceType, region, databaseEngine, deploymentOption, locationType, usd)
+}
+
+// postgresPrice builds the price product that matches instanceFor's shape.
+func postgresPrice(region, usd string) string {
+	return rdsPriceProduct(region, "db.t3.medium", "PostgreSQL", "Single-AZ", "AWS Region", usd)
+}
+
+// expectPricing stubs ListRDSPrices to return a matching postgres price per
+// region, so a populate warms every instanceFor instance.
+func expectPricing(c *mock.MockClient, usd string) {
+	c.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, region string) ([]string, error) {
+			return []string{postgresPrice(region, usd)}, nil
+		}).AnyTimes()
+}
 
 func TestIsOutpostsInstance(t *testing.T) {
 	tests := []struct {
@@ -196,8 +204,8 @@ func TestCollector_Collect_ServesFromWarmMap(t *testing.T) {
 		Times(1)
 
 	pricingClient := mock.NewMockClient(mockCtrl)
-	pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(validPriceJSON, nil).
+	pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+		Return([]string{postgresPrice("us-east-1", "0.456")}, nil).
 		Times(1)
 
 	pm := newPricingMap()
@@ -242,10 +250,10 @@ func TestCollector_Collect_PricingMiss(t *testing.T) {
 		Return([]rdsTypes.DBInstance{instanceFor("us-east-1", "db-1")}, nil).
 		Times(1)
 
-	// The pricing API returns no data, so the key never lands in the map.
+	// The pricing API returns no products, so the key never lands in the map.
 	pricingClient := mock.NewMockClient(mockCtrl)
-	pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-		Return("", nil).
+	pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+		Return([]string{}, nil).
 		Times(1)
 
 	pm := newPricingMap()
@@ -295,9 +303,7 @@ func TestCollector_Collect_MultiRegion(t *testing.T) {
 
 	// One distinct pricing key per region.
 	pricingClient := mock.NewMockClient(mockCtrl)
-	pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(validPriceJSON, nil).
-		Times(len(regionNames))
+	expectPricing(pricingClient, "0.456")
 
 	pm := newPricingMap()
 	store := newTestStore(regions, regionMap, pricingClient, pm)

@@ -8,13 +8,11 @@
 
 | Metric name                                      | Metric type | Description                                                              | Labels                                                                                                                              |
 |--------------------------------------------------|-------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
-| cloudcost_exporter_aws_rds_populate_errors_total | Counter     | Errors during background store population by store, region, and operation | `store`=&lt;always `instances`&gt; <br/> `region`=&lt;AWS region&gt; <br/> `operation`=&lt;`lookup_client`, `list_instances`, `get_pricing`, `validate_pricing`&gt; |
+| cloudcost_exporter_aws_rds_populate_errors_total | Counter     | Errors during background store population by store, region, and operation | `store`=&lt;always `instances`&gt; <br/> `region`=&lt;AWS region&gt; <br/> `operation`=&lt;`lookup_client`, `list_instances`, `list_prices`, `parse_pricing`&gt; |
 
 ## Overview
 
 The RDS collector exports pricing metrics for Amazon Relational Database Service instances across all configured AWS regions. It collects hourly pricing rates for RDS database instances based on their instance type and tier.
-
-Instance inventory (`DescribeDBInstances`) and pricing (`GetProducts`) are refreshed in the background on a ticker rather than on the Prometheus scrape path. A scrape reads the warm cache and makes zero AWS calls, so scrape latency no longer tracks AWS API latency or a cold pricing map. Warming starts at startup, so there is a short cold-start gap: no metrics emit until the first background refresh finishes. When a refresh fails to warm a price for an instance, that instance is skipped and `cloudcost_exporter_aws_rds_populate_errors_total` is incremented; the scrape still succeeds.
 
 ## Configuration
 
@@ -33,7 +31,7 @@ Or via command line:
 
 ### Per-region Timeout
 
-The background refresh queries `DescribeDBInstances` and pricing in each region concurrently. `--aws.rds.region-timeout` bounds each region's work:
+The background refresh lists instances (`DescribeDBInstances`) and prices (`GetProducts`) in each region concurrently. `--aws.rds.region-timeout` bounds each region's work:
 
 ```bash
 --aws.rds.region-timeout=15s
@@ -51,7 +49,8 @@ The default is `0`, which applies an internal safety ceiling so a hung AWS call 
 
 ## Notes
 
-- Pricing data is fetched from the AWS Pricing API (us-east-1 region)
+- Pricing is listed in bulk per region from the AWS Pricing API and keyed by instance type, engine, deployment option, and license so `Collect` matches each instance to its price
+- Instances whose engine is not recognized are skipped; recognized engines are MySQL, MariaDB, PostgreSQL, Aurora MySQL, Aurora PostgreSQL, Oracle, and SQL Server
 - Inventory and pricing are refreshed in the background on the configured scrape interval; scrapes read the warm cache and make no AWS calls
 - No metrics emit until the first background refresh completes after startup
 - All costs are represented in USD per hour

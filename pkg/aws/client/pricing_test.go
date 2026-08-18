@@ -305,91 +305,60 @@ func TestListStoragePrices(t *testing.T) {
 	}
 }
 
-func Test_GetRDSUnitData(t *testing.T) {
-	tests := []struct {
-		name        string
-		GetProducts func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error)
-		want        string
-		wantErr     bool
-	}{
-		{
-			name: "only one price",
-			GetProducts: func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error) {
-				return &awsPricing.GetProductsOutput{
-						PriceList: []string{
-							`{
-							"terms": {
-								"OnDemand": {
-									"term1": {
-										"priceDimensions": {
-											"dim1": {
-												"pricePerUnit": {"USD": "0.0840000000"}
-											}
-										}
-									}
-								}
-							}
-						}`,
-						},
-					},
-					nil
-			},
-			want:    `{"terms":{"OnDemand":{"term1":{"priceDimensions":{"dim1":{"pricePerUnit":{"USD":"0.0840000000"}}}}}}}`,
-			wantErr: false,
-		},
-		{
-			name: "multiple prices - ambiguous match, skips without error",
-			GetProducts: func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error) {
-				return &awsPricing.GetProductsOutput{
-					PriceList: []string{
-						`{"terms": {"OnDemand": {"term1": {"priceDimensions": {"dim1": {"pricePerUnit": {"USD": "0.0840000000"}}}}}}}`,
-						`{"terms": {"OnDemand": {"term2": {"priceDimensions": {"dim2": {"pricePerUnit": {"USD": "0.0240000000"}}}}}}}`,
-					},
-				}, nil
-			},
-			want:    "",
-			wantErr: false,
-		},
-		{
-			name: "empty price list - no match, skips without error",
-			GetProducts: func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error) {
-				return &awsPricing.GetProductsOutput{
-					PriceList: []string{},
-				}, nil
-			},
-			want:    "",
-			wantErr: false,
-		},
-		{
-			name: "pricing API errors",
-			GetProducts: func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error) {
-				return &awsPricing.GetProductsOutput{}, errors.New("test error")
-			},
-			want:    "",
-			wantErr: true,
-		},
+func Test_ListRDSPrices(t *testing.T) {
+	getFilterValue := func(filters []pricingTypes.Filter, field string) string {
+		for _, filter := range filters {
+			if aws.ToString(filter.Field) == field {
+				return aws.ToString(filter.Value)
+			}
+		}
+		return ""
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			client := mocks.NewMockPricing(ctrl)
+	t.Run("filters by service, region, and Database Instance family and paginates", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		client := mocks.NewMockPricing(ctrl)
 
+		gomock.InOrder(
 			client.EXPECT().
 				GetProducts(gomock.Any(), gomock.Any(), gomock.Any()).
-				DoAndReturn(tt.GetProducts).
-				Times(1)
-			c := newPricing(client, nil)
-			result, err := c.getRDSUnitData(t.Context(), "input1", "input2", "input3", "input4", "input5")
+				DoAndReturn(func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error) {
+					assert.Equal(t, "AmazonRDS", aws.ToString(input.ServiceCode))
+					assert.Equal(t, "us-east-1", getFilterValue(input.Filters, "regionCode"))
+					assert.Equal(t, "Database Instance", getFilterValue(input.Filters, "productFamily"))
+					return &awsPricing.GetProductsOutput{
+						PriceList: []string{`{"price":"one"}`},
+						NextToken: aws.String("next"),
+					}, nil
+				}).Times(1),
+			client.EXPECT().
+				GetProducts(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(ctx context.Context, input *awsPricing.GetProductsInput, optFns ...func(*awsPricing.Options)) (*awsPricing.GetProductsOutput, error) {
+					assert.Equal(t, "next", aws.ToString(input.NextToken))
+					return &awsPricing.GetProductsOutput{
+						PriceList: []string{`{"price":"two"}`},
+					}, nil
+				}).Times(1),
+		)
 
-			t.Logf("Test: %s, Result: %s, Error: %v, WantErr: %v", tt.name, result, err, tt.wantErr)
-			if tt.wantErr {
-				assert.Error(t, err)
-				return
-			}
-			assert.NoError(t, err)
-		})
-	}
+		c := newPricing(client, nil)
+		got, err := c.listRDSPrices(t.Context(), "us-east-1")
+		assert.NoError(t, err)
+		assert.Equal(t, []string{`{"price":"one"}`, `{"price":"two"}`}, got)
+	})
+
+	t.Run("returns the pricing API error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		client := mocks.NewMockPricing(ctrl)
+		client.EXPECT().
+			GetProducts(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&awsPricing.GetProductsOutput{}, errors.New("test error")).
+			Times(1)
+
+		c := newPricing(client, nil)
+		_, err := c.listRDSPrices(t.Context(), "us-east-1")
+		assert.Error(t, err)
+	})
 }
 
 func Test_ListMSKServicePrices(t *testing.T) {

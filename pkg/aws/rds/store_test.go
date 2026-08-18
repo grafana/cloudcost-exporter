@@ -18,6 +18,9 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+// warmKey is the pricing key produced by both instanceFor and postgresPrice.
+var warmKey = createPricingKey("us-east-1", "db.t3.medium", "PostgreSQL", "", "Single-AZ", "No license required", "AWS Region")
+
 // newTestStore builds a store without the background goroutine the production
 // constructor starts, so tests can drive Populate synchronously.
 func newTestStore(regions []types.Region, regionMap map[string]client.Client, pricingClient client.Client, pm *pricingMap) *instanceStore {
@@ -46,8 +49,8 @@ func TestStore_Populate_WarmsInstancesAndPricing(t *testing.T) {
 		Times(1)
 
 	pricingClient := mock.NewMockClient(mockCtrl)
-	pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(validPriceJSON, nil).
+	pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+		Return([]string{postgresPrice("us-east-1", "0.456")}, nil).
 		Times(1)
 
 	pm := newPricingMap()
@@ -58,14 +61,14 @@ func TestStore_Populate_WarmsInstancesAndPricing(t *testing.T) {
 	store.Populate(t.Context())
 
 	assert.Len(t, store.Get("us-east-1"), 1)
-	price, ok := pm.Get(createPricingKey("us-east-1", "db.t3.medium", "postgres", "Single-AZ", "AWS Region"))
+	price, ok := pm.Get(warmKey)
 	assert.True(t, ok, "price should be warmed during populate")
 	assert.Equal(t, 0.456, price)
 }
 
-// TestStore_Populate_DedupesPricingKeys verifies instances sharing a pricing
-// key trigger a single pricing call per populate.
-func TestStore_Populate_DedupesPricingKeys(t *testing.T) {
+// TestStore_Populate_PricingListedOncePerRegion verifies pricing is listed in
+// bulk once per region, independent of how many instances the region has.
+func TestStore_Populate_PricingListedOncePerRegion(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -78,9 +81,9 @@ func TestStore_Populate_DedupesPricingKeys(t *testing.T) {
 		Times(1)
 
 	pricingClient := mock.NewMockClient(mockCtrl)
-	pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(validPriceJSON, nil).
-		Times(1) // both instances share one key
+	pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+		Return([]string{postgresPrice("us-east-1", "0.456")}, nil).
+		Times(1) // one bulk price list regardless of instance count
 
 	pm := newPricingMap()
 	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
@@ -91,13 +94,11 @@ func TestStore_Populate_DedupesPricingKeys(t *testing.T) {
 	assert.Len(t, store.Get("us-east-1"), 2)
 }
 
-// TestStore_Populate_Refresh verifies a second populate re-fetches prices so
-// the map tracks the latest rates.
+// TestStore_Populate_Refresh verifies a second populate re-lists prices so the
+// map tracks the latest rates.
 func TestStore_Populate_Refresh(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
-
-	updatedPriceJSON := `{"terms":{"OnDemand":{"t":{"priceDimensions":{"d":{"pricePerUnit":{"USD":"0.789"}}}}}}}`
 
 	regionClient := mock.NewMockClient(mockCtrl)
 	regionClient.EXPECT().ListRDSInstances(gomock.Any()).
@@ -106,10 +107,10 @@ func TestStore_Populate_Refresh(t *testing.T) {
 
 	pricingClient := mock.NewMockClient(mockCtrl)
 	gomock.InOrder(
-		pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(validPriceJSON, nil).Times(1),
-		pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(updatedPriceJSON, nil).Times(1),
+		pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+			Return([]string{postgresPrice("us-east-1", "0.456")}, nil).Times(1),
+		pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+			Return([]string{postgresPrice("us-east-1", "0.789")}, nil).Times(1),
 	)
 
 	pm := newPricingMap()
@@ -117,14 +118,12 @@ func TestStore_Populate_Refresh(t *testing.T) {
 	regionMap := map[string]client.Client{"us-east-1": regionClient}
 	store := newTestStore(regions, regionMap, pricingClient, pm)
 
-	key := createPricingKey("us-east-1", "db.t3.medium", "postgres", "Single-AZ", "AWS Region")
-
 	store.Populate(t.Context())
-	price, _ := pm.Get(key)
+	price, _ := pm.Get(warmKey)
 	assert.Equal(t, 0.456, price)
 
 	store.Populate(t.Context())
-	price, _ = pm.Get(key)
+	price, _ = pm.Get(warmKey)
 	assert.Equal(t, 0.789, price, "refresh should overwrite the cached price")
 }
 
@@ -139,8 +138,7 @@ func TestStore_Done_ClosesAfterPopulate(t *testing.T) {
 		Return([]rdsTypes.DBInstance{instanceFor("us-east-1", "db-1")}, nil).
 		Times(1)
 	pricingClient := mock.NewMockClient(mockCtrl)
-	pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(validPriceJSON, nil).AnyTimes()
+	expectPricing(pricingClient, "0.456")
 
 	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
 	regionMap := map[string]client.Client{"us-east-1": regionClient}
@@ -203,9 +201,7 @@ func TestStore_Populate_ListErrorCountsAndContinues(t *testing.T) {
 		Times(1)
 
 	pricingClient := mock.NewMockClient(mockCtrl)
-	pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(validPriceJSON, nil).
-		Times(1) // only the healthy region reaches pricing
+	expectPricing(pricingClient, "0.456")
 
 	regions := []types.Region{
 		{RegionName: aws.String("us-east-1")},
@@ -265,6 +261,9 @@ func TestStore_Populate_RegionListTimeout(t *testing.T) {
 					return nil, nil
 				}).
 				Times(1)
+			regionClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+				Return(nil, nil).
+				AnyTimes()
 
 			regions := []types.Region{{RegionName: aws.String("us-east-1")}}
 			regionMap := map[string]client.Client{"us-east-1": regionClient}
@@ -301,9 +300,7 @@ func TestStore_Populate_SlowRegionFailsFast(t *testing.T) {
 		Times(1)
 
 	pricingClient := mock.NewMockClient(mockCtrl)
-	pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(validPriceJSON, nil).
-		AnyTimes()
+	expectPricing(pricingClient, "0.456")
 
 	regions := []types.Region{
 		{RegionName: aws.String("us-east-1")},
