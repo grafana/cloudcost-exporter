@@ -92,6 +92,8 @@ helm install cloudcost-exporter grafana/cloudcost-exporter
 **Chart source**: [charts/cloudcost-exporter](./charts/cloudcost-exporter/)
 **Chart documentation**: [charts/cloudcost-exporter/README.md](./charts/cloudcost-exporter/README.md)
 
+To run multiple replicas without multiplying load on the cloud provider APIs, enable [leader election](./docs/deploying/leader-election.md) so only one replica collects at a time.
+
 ## Supported Services
 
 Cloud Cost Exporter exposes Prometheus metrics for cost rates of cloud resources. Each service exports metrics specific to that resource type - see the [metrics documentation](./docs/metrics/README.md) for details on supported services.
