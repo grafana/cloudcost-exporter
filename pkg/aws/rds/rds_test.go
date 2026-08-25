@@ -2,9 +2,9 @@ package rds
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"testing"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -14,9 +14,28 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
+
+// rdsPriceProduct builds a Pricing API product JSON for the given attributes.
+func rdsPriceProduct(region, instanceType, databaseEngine, deploymentOption, locationType, usd string) string {
+	return fmt.Sprintf(`{"product":{"attributes":{"instanceType":%q,"regionCode":%q,"databaseEngine":%q,"deploymentOption":%q,"locationType":%q}},"terms":{"OnDemand":{"t":{"priceDimensions":{"d":{"pricePerUnit":{"USD":%q}}}}}}}`,
+		instanceType, region, databaseEngine, deploymentOption, locationType, usd)
+}
+
+// postgresPrice builds the price product that matches instanceFor's shape.
+func postgresPrice(region, usd string) string {
+	return rdsPriceProduct(region, "db.t3.medium", "PostgreSQL", "Single-AZ", "AWS Region", usd)
+}
+
+// expectPricing stubs ListRDSPrices to return a matching postgres price per
+// region, so a populate warms every instanceFor instance.
+func expectPricing(c *mock.MockClient, usd string) {
+	c.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, region string) ([]string, error) {
+			return []string{postgresPrice(region, usd)}, nil
+		}).AnyTimes()
+}
 
 func TestIsOutpostsInstance(t *testing.T) {
 	tests := []struct {
@@ -112,34 +131,161 @@ func TestMultiOrSingleAZ(t *testing.T) {
 	}
 }
 
-func TestCollector_Collect_MultiRegion(t *testing.T) {
-	const validPriceJSON = `{
-            "terms": {
-                "OnDemand": {
-                    "term1": {
-                        "priceDimensions": {
-                            "dim1": {
-                                "pricePerUnit": {"USD": "0.456"}
-                            }
-                        }
-                    }
-                }
-            }
-        }`
+func instanceFor(region, id string) rdsTypes.DBInstance {
+	return rdsTypes.DBInstance{
+		DBSubnetGroup:        &rdsTypes.DBSubnetGroup{},
+		AvailabilityZone:     aws.String(region + "a"),
+		DBInstanceClass:      aws.String("db.t3.medium"),
+		Engine:               aws.String("postgres"),
+		DBInstanceIdentifier: aws.String(id),
+		MultiAZ:              aws.Bool(false),
+		DbiResourceId:        aws.String(id),
+		DBInstanceArn:        aws.String("arn-" + id),
+	}
+}
 
-	instanceFor := func(region, id string) rdsTypes.DBInstance {
-		return rdsTypes.DBInstance{
-			DBSubnetGroup:        &rdsTypes.DBSubnetGroup{},
-			AvailabilityZone:     aws.String(region + "a"),
-			DBInstanceClass:      aws.String("db.t3.medium"),
-			Engine:               aws.String("postgres"),
-			DBInstanceIdentifier: aws.String(id),
-			MultiAZ:              aws.Bool(false),
-			DbiResourceId:        aws.String(id),
-			DBInstanceArn:        aws.String("arn-" + id),
-		}
+// collectRegions drains ch and returns the set of region labels seen.
+func collectRegions(t *testing.T, ch chan prometheus.Metric) map[string]bool {
+	t.Helper()
+	close(ch)
+	got := map[string]bool{}
+	for metric := range ch {
+		got[utils.ReadMetrics(metric).Labels["region"]] = true
+	}
+	return got
+}
+
+// TestCollector_Collect_ColdStart verifies that a scrape before the first
+// populate finishes emits no metrics and does not error.
+func TestCollector_Collect_ColdStart(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	regionClient := mock.NewMockClient(mockCtrl)
+	// No AWS calls expected: the store has not populated, so Collect returns early.
+
+	pm := newPricingMap()
+	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
+	regionMap := map[string]client.Client{"us-east-1": regionClient}
+	store := newTestStore(regions, regionMap, regionClient, pm)
+
+	c := &Collector{
+		regions:        regions,
+		regionMap:      regionMap,
+		pricingMap:     pm,
+		store:          store,
+		accountID:      "123456789012",
+		populateErrors: store.populateErrors,
+		logger:         slog.Default(),
 	}
 
+	ch := make(chan prometheus.Metric, 1)
+	err := c.Collect(t.Context(), ch)
+	assert.NoError(t, err)
+
+	select {
+	case <-ch:
+		t.Fatal("expected no metric before the store is populated")
+	default:
+	}
+}
+
+// TestCollector_Collect_ServesFromWarmMap verifies that once the store is
+// populated, Collect serves instances and prices from memory and makes zero
+// AWS calls. The gomock Times(1) expectations are consumed entirely by the
+// background populate; any call from Collect would exceed them and fail.
+func TestCollector_Collect_ServesFromWarmMap(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	regionClient := mock.NewMockClient(mockCtrl)
+	regionClient.EXPECT().ListRDSInstances(gomock.Any()).
+		Return([]rdsTypes.DBInstance{instanceFor("us-east-1", "db-1")}, nil).
+		Times(1)
+
+	pricingClient := mock.NewMockClient(mockCtrl)
+	pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+		Return([]string{postgresPrice("us-east-1", "0.456")}, nil).
+		Times(1)
+
+	pm := newPricingMap()
+	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
+	regionMap := map[string]client.Client{"us-east-1": regionClient}
+	store := newTestStore(regions, regionMap, pricingClient, pm)
+	store.Populate(t.Context())
+
+	c := &Collector{
+		regions:        regions,
+		regionMap:      regionMap,
+		pricingMap:     pm,
+		store:          store,
+		accountID:      "123456789012",
+		populateErrors: store.populateErrors,
+		logger:         slog.Default(),
+	}
+
+	ch := make(chan prometheus.Metric, 1)
+	err := c.Collect(t.Context(), ch)
+	assert.NoError(t, err)
+
+	select {
+	case metric := <-ch:
+		result := utils.ReadMetrics(metric)
+		assert.Equal(t, "db.t3.medium", result.Labels["tier"])
+		assert.Equal(t, "db-1", result.Labels["id"])
+		assert.Equal(t, 0.456, result.Value)
+	default:
+		t.Fatal("expected a metric to be collected from the warm map")
+	}
+}
+
+// TestCollector_Collect_PricingMiss verifies that an instance whose price never
+// warmed is skipped with a log and does not fail the scrape.
+func TestCollector_Collect_PricingMiss(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	regionClient := mock.NewMockClient(mockCtrl)
+	regionClient.EXPECT().ListRDSInstances(gomock.Any()).
+		Return([]rdsTypes.DBInstance{instanceFor("us-east-1", "db-1")}, nil).
+		Times(1)
+
+	// The pricing API returns no products, so the key never lands in the map.
+	pricingClient := mock.NewMockClient(mockCtrl)
+	pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+		Return([]string{}, nil).
+		Times(1)
+
+	pm := newPricingMap()
+	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
+	regionMap := map[string]client.Client{"us-east-1": regionClient}
+	store := newTestStore(regions, regionMap, pricingClient, pm)
+	store.Populate(t.Context())
+
+	c := &Collector{
+		regions:        regions,
+		regionMap:      regionMap,
+		pricingMap:     pm,
+		store:          store,
+		accountID:      "123456789012",
+		populateErrors: store.populateErrors,
+		logger:         slog.Default(),
+	}
+
+	ch := make(chan prometheus.Metric, 1)
+	err := c.Collect(t.Context(), ch)
+	assert.NoError(t, err)
+
+	select {
+	case <-ch:
+		t.Fatal("expected no metric when pricing is missing")
+	default:
+	}
+}
+
+// TestCollector_Collect_MultiRegion verifies instances from every region are
+// served from the warm store.
+func TestCollector_Collect_MultiRegion(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -155,299 +301,30 @@ func TestCollector_Collect_MultiRegion(t *testing.T) {
 		regionMap[region] = regionClient
 	}
 
-	// Pricing lookups go through the shared client; serve a valid price for any region.
+	// One distinct pricing key per region.
 	pricingClient := mock.NewMockClient(mockCtrl)
-	pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(validPriceJSON, nil).
-		AnyTimes()
+	expectPricing(pricingClient, "0.456")
+
+	pm := newPricingMap()
+	store := newTestStore(regions, regionMap, pricingClient, pm)
+	store.Populate(t.Context())
 
 	c := &Collector{
-		pricingMap:        newPricingMap(),
-		regions:           regions,
-		regionMap:         regionMap,
-		scrapeInterval:    time.Minute,
-		regionListTimeout: time.Minute,
-		Client:            pricingClient,
-		accountID:         "123456789012",
-		logger:            slog.Default(),
+		regions:        regions,
+		regionMap:      regionMap,
+		pricingMap:     pm,
+		store:          store,
+		accountID:      "123456789012",
+		populateErrors: store.populateErrors,
+		logger:         slog.Default(),
 	}
 
 	ch := make(chan prometheus.Metric, len(regionNames))
 	err := c.Collect(t.Context(), ch)
 	assert.NoError(t, err)
-	close(ch)
 
-	gotRegions := map[string]bool{}
-	for metric := range ch {
-		gotRegions[utils.ReadMetrics(metric).Labels["region"]] = true
-	}
+	gotRegions := collectRegions(t, ch)
 	for _, region := range regionNames {
 		assert.True(t, gotRegions[region], "expected a metric for region %s", region)
-	}
-}
-
-// TestCollector_Collect_SlowRegionFailsFast verifies a region whose
-// ListRDSInstances hangs is bounded by regionListTimeout and does not block the
-// healthy regions or the overall Collect.
-func TestCollector_Collect_SlowRegionFailsFast(t *testing.T) {
-	const validPriceJSON = `{"terms":{"OnDemand":{"t":{"priceDimensions":{"d":{"pricePerUnit":{"USD":"0.456"}}}}}}}`
-
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-
-	healthyInstance := rdsTypes.DBInstance{
-		DBSubnetGroup:        &rdsTypes.DBSubnetGroup{},
-		AvailabilityZone:     aws.String("us-east-1a"),
-		DBInstanceClass:      aws.String("db.t3.medium"),
-		Engine:               aws.String("postgres"),
-		DBInstanceIdentifier: aws.String("healthy-db"),
-		MultiAZ:              aws.Bool(false),
-		DbiResourceId:        aws.String("healthy-db"),
-		DBInstanceArn:        aws.String("arn-healthy"),
-	}
-
-	healthy := mock.NewMockClient(mockCtrl)
-	healthy.EXPECT().ListRDSInstances(gomock.Any()).
-		Return([]rdsTypes.DBInstance{healthyInstance}, nil).
-		Times(1)
-
-	// The slow region blocks until its (timeout-bounded) context is canceled,
-	// then returns the context error — mimicking an unreachable endpoint.
-	slow := mock.NewMockClient(mockCtrl)
-	slow.EXPECT().ListRDSInstances(gomock.Any()).
-		DoAndReturn(func(ctx context.Context) ([]rdsTypes.DBInstance, error) {
-			<-ctx.Done()
-			return nil, ctx.Err()
-		}).
-		Times(1)
-
-	pricingClient := mock.NewMockClient(mockCtrl)
-	pricingClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(validPriceJSON, nil).
-		AnyTimes()
-
-	c := &Collector{
-		pricingMap: newPricingMap(),
-		regions: []types.Region{
-			{RegionName: aws.String("us-east-1")},
-			{RegionName: aws.String("ap-southeast-7")},
-		},
-		regionMap: map[string]client.Client{
-			"us-east-1":      healthy,
-			"ap-southeast-7": slow,
-		},
-		scrapeInterval:    time.Minute,
-		regionListTimeout: 50 * time.Millisecond,
-		Client:            pricingClient,
-		accountID:         "123456789012",
-		logger:            slog.Default(),
-	}
-
-	ch := make(chan prometheus.Metric, 2)
-	start := time.Now()
-	err := c.Collect(t.Context(), ch)
-	elapsed := time.Since(start)
-	assert.NoError(t, err)
-	close(ch)
-
-	// Collect returns shortly after the per-region timeout, not after the full
-	// collector budget; allow generous slack for CI scheduling.
-	assert.Less(t, elapsed, 5*time.Second, "slow region should not block Collect")
-
-	gotRegions := map[string]bool{}
-	for metric := range ch {
-		gotRegions[utils.ReadMetrics(metric).Labels["region"]] = true
-	}
-	assert.True(t, gotRegions["us-east-1"], "healthy region should still emit a metric")
-	assert.False(t, gotRegions["ap-southeast-7"], "slow region should be skipped, not block")
-}
-
-// TestCollector_Collect_RegionListTimeout verifies the wrap/no-wrap behavior:
-// a zero timeout leaves the region call bounded only by the parent context
-// (backwards-compatible default), while a positive timeout imposes a deadline.
-func TestCollector_Collect_RegionListTimeout(t *testing.T) {
-	tests := []struct {
-		name              string
-		regionListTimeout time.Duration
-		wantDeadline      bool
-	}{
-		{name: "zero disables per-region timeout", regionListTimeout: 0, wantDeadline: false},
-		{name: "positive imposes per-region timeout", regionListTimeout: 30 * time.Second, wantDeadline: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockCtrl := gomock.NewController(t)
-			defer mockCtrl.Finish()
-
-			var gotDeadline bool
-			regionClient := mock.NewMockClient(mockCtrl)
-			regionClient.EXPECT().ListRDSInstances(gomock.Any()).
-				DoAndReturn(func(ctx context.Context) ([]rdsTypes.DBInstance, error) {
-					_, gotDeadline = ctx.Deadline()
-					return nil, nil
-				}).
-				Times(1)
-
-			c := &Collector{
-				pricingMap:        newPricingMap(),
-				regions:           []types.Region{{RegionName: aws.String("us-east-1")}},
-				regionMap:         map[string]client.Client{"us-east-1": regionClient},
-				scrapeInterval:    time.Minute,
-				regionListTimeout: tt.regionListTimeout,
-				Client:            regionClient,
-				accountID:         "123456789012",
-				logger:            slog.Default(),
-			}
-
-			// Parent context carries no deadline, so any deadline observed by the
-			// region call comes from the per-region timeout.
-			ch := make(chan prometheus.Metric, 1)
-			require.NoError(t, c.Collect(context.Background(), ch))
-			assert.Equal(t, tt.wantDeadline, gotDeadline)
-		})
-	}
-}
-
-func TestCollector_Collect(t *testing.T) {
-	const cacheKey = "us-east-1-db.t3.medium-mysql-Single-AZ-AWS Outposts"
-	validPriceJSON := `{
-            "terms": {
-                "OnDemand": {
-                    "term1": {
-                        "priceDimensions": {
-                            "dim1": {
-                                "pricePerUnit": {"USD": "0.456"}
-                            }
-                        }
-                    }
-                }
-            }
-        }`
-	tests := []struct {
-		name                 string
-		ListRDSInstances     []rdsTypes.DBInstance
-		pricingKey           string
-		getRDSUnitDataRet    string
-		expectGetRDSUnitData bool
-		expectMetric         bool
-		initialCache         map[string]float64
-	}{
-		{
-			name: "cache hit - uses cached price",
-			ListRDSInstances: []rdsTypes.DBInstance{{
-				DBSubnetGroup: &rdsTypes.DBSubnetGroup{
-					Subnets: []rdsTypes.Subnet{
-						{
-							SubnetOutpost: &rdsTypes.Outpost{
-								Arn: aws.String("some-outpost-arn"),
-							},
-						},
-					},
-				},
-				AvailabilityZone:     aws.String("us-east-1a"),
-				DBInstanceClass:      aws.String("db.t3.medium"),
-				Engine:               aws.String("mysql"),
-				DBInstanceIdentifier: aws.String("test-db"),
-				MultiAZ:              aws.Bool(false),
-				DbiResourceId:        aws.String("test-db"),
-				DBInstanceArn:        aws.String("some-arn"),
-			}},
-			pricingKey:           cacheKey,
-			expectGetRDSUnitData: false,
-			expectMetric:         true,
-			initialCache:         map[string]float64{cacheKey: 0.123},
-		},
-		{
-			name: "cache miss - fetches price from API",
-			ListRDSInstances: []rdsTypes.DBInstance{{
-				DBSubnetGroup:        &rdsTypes.DBSubnetGroup{},
-				AvailabilityZone:     aws.String("us-east-1a"),
-				DBInstanceClass:      aws.String("db.t3.medium"),
-				Engine:               aws.String("postgres"),
-				DBInstanceIdentifier: aws.String("test-db-2"),
-				MultiAZ:              aws.Bool(false),
-				DbiResourceId:        aws.String("test-db-2"),
-				DBInstanceArn:        aws.String("some-arn-2"),
-			}},
-			pricingKey:           createPricingKey("us-east-1", "db.t3.medium", "postgres", "Single-AZ", "AWS Region"),
-			getRDSUnitDataRet:    validPriceJSON,
-			expectGetRDSUnitData: true,
-			expectMetric:         true,
-			initialCache:         map[string]float64{},
-		},
-		{
-			name: "no pricing data returned for instance - skips without error",
-			ListRDSInstances: []rdsTypes.DBInstance{{
-				DBSubnetGroup:        &rdsTypes.DBSubnetGroup{},
-				AvailabilityZone:     aws.String("us-east-1a"),
-				DBInstanceClass:      aws.String("db.t3.medium"),
-				Engine:               aws.String("aurora-postgresql"),
-				DBInstanceIdentifier: aws.String("test-db-3"),
-				MultiAZ:              aws.Bool(false),
-				DbiResourceId:        aws.String("test-db-3"),
-				DBInstanceArn:        aws.String("some-arn-3"),
-			}},
-			pricingKey:           createPricingKey("us-east-1", "db.t3.medium", "aurora-postgresql", "Single-AZ", "AWS Region"),
-			getRDSUnitDataRet:    "",
-			expectGetRDSUnitData: true,
-			expectMetric:         false,
-			initialCache:         map[string]float64{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockCtrl := gomock.NewController(t)
-			defer mockCtrl.Finish()
-
-			mockClient := mock.NewMockClient(mockCtrl)
-			mockClient.EXPECT().ListRDSInstances(gomock.Any()).
-				Return(tt.ListRDSInstances, nil).
-				Times(1)
-
-			if tt.expectGetRDSUnitData {
-				mockClient.EXPECT().GetRDSUnitData(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-					Return(tt.getRDSUnitDataRet, nil).
-					Times(1)
-			}
-
-			c := &Collector{
-				pricingMap:        &pricingMap{pricingMap: tt.initialCache},
-				regions:           []types.Region{{RegionName: aws.String("us-east-1")}},
-				regionMap:         map[string]client.Client{"us-east-1": mockClient},
-				scrapeInterval:    time.Minute,
-				regionListTimeout: time.Minute,
-				Client:            mockClient,
-				accountID:         "123456789012",
-				logger:            slog.Default(),
-			}
-
-			ch := make(chan prometheus.Metric, 1)
-			err := c.Collect(t.Context(), ch)
-			assert.NoError(t, err)
-
-			if !tt.expectMetric {
-				select {
-				case <-ch:
-					t.Fatal("expected no metric to be collected")
-				default:
-				}
-				return
-			}
-
-			select {
-			case metric := <-ch:
-				metricResult := utils.ReadMetrics(metric)
-				close(ch)
-				labels := metricResult.Labels
-				hourlyPrice, _ := c.pricingMap.Get(tt.pricingKey)
-				assert.Equal(t, *tt.ListRDSInstances[0].DBInstanceClass, labels["tier"])
-				assert.Equal(t, *tt.ListRDSInstances[0].DbiResourceId, labels["id"])
-				assert.Equal(t, hourlyPrice, metricResult.Value)
-			default:
-				t.Fatal("expected a metric to be collected")
-			}
-		})
 	}
 }

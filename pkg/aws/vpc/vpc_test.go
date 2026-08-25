@@ -98,9 +98,9 @@ func (m *MockClient) ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstanc
 	return args.Get(0).([]rdsTypes.DBInstance), args.Error(1)
 }
 
-func (m *MockClient) GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, engineCode, isOutpost string) (string, error) {
-	args := m.Called(ctx, instType, region, deploymentOption, engineCode, isOutpost)
-	return args.Get(0).(string), args.Error(1)
+func (m *MockClient) ListRDSPrices(ctx context.Context, region string) ([]string, error) {
+	args := m.Called(ctx, region)
+	return args.Get(0).([]string), args.Error(1)
 }
 
 func (m *MockClient) ListMSKClusters(ctx context.Context) ([]msktypes.Cluster, error) {
