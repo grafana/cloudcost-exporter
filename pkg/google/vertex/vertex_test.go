@@ -316,7 +316,7 @@ func (s *stubVertexClient) ListInstancesInZone(_ string, _ string) ([]*client.Ma
 	return nil, nil
 }
 
-func (s *stubVertexClient) GetMachineType(_, _, _ string) (*compute.MachineType, error) {
+func (s *stubVertexClient) GetMachineType(_ context.Context, _, _, _ string) (*compute.MachineType, error) {
 	return nil, nil
 }
 

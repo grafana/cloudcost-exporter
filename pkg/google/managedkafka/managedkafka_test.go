@@ -318,7 +318,7 @@ func (s *stubClient) ListInstancesInZone(string, string) ([]*client.MachineSpec,
 	return nil, nil
 }
 
-func (s *stubClient) GetMachineType(string, string, string) (*compute.MachineType, error) {
+func (s *stubClient) GetMachineType(context.Context, string, string, string) (*compute.MachineType, error) {
 	return nil, nil
 }
 

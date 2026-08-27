@@ -64,8 +64,8 @@ func (c *Compute) listInstancesInZone(projectId, zone string) ([]*MachineSpec, e
 // getMachineType returns the machine type spec (vCPU count, memory) for a
 // (project, zone, machineType) tuple. The spec is immutable for a given
 // zone, so callers should cache the result.
-func (c *Compute) getMachineType(project, zone, machineType string) (*compute.MachineType, error) {
-	return c.computeService.MachineTypes.Get(project, zone, machineType).Do()
+func (c *Compute) getMachineType(ctx context.Context, project, zone, machineType string) (*compute.MachineType, error) {
+	return c.computeService.MachineTypes.Get(project, zone, machineType).Context(ctx).Do()
 }
 
 // listDisks will list all disks in a given zone and return a slice of compute.Disk

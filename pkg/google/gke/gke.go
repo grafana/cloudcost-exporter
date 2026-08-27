@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
+	"github.com/grafana/cloudcost-exporter/pkg/google/storeutil"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,16 +28,6 @@ const (
 	// Override via Config.ZoneConcurrency to trade burst rate for scrape latency.
 	DefaultZoneCollectConcurrency = 10
 )
-
-func newPopulateErrorsCounter() *prometheus.CounterVec {
-	return prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: prometheus.BuildFQName(cloudcostexporter.ExporterName, subsystem, "populate_errors_total"),
-			Help: "Total errors during background store population, by store, project, and operation.",
-		},
-		[]string{"store", "project", "operation"},
-	)
-}
 
 var (
 	gkeNodeMemoryHourlyCostDesc = utils.GenerateDesc(
@@ -178,17 +169,17 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 	projects := strings.Split(config.Projects, ",")
 	regions := client.RegionsFromZonesForProjects(gcpClient, projects, logger)
 
-	populateErrors := newPopulateErrorsCounter()
+	populateErrors := storeutil.NewPopulateErrorsCounter(subsystem)
 	nodeStore := NewNodeStore(ctx, logger, gcpClient, projects, config.ZoneConcurrency, populateErrors)
 	diskStore := NewDiskStore(ctx, logger, gcpClient, projects, config.ZoneConcurrency, populateErrors)
 
-	startRefreshTicker(ctx, PriceRefreshInterval, func() {
+	storeutil.StartRefreshTicker(ctx, PriceRefreshInterval, func() {
 		if err := pm.Populate(ctx); err != nil {
 			logger.Error(err.Error())
 		}
 	})
-	startRefreshTicker(ctx, nodeRefreshInterval, func() { nodeStore.Populate(ctx) })
-	startRefreshTicker(ctx, diskRefreshInterval, func() { diskStore.Populate(ctx) })
+	storeutil.StartRefreshTicker(ctx, nodeRefreshInterval, func() { nodeStore.Populate(ctx) })
+	storeutil.StartRefreshTicker(ctx, diskRefreshInterval, func() { diskStore.Populate(ctx) })
 
 	return &Collector{
 		projects:       projects,
@@ -199,21 +190,6 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 		diskStore:      diskStore,
 		populateErrors: populateErrors,
 	}, nil
-}
-
-func startRefreshTicker(ctx context.Context, interval time.Duration, run func()) {
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				run()
-			}
-		}
-	}()
 }
 
 func (c *Collector) Regions() []string {

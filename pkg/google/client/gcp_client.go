@@ -130,8 +130,8 @@ func (c *GCPClient) ListInstancesInZone(projectId, zone string) ([]*MachineSpec,
 	return c.compute.listInstancesInZone(projectId, zone)
 }
 
-func (c *GCPClient) GetMachineType(projectId, zone, machineType string) (*computev1.MachineType, error) {
-	return c.compute.getMachineType(projectId, zone, machineType)
+func (c *GCPClient) GetMachineType(ctx context.Context, projectId, zone, machineType string) (*computev1.MachineType, error) {
+	return c.compute.getMachineType(ctx, projectId, zone, machineType)
 }
 
 func (c *GCPClient) ListDisks(ctx context.Context, projectId string, zone string) ([]*computev1.Disk, error) {
