@@ -135,6 +135,10 @@ func (m *mockGCPClient) ListInstancesInZone(projectId, zone string) ([]*client.M
 	return nil, nil
 }
 
+func (m *mockGCPClient) GetMachineType(project, zone, machineType string) (*compute.MachineType, error) {
+	return nil, nil
+}
+
 func (m *mockGCPClient) ListDisks(ctx context.Context, projectId string, zone string) ([]*compute.Disk, error) {
 	return nil, nil
 }

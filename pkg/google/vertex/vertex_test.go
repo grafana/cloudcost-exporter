@@ -316,6 +316,10 @@ func (s *stubVertexClient) ListInstancesInZone(_ string, _ string) ([]*client.Ma
 	return nil, nil
 }
 
+func (s *stubVertexClient) GetMachineType(_, _, _ string) (*compute.MachineType, error) {
+	return nil, nil
+}
+
 func (s *stubVertexClient) ListDisks(_ context.Context, _ string, _ string) ([]*compute.Disk, error) {
 	return nil, nil
 }
