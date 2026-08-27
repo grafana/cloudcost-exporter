@@ -2,14 +2,18 @@ package gce
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
 	"github.com/grafana/cloudcost-exporter/pkg/google/storeutil"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
+
+	dto "github.com/prometheus/client_model/go"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -66,6 +70,41 @@ type Collector struct {
 	machineTypes   *machineTypeCache
 	logger         *slog.Logger
 	populateErrors *prometheus.CounterVec
+
+	// errMu guards lastNodeStorePopulateErrors, which lets Collect detect
+	// whether the node store reported new populate errors since the previous
+	// scrape without gke.NodeStore needing to expose its own error state.
+	errMu                       sync.Mutex
+	lastNodeStorePopulateErrors float64
+}
+
+// sumPopulateErrorsByStore returns the current total across all label
+// combinations of populateErrors whose "store" label matches store, read via
+// its Collector interface rather than an exported total. Machine-type lookup
+// misses (store "machine_types") are an expected, per-instance data gap
+// already handled by skipping just the total-cost metric, so callers scope
+// this to "nodes" to only flag genuine project/zone/instance listing outages.
+func sumPopulateErrorsByStore(cv *prometheus.CounterVec, store string) float64 {
+	metricCh := make(chan prometheus.Metric)
+	go func() {
+		cv.Collect(metricCh)
+		close(metricCh)
+	}()
+
+	var total float64
+	var m dto.Metric
+	for metric := range metricCh {
+		if err := metric.Write(&m); err != nil {
+			continue
+		}
+		for _, lp := range m.GetLabel() {
+			if lp.GetName() == "store" && lp.GetValue() == store {
+				total += m.GetCounter().GetValue()
+				break
+			}
+		}
+	}
+	return total
 }
 
 func (c *Collector) Register(r provider.Registry) error {
@@ -117,6 +156,15 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "metrics collected",
 		slog.Duration("duration", time.Since(now)),
 		slog.Int64("instances_emitted", instanceCount))
+
+	total := sumPopulateErrorsByStore(c.populateErrors, "nodes")
+	c.errMu.Lock()
+	hasNewPopulateErrors := total > c.lastNodeStorePopulateErrors
+	c.lastNodeStorePopulateErrors = total
+	c.errMu.Unlock()
+	if hasNewPopulateErrors {
+		return fmt.Errorf("node store population reported errors since the last scrape; see cloudcost_exporter_gcp_gce_populate_errors_total")
+	}
 	return nil
 }
 
