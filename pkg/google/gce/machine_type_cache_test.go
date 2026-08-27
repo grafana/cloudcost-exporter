@@ -1,6 +1,7 @@
 package gce
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"os"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
+	"github.com/grafana/cloudcost-exporter/pkg/google/storeutil"
 )
 
 var cacheTestLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -45,7 +47,7 @@ func newTestNodeStore(t *testing.T, instances []*computev1.Instance) *gke.NodeSt
 		zones:     []*computev1.Zone{{Name: "us-central1-a"}},
 		instances: instances,
 	}
-	populateErrors := newPopulateErrorsCounter()
+	populateErrors := storeutil.NewPopulateErrorsCounter(subsystem)
 	ns := gke.NewNodeStore(t.Context(), cacheTestLogger, fakeClient, []string{"testing"}, 5, populateErrors)
 	<-ns.Done()
 	return ns
@@ -58,21 +60,21 @@ type fakeMachineTypeClient struct {
 	client.Client
 
 	mu                 sync.Mutex
-	failuresRemaining  map[string]int
-	calls              map[string]int
+	failuresRemaining  map[machineTypeKey]int
+	calls              map[machineTypeKey]int
 	currentConcurrency int
 	peakConcurrency    int
 }
 
-func newFakeMachineTypeClient(failuresRemaining map[string]int) *fakeMachineTypeClient {
+func newFakeMachineTypeClient(failuresRemaining map[machineTypeKey]int) *fakeMachineTypeClient {
 	return &fakeMachineTypeClient{
 		failuresRemaining: failuresRemaining,
-		calls:             map[string]int{},
+		calls:             map[machineTypeKey]int{},
 	}
 }
 
-func (f *fakeMachineTypeClient) GetMachineType(project, zone, machineType string) (*computev1.MachineType, error) {
-	key := machineTypeCacheKey(project, zone, machineType)
+func (f *fakeMachineTypeClient) GetMachineType(_ context.Context, project, zone, machineType string) (*computev1.MachineType, error) {
+	key := machineTypeKey{project, zone, machineType}
 
 	f.mu.Lock()
 	f.calls[key]++
@@ -99,7 +101,7 @@ func (f *fakeMachineTypeClient) GetMachineType(project, zone, machineType string
 }
 
 func newTestCache(gcpClient client.Client, concurrency int) *machineTypeCache {
-	return newMachineTypeCache(gcpClient, newPopulateErrorsCounter(), concurrency, cacheTestLogger)
+	return newMachineTypeCache(gcpClient, storeutil.NewPopulateErrorsCounter(subsystem), concurrency, cacheTestLogger)
 }
 
 func TestMachineTypeCache_GetHitMiss(t *testing.T) {
@@ -109,7 +111,7 @@ func TestMachineTypeCache_GetHitMiss(t *testing.T) {
 	assert.False(t, ok, "expected a miss before warming")
 
 	cache.mu.Lock()
-	cache.specs[machineTypeCacheKey("proj", "us-central1-a", "n1-standard-1")] = machineTypeSpec{VCPU: 1, MemoryGiB: 3.75}
+	cache.specs[machineTypeKey{"proj", "us-central1-a", "n1-standard-1"}] = machineTypeSpec{VCPU: 1, MemoryGiB: 3.75}
 	cache.mu.Unlock()
 
 	spec, ok := cache.get("proj", "us-central1-a", "n1-standard-1")
@@ -148,8 +150,8 @@ func TestMachineTypeCache_Warm_RetriesPreviouslyFailedKeys(t *testing.T) {
 		{Name: "a", MachineType: "abc/n1-slim", Zone: "testing/us-central1-a", Scheduling: &computev1.Scheduling{}},
 	}
 	nodeStore := newTestNodeStore(t, instances)
-	key := machineTypeCacheKey("testing", "us-central1-a", "n1-slim")
-	gcpClient := newFakeMachineTypeClient(map[string]int{key: 1}) // fails once, then succeeds
+	key := machineTypeKey{"testing", "us-central1-a", "n1-slim"}
+	gcpClient := newFakeMachineTypeClient(map[machineTypeKey]int{key: 1}) // fails once, then succeeds
 	cache := newTestCache(gcpClient, 5)
 
 	cache.warm(t.Context(), nodeStore, []string{"testing"})
@@ -186,7 +188,7 @@ func TestMachineTypeCache_Warm_RespectsConcurrencyLimit(t *testing.T) {
 }
 
 func TestCollector_Register(t *testing.T) {
-	c := &Collector{populateErrors: newPopulateErrorsCounter()}
+	c := &Collector{populateErrors: storeutil.NewPopulateErrorsCounter(subsystem)}
 	registry := prometheus.NewRegistry()
 	require.NoError(t, c.Register(registry))
 }

@@ -61,7 +61,7 @@ func (c *regionsStubClient) GetProjectBillingAccount(_ context.Context, _ string
 func (c *regionsStubClient) ListInstancesInZone(_, _ string) ([]*MachineSpec, error) {
 	panic("not implemented")
 }
-func (c *regionsStubClient) GetMachineType(_, _, _ string) (*compute.MachineType, error) {
+func (c *regionsStubClient) GetMachineType(_ context.Context, _, _, _ string) (*compute.MachineType, error) {
 	panic("not implemented")
 }
 func (c *regionsStubClient) ListDisks(_ context.Context, _, _ string) ([]*compute.Disk, error) {

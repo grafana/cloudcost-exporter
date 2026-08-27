@@ -21,7 +21,7 @@ type Client interface {
 	GetZones(project string) ([]*compute.Zone, error)
 	GetRegions(project string) ([]*compute.Region, error)
 	ListInstancesInZone(projectId, zone string) ([]*MachineSpec, error)
-	GetMachineType(project, zone, machineType string) (*compute.MachineType, error)
+	GetMachineType(ctx context.Context, project, zone, machineType string) (*compute.MachineType, error)
 	ListDisks(ctx context.Context, project string, zone string) ([]*compute.Disk, error)
 	ListForwardingRules(ctx context.Context, project string, region string) ([]*compute.ForwardingRule, error)
 	ListSQLInstances(ctx context.Context, project string) ([]*sqladmin.DatabaseInstance, error)

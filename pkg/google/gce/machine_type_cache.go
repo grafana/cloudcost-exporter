@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
@@ -16,6 +17,11 @@ import (
 // errNilMachineType guards against a client returning a nil *compute.MachineType
 // alongside a nil error, which would otherwise panic on field access below.
 var errNilMachineType = errors.New("machine type response was nil")
+
+// errIncompleteMachineType guards against a client returning a *compute.MachineType
+// with a non-positive vCPU or memory value, which would otherwise be cached as a
+// valid spec and silently zero out part of the total cost metric.
+var errIncompleteMachineType = errors.New("machine type response has non-positive vCPU or memory")
 
 // machineTypeSpec is the subset of a GCE machine type's spec needed to turn
 // per-core/per-GiB rates into a total hourly cost.
@@ -35,7 +41,9 @@ type machineTypeCache struct {
 	logger         *slog.Logger
 
 	mu    sync.RWMutex
-	specs map[string]machineTypeSpec
+	specs map[machineTypeKey]machineTypeSpec
+
+	warming atomic.Bool
 
 	initialWarmOnce sync.Once
 	initialWarm     chan struct{}
@@ -50,7 +58,7 @@ func newMachineTypeCache(gcpClient client.Client, populateErrors *prometheus.Cou
 		populateErrors: populateErrors,
 		concurrency:    concurrency,
 		logger:         logger.With("store", "machine_types"),
-		specs:          make(map[string]machineTypeSpec),
+		specs:          make(map[machineTypeKey]machineTypeSpec),
 		initialWarm:    make(chan struct{}),
 	}
 }
@@ -62,25 +70,30 @@ func (c *machineTypeCache) Done() <-chan struct{} {
 	return c.initialWarm
 }
 
-func machineTypeCacheKey(project, zone, machineType string) string {
-	return project + "/" + zone + "/" + machineType
+type machineTypeKey struct {
+	project, zone, machineType string
 }
 
 // get returns the cached spec for a machine type, if resolved.
 func (c *machineTypeCache) get(project, zone, machineType string) (machineTypeSpec, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	spec, ok := c.specs[machineTypeCacheKey(project, zone, machineType)]
+	spec, ok := c.specs[machineTypeKey{project, zone, machineType}]
 	return spec, ok
 }
 
-type machineTypeKey struct {
-	project, zone, machineType string
-}
-
 // warm fetches specs for any (project, zone, machine type) tuple present in nodeStore
-// that isn't already cached, capped at c.concurrency in-flight calls.
+// that isn't already cached, capped at c.concurrency in-flight calls. Concurrent calls
+// to warm are dropped: if a tick fires while a previous warm is still running, running
+// a second pass would only duplicate in-flight GetMachineType calls against the same
+// missing set.
 func (c *machineTypeCache) warm(ctx context.Context, nodeStore *gke.NodeStore, projects []string) {
+	if !c.warming.CompareAndSwap(false, true) {
+		c.logger.LogAttrs(ctx, slog.LevelInfo, "warm already in progress, skipping tick")
+		return
+	}
+	defer c.warming.Store(false)
+
 	defer c.initialWarmOnce.Do(func() { close(c.initialWarm) })
 
 	seen := make(map[machineTypeKey]struct{})
@@ -108,9 +121,12 @@ func (c *machineTypeCache) warm(ctx context.Context, nodeStore *gke.NodeStore, p
 			if ctx.Err() != nil {
 				return nil
 			}
-			mt, err := c.gcpClient.GetMachineType(k.project, k.zone, k.machineType)
+			mt, err := c.gcpClient.GetMachineType(ctx, k.project, k.zone, k.machineType)
 			if err == nil && mt == nil {
 				err = errNilMachineType
+			}
+			if err == nil && (mt.GuestCpus <= 0 || mt.MemoryMb <= 0) {
+				err = errIncompleteMachineType
 			}
 			if err != nil {
 				c.logger.LogAttrs(ctx, slog.LevelError, "failed to get machine type",
@@ -122,7 +138,7 @@ func (c *machineTypeCache) warm(ctx context.Context, nodeStore *gke.NodeStore, p
 				return nil
 			}
 			c.mu.Lock()
-			c.specs[machineTypeCacheKey(k.project, k.zone, k.machineType)] = machineTypeSpec{
+			c.specs[k] = machineTypeSpec{
 				VCPU:      mt.GuestCpus,
 				MemoryGiB: float64(mt.MemoryMb) / 1024,
 			}

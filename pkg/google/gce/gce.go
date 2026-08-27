@@ -8,6 +8,7 @@ import (
 
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
+	"github.com/grafana/cloudcost-exporter/pkg/google/storeutil"
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -24,16 +25,6 @@ const (
 	// widening gke's exported surface just for this.
 	nodeRefreshInterval = 5 * time.Minute
 )
-
-func newPopulateErrorsCounter() *prometheus.CounterVec {
-	return prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: prometheus.BuildFQName(cloudcostexporter.ExporterName, subsystem, "populate_errors_total"),
-			Help: "Total errors during background store population, by store, project, and operation.",
-		},
-		[]string{"store", "project", "operation"},
-	)
-}
 
 var (
 	gceInstanceCPUHourlyCostDesc = utils.GenerateDesc(
@@ -140,16 +131,16 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 	projects := strings.Split(config.Projects, ",")
 	regions := client.RegionsFromZonesForProjects(gcpClient, projects, logger)
 
-	populateErrors := newPopulateErrorsCounter()
+	populateErrors := storeutil.NewPopulateErrorsCounter(subsystem)
 	nodeStore := gke.NewNodeStore(ctx, logger, gcpClient, projects, config.ZoneConcurrency, populateErrors)
 	machineTypes := newMachineTypeCache(gcpClient, populateErrors, config.ZoneConcurrency, logger)
 
-	startRefreshTicker(ctx, gke.PriceRefreshInterval, func() {
+	storeutil.StartRefreshTicker(ctx, gke.PriceRefreshInterval, func() {
 		if err := pm.Populate(ctx); err != nil {
 			logger.Error(err.Error())
 		}
 	})
-	startRefreshTicker(ctx, nodeRefreshInterval, func() {
+	storeutil.StartRefreshTicker(ctx, nodeRefreshInterval, func() {
 		nodeStore.Populate(ctx)
 		machineTypes.warm(ctx, nodeStore, projects)
 	})
@@ -172,21 +163,6 @@ func New(ctx context.Context, config *Config, logger *slog.Logger, gcpClient cli
 		machineTypes:   machineTypes,
 		populateErrors: populateErrors,
 	}, nil
-}
-
-func startRefreshTicker(ctx context.Context, interval time.Duration, run func()) {
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				run()
-			}
-		}
-	}()
 }
 
 func (c *Collector) Regions() []string {
