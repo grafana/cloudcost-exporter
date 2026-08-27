@@ -211,10 +211,15 @@ func (pm *PricingMap) GetCostOfStorage(region, storageClass string) (*StoragePri
 	if _, ok := pm.storage[region]; !ok {
 		return nil, fmt.Errorf("%w: %s", ErrRegionNotFound, region)
 	}
-	if _, ok := pm.storage[region].Storage[storageClass]; !ok {
+	sp, ok := pm.storage[region].Storage[storageClass]
+	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrFamilyTypeNotFound, storageClass)
 	}
-	return pm.storage[region].Storage[storageClass], nil
+	// Copy out while holding the lock: this pointer would otherwise alias the
+	// same *StoragePrices that ParseSkus mutates in place on the next refresh,
+	// racing with the caller's unsynchronized reads after RUnlock.
+	prices := *sp
+	return &prices, nil
 }
 
 var (

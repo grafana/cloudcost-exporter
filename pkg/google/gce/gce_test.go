@@ -90,6 +90,7 @@ func TestCollector_Collect(t *testing.T) {
 		config          *Config
 		testServer      *httptest.Server
 		expectedMetrics []*utils.MetricResult
+		expectErr       bool
 	}{
 		"Handle http error": {
 			config: &Config{Projects: "testing"},
@@ -97,6 +98,7 @@ func TestCollector_Collect(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 			})),
 			expectedMetrics: []*utils.MetricResult{},
+			expectErr:       true,
 		},
 		"Excludes GKE nodes, prices standalone VMs, skips unpriced machine types": {
 			config:     &Config{Projects: "testing"},
@@ -238,7 +240,12 @@ func TestCollector_Collect(t *testing.T) {
 
 			ch := make(chan prometheus.Metric)
 			go func() {
-				require.NoError(t, collector.Collect(t.Context(), ch))
+				collectErr := collector.Collect(t.Context(), ch)
+				if test.expectErr {
+					assert.Error(t, collectErr)
+				} else {
+					assert.NoError(t, collectErr)
+				}
 				close(ch)
 			}()
 
