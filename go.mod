@@ -1,15 +1,18 @@
 module github.com/grafana/cloudcost-exporter
 
-go 1.26.4
+go 1.27.1
 
 require (
 	cloud.google.com/go/billing v1.26.0
 	cloud.google.com/go/compute v1.65.0
-	cloud.google.com/go/monitoring v1.30.0 // indirect
+	cloud.google.com/go/managedkafka v1.0.0
 	cloud.google.com/go/storage v1.62.2
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.0
+	github.com/Azure/azure-sdk-for-go/sdk/monitor/query/azmetrics v1.3.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v8 v8.1.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9 v9.3.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/eventhub/armeventhub v1.3.0
 	github.com/Azure/go-autorest/autorest/to v0.4.1
 	github.com/aws/aws-sdk-go-v2 v1.42.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.28
@@ -17,6 +20,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.66.0
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.313.0
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.56.0
+	github.com/aws/aws-sdk-go-v2/service/kafka v1.55.0
 	github.com/aws/aws-sdk-go-v2/service/pricing v1.43.0
 	github.com/aws/aws-sdk-go-v2/service/rds v1.120.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.44.0
@@ -32,16 +36,7 @@ require (
 	google.golang.org/api v0.287.1
 	google.golang.org/genproto v0.0.0-20260729162451-8efbd57d26e0
 	google.golang.org/grpc v1.82.1
-	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/matryer/try.v1 v1.0.0-20150601225556-312d2599e12e
-)
-
-require (
-	cloud.google.com/go/managedkafka v1.0.0
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0
-	github.com/Azure/azure-sdk-for-go/sdk/monitor/query/azmetrics v1.3.0
-	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/eventhub/armeventhub v1.3.0
-	github.com/aws/aws-sdk-go-v2/service/kafka v1.55.0
 )
 
 require (
@@ -52,6 +47,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.12.0 // indirect
 	cloud.google.com/go/longrunning v1.2.0 // indirect
+	cloud.google.com/go/monitoring v1.30.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
 	github.com/Azure/go-autorest v14.2.0+incompatible // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.9.0 // indirect
@@ -109,5 +105,6 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260727163830-6c54dddc4772 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260729162451-8efbd57d26e0 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
