@@ -33,8 +33,8 @@ var (
 type Collector struct {
 	regions        []types.Region
 	regionMap      map[string]client.Client
-	pricingMap     *pricingMap
-	store          *instanceStore
+	instanceStore  *instanceStore
+	pricingStore   *pricingStore
 	accountID      string
 	populateErrors *prometheus.CounterVec
 	logger         *slog.Logger
@@ -55,46 +55,68 @@ const (
 
 // New creates an rds collector.
 //
-// Instance inventory and pricing are refreshed in the background on a ticker
-// rather than on the scrape path. New() kicks off the first populate immediately
-// via the store constructor and returns without blocking, so a slow AWS API
-// never delays startup. Collect() makes zero AWS calls and serves metrics from
-// the warm store and pricing map.
-// A positive RegionListTimeout caps each region's background work; 0 falls back
-// to an internal safety ceiling so a slow region never wedges the refresh.
+// Instance inventory and pricing are refreshed independently in the
+// background, each on its own ticker, rather than on the scrape path. New()
+// kicks off both stores' first populate immediately and returns without
+// blocking, so a slow AWS API never delays startup. Collect() makes zero AWS
+// calls and serves metrics from the two warm stores, joined by pricing key.
+// A positive RegionListTimeout caps each region's background work for both
+// stores; 0 falls back to an internal safety ceiling so a slow region never
+// wedges either refresh.
 func New(ctx context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
 	logger = logger.With("collector", serviceName)
-	pm := newPricingMap()
 	populateErrors := newPopulateErrorsCounter()
-	store := newInstanceStore(ctx, logger, config, pm, populateErrors)
 
-	startRefreshTicker(ctx, config.ScrapeInterval, func() { store.Populate(ctx) })
+	instanceStore := newInstanceStore(ctx, logger, config, populateErrors)
+	pricingStore := newPricingStore(ctx, logger, config, populateErrors)
+
+	startRefreshTicker(ctx, config.ScrapeInterval, func() { instanceStore.Populate(ctx) })
+	startRefreshTicker(ctx, defaultPricingRefreshInterval, func() { pricingStore.Populate(ctx) })
 
 	return &Collector{
 		regions:        config.Regions,
 		regionMap:      config.RegionMap,
-		pricingMap:     pm,
-		store:          store,
+		instanceStore:  instanceStore,
+		pricingStore:   pricingStore,
 		accountID:      config.AccountID,
 		populateErrors: populateErrors,
 		logger:         logger,
 	}, nil
 }
 
-// Collect satisfies the provider.Collector interface. It makes no AWS calls:
-// instances come from the background store and prices from the pre-warmed
-// pricing map. A cold store (no populate finished yet) or a pricing miss emits
-// nothing for the affected instances and logs, rather than failing the scrape.
-func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
+// isDone reports whether ch has been closed.
+func isDone(ch <-chan struct{}) bool {
 	select {
-	case <-c.store.Done():
+	case <-ch:
+		return true
 	default:
+		return false
+	}
+}
+
+// Collect satisfies the provider.Collector interface. It makes no AWS calls:
+// instances come from the background instance store and prices from the
+// background pricing store. Either store not yet populated, or any
+// combination of the two, skips the scrape (no metrics, no error) rather than
+// failing it. A pricing miss for an individual instance is likewise skipped
+// with a log, not an error.
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
+	instancesReady := isDone(c.instanceStore.Done())
+	pricesReady := isDone(c.pricingStore.Done())
+	switch {
+	case !instancesReady && !pricesReady:
+		c.logger.LogAttrs(ctx, slog.LevelInfo, "instance and pricing stores not yet populated, skipping metrics")
+		return nil
+	case !instancesReady:
 		c.logger.LogAttrs(ctx, slog.LevelInfo, "instance store not yet populated, skipping metrics")
+		return nil
+	case !pricesReady:
+		c.logger.LogAttrs(ctx, slog.LevelInfo, "pricing store not yet populated, skipping metrics")
 		return nil
 	}
 
 	for _, region := range c.regions {
-		for _, instance := range c.store.Get(*region.RegionName) {
+		for _, instance := range c.instanceStore.Get(*region.RegionName) {
 			// pricingKeyFor returns ok=false for a partial instance (AWS can
 			// return one missing its AZ, class, engine, or multi-AZ flag mid
 			// create or delete) or an engine we cannot map to a price; skip
@@ -109,7 +131,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				continue
 			}
 
-			hourlyPrice, ok := c.pricingMap.Get(key)
+			hourlyPrice, ok := c.pricingStore.Get(key)
 			if !ok {
 				c.logger.Warn("no pricing data found for RDS instance, skipping", "instanceType", *instance.DBInstanceClass, "region", azRegion, "engine", *instance.Engine)
 				continue
@@ -162,6 +184,10 @@ func isOutpostsInstance(instance rdsTypes.DBInstance) string {
 // but the Oracle and SQL Server databaseEdition strings are best-effort and
 // should be checked against a real GetProducts response before relying on their
 // prices.
+//
+// TODO: harden Aurora and multi-edition engine matching against a real
+// GetProducts response (e.g. Aurora Serverless v2 may need a distinct key
+// from provisioned Aurora); tracked as a follow-up issue.
 var engineAttributes = map[string]struct {
 	databaseEngine  string
 	databaseEdition string

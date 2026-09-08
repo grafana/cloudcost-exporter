@@ -8,7 +8,7 @@
 
 | Metric name                                      | Metric type | Description                                                              | Labels                                                                                                                              |
 |--------------------------------------------------|-------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
-| cloudcost_exporter_aws_rds_populate_errors_total | Counter     | Errors during background store population by store, region, and operation | `store`=&lt;always `instances`&gt; <br/> `region`=&lt;AWS region&gt; <br/> `operation`=&lt;`lookup_client`, `list_instances`, `list_prices`, `parse_pricing`&gt; |
+| cloudcost_exporter_aws_rds_populate_errors_total | Counter     | Errors during background store population by store, region, and operation | `store`=&lt;`instances` or `pricing`&gt; <br/> `region`=&lt;AWS region&gt; <br/> `operation`=&lt;`lookup_client`, `list_instances`, `list_prices`, `parse_pricing`&gt; |
 
 ## Overview
 
@@ -31,13 +31,13 @@ Or via command line:
 
 ### Per-region Timeout
 
-The background refresh lists instances (`DescribeDBInstances`) and prices (`GetProducts`) in each region concurrently. `--aws.rds.region-timeout` bounds each region's work:
+Instance inventory (`DescribeDBInstances`) and pricing (`GetProducts`) refresh independently, each in its own background store with its own per-region call. `--aws.rds.region-timeout` bounds each region's work in both stores:
 
 ```bash
 --aws.rds.region-timeout=15s
 ```
 
-The default is `0`, which applies an internal safety ceiling so a hung AWS call can never stall the background refresh. Set a positive value (e.g. `15s`) to fail slow or unreachable regions faster: the region is logged, counted in `cloudcost_exporter_aws_rds_populate_errors_total`, and skipped while the others still warm. Because the refresh runs off the scrape path, a slow region delays only the freshness of that region's data, not the scrape itself.
+The default is `0`, which applies an internal safety ceiling so a hung AWS call can never stall either background refresh. Set a positive value (e.g. `15s`) to fail slow or unreachable regions faster: the region is logged, counted in `cloudcost_exporter_aws_rds_populate_errors_total`, and skipped while the others still warm. Because the refresh runs off the scrape path, a slow region delays only the freshness of that region's data, not the scrape itself.
 
 ## Labels
 
@@ -51,8 +51,9 @@ The default is `0`, which applies an internal safety ceiling so a hung AWS call 
 
 - Pricing is listed in bulk per region from the AWS Pricing API and keyed by instance type, engine, deployment option, and license so `Collect` matches each instance to its price
 - Instances whose engine is not recognized are skipped; recognized engines are MySQL, MariaDB, PostgreSQL, Aurora MySQL, Aurora PostgreSQL, Oracle, and SQL Server
-- Inventory and pricing are refreshed in the background on the configured scrape interval; scrapes read the warm cache and make no AWS calls
-- No metrics emit until the first background refresh completes after startup
+- Instance inventory and pricing refresh independently in the background, each in its own store: inventory refreshes on `--scrape-interval` (default `1h`); pricing refreshes on a fixed 24-hour interval, since it's a stable bulk-per-region fetch that doesn't need frequent refresh
+- Scrapes read both warm stores and make no AWS calls
+- No metrics emit until both the instance and pricing background stores complete their first refresh after startup
 - All costs are represented in USD per hour
 
 ## IAM Permissions

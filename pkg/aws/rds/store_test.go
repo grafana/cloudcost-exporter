@@ -21,15 +21,13 @@ import (
 // warmKey is the pricing key produced by both instanceFor and postgresPrice.
 var warmKey = createPricingKey("us-east-1", "db.t3.medium", "PostgreSQL", "", "Single-AZ", "No license required", "AWS Region")
 
-// newTestStore builds a store without the background goroutine the production
-// constructor starts, so tests can drive Populate synchronously.
-func newTestStore(regions []types.Region, regionMap map[string]client.Client, pricingClient client.Client, pm *pricingMap) *instanceStore {
+// newTestInstanceStore builds a store without the background goroutine the
+// production constructor starts, so tests can drive Populate synchronously.
+func newTestInstanceStore(regions []types.Region, regionMap map[string]client.Client) *instanceStore {
 	return &instanceStore{
 		logger:            slog.Default(),
 		regions:           regions,
 		regionMap:         regionMap,
-		pricingClient:     pricingClient,
-		pricingMap:        pm,
 		concurrency:       populateConcurrency,
 		populateErrors:    newPopulateErrorsCounter(),
 		instances:         make(map[string][]rdsTypes.DBInstance),
@@ -37,9 +35,9 @@ func newTestStore(regions []types.Region, regionMap map[string]client.Client, pr
 	}
 }
 
-// TestStore_Populate_WarmsInstancesAndPricing verifies a populate caches the
-// region's instances and fills the pricing map off the scrape path.
-func TestStore_Populate_WarmsInstancesAndPricing(t *testing.T) {
+// TestInstanceStore_Populate_WarmsInstances verifies a populate caches the
+// region's instances off the scrape path.
+func TestInstanceStore_Populate_WarmsInstances(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -48,88 +46,43 @@ func TestStore_Populate_WarmsInstancesAndPricing(t *testing.T) {
 		Return([]rdsTypes.DBInstance{instanceFor("us-east-1", "db-1")}, nil).
 		Times(1)
 
-	pricingClient := mock.NewMockClient(mockCtrl)
-	pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
-		Return([]string{postgresPrice("us-east-1", "0.456")}, nil).
-		Times(1)
-
-	pm := newPricingMap()
 	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
 	regionMap := map[string]client.Client{"us-east-1": regionClient}
-	store := newTestStore(regions, regionMap, pricingClient, pm)
+	store := newTestInstanceStore(regions, regionMap)
 
 	store.Populate(t.Context())
 
 	assert.Len(t, store.Get("us-east-1"), 1)
-	price, ok := pm.Get(warmKey)
-	assert.True(t, ok, "price should be warmed during populate")
-	assert.Equal(t, 0.456, price)
 }
 
-// TestStore_Populate_PricingListedOncePerRegion verifies pricing is listed in
-// bulk once per region, independent of how many instances the region has.
-func TestStore_Populate_PricingListedOncePerRegion(t *testing.T) {
+// TestInstanceStore_Populate_Refresh verifies a second populate re-lists
+// instances so the cache tracks the latest inventory.
+func TestInstanceStore_Populate_Refresh(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
 	regionClient := mock.NewMockClient(mockCtrl)
-	regionClient.EXPECT().ListRDSInstances(gomock.Any()).
-		Return([]rdsTypes.DBInstance{
-			instanceFor("us-east-1", "db-1"),
-			instanceFor("us-east-1", "db-2"),
-		}, nil).
-		Times(1)
-
-	pricingClient := mock.NewMockClient(mockCtrl)
-	pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
-		Return([]string{postgresPrice("us-east-1", "0.456")}, nil).
-		Times(1) // one bulk price list regardless of instance count
-
-	pm := newPricingMap()
-	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
-	regionMap := map[string]client.Client{"us-east-1": regionClient}
-	store := newTestStore(regions, regionMap, pricingClient, pm)
-
-	store.Populate(t.Context())
-	assert.Len(t, store.Get("us-east-1"), 2)
-}
-
-// TestStore_Populate_Refresh verifies a second populate re-lists prices so the
-// map tracks the latest rates.
-func TestStore_Populate_Refresh(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-
-	regionClient := mock.NewMockClient(mockCtrl)
-	regionClient.EXPECT().ListRDSInstances(gomock.Any()).
-		Return([]rdsTypes.DBInstance{instanceFor("us-east-1", "db-1")}, nil).
-		Times(2)
-
-	pricingClient := mock.NewMockClient(mockCtrl)
 	gomock.InOrder(
-		pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
-			Return([]string{postgresPrice("us-east-1", "0.456")}, nil).Times(1),
-		pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
-			Return([]string{postgresPrice("us-east-1", "0.789")}, nil).Times(1),
+		regionClient.EXPECT().ListRDSInstances(gomock.Any()).
+			Return([]rdsTypes.DBInstance{instanceFor("us-east-1", "db-1")}, nil).Times(1),
+		regionClient.EXPECT().ListRDSInstances(gomock.Any()).
+			Return([]rdsTypes.DBInstance{instanceFor("us-east-1", "db-1"), instanceFor("us-east-1", "db-2")}, nil).Times(1),
 	)
 
-	pm := newPricingMap()
 	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
 	regionMap := map[string]client.Client{"us-east-1": regionClient}
-	store := newTestStore(regions, regionMap, pricingClient, pm)
+	store := newTestInstanceStore(regions, regionMap)
 
 	store.Populate(t.Context())
-	price, _ := pm.Get(warmKey)
-	assert.Equal(t, 0.456, price)
+	assert.Len(t, store.Get("us-east-1"), 1)
 
 	store.Populate(t.Context())
-	price, _ = pm.Get(warmKey)
-	assert.Equal(t, 0.789, price, "refresh should overwrite the cached price")
+	assert.Len(t, store.Get("us-east-1"), 2, "refresh should overwrite the cached inventory")
 }
 
-// TestStore_Done_ClosesAfterPopulate verifies readiness is signalled once the
-// first populate attempt finishes.
-func TestStore_Done_ClosesAfterPopulate(t *testing.T) {
+// TestInstanceStore_Done_ClosesAfterPopulate verifies readiness is signalled
+// once the first populate attempt finishes.
+func TestInstanceStore_Done_ClosesAfterPopulate(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -137,12 +90,10 @@ func TestStore_Done_ClosesAfterPopulate(t *testing.T) {
 	regionClient.EXPECT().ListRDSInstances(gomock.Any()).
 		Return([]rdsTypes.DBInstance{instanceFor("us-east-1", "db-1")}, nil).
 		Times(1)
-	pricingClient := mock.NewMockClient(mockCtrl)
-	expectPricing(pricingClient, "0.456")
 
 	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
 	regionMap := map[string]client.Client{"us-east-1": regionClient}
-	store := newTestStore(regions, regionMap, pricingClient, newPricingMap())
+	store := newTestInstanceStore(regions, regionMap)
 
 	select {
 	case <-store.Done():
@@ -159,9 +110,9 @@ func TestStore_Done_ClosesAfterPopulate(t *testing.T) {
 	}
 }
 
-// TestStore_Populate_OverlapGuard verifies a populate is skipped while another
-// is still running, so a slow AWS API cannot double the load.
-func TestStore_Populate_OverlapGuard(t *testing.T) {
+// TestInstanceStore_Populate_OverlapGuard verifies a populate is skipped while
+// another is still running, so a slow AWS API cannot double the load.
+func TestInstanceStore_Populate_OverlapGuard(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -170,7 +121,7 @@ func TestStore_Populate_OverlapGuard(t *testing.T) {
 
 	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
 	regionMap := map[string]client.Client{"us-east-1": regionClient}
-	store := newTestStore(regions, regionMap, regionClient, newPricingMap())
+	store := newTestInstanceStore(regions, regionMap)
 
 	// Simulate an in-flight populate.
 	require.True(t, store.populating.CompareAndSwap(false, true))
@@ -184,9 +135,9 @@ func TestStore_Populate_OverlapGuard(t *testing.T) {
 	}
 }
 
-// TestStore_Populate_ListErrorCountsAndContinues verifies a failing region is
-// counted and skipped without dropping its healthy siblings.
-func TestStore_Populate_ListErrorCountsAndContinues(t *testing.T) {
+// TestInstanceStore_Populate_ListErrorCountsAndContinues verifies a failing
+// region is counted and skipped without dropping its healthy siblings.
+func TestInstanceStore_Populate_ListErrorCountsAndContinues(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -200,9 +151,6 @@ func TestStore_Populate_ListErrorCountsAndContinues(t *testing.T) {
 		Return(nil, errors.New("boom")).
 		Times(1)
 
-	pricingClient := mock.NewMockClient(mockCtrl)
-	expectPricing(pricingClient, "0.456")
-
 	regions := []types.Region{
 		{RegionName: aws.String("us-east-1")},
 		{RegionName: aws.String("eu-west-1")},
@@ -211,7 +159,7 @@ func TestStore_Populate_ListErrorCountsAndContinues(t *testing.T) {
 		"us-east-1": healthy,
 		"eu-west-1": broken,
 	}
-	store := newTestStore(regions, regionMap, pricingClient, newPricingMap())
+	store := newTestInstanceStore(regions, regionMap)
 
 	store.Populate(t.Context())
 
@@ -220,24 +168,22 @@ func TestStore_Populate_ListErrorCountsAndContinues(t *testing.T) {
 	assert.Equal(t, 1.0, testutil.ToFloat64(store.populateErrors.WithLabelValues("instances", "eu-west-1", "list_instances")))
 }
 
-// TestStore_Populate_MissingClientCounts verifies a region without a client is
-// counted and skipped.
-func TestStore_Populate_MissingClientCounts(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-
+// TestInstanceStore_Populate_MissingClientCounts verifies a region without a
+// client is counted and skipped.
+func TestInstanceStore_Populate_MissingClientCounts(t *testing.T) {
 	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
-	store := newTestStore(regions, map[string]client.Client{}, nil, newPricingMap())
+	store := newTestInstanceStore(regions, map[string]client.Client{})
 
 	store.Populate(t.Context())
 
 	assert.Equal(t, 1.0, testutil.ToFloat64(store.populateErrors.WithLabelValues("instances", "us-east-1", "lookup_client")))
 }
 
-// TestStore_Populate_RegionListTimeout verifies the background listing is
-// always bounded: a positive RegionListTimeout is honoured, and a zero value
-// falls back to the internal safety ceiling rather than running unbounded.
-func TestStore_Populate_RegionListTimeout(t *testing.T) {
+// TestInstanceStore_Populate_RegionListTimeout verifies the background
+// listing is always bounded: a positive RegionListTimeout is honoured, and a
+// zero value falls back to the internal safety ceiling rather than running
+// unbounded.
+func TestInstanceStore_Populate_RegionListTimeout(t *testing.T) {
 	tests := []struct {
 		name              string
 		regionListTimeout time.Duration
@@ -261,13 +207,10 @@ func TestStore_Populate_RegionListTimeout(t *testing.T) {
 					return nil, nil
 				}).
 				Times(1)
-			regionClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
-				Return(nil, nil).
-				AnyTimes()
 
 			regions := []types.Region{{RegionName: aws.String("us-east-1")}}
 			regionMap := map[string]client.Client{"us-east-1": regionClient}
-			store := newTestStore(regions, regionMap, regionClient, newPricingMap())
+			store := newTestInstanceStore(regions, regionMap)
 			store.regionListTimeout = tt.regionListTimeout
 
 			// Parent context carries no deadline, so any deadline observed comes
@@ -279,9 +222,10 @@ func TestStore_Populate_RegionListTimeout(t *testing.T) {
 	}
 }
 
-// TestStore_Populate_SlowRegionFailsFast verifies a region whose listing hangs
-// is bounded by regionListTimeout and does not block healthy regions.
-func TestStore_Populate_SlowRegionFailsFast(t *testing.T) {
+// TestInstanceStore_Populate_SlowRegionFailsFast verifies a region whose
+// listing hangs is bounded by regionListTimeout and does not block healthy
+// regions.
+func TestInstanceStore_Populate_SlowRegionFailsFast(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -299,9 +243,6 @@ func TestStore_Populate_SlowRegionFailsFast(t *testing.T) {
 		}).
 		Times(1)
 
-	pricingClient := mock.NewMockClient(mockCtrl)
-	expectPricing(pricingClient, "0.456")
-
 	regions := []types.Region{
 		{RegionName: aws.String("us-east-1")},
 		{RegionName: aws.String("ap-southeast-7")},
@@ -310,7 +251,7 @@ func TestStore_Populate_SlowRegionFailsFast(t *testing.T) {
 		"us-east-1":      healthy,
 		"ap-southeast-7": slow,
 	}
-	store := newTestStore(regions, regionMap, pricingClient, newPricingMap())
+	store := newTestInstanceStore(regions, regionMap)
 	store.regionListTimeout = 50 * time.Millisecond
 
 	start := time.Now()

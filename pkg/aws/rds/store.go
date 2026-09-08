@@ -16,16 +16,17 @@ import (
 )
 
 // populateConcurrency caps the number of regions refreshed in parallel per
-// populate. RDS is regional (one DescribeDBInstances call per region), so this
-// bounds in-flight listing plus the pricing lookups each region triggers.
+// populate. RDS is regional (one DescribeDBInstances or GetProducts call per
+// region), so this bounds in-flight AWS calls for both the instance and
+// pricing stores.
 const populateConcurrency = 10
 
-// defaultPopulateTimeout caps a single region's background refresh (listing
-// plus pricing) when no RegionListTimeout is configured. On the scrape path the
-// collector interval bounded these calls; the background populate has no such
-// outer deadline, so without a ceiling a hung AWS call would keep Populate from
-// returning, leave the readiness channel open, and skip every future tick. This
-// ceiling guarantees the loop always makes progress.
+// defaultPopulateTimeout caps a single region's background refresh when no
+// RegionListTimeout is configured. On the scrape path the collector interval
+// bounded these calls; the background populate has no such outer deadline, so
+// without a ceiling a hung AWS call would keep Populate from returning, leave
+// the readiness channel open, and skip every future tick. This ceiling
+// guarantees the loop always makes progress.
 const defaultPopulateTimeout = 2 * time.Minute
 
 const defaultRefreshInterval = time.Hour
@@ -60,18 +61,14 @@ func startRefreshTicker(ctx context.Context, interval time.Duration, run func())
 	}()
 }
 
-// instanceStore refreshes RDS instance inventory and pricing in the background
-// and serves both to Collect from memory. Listing (the scrape average) and
-// pricing lookups (the cold-start p99 tail) both move off the scrape path.
-// Inventory and pricing are refreshed independently: prices are listed in bulk
-// from the Pricing API and keyed by product attributes, then joined to instances
-// by pricing key at Collect.
+// instanceStore refreshes RDS instance inventory in the background and serves
+// it to Collect from memory, off the scrape path. It knows nothing about
+// pricing: pricing is refreshed independently by pricingStore and joined to
+// instances by pricing key at Collect.
 type instanceStore struct {
 	logger            *slog.Logger
 	regions           []types.Region
 	regionMap         map[string]client.Client
-	pricingClient     client.Client
-	pricingMap        *pricingMap
 	regionListTimeout time.Duration
 	concurrency       int
 	populateErrors    *prometheus.CounterVec
@@ -87,14 +84,12 @@ type instanceStore struct {
 
 // newInstanceStore returns a store that begins warming immediately in the
 // background. Warming at startup rather than on the first scrape closes the
-// cold-start pricing gap that drove the RDS p99.
-func newInstanceStore(ctx context.Context, logger *slog.Logger, config *Config, pm *pricingMap, populateErrors *prometheus.CounterVec) *instanceStore {
+// cold-start gap that drove the RDS p99.
+func newInstanceStore(ctx context.Context, logger *slog.Logger, config *Config, populateErrors *prometheus.CounterVec) *instanceStore {
 	s := &instanceStore{
 		logger:            logger.With("store", "instances"),
 		regions:           config.Regions,
 		regionMap:         config.RegionMap,
-		pricingClient:     config.Client,
-		pricingMap:        pm,
 		regionListTimeout: config.RegionListTimeout,
 		concurrency:       populateConcurrency,
 		populateErrors:    populateErrors,
@@ -117,10 +112,10 @@ func (s *instanceStore) Get(region string) []rdsTypes.DBInstance {
 	return s.instances[region]
 }
 
-// Populate refreshes instance inventory and pricing for every region. It skips
-// the tick if a previous populate is still running, fans out under a bounded
-// errgroup, and logs, counts, and swallows per-region errors so one bad region
-// never drops its siblings.
+// Populate refreshes instance inventory for every region. It skips the tick
+// if a previous populate is still running, fans out under a bounded errgroup,
+// and logs, counts, and swallows per-region errors so one bad region never
+// drops its siblings.
 func (s *instanceStore) Populate(ctx context.Context) {
 	// Drop overlapping populates: if a tick fires while the previous one is
 	// still running (slow AWS / many regions), avoid doubling API load and the
@@ -160,14 +155,12 @@ func (s *instanceStore) Populate(ctx context.Context) {
 	eg.Wait()
 }
 
-// populateRegion refreshes a single region's instance inventory and pricing.
-// The two are independent: pricing is listed in bulk from the Pricing API and
-// keyed by product attributes, not driven by the listed instances. Collect
-// joins them by pricing key.
+// populateRegion refreshes a single region's instance inventory, bounded by a
+// per-region timeout so a hung listing call cannot wedge the background loop.
 func (s *instanceStore) populateRegion(ctx context.Context, regionName string, regionClient client.Client) {
-	// Bound every AWS call for this region. A configured RegionListTimeout wins
+	// Bound the AWS call for this region. A configured RegionListTimeout wins
 	// so operators can fail slow regions fast; otherwise a safety ceiling keeps
-	// a hung listing or pricing call from wedging the background loop.
+	// a hung listing call from wedging the background loop.
 	timeout := s.regionListTimeout
 	if timeout <= 0 {
 		timeout = defaultPopulateTimeout
@@ -176,7 +169,6 @@ func (s *instanceStore) populateRegion(ctx context.Context, regionName string, r
 	defer cancel()
 
 	s.populateInstances(ctx, regionName, regionClient)
-	s.populatePricing(ctx, regionName)
 }
 
 // populateInstances lists a region's instances and caches them.
@@ -193,28 +185,4 @@ func (s *instanceStore) populateInstances(ctx context.Context, regionName string
 	s.mu.Lock()
 	s.instances[regionName] = instances
 	s.mu.Unlock()
-}
-
-// populatePricing lists every RDS Database Instance price in a region and writes
-// each keyed price to the shared pricing map, so Collect never issues a pricing
-// call. It goes through the dedicated pricing client and lists prices in bulk,
-// keeping pricing independent of the instance inventory.
-func (s *instanceStore) populatePricing(ctx context.Context, regionName string) {
-	priceList, err := s.pricingClient.ListRDSPrices(ctx, regionName)
-	if err != nil {
-		s.logger.LogAttrs(ctx, slog.LevelError, "error listing RDS prices",
-			slog.String("region", regionName),
-			slog.String("error", err.Error()))
-		s.populateErrors.WithLabelValues("instances", regionName, "list_prices").Inc()
-		return
-	}
-
-	for _, product := range priceList {
-		key, price, ok := parseRDSPriceProduct(ctx, product)
-		if !ok {
-			s.populateErrors.WithLabelValues("instances", regionName, "parse_pricing").Inc()
-			continue
-		}
-		s.pricingMap.Set(key, price)
-	}
 }

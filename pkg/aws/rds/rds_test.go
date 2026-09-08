@@ -155,27 +155,27 @@ func collectRegions(t *testing.T, ch chan prometheus.Metric) map[string]bool {
 	return got
 }
 
-// TestCollector_Collect_ColdStart verifies that a scrape before the first
-// populate finishes emits no metrics and does not error.
-func TestCollector_Collect_ColdStart(t *testing.T) {
+// TestCollector_Collect_ColdStart_NeitherReady verifies that a scrape before
+// either store has populated emits no metrics and does not error.
+func TestCollector_Collect_ColdStart_NeitherReady(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
 	regionClient := mock.NewMockClient(mockCtrl)
-	// No AWS calls expected: the store has not populated, so Collect returns early.
+	// No AWS calls expected: neither store has populated, so Collect returns early.
 
-	pm := newPricingMap()
 	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
 	regionMap := map[string]client.Client{"us-east-1": regionClient}
-	store := newTestStore(regions, regionMap, regionClient, pm)
+	instanceStore := newTestInstanceStore(regions, regionMap)
+	pricingStore := newTestPricingStore(regions, regionClient)
 
 	c := &Collector{
 		regions:        regions,
 		regionMap:      regionMap,
-		pricingMap:     pm,
-		store:          store,
+		instanceStore:  instanceStore,
+		pricingStore:   pricingStore,
 		accountID:      "123456789012",
-		populateErrors: store.populateErrors,
+		populateErrors: instanceStore.populateErrors,
 		logger:         slog.Default(),
 	}
 
@@ -185,7 +185,89 @@ func TestCollector_Collect_ColdStart(t *testing.T) {
 
 	select {
 	case <-ch:
-		t.Fatal("expected no metric before the store is populated")
+		t.Fatal("expected no metric before either store is populated")
+	default:
+	}
+}
+
+// TestCollector_Collect_ColdStart_InstancesReadyPricesNot verifies that a
+// scrape with a warm instance store but a cold pricing store still emits no
+// metrics and does not error.
+func TestCollector_Collect_ColdStart_InstancesReadyPricesNot(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	regionClient := mock.NewMockClient(mockCtrl)
+	regionClient.EXPECT().ListRDSInstances(gomock.Any()).
+		Return([]rdsTypes.DBInstance{instanceFor("us-east-1", "db-1")}, nil).
+		Times(1)
+	// No ListRDSPrices call expected: the pricing store never populates.
+	pricingClient := mock.NewMockClient(mockCtrl)
+
+	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
+	regionMap := map[string]client.Client{"us-east-1": regionClient}
+	instanceStore := newTestInstanceStore(regions, regionMap)
+	instanceStore.Populate(t.Context())
+	pricingStore := newTestPricingStore(regions, pricingClient)
+
+	c := &Collector{
+		regions:        regions,
+		regionMap:      regionMap,
+		instanceStore:  instanceStore,
+		pricingStore:   pricingStore,
+		accountID:      "123456789012",
+		populateErrors: instanceStore.populateErrors,
+		logger:         slog.Default(),
+	}
+
+	ch := make(chan prometheus.Metric, 1)
+	err := c.Collect(t.Context(), ch)
+	assert.NoError(t, err)
+
+	select {
+	case <-ch:
+		t.Fatal("expected no metric while the pricing store is cold")
+	default:
+	}
+}
+
+// TestCollector_Collect_ColdStart_PricesReadyInstancesNot verifies that a
+// scrape with a warm pricing store but a cold instance store still emits no
+// metrics and does not error.
+func TestCollector_Collect_ColdStart_PricesReadyInstancesNot(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	// No ListRDSInstances call expected: the instance store never populates.
+	regionClient := mock.NewMockClient(mockCtrl)
+	pricingClient := mock.NewMockClient(mockCtrl)
+	pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+		Return([]string{postgresPrice("us-east-1", "0.456")}, nil).
+		Times(1)
+
+	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
+	regionMap := map[string]client.Client{"us-east-1": regionClient}
+	instanceStore := newTestInstanceStore(regions, regionMap)
+	pricingStore := newTestPricingStore(regions, pricingClient)
+	pricingStore.Populate(t.Context())
+
+	c := &Collector{
+		regions:        regions,
+		regionMap:      regionMap,
+		instanceStore:  instanceStore,
+		pricingStore:   pricingStore,
+		accountID:      "123456789012",
+		populateErrors: instanceStore.populateErrors,
+		logger:         slog.Default(),
+	}
+
+	ch := make(chan prometheus.Metric, 1)
+	err := c.Collect(t.Context(), ch)
+	assert.NoError(t, err)
+
+	select {
+	case <-ch:
+		t.Fatal("expected no metric while the instance store is cold")
 	default:
 	}
 }
@@ -208,19 +290,20 @@ func TestCollector_Collect_ServesFromWarmMap(t *testing.T) {
 		Return([]string{postgresPrice("us-east-1", "0.456")}, nil).
 		Times(1)
 
-	pm := newPricingMap()
 	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
 	regionMap := map[string]client.Client{"us-east-1": regionClient}
-	store := newTestStore(regions, regionMap, pricingClient, pm)
-	store.Populate(t.Context())
+	instanceStore := newTestInstanceStore(regions, regionMap)
+	instanceStore.Populate(t.Context())
+	pricingStore := newTestPricingStore(regions, pricingClient)
+	pricingStore.Populate(t.Context())
 
 	c := &Collector{
 		regions:        regions,
 		regionMap:      regionMap,
-		pricingMap:     pm,
-		store:          store,
+		instanceStore:  instanceStore,
+		pricingStore:   pricingStore,
 		accountID:      "123456789012",
-		populateErrors: store.populateErrors,
+		populateErrors: instanceStore.populateErrors,
 		logger:         slog.Default(),
 	}
 
@@ -256,19 +339,20 @@ func TestCollector_Collect_PricingMiss(t *testing.T) {
 		Return([]string{}, nil).
 		Times(1)
 
-	pm := newPricingMap()
 	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
 	regionMap := map[string]client.Client{"us-east-1": regionClient}
-	store := newTestStore(regions, regionMap, pricingClient, pm)
-	store.Populate(t.Context())
+	instanceStore := newTestInstanceStore(regions, regionMap)
+	instanceStore.Populate(t.Context())
+	pricingStore := newTestPricingStore(regions, pricingClient)
+	pricingStore.Populate(t.Context())
 
 	c := &Collector{
 		regions:        regions,
 		regionMap:      regionMap,
-		pricingMap:     pm,
-		store:          store,
+		instanceStore:  instanceStore,
+		pricingStore:   pricingStore,
 		accountID:      "123456789012",
-		populateErrors: store.populateErrors,
+		populateErrors: instanceStore.populateErrors,
 		logger:         slog.Default(),
 	}
 
@@ -305,17 +389,18 @@ func TestCollector_Collect_MultiRegion(t *testing.T) {
 	pricingClient := mock.NewMockClient(mockCtrl)
 	expectPricing(pricingClient, "0.456")
 
-	pm := newPricingMap()
-	store := newTestStore(regions, regionMap, pricingClient, pm)
-	store.Populate(t.Context())
+	instanceStore := newTestInstanceStore(regions, regionMap)
+	instanceStore.Populate(t.Context())
+	pricingStore := newTestPricingStore(regions, pricingClient)
+	pricingStore.Populate(t.Context())
 
 	c := &Collector{
 		regions:        regions,
 		regionMap:      regionMap,
-		pricingMap:     pm,
-		store:          store,
+		instanceStore:  instanceStore,
+		pricingStore:   pricingStore,
 		accountID:      "123456789012",
-		populateErrors: store.populateErrors,
+		populateErrors: instanceStore.populateErrors,
 		logger:         slog.Default(),
 	}
 
