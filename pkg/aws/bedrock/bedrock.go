@@ -650,6 +650,11 @@ func familyFromServiceName(servicename string) string {
 	switch {
 	case strings.HasPrefix(lower, "claude"):
 		return "anthropic"
+	// Matches the vendor prefix only. A bare "GPT" prefix would also claim GPT-J, GPT-NeoX,
+	// and GPTBigCode, which are not OpenAI models; the OpenAI open-weight models reach the
+	// standard path instead, where the `provider` attribute identifies them.
+	case strings.HasPrefix(lower, "openai"):
+		return "openai"
 	case strings.HasPrefix(lower, "cohere"):
 		return "cohere"
 	case strings.HasPrefix(lower, "meta"):
