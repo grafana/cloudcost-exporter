@@ -99,6 +99,36 @@ func TestPricingStore_Populate_Refresh(t *testing.T) {
 	assert.Equal(t, 0.789, price, "refresh should overwrite the cached price")
 }
 
+// TestPricingStore_Populate_FailedRefreshKeepsStalePrice verifies a region
+// that previously warmed successfully keeps serving its last-known-good price
+// when a later refresh for that region fails, rather than losing the price.
+func TestPricingStore_Populate_FailedRefreshKeepsStalePrice(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	pricingClient := mock.NewMockClient(mockCtrl)
+	gomock.InOrder(
+		pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+			Return([]string{postgresPrice("us-east-1", "0.456")}, nil).Times(1),
+		pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+			Return(nil, errors.New("boom")).Times(1),
+	)
+
+	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
+	store := newTestPricingStore(regions, pricingClient)
+
+	store.Populate(t.Context())
+	price, ok := store.Get(warmKey)
+	require.True(t, ok, "price should be warmed during the first populate")
+	assert.Equal(t, 0.456, price)
+
+	store.Populate(t.Context())
+	price, ok = store.Get(warmKey)
+	assert.True(t, ok, "a failed refresh should keep serving the last-known-good price")
+	assert.Equal(t, 0.456, price)
+	assert.Equal(t, 1.0, testutil.ToFloat64(store.populateErrors.WithLabelValues("pricing", "us-east-1", "list_prices")))
+}
+
 // TestPricingStore_Done_ClosesAfterPopulate verifies readiness is signalled
 // once the first populate attempt finishes.
 func TestPricingStore_Done_ClosesAfterPopulate(t *testing.T) {

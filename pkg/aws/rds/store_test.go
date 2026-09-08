@@ -80,6 +80,34 @@ func TestInstanceStore_Populate_Refresh(t *testing.T) {
 	assert.Len(t, store.Get("us-east-1"), 2, "refresh should overwrite the cached inventory")
 }
 
+// TestInstanceStore_Populate_FailedRefreshKeepsStaleData verifies a region
+// that previously warmed successfully keeps serving its last-known-good
+// inventory when a later refresh for that region fails, rather than going
+// empty.
+func TestInstanceStore_Populate_FailedRefreshKeepsStaleData(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	regionClient := mock.NewMockClient(mockCtrl)
+	gomock.InOrder(
+		regionClient.EXPECT().ListRDSInstances(gomock.Any()).
+			Return([]rdsTypes.DBInstance{instanceFor("us-east-1", "db-1")}, nil).Times(1),
+		regionClient.EXPECT().ListRDSInstances(gomock.Any()).
+			Return(nil, errors.New("boom")).Times(1),
+	)
+
+	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
+	regionMap := map[string]client.Client{"us-east-1": regionClient}
+	store := newTestInstanceStore(regions, regionMap)
+
+	store.Populate(t.Context())
+	assert.Len(t, store.Get("us-east-1"), 1, "region should warm on the first populate")
+
+	store.Populate(t.Context())
+	assert.Len(t, store.Get("us-east-1"), 1, "a failed refresh should keep serving the last-known-good inventory")
+	assert.Equal(t, 1.0, testutil.ToFloat64(store.populateErrors.WithLabelValues("instances", "us-east-1", "list_instances")))
+}
+
 // TestInstanceStore_Done_ClosesAfterPopulate verifies readiness is signalled
 // once the first populate attempt finishes.
 func TestInstanceStore_Done_ClosesAfterPopulate(t *testing.T) {
