@@ -30,6 +30,9 @@ type AWSProductAttributes struct {
 	DeploymentOption string `json:"deploymentOption"`
 	LicenseModel     string `json:"licenseModel"`
 	LocationType     string `json:"locationType"`
+	// Storage only disambiguates Aurora SKUs (Standard vs I/O-Optimized, which
+	// carry different instance-hour prices); see auroraStorageModeFromPricing.
+	Storage string `json:"storage"`
 }
 
 type AWSTerms struct {
@@ -155,5 +158,15 @@ func priceKeyFromAttributes(product *AWSProduct) (string, bool) {
 		// side depending on the raw licenseModel attribute string.
 		license = openSourceLicense
 	}
-	return createPricingKey(a.RegionCode, a.InstanceType, a.DatabaseEngine, a.DatabaseEdition, a.DeploymentOption, license, a.LocationType), true
+
+	storageMode := auroraStorageModeNA
+	if isAuroraEngine(a.DatabaseEngine) {
+		var ok bool
+		storageMode, ok = auroraStorageModeFromPricing(a.Storage)
+		if !ok {
+			return "", false
+		}
+	}
+
+	return createPricingKey(a.RegionCode, a.InstanceType, a.DatabaseEngine, a.DatabaseEdition, a.DeploymentOption, license, a.LocationType, storageMode), true
 }

@@ -185,9 +185,8 @@ func isOutpostsInstance(instance rdsTypes.DBInstance) string {
 // should be checked against a real GetProducts response before relying on their
 // prices.
 //
-// TODO: harden Aurora and multi-edition engine matching against a real
-// GetProducts response (e.g. Aurora Serverless v2 may need a distinct key
-// from provisioned Aurora); tracked as a follow-up issue.
+// TODO: harden Oracle and SQL Server databaseEdition/license matching against
+// a real GetProducts response; tracked as a follow-up issue (#1131).
 var engineAttributes = map[string]struct {
 	databaseEngine  string
 	databaseEdition string
@@ -223,8 +222,61 @@ var licenseModelAttributes = map[string]string{
 	"bring-your-own-license": "Bring your own license",
 }
 
-func createPricingKey(region, instanceType, databaseEngine, databaseEdition, depOption, licenseModel, locationType string) string {
-	return fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s", region, instanceType, databaseEngine, databaseEdition, depOption, licenseModel, locationType)
+// Aurora storage-mode tokens disambiguate the two Aurora SKUs (Standard vs
+// I/O-Optimized), which carry different instance-hour prices despite sharing
+// every other pricing attribute. auroraStorageModeNA is used by both sides of
+// the key for every non-Aurora engine, so the key is unaffected for them.
+const (
+	auroraStorageModeNA          = ""
+	auroraStorageModeStandard    = "Standard"
+	auroraStorageModeIOOptimized = "IOOptimized"
+)
+
+// isAuroraEngine reports whether a pricing databaseEngine attribute value
+// (also used as engineAttributes' databaseEngine) is one of the two Aurora
+// engines, the only engines whose instance-hour price depends on storage mode.
+func isAuroraEngine(databaseEngine string) bool {
+	return databaseEngine == "Aurora MySQL" || databaseEngine == "Aurora PostgreSQL"
+}
+
+// auroraStorageModeFromPricing normalizes the Pricing API's "storage"
+// attribute into a mode token for Aurora engines. ok=false when storage is
+// missing or doesn't match a known value, so the caller skips the row instead
+// of silently mis-keying it.
+func auroraStorageModeFromPricing(storage string) (mode string, ok bool) {
+	switch storage {
+	case "EBS Only":
+		return auroraStorageModeStandard, true
+	case "Aurora IO Optimization Mode":
+		return auroraStorageModeIOOptimized, true
+	default:
+		return "", false
+	}
+}
+
+// auroraStorageModeFromInstance normalizes a DB instance's StorageType into
+// the same mode token for Aurora engines.
+//
+// VERIFY: assumes DescribeDBInstances surfaces "aurora-iopt1" on Aurora
+// I/O-Optimized member instances, mirroring DBCluster.StorageType, rather than
+// only DescribeDBClusters exposing it. Confirm against a live Aurora
+// I/O-Optimized cluster before relying on this in production.
+func auroraStorageModeFromInstance(storageType *string) (mode string, ok bool) {
+	if storageType == nil {
+		return "", false
+	}
+	switch *storageType {
+	case "aurora":
+		return auroraStorageModeStandard, true
+	case "aurora-iopt1":
+		return auroraStorageModeIOOptimized, true
+	default:
+		return "", false
+	}
+}
+
+func createPricingKey(region, instanceType, databaseEngine, databaseEdition, depOption, licenseModel, locationType, storageMode string) string {
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s", region, instanceType, databaseEngine, databaseEdition, depOption, licenseModel, locationType, storageMode)
 }
 
 // pricingKeyFor derives the pricing-map key and the region (from the instance's
@@ -261,9 +313,17 @@ func pricingKeyFor(instance rdsTypes.DBInstance) (key, region string, ok bool) {
 		}
 	}
 
+	storageMode := auroraStorageModeNA
+	if isAuroraEngine(engine.databaseEngine) {
+		storageMode, ok = auroraStorageModeFromInstance(instance.StorageType)
+		if !ok {
+			return "", region, false
+		}
+	}
+
 	depOption := multiOrSingleAZ(*instance.MultiAZ)
 	locationType := isOutpostsInstance(instance) // outposts locations have a different unit price
-	return createPricingKey(region, *instance.DBInstanceClass, engine.databaseEngine, engine.databaseEdition, depOption, license, locationType), region, true
+	return createPricingKey(region, *instance.DBInstanceClass, engine.databaseEngine, engine.databaseEdition, depOption, license, locationType, storageMode), region, true
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {

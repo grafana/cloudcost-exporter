@@ -19,7 +19,7 @@ import (
 )
 
 // warmKey is the pricing key produced by both instanceFor and postgresPrice.
-var warmKey = createPricingKey("us-east-1", "db.t3.medium", "PostgreSQL", "", "Single-AZ", "No license required", "AWS Region")
+var warmKey = createPricingKey("us-east-1", "db.t3.medium", "PostgreSQL", "", "Single-AZ", "No license required", "AWS Region", auroraStorageModeNA)
 
 // newTestInstanceStore builds a store without the background goroutine the
 // production constructor starts, so tests can drive Populate synchronously.

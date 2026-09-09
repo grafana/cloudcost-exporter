@@ -144,6 +144,69 @@ func instanceFor(region, id string) rdsTypes.DBInstance {
 	}
 }
 
+// TestPricingKeyFor_AuroraStorageMode verifies Aurora engines disambiguate
+// Standard vs I/O-Optimized storage in the pricing key, non-Aurora engines are
+// unaffected, and a missing or unrecognized Aurora StorageType is skipped
+// rather than silently mis-keyed.
+func TestPricingKeyFor_AuroraStorageMode(t *testing.T) {
+	auroraInstance := func(storageType *string) rdsTypes.DBInstance {
+		inst := instanceFor("us-east-1", "aurora-1")
+		inst.Engine = aws.String("aurora-mysql")
+		inst.StorageType = storageType
+		return inst
+	}
+
+	tests := []struct {
+		name   string
+		inst   rdsTypes.DBInstance
+		wantOK bool
+	}{
+		{
+			name:   "non-aurora engine ignores storage type",
+			inst:   instanceFor("us-east-1", "db-1"),
+			wantOK: true,
+		},
+		{
+			name:   "aurora standard storage",
+			inst:   auroraInstance(aws.String("aurora")),
+			wantOK: true,
+		},
+		{
+			name:   "aurora I/O-optimized storage",
+			inst:   auroraInstance(aws.String("aurora-iopt1")),
+			wantOK: true,
+		},
+		{
+			name:   "aurora with nil storage type is skipped",
+			inst:   auroraInstance(nil),
+			wantOK: false,
+		},
+		{
+			name:   "aurora with unrecognized storage type is skipped",
+			inst:   auroraInstance(aws.String("some-future-mode")),
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, ok := pricingKeyFor(tt.inst)
+			assert.Equal(t, tt.wantOK, ok)
+		})
+	}
+
+	t.Run("standard and I/O-optimized keys are distinct and match the pricing side", func(t *testing.T) {
+		standardKey, _, ok := pricingKeyFor(auroraInstance(aws.String("aurora")))
+		assert.True(t, ok)
+		ioOptimizedKey, _, ok := pricingKeyFor(auroraInstance(aws.String("aurora-iopt1")))
+		assert.True(t, ok)
+
+		assert.NotEqual(t, standardKey, ioOptimizedKey)
+		assert.Equal(t, createPricingKey("us-east-1", "db.t3.medium", "Aurora MySQL", "", "Single-AZ", "No license required", "AWS Region", auroraStorageModeStandard), standardKey)
+		assert.Equal(t, createPricingKey("us-east-1", "db.t3.medium", "Aurora MySQL", "", "Single-AZ", "No license required", "AWS Region", auroraStorageModeIOOptimized), ioOptimizedKey)
+	})
+}
+
 // collectRegions drains ch and returns the set of region labels seen.
 func collectRegions(t *testing.T, ch chan prometheus.Metric) map[string]bool {
 	t.Helper()
