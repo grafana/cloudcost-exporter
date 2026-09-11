@@ -73,6 +73,10 @@ func (c *Mock) ListInstancesInZone(projectId, zone string) ([]*MachineSpec, erro
 	return c.compute.listInstancesInZone(projectId, zone)
 }
 
+func (c *Mock) GetMachineType(ctx context.Context, projectId, zone, machineType string) (*compute.MachineType, error) {
+	return c.compute.getMachineType(ctx, projectId, zone, machineType)
+}
+
 func (c *Mock) ListDisks(ctx context.Context, projectId string, zone string) ([]*compute.Disk, error) {
 	return c.compute.listDisks(ctx, projectId, zone)
 }
