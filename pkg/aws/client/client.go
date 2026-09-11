@@ -29,7 +29,7 @@ type Client interface {
 	ListELBPrices(ctx context.Context, region string) ([]string, error)
 	DescribeLoadBalancers(ctx context.Context) ([]elbTypes.LoadBalancer, error)
 	ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstance, error)
-	GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, engineCode, isOutpost string) (string, error)
+	ListRDSPrices(ctx context.Context, region string) ([]string, error)
 	ListMSKClusters(ctx context.Context) ([]msktypes.Cluster, error)
 	ListMSKServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error)
 	ListBedrockPrices(ctx context.Context, region string) ([]string, error)

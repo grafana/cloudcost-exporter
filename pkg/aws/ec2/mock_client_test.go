@@ -88,7 +88,7 @@ func (m *mockClient) ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstanc
 	panic("not implemented")
 }
 
-func (m *mockClient) GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, engineCode, isOutpost string) (string, error) {
+func (m *mockClient) ListRDSPrices(ctx context.Context, region string) ([]string, error) {
 	panic("not implemented")
 }
 

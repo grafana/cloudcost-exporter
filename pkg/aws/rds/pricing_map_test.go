@@ -1,6 +1,7 @@
 package rds
 
 import (
+	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
@@ -8,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestValidateRDSPriceData(t *testing.T) {
+func TestPriceFromTerms(t *testing.T) {
 	ctx := t.Context()
 
 	tests := []struct {
@@ -151,7 +152,12 @@ func TestValidateRDSPriceData(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			price, err := validateRDSPriceData(ctx, tt.priceList)
+			var data AWSPriceData
+			if err := json.Unmarshal([]byte(tt.priceList), &data); err != nil {
+				assert.True(t, tt.wantErr, "invalid JSON should be a wantErr case")
+				return
+			}
+			price, err := priceFromTerms(ctx, data.Terms)
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -160,6 +166,94 @@ func TestValidateRDSPriceData(t *testing.T) {
 			assert.Equal(t, tt.want, price)
 		})
 	}
+}
+
+func TestParseRDSPriceProduct(t *testing.T) {
+	ctx := t.Context()
+
+	product := `{
+		"product": {
+			"attributes": {
+				"instanceType": "db.t3.medium",
+				"regionCode": "us-east-1",
+				"databaseEngine": "PostgreSQL",
+				"deploymentOption": "Single-AZ",
+				"locationType": "AWS Region"
+			}
+		},
+		"terms": {"OnDemand": {"t": {"priceDimensions": {"d": {"pricePerUnit": {"USD": "0.456"}}}}}}
+	}`
+
+	t.Run("valid product yields key and price", func(t *testing.T) {
+		key, price, ok := parseRDSPriceProduct(ctx, product)
+		assert.True(t, ok)
+		assert.Equal(t, 0.456, price)
+		assert.Equal(t, createPricingKey("us-east-1", "db.t3.medium", "PostgreSQL", "", "Single-AZ", "No license required", "AWS Region", auroraStorageModeNA), key)
+	})
+
+	t.Run("missing product attributes is skipped", func(t *testing.T) {
+		_, _, ok := parseRDSPriceProduct(ctx, `{"terms":{"OnDemand":{"t":{"priceDimensions":{"d":{"pricePerUnit":{"USD":"0.1"}}}}}}}`)
+		assert.False(t, ok)
+	})
+
+	t.Run("missing price is skipped", func(t *testing.T) {
+		_, _, ok := parseRDSPriceProduct(ctx, `{"product":{"attributes":{"instanceType":"db.t3.medium","regionCode":"us-east-1","databaseEngine":"PostgreSQL","deploymentOption":"Single-AZ","locationType":"AWS Region"}}}`)
+		assert.False(t, ok)
+	})
+
+	t.Run("invalid JSON is skipped", func(t *testing.T) {
+		_, _, ok := parseRDSPriceProduct(ctx, `{invalid`)
+		assert.False(t, ok)
+	})
+
+	auroraProduct := func(storage string) string {
+		return fmt.Sprintf(`{
+			"product": {
+				"attributes": {
+					"instanceType": "db.r6g.large",
+					"regionCode": "us-east-1",
+					"databaseEngine": "Aurora MySQL",
+					"deploymentOption": "Single-AZ",
+					"locationType": "AWS Region",
+					"storage": "%s"
+				}
+			},
+			"terms": {"OnDemand": {"t": {"priceDimensions": {"d": {"pricePerUnit": {"USD": "0.5"}}}}}}
+		}`, storage)
+	}
+
+	t.Run("aurora standard and I/O-optimized storage yield distinct keys", func(t *testing.T) {
+		standardKey, _, ok := parseRDSPriceProduct(ctx, auroraProduct("EBS Only"))
+		assert.True(t, ok)
+
+		ioOptimizedKey, _, ok := parseRDSPriceProduct(ctx, auroraProduct("Aurora IO Optimization Mode"))
+		assert.True(t, ok)
+
+		assert.NotEqual(t, standardKey, ioOptimizedKey)
+		assert.Equal(t, createPricingKey("us-east-1", "db.r6g.large", "Aurora MySQL", "", "Single-AZ", "No license required", "AWS Region", auroraStorageModeStandard), standardKey)
+		assert.Equal(t, createPricingKey("us-east-1", "db.r6g.large", "Aurora MySQL", "", "Single-AZ", "No license required", "AWS Region", auroraStorageModeIOOptimized), ioOptimizedKey)
+	})
+
+	t.Run("aurora with unrecognized storage is skipped", func(t *testing.T) {
+		_, _, ok := parseRDSPriceProduct(ctx, auroraProduct("Some New Storage Mode"))
+		assert.False(t, ok)
+	})
+
+	t.Run("aurora with missing storage is skipped", func(t *testing.T) {
+		_, _, ok := parseRDSPriceProduct(ctx, `{
+			"product": {
+				"attributes": {
+					"instanceType": "db.r6g.large",
+					"regionCode": "us-east-1",
+					"databaseEngine": "Aurora MySQL",
+					"deploymentOption": "Single-AZ",
+					"locationType": "AWS Region"
+				}
+			},
+			"terms": {"OnDemand": {"t": {"priceDimensions": {"d": {"pricePerUnit": {"USD": "0.5"}}}}}}
+		}`)
+		assert.False(t, ok)
+	})
 }
 
 func TestPricingMap_SetAndGet(t *testing.T) {

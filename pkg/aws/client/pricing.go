@@ -4,8 +4,6 @@ import (
 	"context"
 	"time"
 
-	"log/slog"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -226,56 +224,15 @@ func (p *pricing) getPricesFromProductList(ctx context.Context, input *awsPricin
 	return productOutputs, nil
 }
 
-func (p *pricing) getRDSUnitData(ctx context.Context, instType, region, deploymentOption, databaseEngine, locationType string) (string, error) {
-	input := &awsPricing.GetProductsInput{
-		ServiceCode: aws.String("AmazonRDS"),
-		Filters: []pricingTypes.Filter{
-			{
-				Field: aws.String("productFamily"),
-				Type:  pricingTypes.FilterTypeTermMatch,
-				Value: aws.String("Database Instance"),
-			},
-			{
-				Field: aws.String("instanceType"),
-				Type:  pricingTypes.FilterTypeTermMatch,
-				Value: aws.String(instType),
-			},
-			{
-				Field: aws.String("regionCode"),
-				Type:  pricingTypes.FilterTypeTermMatch,
-				Value: aws.String(region),
-			},
-			{
-				Field: aws.String("deploymentOption"),
-				Type:  pricingTypes.FilterTypeTermMatch,
-				Value: aws.String(deploymentOption),
-			},
-			{
-				Field: aws.String("databaseEngine"),
-				Type:  pricingTypes.FilterTypeContains,
-				Value: aws.String(databaseEngine),
-			},
-			{
-				Field: aws.String("locationType"),
-				Type:  pricingTypes.FilterTypeTermMatch,
-				Value: aws.String(locationType),
-			},
+// listRDSPrices lists every RDS Database Instance product in a region. The RDS
+// collector parses each product's attributes into a pricing key, so pricing is
+// listed once per region rather than looked up per instance.
+func (p *pricing) listRDSPrices(ctx context.Context, region string) ([]string, error) {
+	return p.listServicePrices(ctx, "AmazonRDS", region, []pricingTypes.Filter{
+		{
+			Field: aws.String("productFamily"),
+			Type:  pricingTypes.FilterTypeTermMatch,
+			Value: aws.String("Database Instance"),
 		},
-	}
-
-	products, err := p.client.GetProducts(ctx, input)
-	if err != nil {
-		slog.ErrorContext(ctx, "error getting rds prices", "error", err)
-		return "", err
-	}
-
-	if len(products.PriceList) == 0 {
-		slog.WarnContext(ctx, "no price list found for RDS instance", "instanceType", instType, "region", region)
-		return "", nil
-	}
-	if len(products.PriceList) > 1 {
-		slog.WarnContext(ctx, "ambiguous price list, expected 1 got multiple", "count", len(products.PriceList), "instanceType", instType, "region", region)
-		return "", nil
-	}
-	return products.PriceList[0], nil
+	})
 }

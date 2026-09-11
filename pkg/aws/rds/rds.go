@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -32,14 +31,13 @@ var (
 
 // Collector is a prometheus collector that collects metrics from AWS RDS clusters.
 type Collector struct {
-	regions           []types.Region
-	regionMap         map[string]client.Client
-	scrapeInterval    time.Duration
-	regionListTimeout time.Duration
-	Client            client.Client
-	pricingMap        *pricingMap
-	accountID         string
-	logger            *slog.Logger
+	regions        []types.Region
+	regionMap      map[string]client.Client
+	instanceStore  *instanceStore
+	pricingStore   *pricingStore
+	accountID      string
+	populateErrors *prometheus.CounterVec
+	logger         *slog.Logger
 }
 
 type Config struct {
@@ -55,123 +53,106 @@ const (
 	serviceName = "RDS"
 )
 
-// New creates an rds collector. A RegionListTimeout of 0 leaves each region's
-// DescribeDBInstances call bounded only by the shared collector context
-// (-collector-interval); a positive value caps it per region so a slow or
-// unreachable region fails fast instead of overrunning the scrape.
-func New(_ context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
+// New creates an rds collector.
+//
+// Instance inventory and pricing are refreshed independently in the
+// background, each on its own ticker, rather than on the scrape path. New()
+// kicks off both stores' first populate immediately and returns without
+// blocking, so a slow AWS API never delays startup. Collect() makes zero AWS
+// calls and serves metrics from the two warm stores, joined by pricing key.
+// A positive RegionListTimeout caps each region's background work for both
+// stores; 0 falls back to an internal safety ceiling so a slow region never
+// wedges either refresh. Pricing additionally retries sooner than its normal
+// refresh interval after any populate with a region failure, so a persistent
+// outage self-heals rather than leaving the store stale or empty for a full
+// day; see startPricingRefreshTicker.
+func New(ctx context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
+	logger = logger.With("collector", serviceName)
+	populateErrors := newPopulateErrorsCounter()
+
+	instanceStore := newInstanceStore(ctx, logger, config, populateErrors)
+	pricingStore := newPricingStore(logger, config, populateErrors)
+
+	startRefreshTicker(ctx, config.ScrapeInterval, func() { instanceStore.Populate(ctx) })
+	startPricingRefreshTicker(ctx, pricingStore)
+
 	return &Collector{
-		pricingMap:        newPricingMap(),
-		regions:           config.Regions,
-		regionMap:         config.RegionMap,
-		scrapeInterval:    config.ScrapeInterval,
-		regionListTimeout: config.RegionListTimeout,
-		Client:            config.Client,
-		accountID:         config.AccountID,
-		logger:            logger.With("collector", serviceName),
+		regions:        config.Regions,
+		regionMap:      config.RegionMap,
+		instanceStore:  instanceStore,
+		pricingStore:   pricingStore,
+		accountID:      config.AccountID,
+		populateErrors: populateErrors,
+		logger:         logger,
 	}, nil
 }
 
-// Collect satisfies the provider.Collector interface.
-func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
-	logger := c.logger
-	var instances = []rdsTypes.DBInstance{}
-
-	// Fan out the per-region ListRDSInstances calls concurrently
-	numOfRegions := len(c.regions)
-	instanceCh := make(chan []rdsTypes.DBInstance, numOfRegions)
-
-	wg := sync.WaitGroup{}
-	for _, region := range c.regions {
-		regionName := *region.RegionName
-		regionClient, ok := c.regionMap[regionName]
-		if !ok {
-			logger.Error("no client found for region", "region", regionName)
-			continue
-		}
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			c.fetchInstancesData(ctx, regionClient, regionName, instanceCh)
-		}()
+// isDone reports whether ch has been closed.
+func isDone(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
 	}
-
-	go func() {
-		wg.Wait()
-		close(instanceCh)
-	}()
-
-	for is := range instanceCh {
-		instances = append(instances, is...)
-	}
-
-	for _, instance := range instances {
-		// we need to get the region from the availability zone as there is no field for region
-		if instance.AvailabilityZone == nil {
-			// sometimes the availability zone is empty, possibly when an RDS instance is introduced or being removed, skipping them for the time being
-			logger.Warn("no availability zone found for RDS instance")
-			continue
-		}
-		var az = *instance.AvailabilityZone
-		var region = az[:len(az)-1]
-		depOption := multiOrSingleAZ(*instance.MultiAZ)
-		locationType := isOutpostsInstance(instance) // outposts locations have a different unit price
-		createPricingKey := createPricingKey(region, *instance.DBInstanceClass, *instance.Engine, depOption, locationType)
-
-		hourlyPrice, ok := c.pricingMap.Get(createPricingKey)
-
-		if !ok {
-			// Compute price without holding the lock
-			v, err := c.Client.GetRDSUnitData(ctx, *instance.DBInstanceClass, region, depOption, *instance.Engine, locationType)
-			if err != nil {
-				logger.Error("error listing rds prices", "error", err)
-				return err
-			}
-			if v == "" {
-				logger.Warn("no pricing data found for RDS instance, skipping", "instanceType", *instance.DBInstanceClass, "region", region, "engine", *instance.Engine)
-				continue
-			}
-			validatedPrice, err := validateRDSPriceData(ctx, v)
-			if err != nil {
-				logger.Error("error validating RDS price data", "error", err)
-				return err
-			}
-			c.pricingMap.Set(createPricingKey, validatedPrice)
-			hourlyPrice = validatedPrice
-		}
-
-		ch <- prometheus.MustNewConstMetric(
-			HourlyGaugeDesc,
-			prometheus.GaugeValue,
-			hourlyPrice,
-			c.accountID,
-			region,
-			*instance.DBInstanceClass,
-			*instance.DbiResourceId,
-			*instance.DBInstanceArn,
-		)
-	}
-	return nil
 }
 
-// fetchInstancesData lists RDS instances for a single region, sending the
-// result to instanceCh. On failure it logs the error and returns.
-func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.Client, region string, instanceCh chan []rdsTypes.DBInstance) {
-	// A positive regionListTimeout caps this region's call; 0 leaves it bounded
-	// only by the parent collector context (backwards-compatible default).
-	if c.regionListTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, c.regionListTimeout)
-		defer cancel()
+// Collect satisfies the provider.Collector interface. It makes no AWS calls:
+// instances come from the background instance store and prices from the
+// background pricing store. Either store not yet populated, or any
+// combination of the two, skips the scrape (no metrics, no error) rather than
+// failing it. A pricing miss for an individual instance is likewise skipped
+// with a log, not an error.
+func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
+	instancesReady := isDone(c.instanceStore.Done())
+	pricesReady := isDone(c.pricingStore.Done())
+	switch {
+	case !instancesReady && !pricesReady:
+		c.logger.LogAttrs(ctx, slog.LevelInfo, "instance and pricing stores not yet populated, skipping metrics")
+		return nil
+	case !instancesReady:
+		c.logger.LogAttrs(ctx, slog.LevelInfo, "instance store not yet populated, skipping metrics")
+		return nil
+	case !pricesReady:
+		c.logger.LogAttrs(ctx, slog.LevelInfo, "pricing store not yet populated, skipping metrics")
+		return nil
 	}
 
-	is, err := regionClient.ListRDSInstances(ctx)
-	if err != nil {
-		c.logger.Error("error listing RDS instances", "region", region, "error", err)
-		return
+	for _, region := range c.regions {
+		for _, instance := range c.instanceStore.Get(*region.RegionName) {
+			// pricingKeyFor returns ok=false for a partial instance (AWS can
+			// return one missing its AZ, class, engine, or multi-AZ flag mid
+			// create or delete) or an engine we cannot map to a price; skip
+			// either rather than deref a nil.
+			key, azRegion, ok := pricingKeyFor(instance)
+			if !ok {
+				c.logger.Warn("cannot derive pricing key for RDS instance, skipping")
+				continue
+			}
+			if instance.DbiResourceId == nil || instance.DBInstanceArn == nil {
+				c.logger.Warn("RDS instance missing identifiers, skipping", "region", azRegion)
+				continue
+			}
+
+			hourlyPrice, ok := c.pricingStore.Get(key)
+			if !ok {
+				c.logger.Warn("no pricing data found for RDS instance, skipping", "instanceType", *instance.DBInstanceClass, "region", azRegion, "engine", *instance.Engine)
+				continue
+			}
+
+			ch <- prometheus.MustNewConstMetric(
+				HourlyGaugeDesc,
+				prometheus.GaugeValue,
+				hourlyPrice,
+				c.accountID,
+				azRegion,
+				*instance.DBInstanceClass,
+				*instance.DbiResourceId,
+				*instance.DBInstanceArn,
+			)
+		}
 	}
-	instanceCh <- is
+	return nil
 }
 
 func multiOrSingleAZ(multiAZ bool) string {
@@ -195,8 +176,157 @@ func isOutpostsInstance(instance rdsTypes.DBInstance) string {
 	return "AWS Region"
 }
 
-func createPricingKey(region, tier, engine, depOption, locationType string) string {
-	return fmt.Sprintf("%s-%s-%s-%s-%s", region, tier, engine, depOption, locationType)
+// engineAttributes maps an RDS instance Engine code to the AmazonRDS pricing
+// databaseEngine and databaseEdition attribute values that key its price. The
+// instance Engine field ("postgres", "oracle-ee") differs from the Pricing
+// API's display names ("PostgreSQL", "Oracle" plus edition "Enterprise"), so we
+// translate explicitly. Engines absent from this map cannot be priced and are
+// skipped by pricingKeyFor.
+//
+// VERIFY: the open-source rows (MySQL/MariaDB/PostgreSQL/Aurora) are confirmed,
+// but the Oracle and SQL Server databaseEdition strings are best-effort and
+// should be checked against a real GetProducts response before relying on their
+// prices.
+//
+// TODO: harden Oracle and SQL Server databaseEdition/license matching against
+// a real GetProducts response; tracked as a follow-up issue (#1131).
+var engineAttributes = map[string]struct {
+	databaseEngine  string
+	databaseEdition string
+}{
+	"mysql":             {databaseEngine: "MySQL"},
+	"mariadb":           {databaseEngine: "MariaDB"},
+	"postgres":          {databaseEngine: "PostgreSQL"},
+	"aurora-mysql":      {databaseEngine: "Aurora MySQL"},
+	"aurora-postgresql": {databaseEngine: "Aurora PostgreSQL"},
+	"oracle-ee":         {databaseEngine: "Oracle", databaseEdition: "Enterprise"},
+	"oracle-ee-cdb":     {databaseEngine: "Oracle", databaseEdition: "Enterprise"},
+	"oracle-se2":        {databaseEngine: "Oracle", databaseEdition: "Standard Two"},
+	"oracle-se2-cdb":    {databaseEngine: "Oracle", databaseEdition: "Standard Two"},
+	"sqlserver-ee":      {databaseEngine: "SQL Server", databaseEdition: "Enterprise"},
+	"sqlserver-se":      {databaseEngine: "SQL Server", databaseEdition: "Standard"},
+	"sqlserver-web":     {databaseEngine: "SQL Server", databaseEdition: "Web"},
+	"sqlserver-ex":      {databaseEngine: "SQL Server", databaseEdition: "Express"},
+}
+
+// openSourceLicense is the pricing licenseModel attribute shared by every
+// open-source RDS engine, so those engines never depend on the instance's
+// LicenseModel field.
+const openSourceLicense = "No license required"
+
+// licenseModelAttributes maps an RDS instance LicenseModel to the pricing
+// licenseModel attribute value. Only the licensed engines (Oracle, SQL Server)
+// consult this map; see pricingKeyFor.
+//
+// VERIFY: the "License included" / "Bring your own license" strings are
+// best-effort and should be checked against a real GetProducts response.
+var licenseModelAttributes = map[string]string{
+	"license-included":       "License included",
+	"bring-your-own-license": "Bring your own license",
+}
+
+// Aurora storage-mode tokens disambiguate the two Aurora SKUs (Standard vs
+// I/O-Optimized), which carry different instance-hour prices despite sharing
+// every other pricing attribute. auroraStorageModeNA is used by both sides of
+// the key for every non-Aurora engine, so the key is unaffected for them.
+const (
+	auroraStorageModeNA          = ""
+	auroraStorageModeStandard    = "Standard"
+	auroraStorageModeIOOptimized = "IOOptimized"
+)
+
+// isAuroraEngine reports whether a pricing databaseEngine attribute value
+// (also used as engineAttributes' databaseEngine) is one of the two Aurora
+// engines, the only engines whose instance-hour price depends on storage mode.
+func isAuroraEngine(databaseEngine string) bool {
+	return databaseEngine == "Aurora MySQL" || databaseEngine == "Aurora PostgreSQL"
+}
+
+// auroraStorageModeFromPricing normalizes the Pricing API's "storage"
+// attribute into a mode token for Aurora engines. ok=false when storage is
+// missing or doesn't match a known value, so the caller skips the row instead
+// of silently mis-keying it.
+func auroraStorageModeFromPricing(storage string) (mode string, ok bool) {
+	switch storage {
+	case "EBS Only":
+		return auroraStorageModeStandard, true
+	case "Aurora IO Optimization Mode":
+		return auroraStorageModeIOOptimized, true
+	default:
+		return "", false
+	}
+}
+
+// auroraStorageModeFromInstance normalizes a DB instance's StorageType into
+// the same mode token for Aurora engines.
+//
+// VERIFY: assumes DescribeDBInstances surfaces "aurora-iopt1" on Aurora
+// I/O-Optimized member instances, mirroring DBCluster.StorageType, rather than
+// only DescribeDBClusters exposing it. Confirm against a live Aurora
+// I/O-Optimized cluster before relying on this in production.
+func auroraStorageModeFromInstance(storageType *string) (mode string, ok bool) {
+	if storageType == nil {
+		return "", false
+	}
+	switch *storageType {
+	case "aurora":
+		return auroraStorageModeStandard, true
+	case "aurora-iopt1":
+		return auroraStorageModeIOOptimized, true
+	default:
+		return "", false
+	}
+}
+
+func createPricingKey(region, instanceType, databaseEngine, databaseEdition, depOption, licenseModel, locationType, storageMode string) string {
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s", region, instanceType, databaseEngine, databaseEdition, depOption, licenseModel, locationType, storageMode)
+}
+
+// pricingKeyFor derives the pricing-map key and the region (from the instance's
+// availability zone) for an instance. It returns ok=false when a field the key
+// depends on is missing (AWS can return partial instances mid create or delete)
+// or the engine is not in engineAttributes. Callers must skip such instances
+// rather than dereference the nils.
+func pricingKeyFor(instance rdsTypes.DBInstance) (key, region string, ok bool) {
+	if instance.AvailabilityZone == nil || instance.DBInstanceClass == nil || instance.Engine == nil || instance.MultiAZ == nil {
+		return "", "", false
+	}
+	az := *instance.AvailabilityZone
+	if az == "" {
+		return "", "", false
+	}
+	region = az[:len(az)-1]
+
+	engine, ok := engineAttributes[*instance.Engine]
+	if !ok {
+		return "", region, false
+	}
+
+	// Open-source engines all price under a single license; only the licensed
+	// engines (Oracle, SQL Server) key on the instance's LicenseModel.
+	license := openSourceLicense
+	if engine.databaseEdition != "" {
+		lm := ""
+		if instance.LicenseModel != nil {
+			lm = *instance.LicenseModel
+		}
+		license, ok = licenseModelAttributes[lm]
+		if !ok {
+			return "", region, false
+		}
+	}
+
+	storageMode := auroraStorageModeNA
+	if isAuroraEngine(engine.databaseEngine) {
+		storageMode, ok = auroraStorageModeFromInstance(instance.StorageType)
+		if !ok {
+			return "", region, false
+		}
+	}
+
+	depOption := multiOrSingleAZ(*instance.MultiAZ)
+	locationType := isOutpostsInstance(instance) // outposts locations have a different unit price
+	return createPricingKey(region, *instance.DBInstanceClass, engine.databaseEngine, engine.databaseEdition, depOption, license, locationType, storageMode), region, true
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
@@ -212,5 +342,6 @@ func (c *Collector) Regions() []string {
 }
 
 func (c *Collector) Register(registry provider.Registry) error {
+	registry.MustRegister(c.populateErrors)
 	return nil
 }
