@@ -19,6 +19,14 @@ import (
 // inventory. Mirrors GKE's PriceRefreshInterval.
 const defaultPricingRefreshInterval = 24 * time.Hour
 
+// defaultPricingRefreshRetryInterval is used instead of
+// defaultPricingRefreshInterval after a populate where at least one region's
+// pricing listing failed, so a persistent outage (bad IAM permissions, a
+// region-wide Pricing API failure) retries again soon rather than leaving the
+// store on stale or empty data for a full day. Mirrors the AKS VM price
+// store's adaptive-interval pattern (pkg/azure/aks/aks.go).
+const defaultPricingRefreshRetryInterval = 30 * time.Minute
+
 // pricingStore refreshes RDS pricing in the background and serves it to
 // Collect from memory, off the scrape path. It is independent of
 // instanceStore: pricing is listed in bulk per region from the Pricing API
@@ -40,10 +48,10 @@ type pricingStore struct {
 	initialPopulation     chan struct{}
 }
 
-// newPricingStore returns a store that begins warming immediately in the
-// background, independent of instanceStore.
-func newPricingStore(ctx context.Context, logger *slog.Logger, config *Config, populateErrors *prometheus.CounterVec) *pricingStore {
-	s := &pricingStore{
+// newPricingStore builds an unstarted store; call startPricingRefreshTicker to
+// begin warming it in the background, independent of instanceStore.
+func newPricingStore(logger *slog.Logger, config *Config, populateErrors *prometheus.CounterVec) *pricingStore {
+	return &pricingStore{
 		logger:            logger.With("store", "pricing"),
 		pricingClient:     config.Client,
 		regions:           config.Regions,
@@ -53,8 +61,37 @@ func newPricingStore(ctx context.Context, logger *slog.Logger, config *Config, p
 		prices:            newPricingMap(),
 		initialPopulation: make(chan struct{}),
 	}
-	go s.Populate(ctx)
-	return s
+}
+
+// startPricingRefreshTicker owns pricingStore's entire populate lifecycle,
+// including the first attempt, so it can size the wait before the next
+// attempt off that attempt's own outcome. After any populate where at least
+// one region's pricing listing failed, the next attempt runs after
+// defaultPricingRefreshRetryInterval instead of defaultPricingRefreshInterval.
+// Runs in its own goroutine and returns immediately, so a slow or failing
+// Pricing API never delays startup.
+func startPricingRefreshTicker(ctx context.Context, store *pricingStore) {
+	go func() {
+		interval := defaultPricingRefreshInterval
+		if !store.Populate(ctx) {
+			interval = defaultPricingRefreshRetryInterval
+		}
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				nextInterval := defaultPricingRefreshInterval
+				if !store.Populate(ctx) {
+					nextInterval = defaultPricingRefreshRetryInterval
+				}
+				ticker.Reset(nextInterval)
+			}
+		}
+	}()
 }
 
 // Done is closed once the first populate attempt finishes, successfully or not.
@@ -70,13 +107,17 @@ func (s *pricingStore) Get(key string) (float64, bool) {
 // Populate refreshes pricing for every region. It skips the tick if a
 // previous populate is still running, fans out under a bounded errgroup, and
 // logs, counts, and swallows per-region errors so one bad region never drops
-// its siblings.
-func (s *pricingStore) Populate(ctx context.Context) {
+// its siblings. It returns false if any region's pricing listing itself
+// failed (not merely an individual price failing to parse), so the caller can
+// retry sooner rather than waiting the full refresh interval; a skipped
+// (overlapping) populate returns true since nothing about the store's health
+// changed.
+func (s *pricingStore) Populate(ctx context.Context) bool {
 	// Drop overlapping populates: if a tick fires while the previous one is
 	// still running, avoid doubling API load.
 	if !s.populating.CompareAndSwap(false, true) {
 		s.logger.LogAttrs(ctx, slog.LevelInfo, "populate already in progress, skipping tick")
-		return
+		return true
 	}
 	defer s.populating.Store(false)
 
@@ -87,6 +128,9 @@ func (s *pricingStore) Populate(ctx context.Context) {
 	var eg errgroup.Group
 	eg.SetLimit(s.concurrency)
 
+	var succeeded atomic.Bool
+	succeeded.Store(true)
+
 	for _, region := range s.regions {
 		if ctx.Err() != nil {
 			break
@@ -96,16 +140,22 @@ func (s *pricingStore) Populate(ctx context.Context) {
 			if ctx.Err() != nil {
 				return nil
 			}
-			s.populateRegion(ctx, regionName)
+			if !s.populateRegion(ctx, regionName) {
+				succeeded.Store(false)
+			}
 			return nil // log and continue; don't drop sibling regions
 		})
 	}
 	eg.Wait()
+
+	return succeeded.Load()
 }
 
 // populateRegion refreshes a single region's pricing, bounded by a
 // per-region timeout so a hung listing call cannot wedge the background loop.
-func (s *pricingStore) populateRegion(ctx context.Context, regionName string) {
+// It returns false only when the listing call itself failed; a price that
+// fails to parse is counted and skipped but doesn't fail the region.
+func (s *pricingStore) populateRegion(ctx context.Context, regionName string) bool {
 	timeout := s.regionListTimeout
 	if timeout <= 0 {
 		timeout = defaultPopulateTimeout
@@ -119,7 +169,7 @@ func (s *pricingStore) populateRegion(ctx context.Context, regionName string) {
 			slog.String("region", regionName),
 			slog.String("error", err.Error()))
 		s.populateErrors.WithLabelValues("pricing", regionName, "list_prices").Inc()
-		return
+		return false
 	}
 
 	for _, product := range priceList {
@@ -130,4 +180,5 @@ func (s *pricingStore) populateRegion(ctx context.Context, regionName string) {
 		}
 		s.prices.Set(key, price)
 	}
+	return true
 }

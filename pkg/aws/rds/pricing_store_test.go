@@ -17,8 +17,8 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// newTestPricingStore builds a store without the background goroutine the
-// production constructor starts, so tests can drive Populate synchronously.
+// newTestPricingStore builds a store without starting the production
+// adaptive-refresh goroutine, so tests can drive Populate synchronously.
 func newTestPricingStore(regions []types.Region, pricingClient client.Client) *pricingStore {
 	return &pricingStore{
 		logger:            slog.Default(),
@@ -45,7 +45,8 @@ func TestPricingStore_Populate_WarmsPricing(t *testing.T) {
 	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
 	store := newTestPricingStore(regions, pricingClient)
 
-	store.Populate(t.Context())
+	succeeded := store.Populate(t.Context())
+	assert.True(t, succeeded, "a populate with no region failures should report success")
 
 	price, ok := store.Get(warmKey)
 	assert.True(t, ok, "price should be warmed during populate")
@@ -171,7 +172,8 @@ func TestPricingStore_Populate_OverlapGuard(t *testing.T) {
 	// Simulate an in-flight populate.
 	require.True(t, store.populating.CompareAndSwap(false, true))
 
-	store.Populate(t.Context())
+	succeeded := store.Populate(t.Context())
+	assert.True(t, succeeded, "a skipped populate should not be treated as a failure needing a fast retry")
 
 	select {
 	case <-store.Done():
@@ -201,7 +203,8 @@ func TestPricingStore_Populate_ListPricesErrorCountsAndContinues(t *testing.T) {
 	}
 	store := newTestPricingStore(regions, pricingClient)
 
-	store.Populate(t.Context())
+	succeeded := store.Populate(t.Context())
+	assert.False(t, succeeded, "a region's listing failure should report the populate as not fully successful")
 
 	_, ok := store.Get(warmKey)
 	assert.True(t, ok, "healthy region's price should still be cached")
@@ -222,7 +225,8 @@ func TestPricingStore_Populate_ParseErrorCounts(t *testing.T) {
 	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
 	store := newTestPricingStore(regions, pricingClient)
 
-	store.Populate(t.Context())
+	succeeded := store.Populate(t.Context())
+	assert.True(t, succeeded, "a price that fails to parse should not fail the region: the listing call itself succeeded")
 
 	assert.Equal(t, 1.0, testutil.ToFloat64(store.populateErrors.WithLabelValues("pricing", "us-east-1", "parse_pricing")))
 }
@@ -302,4 +306,56 @@ func TestPricingStore_Populate_SlowRegionFailsFast(t *testing.T) {
 	assert.Less(t, elapsed, 5*time.Second, "slow region should not block the populate")
 	_, ok := store.Get(warmKey)
 	assert.True(t, ok, "healthy region's price should still be cached")
+}
+
+// TestNewPricingStore_DoesNotWarm verifies the constructor builds an inert
+// store: warming only begins once startPricingRefreshTicker is called.
+func TestNewPricingStore_DoesNotWarm(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	pricingClient := mock.NewMockClient(mockCtrl)
+	// No calls expected: construction alone must not warm the store.
+
+	config := &Config{
+		Client:  pricingClient,
+		Regions: []types.Region{{RegionName: aws.String("us-east-1")}},
+	}
+	store := newPricingStore(slog.Default(), config, newPopulateErrorsCounter())
+
+	select {
+	case <-store.Done():
+		t.Fatal("Done should not be closed before anything triggers a populate")
+	default:
+	}
+}
+
+// TestStartPricingRefreshTicker_RunsFirstPopulateImmediately verifies the
+// starter kicks off the first populate right away, without the caller
+// blocking on it.
+func TestStartPricingRefreshTicker_RunsFirstPopulateImmediately(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	pricingClient := mock.NewMockClient(mockCtrl)
+	expectPricing(pricingClient, "0.456")
+
+	config := &Config{
+		Client:  pricingClient,
+		Regions: []types.Region{{RegionName: aws.String("us-east-1")}},
+	}
+	store := newPricingStore(slog.Default(), config, newPopulateErrorsCounter())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	startPricingRefreshTicker(ctx, store)
+
+	select {
+	case <-store.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("starter should trigger the first populate without the caller blocking on it")
+	}
+
+	_, ok := store.Get(warmKey)
+	assert.True(t, ok, "the first populate triggered by the starter should warm the store")
 }

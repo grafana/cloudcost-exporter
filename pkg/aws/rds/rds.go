@@ -62,16 +62,19 @@ const (
 // calls and serves metrics from the two warm stores, joined by pricing key.
 // A positive RegionListTimeout caps each region's background work for both
 // stores; 0 falls back to an internal safety ceiling so a slow region never
-// wedges either refresh.
+// wedges either refresh. Pricing additionally retries sooner than its normal
+// refresh interval after any populate with a region failure, so a persistent
+// outage self-heals rather than leaving the store stale or empty for a full
+// day; see startPricingRefreshTicker.
 func New(ctx context.Context, config *Config, logger *slog.Logger) (*Collector, error) {
 	logger = logger.With("collector", serviceName)
 	populateErrors := newPopulateErrorsCounter()
 
 	instanceStore := newInstanceStore(ctx, logger, config, populateErrors)
-	pricingStore := newPricingStore(ctx, logger, config, populateErrors)
+	pricingStore := newPricingStore(logger, config, populateErrors)
 
 	startRefreshTicker(ctx, config.ScrapeInterval, func() { instanceStore.Populate(ctx) })
-	startRefreshTicker(ctx, defaultPricingRefreshInterval, func() { pricingStore.Populate(ctx) })
+	startPricingRefreshTicker(ctx, pricingStore)
 
 	return &Collector{
 		regions:        config.Regions,
