@@ -138,6 +138,35 @@ func TestInstanceStore_Done_ClosesAfterPopulate(t *testing.T) {
 	}
 }
 
+// TestInstanceStore_Done_ClosesEvenWhenFirstPopulateFailsEverywhere verifies
+// that readiness tracks "the first populate was attempted," not "the first
+// populate succeeded": if every region fails on the very first populate,
+// Done() still closes, so Collect will treat the store as ready despite it
+// caching no instances.
+func TestInstanceStore_Done_ClosesEvenWhenFirstPopulateFailsEverywhere(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	regionClient := mock.NewMockClient(mockCtrl)
+	regionClient.EXPECT().ListRDSInstances(gomock.Any()).
+		Return(nil, errors.New("boom")).
+		Times(1)
+
+	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
+	regionMap := map[string]client.Client{"us-east-1": regionClient}
+	store := newTestInstanceStore(regions, regionMap)
+
+	store.Populate(t.Context())
+
+	select {
+	case <-store.Done():
+	default:
+		t.Fatal("Done should close even when the first populate fails everywhere")
+	}
+
+	assert.Empty(t, store.Get("us-east-1"), "no instances should be cached when every region failed")
+}
+
 // TestInstanceStore_Populate_OverlapGuard verifies a populate is skipped while
 // another is still running, so a slow AWS API cannot double the load.
 func TestInstanceStore_Populate_OverlapGuard(t *testing.T) {

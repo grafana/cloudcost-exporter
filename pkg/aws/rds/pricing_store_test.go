@@ -157,6 +157,36 @@ func TestPricingStore_Done_ClosesAfterPopulate(t *testing.T) {
 	}
 }
 
+// TestPricingStore_Done_ClosesEvenWhenFirstPopulateFailsEverywhere verifies
+// that readiness tracks "the first populate was attempted," not "the first
+// populate succeeded": if every region fails on the very first populate,
+// Done() still closes, so Collect will treat the store as ready despite it
+// caching no prices.
+func TestPricingStore_Done_ClosesEvenWhenFirstPopulateFailsEverywhere(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	pricingClient := mock.NewMockClient(mockCtrl)
+	pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+		Return(nil, errors.New("boom")).
+		Times(1)
+
+	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
+	store := newTestPricingStore(regions, pricingClient)
+
+	succeeded := store.Populate(t.Context())
+	assert.False(t, succeeded, "a populate where every region fails should report failure")
+
+	select {
+	case <-store.Done():
+	default:
+		t.Fatal("Done should close even when the first populate fails everywhere")
+	}
+
+	_, ok := store.Get(warmKey)
+	assert.False(t, ok, "no price should be cached when every region failed")
+}
+
 // TestPricingStore_Populate_OverlapGuard verifies a populate is skipped while
 // another is still running, so a slow AWS API cannot double the load.
 func TestPricingStore_Populate_OverlapGuard(t *testing.T) {
