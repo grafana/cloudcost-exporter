@@ -106,8 +106,8 @@ func (c *AWSClient) ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstance
 	return c.rdsService.listRDSInstances(ctx)
 }
 
-func (c *AWSClient) GetRDSUnitData(ctx context.Context, instType, region, deploymentOption, databaseEngine, locationType string) (string, error) {
-	return c.priceService.getRDSUnitData(ctx, instType, region, deploymentOption, databaseEngine, locationType)
+func (c *AWSClient) ListRDSPrices(ctx context.Context, region string) ([]string, error) {
+	return c.priceService.listRDSPrices(ctx, region)
 }
 
 func (c *AWSClient) ListVPCServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
