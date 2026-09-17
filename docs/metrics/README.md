@@ -16,6 +16,7 @@ Each bullet shows the human-readable name, the flag value to pass via `-{provide
 ## GCP Services
 
 - **[GKE](./gcp/gke.md)** (`GKE`): Google Kubernetes Engine clusters
+- **[GCE](./gcp/gce.md)** (`GCE`): Standalone Google Compute Engine VMs (excludes GKE-managed nodes)
 - **[GCS](./gcp/gcs.md)** (`GCS`): Google Cloud Storage buckets
 - **[Cloud SQL](./gcp/cloudsql.md)** (`SQL`): Managed database instances
 - **[Managed Kafka](./gcp/managedkafka.md)** (`MANAGEDKAFKA`, alias: `KAFKA`): Managed Service for Apache Kafka clusters

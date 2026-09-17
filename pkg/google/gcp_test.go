@@ -246,7 +246,7 @@ func TestGCP_CollectMetrics(t *testing.T) {
 func TestServices(t *testing.T) {
 	got := Services()
 	wantNames := []string{
-		serviceGCS, serviceGKE, serviceCLB, serviceVPC,
+		serviceGCS, serviceGKE, serviceGCE, serviceCLB, serviceVPC,
 		serviceSQL, serviceManagedKafka, serviceVertex,
 	}
 	gotNames := make([]string, 0, len(got))
