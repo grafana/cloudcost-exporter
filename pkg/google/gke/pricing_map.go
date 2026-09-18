@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
@@ -101,11 +102,18 @@ func NewPriceTiers() *PriceTiers {
 	}
 }
 
-// PricingMap is a map of regions to a map of family to price tiers
+// PricingMap is a map of regions to a map of family to price tiers.
+//
+// mu guards compute and storage: ParseSkus writes them in place when the 24h
+// refresh ticker fires, while Collect reads them on every scrape via
+// GetCostOfInstance and GetCostOfStorage. Without it a scrape racing a refresh
+// trips the runtime's concurrent map read/write detector and crashes the
+// exporter (https://github.com/grafana/cloudcost-exporter/issues/1036).
 type PricingMap struct {
 	compute   map[string]*FamilyPricing
 	storage   map[string]*StoragePricing
 	gcpClient client.Client
+	mu        sync.RWMutex
 }
 
 // NewPricingMap returns a new PricingMap in a way that can be used afterwards.
@@ -161,6 +169,8 @@ func NewStoragePricing() *StoragePricing {
 }
 
 func (pm *PricingMap) GetCostOfInstance(instance *client.MachineSpec) (float64, float64, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
 	if len(pm.compute) == 0 || instance == nil {
 		return 0, 0, ErrRegionNotFound
 	}
@@ -197,6 +207,8 @@ func computeDiskCost(d *Disk, p *StoragePrices) float64 {
 }
 
 func (pm *PricingMap) GetCostOfStorage(region, storageClass string) (*StoragePrices, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
 	if len(pm.storage) == 0 {
 		return nil, ErrRegionNotFound
 	}
@@ -206,7 +218,10 @@ func (pm *PricingMap) GetCostOfStorage(region, storageClass string) (*StoragePri
 	if _, ok := pm.storage[region].Storage[storageClass]; !ok {
 		return nil, fmt.Errorf("%w: %s", ErrFamilyTypeNotFound, storageClass)
 	}
-	return pm.storage[region].Storage[storageClass], nil
+	// Return a copy so the value stays stable after the read lock is released; a
+	// concurrent ParseSkus refresh mutates the stored StoragePrices in place.
+	sp := *pm.storage[region].Storage[storageClass]
+	return &sp, nil
 }
 
 var (
@@ -239,6 +254,8 @@ func (pm *PricingMap) Populate(ctx context.Context) error {
 
 // ParseSkus accepts a list of skus, parses their content, and updates the pricing map with the appropriate costs.
 func (pm *PricingMap) ParseSkus(skus []*billingpb.Sku) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 	for _, sku := range skus {
 		rawData, err := getDataFromSku(sku)
 		if errors.Is(err, ErrSkuNotRelevant) {

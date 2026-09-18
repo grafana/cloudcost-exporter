@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -20,7 +21,7 @@ import (
 func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
-		pm               PricingMap
+		pm               *PricingMap
 		ms               *client.MachineSpec
 		expectedCPUPrice float64
 		expectedRAMPRice float64
@@ -28,28 +29,29 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 	}{
 		{
 			name:          "regions is nil",
+			pm:            &PricingMap{},
 			expectedError: ErrRegionNotFound,
 		},
 		{
 			name:          "nil machine spec",
-			pm:            PricingMap{compute: map[string]*FamilyPricing{"": {}}},
+			pm:            &PricingMap{compute: map[string]*FamilyPricing{"": {}}},
 			expectedError: ErrRegionNotFound,
 		},
 		{
 			name:          "region not found",
-			pm:            PricingMap{compute: map[string]*FamilyPricing{"": {}}},
+			pm:            &PricingMap{compute: map[string]*FamilyPricing{"": {}}},
 			ms:            &client.MachineSpec{Region: "missing region"},
 			expectedError: ErrRegionNotFound,
 		},
 		{
 			name:          "family type not found",
-			pm:            PricingMap{compute: map[string]*FamilyPricing{"region": {}}},
+			pm:            &PricingMap{compute: map[string]*FamilyPricing{"region": {}}},
 			ms:            &client.MachineSpec{Region: "region"},
 			expectedError: ErrFamilyTypeNotFound,
 		},
 		{
 			name: "on-demand",
-			pm: PricingMap{
+			pm: &PricingMap{
 				compute: map[string]*FamilyPricing{
 					"region": {
 						Family: map[string]*PriceTiers{
@@ -72,7 +74,7 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 		},
 		{
 			name: "spot",
-			pm: PricingMap{
+			pm: &PricingMap{
 				compute: map[string]*FamilyPricing{
 					"region": {
 						Family: map[string]*PriceTiers{
@@ -106,6 +108,85 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 			require.Equal(t, tc.expectedRAMPRice, r, "ram price mismatch")
 		})
 	}
+}
+
+// TestPricingMap_ConcurrentAccess is a regression test for
+// https://github.com/grafana/cloudcost-exporter/issues/1036. ParseSkus (the
+// writer, driven by the 24h refresh) and the getters (readers, driven by
+// Collect) must not touch pm.compute/pm.storage concurrently. Run with -race to
+// surface the bug: without the mutex it trips the runtime's "concurrent map
+// read and map write" detector.
+func TestPricingMap_ConcurrentAccess(t *testing.T) {
+	pm := &PricingMap{
+		compute: map[string]*FamilyPricing{},
+		storage: map[string]*StoragePricing{},
+	}
+
+	computeSku := func(region string) *billingpb.Sku {
+		return &billingpb.Sku{
+			Description:    "G2 Instance Core running in Sao Paulo",
+			ServiceRegions: []string{region},
+			PricingInfo: []*billingpb.PricingInfo{{
+				PricingExpression: &billingpb.PricingExpression{
+					TieredRates: []*billingpb.PricingExpression_TierRate{{
+						UnitPrice: &money.Money{Nanos: 1e9},
+					}},
+				},
+			}},
+		}
+	}
+	storageSku := func(region string) *billingpb.Sku {
+		return &billingpb.Sku{
+			Description:    "Storage PD Capacity",
+			Category:       &billingpb.Category{ResourceFamily: "Storage"},
+			ServiceRegions: []string{region},
+			PricingInfo: []*billingpb.PricingInfo{{
+				PricingExpression: &billingpb.PricingExpression{
+					TieredRates: []*billingpb.PricingExpression_TierRate{{
+						UnitPrice: &money.Money{Nanos: 1e9},
+					}},
+				},
+			}},
+		}
+	}
+
+	const iterations = 200
+	var wg sync.WaitGroup
+
+	// Writer: mirrors the periodic refresh, inserting a fresh region each
+	// iteration so the maps keep being written.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			region := fmt.Sprintf("us-central%d", i)
+			_ = pm.ParseSkus([]*billingpb.Sku{computeSku(region), storageSku(region)})
+		}
+	}()
+
+	// Readers: hammer both getters while the writer mutates the maps.
+	for r := 0; r < 4; r++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				region := fmt.Sprintf("us-central%d", i)
+				_, _, _ = pm.GetCostOfInstance(&client.MachineSpec{Region: region, Family: "g2"})
+				_, _ = pm.GetCostOfStorage(region, "pd-standard")
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Sanity-check that the writer actually populated the maps.
+	cpu, _, err := pm.GetCostOfInstance(&client.MachineSpec{Region: "us-central0", Family: "g2"})
+	require.NoError(t, err)
+	require.Equal(t, 1.0, cpu)
+
+	prices, err := pm.GetCostOfStorage("us-central0", "pd-standard")
+	require.NoError(t, err)
+	require.Greater(t, prices.ProvisionedSpaceGiB, 0.0)
 }
 
 func TestPricingMapParseSkus(t *testing.T) {
