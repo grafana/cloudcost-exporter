@@ -27,7 +27,7 @@ require (
 	github.com/prometheus/common v0.69.0
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/mock v0.6.0
-	golang.org/x/sync v0.22.0
+	golang.org/x/sync v0.23.0
 	gomodules.xyz/azure-retail-prices-sdk-for-go v0.0.3
 	google.golang.org/api v0.287.1
 	google.golang.org/genproto v0.0.0-20260911204522-f61a6ca850bd
@@ -101,11 +101,11 @@ require (
 	go.opentelemetry.io/otel/sdk v1.45.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
-	golang.org/x/crypto v0.56.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260904194346-d0f1323225a4 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260911204522-f61a6ca850bd // indirect
