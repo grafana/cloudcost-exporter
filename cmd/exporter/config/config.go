@@ -29,6 +29,7 @@ type Config struct {
 			Services                 StringSliceFlag
 			ExperimentalServices     StringSliceFlag
 			GKEZoneConcurrency       int
+			GCEZoneConcurrency       int
 			VertexFamilyFilter       string
 		}
 		Azure struct {
