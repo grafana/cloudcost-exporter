@@ -20,7 +20,7 @@ import (
 func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
-		pm               PricingMap
+		pm               *PricingMap
 		ms               *client.MachineSpec
 		expectedCPUPrice float64
 		expectedRAMPRice float64
@@ -28,28 +28,29 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 	}{
 		{
 			name:          "regions is nil",
+			pm:            &PricingMap{},
 			expectedError: ErrRegionNotFound,
 		},
 		{
 			name:          "nil machine spec",
-			pm:            PricingMap{compute: map[string]*FamilyPricing{"": {}}},
+			pm:            &PricingMap{compute: map[string]*FamilyPricing{"": {}}},
 			expectedError: ErrRegionNotFound,
 		},
 		{
 			name:          "region not found",
-			pm:            PricingMap{compute: map[string]*FamilyPricing{"": {}}},
+			pm:            &PricingMap{compute: map[string]*FamilyPricing{"": {}}},
 			ms:            &client.MachineSpec{Region: "missing region"},
 			expectedError: ErrRegionNotFound,
 		},
 		{
 			name:          "family type not found",
-			pm:            PricingMap{compute: map[string]*FamilyPricing{"region": {}}},
+			pm:            &PricingMap{compute: map[string]*FamilyPricing{"region": {}}},
 			ms:            &client.MachineSpec{Region: "region"},
 			expectedError: ErrFamilyTypeNotFound,
 		},
 		{
 			name: "on-demand",
-			pm: PricingMap{
+			pm: &PricingMap{
 				compute: map[string]*FamilyPricing{
 					"region": {
 						Family: map[string]*PriceTiers{
@@ -72,7 +73,7 @@ func TestStructuredPricingMap_GetCostOfInstance(t *testing.T) {
 		},
 		{
 			name: "spot",
-			pm: PricingMap{
+			pm: &PricingMap{
 				compute: map[string]*FamilyPricing{
 					"region": {
 						Family: map[string]*PriceTiers{
