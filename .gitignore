@@ -28,10 +28,11 @@ go.work
 
 .run
 .idea
-.vscode
 .claude
 
 # Ignore the compiled binary at root, but not charts/cloudcost-exporter
 /cloudcost-exporter
 
 dist/
+config.bat
+node_modules
