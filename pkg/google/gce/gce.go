@@ -108,8 +108,7 @@ func sumPopulateErrorsByStore(cv *prometheus.CounterVec, store string) float64 {
 }
 
 func (c *Collector) Register(r provider.Registry) error {
-	r.MustRegister(c.populateErrors)
-	return nil
+	return r.Register(c.populateErrors)
 }
 
 func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) error {
