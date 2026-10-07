@@ -2,7 +2,6 @@ package gce
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -13,15 +12,6 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
 )
-
-// errNilMachineType guards against a client returning a nil *compute.MachineType
-// alongside a nil error, which would otherwise panic on field access below.
-var errNilMachineType = errors.New("machine type response was nil")
-
-// errIncompleteMachineType guards against a client returning a *compute.MachineType
-// with a non-positive vCPU or memory value, which would otherwise be cached as a
-// valid spec and silently zero out part of the total cost metric.
-var errIncompleteMachineType = errors.New("machine type response has non-positive vCPU or memory")
 
 // machineTypeSpec is the subset of a GCE machine type's spec needed to turn
 // per-core/per-GiB rates into a total hourly cost.
@@ -122,12 +112,6 @@ func (c *machineTypeCache) warm(ctx context.Context, nodeStore *gke.NodeStore, p
 				return nil
 			}
 			mt, err := c.gcpClient.GetMachineType(ctx, k.project, k.zone, k.machineType)
-			if err == nil && mt == nil {
-				err = errNilMachineType
-			}
-			if err == nil && (mt.GuestCpus <= 0 || mt.MemoryMb <= 0) {
-				err = errIncompleteMachineType
-			}
 			if err != nil {
 				c.logger.LogAttrs(ctx, slog.LevelError, "failed to get machine type",
 					slog.String("project", k.project),

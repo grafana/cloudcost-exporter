@@ -303,9 +303,6 @@ func TestCollector_Collect(t *testing.T) {
 			for metric := range ch {
 				metrics = append(metrics, utils.ReadMetrics(metric))
 			}
-			if len(metrics) == 0 {
-				return
-			}
 			assert.ElementsMatch(t, metrics, test.expectedMetrics)
 		})
 	}

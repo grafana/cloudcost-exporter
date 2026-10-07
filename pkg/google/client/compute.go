@@ -10,6 +10,14 @@ import (
 
 var ErrListInstances = errors.New("no list price was found for the sku")
 
+// ErrNilMachineType indicates the Compute Engine API returned a nil machine
+// type alongside a nil error.
+var ErrNilMachineType = errors.New("machine type response was nil")
+
+// ErrIncompleteMachineType indicates the Compute Engine API returned a
+// machine type with a non-positive vCPU or memory value.
+var ErrIncompleteMachineType = errors.New("machine type response has non-positive vCPU or memory")
+
 type Compute struct {
 	computeService *compute.Service
 }
@@ -63,9 +71,20 @@ func (c *Compute) listInstancesInZone(projectId, zone string) ([]*MachineSpec, e
 
 // getMachineType returns the machine type spec (vCPU count, memory) for a
 // (project, zone, machineType) tuple. The spec is immutable for a given
-// zone, so callers should cache the result.
+// zone, so callers should cache the result. Returns ErrNilMachineType or
+// ErrIncompleteMachineType if the API response doesn't have a usable spec.
 func (c *Compute) getMachineType(ctx context.Context, project, zone, machineType string) (*compute.MachineType, error) {
-	return c.computeService.MachineTypes.Get(project, zone, machineType).Context(ctx).Do()
+	mt, err := c.computeService.MachineTypes.Get(project, zone, machineType).Context(ctx).Do()
+	if err != nil {
+		return nil, err
+	}
+	if mt == nil {
+		return nil, ErrNilMachineType
+	}
+	if mt.GuestCpus <= 0 || mt.MemoryMb <= 0 {
+		return nil, ErrIncompleteMachineType
+	}
+	return mt, nil
 }
 
 // listDisks will list all disks in a given zone and return a slice of compute.Disk
