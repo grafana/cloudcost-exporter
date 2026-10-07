@@ -36,18 +36,21 @@ func standaloneInstances() []*computev1.Instance {
 			Zone:        "testing/us-central1-a",
 			Scheduling:  &computev1.Scheduling{ProvisioningModel: "test"},
 			Labels:      map[string]string{client.GkeClusterLabel: "test"},
+			Status:      "RUNNING",
 		},
 		{
 			Name:        "standalone-n1",
 			MachineType: "abc/n1-slim",
 			Zone:        "testing/us-central1-a",
 			Scheduling:  &computev1.Scheduling{ProvisioningModel: "test"},
+			Status:      "RUNNING",
 		},
 		{
 			Name:        "standalone-n1-spot",
 			MachineType: "abc/n1-slim",
 			Zone:        "testing/us-central1-a",
 			Scheduling:  &computev1.Scheduling{ProvisioningModel: "SPOT"},
+			Status:      "RUNNING",
 		},
 		{
 			// No SKU exists for this machine type in the fake billing fixture below,
@@ -57,6 +60,25 @@ func standaloneInstances() []*computev1.Instance {
 			MachineType: "abc/n8-slim",
 			Zone:        "testing/us-central1-a",
 			Scheduling:  &computev1.Scheduling{ProvisioningModel: "test"},
+			Status:      "RUNNING",
+		},
+		{
+			// Suspended: memory is still billed (the preserved memory snapshot's
+			// storage cost), CPU isn't, so only the memory and total metrics appear,
+			// and total is just the memory term.
+			Name:        "standalone-n1-suspended",
+			MachineType: "abc/n1-slim",
+			Zone:        "testing/us-central1-a",
+			Scheduling:  &computev1.Scheduling{ProvisioningModel: "test"},
+			Status:      "SUSPENDED",
+		},
+		{
+			// Stopped: not billed at all, so the instance is skipped entirely.
+			Name:        "standalone-n1-stopped",
+			MachineType: "abc/n1-slim",
+			Zone:        "testing/us-central1-a",
+			Scheduling:  &computev1.Scheduling{ProvisioningModel: "test"},
+			Status:      "STOPPED",
 		},
 	}
 }
@@ -152,6 +174,24 @@ func TestCollector_Collect(t *testing.T) {
 					},
 					Value: 6, MetricType: prometheus.GaugeValue,
 				},
+				{
+					// Suspended: no cpu metric, memory metric still emitted, total is
+					// just the memory term.
+					FqName: "cloudcost_gcp_gce_instance_memory_usd_per_gib_hour",
+					Labels: map[string]string{
+						"family": "n1", "instance": "standalone-n1-suspended", "machine_type": "n1-slim",
+						"price_tier": "ondemand", "project": "testing", "region": "us-central1",
+					},
+					Value: 1, MetricType: prometheus.GaugeValue,
+				},
+				{
+					FqName: "cloudcost_gcp_gce_instance_total_usd_per_hour",
+					Labels: map[string]string{
+						"family": "n1", "instance": "standalone-n1-suspended", "machine_type": "n1-slim",
+						"price_tier": "ondemand", "project": "testing", "region": "us-central1",
+					},
+					Value: 4, MetricType: prometheus.GaugeValue,
+				},
 			},
 		},
 		"Machine type lookup failure suppresses only the total metric": {
@@ -187,6 +227,16 @@ func TestCollector_Collect(t *testing.T) {
 					Labels: map[string]string{
 						"family": "n1", "instance": "standalone-n1-spot", "machine_type": "n1-slim",
 						"price_tier": "spot", "project": "testing", "region": "us-central1",
+					},
+					Value: 1, MetricType: prometheus.GaugeValue,
+				},
+				{
+					// Suspended, and the machine type spec can't resolve either: just
+					// the memory metric, no cpu, no total.
+					FqName: "cloudcost_gcp_gce_instance_memory_usd_per_gib_hour",
+					Labels: map[string]string{
+						"family": "n1", "instance": "standalone-n1-suspended", "machine_type": "n1-slim",
+						"price_tier": "ondemand", "project": "testing", "region": "us-central1",
 					},
 					Value: 1, MetricType: prometheus.GaugeValue,
 				},

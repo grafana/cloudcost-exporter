@@ -24,6 +24,10 @@ type MachineSpec struct {
 	SpotInstance bool
 	Labels       map[string]string
 	PriceTier    string
+	// Status is the instance's lifecycle status as reported by the Compute Engine
+	// API (e.g. RUNNING, STOPPED, SUSPENDED). See compute.Instance.Status for the
+	// full set of values.
+	Status string
 }
 
 // NewMachineSpec will create a new MachineSpec from compute.Instance objects.
@@ -45,6 +49,7 @@ func NewMachineSpec(instance *compute.Instance) *MachineSpec {
 		SpotInstance: spot,
 		Labels:       instance.Labels,
 		PriceTier:    priceTier,
+		Status:       instance.Status,
 	}
 }
 
