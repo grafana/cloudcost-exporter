@@ -124,11 +124,9 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 					// never double-counted between gcp_gke_* and gcp_gce_* metrics.
 					continue
 				}
-				billCPU := cpuBilled(instance.Status)
-				billMemory := memoryBilled(instance.Status)
-				if !billCPU && !billMemory {
-					// Not currently billed in any state we track (e.g. STOPPED,
-					// TERMINATED, PROVISIONING): skip the instance entirely.
+				if !instanceBilled(instance.Status) {
+					// Not currently billed (e.g. STOPPED, TERMINATED, SUSPENDED,
+					// PROVISIONING): skip the instance entirely.
 					continue
 				}
 				cpuCost, ramCost, err := c.pricingMap.GetCostOfInstance(instance)
@@ -140,21 +138,11 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 					continue
 				}
 				labelValues := []string{instance.Instance, instance.Region, instance.Family, instance.MachineType, project, instance.PriceTier}
-				if billCPU {
-					ch <- prometheus.MustNewConstMetric(gceInstanceCPUHourlyCostDesc, prometheus.GaugeValue, cpuCost, labelValues...)
-				}
-				if billMemory {
-					ch <- prometheus.MustNewConstMetric(gceInstanceMemoryHourlyCostDesc, prometheus.GaugeValue, ramCost, labelValues...)
-				}
+				ch <- prometheus.MustNewConstMetric(gceInstanceCPUHourlyCostDesc, prometheus.GaugeValue, cpuCost, labelValues...)
+				ch <- prometheus.MustNewConstMetric(gceInstanceMemoryHourlyCostDesc, prometheus.GaugeValue, ramCost, labelValues...)
 
 				if spec, ok := c.machineTypes.get(project, instance.Zone, instance.MachineType); ok {
-					var total float64
-					if billCPU {
-						total += cpuCost * float64(spec.VCPU)
-					}
-					if billMemory {
-						total += ramCost * spec.MemoryGiB
-					}
+					total := cpuCost*float64(spec.VCPU) + ramCost*spec.MemoryGiB
 					ch <- prometheus.MustNewConstMetric(gceInstanceTotalHourlyCostDesc, prometheus.GaugeValue, total, labelValues...)
 				} else {
 					c.logger.LogAttrs(ctx, slog.LevelDebug, "machine type spec not cached, skipping total cost metric",
