@@ -230,6 +230,8 @@ func (b *Billing) exportBilling(ctx context.Context, serviceName string, m *metr
 }
 
 // getPricing will collect all the pricing information for a given service and return a list of skus.
+// It returns nil on any iteration error so callers never build a pricing map from a partial catalog.
+// The iterator keeps returning the same error after a failure, so the loop must not continue.
 func (b *Billing) getPricing(ctx context.Context, serviceName string) []*billingpb.Sku {
 	var skus []*billingpb.Sku
 	skuIterator := b.billingService.ListSkus(ctx, &billingpb.ListSkusRequest{Parent: serviceName})
@@ -239,7 +241,8 @@ func (b *Billing) getPricing(ctx context.Context, serviceName string) []*billing
 			if errors.Is(err, iterator.Done) {
 				break
 			}
-			slog.Error("error iterating SKUs, continuing", "error", err)
+			slog.Error("error iterating SKUs", "service", serviceName, "error", err)
+			return nil
 		}
 		skus = append(skus, sku)
 	}

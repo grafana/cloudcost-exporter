@@ -1,12 +1,16 @@
 package client
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/genproto/googleapis/type/money"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestStorageclassFromSkuDescription(t *testing.T) {
@@ -250,6 +254,35 @@ func Test_parseStorageSku(t *testing.T) {
 			assert.ErrorIs(t, err, tt.err)
 		})
 	}
+}
+
+type failingListSkusServer struct {
+	billingpb.UnimplementedCloudCatalogServer
+}
+
+func (s *failingListSkusServer) ListSkus(_ context.Context, _ *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
+	return nil, status.Error(codes.PermissionDenied, "boom")
+}
+
+func TestGetPricing(t *testing.T) {
+	t.Run("returns all skus when iteration succeeds", func(t *testing.T) {
+		b := newBilling(NewTestBillingClient(t, &FakeCloudCatalogServerSlimResults{}), nil, nil)
+		assert.NotEmpty(t, b.getPricing(context.Background(), "services/compute-engine"))
+	})
+
+	t.Run("returns nil and terminates when iteration fails", func(t *testing.T) {
+		b := newBilling(NewTestBillingClient(t, &failingListSkusServer{}), nil, nil)
+
+		done := make(chan []*billingpb.Sku, 1)
+		go func() { done <- b.getPricing(context.Background(), "services/compute-engine") }()
+
+		select {
+		case skus := <-done:
+			assert.Nil(t, skus)
+		case <-time.After(5 * time.Second):
+			t.Fatal("getPricing did not return after an iteration error")
+		}
+	})
 }
 
 func TestRegionNameSameAsStackdriver(t *testing.T) {
