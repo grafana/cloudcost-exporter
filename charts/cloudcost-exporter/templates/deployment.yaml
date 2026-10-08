@@ -33,6 +33,11 @@ spec:
           {{- range .Values.containerArgs }}
             - {{ . }}
           {{- end }}
+          env:
+          {{- range .Values.containerEnvVars}}
+            - name: {{ .name }}
+              value: {{ .value }}
+          {{- end }}
           ports:
             - name: {{ .Values.portName }}
               containerPort: {{ .Values.service.port }}
