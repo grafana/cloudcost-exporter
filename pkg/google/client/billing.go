@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
@@ -14,6 +15,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	cloudbillingv1beta "google.golang.org/api/cloudbilling/v1beta"
 	"google.golang.org/api/iterator"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // billingPriceConcurrency bounds the concurrent per-SKU price fetches for account-scoped pricing.
@@ -229,24 +232,98 @@ func (b *Billing) exportBilling(ctx context.Context, serviceName string, m *metr
 	return 1.0
 }
 
+const (
+	skuPageSize     = 5000
+	skuPageAttempts = 3
+)
+
+// skuPageTimeout and skuRetryBackoff are variables so tests can shorten them.
+var (
+	// skuPageTimeout bounds one attempt at one catalog page. A healthy page returns in a few seconds,
+	// so a stalled call is abandoned well before the client's default 60s call timeout.
+	skuPageTimeout  = 20 * time.Second
+	skuRetryBackoff = time.Second
+)
+
 // getPricing will collect all the pricing information for a given service and return a list of skus.
-// It returns nil on any iteration error so callers never build a pricing map from a partial catalog.
-// The iterator keeps returning the same error after a failure, so the loop must not continue.
+// It returns nil on any error so callers never build a pricing map from a partial catalog.
 func (b *Billing) getPricing(ctx context.Context, serviceName string) []*billingpb.Sku {
 	var skus []*billingpb.Sku
-	skuIterator := b.billingService.ListSkus(ctx, &billingpb.ListSkusRequest{Parent: serviceName})
+	token := ""
 	for {
-		sku, err := skuIterator.Next()
+		page, next, err := b.fetchSkuPage(ctx, serviceName, token)
 		if err != nil {
-			if errors.Is(err, iterator.Done) {
-				break
-			}
 			slog.Error("error iterating SKUs", "service", serviceName, "error", err)
 			return nil
 		}
-		skus = append(skus, sku)
+		skus = append(skus, page...)
+		if next == "" {
+			return skus
+		}
+		token = next
 	}
-	return skus
+}
+
+// fetchSkuPage fetches one page, resuming from token, and retries attempts that stall or fail transiently.
+func (b *Billing) fetchSkuPage(ctx context.Context, serviceName, token string) ([]*billingpb.Sku, string, error) {
+	var err error
+	for attempt := 1; attempt <= skuPageAttempts; attempt++ {
+		var page []*billingpb.Sku
+		var next string
+		page, next, err = b.trySkuPage(ctx, serviceName, token)
+		if err == nil {
+			return page, next, nil
+		}
+		if ctx.Err() != nil || !isTransientSkuError(err) || attempt == skuPageAttempts {
+			break
+		}
+		slog.Warn("retrying SKU page", "service", serviceName, "attempt", attempt, "error", err)
+		select {
+		case <-ctx.Done():
+		case <-time.After(skuRetryBackoff):
+		}
+	}
+	return nil, "", err
+}
+
+// trySkuPage makes exactly one ListSkus RPC. It uses a fresh iterator and deadline per attempt because an
+// iterator keeps returning its first error and holds one context for every page it fetches.
+func (b *Billing) trySkuPage(ctx context.Context, serviceName, token string) ([]*billingpb.Sku, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, skuPageTimeout)
+	defer cancel()
+
+	skuIterator := b.billingService.ListSkus(ctx, &billingpb.ListSkusRequest{Parent: serviceName})
+	pageInfo := skuIterator.PageInfo()
+	pageInfo.MaxSize = skuPageSize
+	pageInfo.Token = token
+
+	var page []*billingpb.Sku
+	for {
+		sku, err := skuIterator.Next()
+		if errors.Is(err, iterator.Done) {
+			break
+		}
+		if err != nil {
+			return nil, "", err
+		}
+		page = append(page, sku)
+		if pageInfo.Remaining() == 0 {
+			break
+		}
+	}
+	return page, pageInfo.Token, nil
+}
+
+func isTransientSkuError(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	switch status.Code(err) {
+	case codes.DeadlineExceeded, codes.Unavailable:
+		return true
+	default:
+		return false
+	}
 }
 
 func getPriceFromSku(sku *billingpb.Sku) (float64, error) {

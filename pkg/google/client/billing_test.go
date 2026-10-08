@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -261,6 +262,91 @@ type failingListSkusServer struct {
 }
 
 func (s *failingListSkusServer) ListSkus(_ context.Context, _ *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
+	return nil, status.Error(codes.PermissionDenied, "boom")
+}
+
+// stallingListSkusServer blocks the first stallFirst calls for each page token until the client gives up.
+// It serves two pages: the empty token returns page one and token "p2" returns page two.
+type stallingListSkusServer struct {
+	billingpb.UnimplementedCloudCatalogServer
+	mu         sync.Mutex
+	calls      map[string]int
+	stallFirst int
+}
+
+func (s *stallingListSkusServer) ListSkus(ctx context.Context, req *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
+	s.mu.Lock()
+	if s.calls == nil {
+		s.calls = map[string]int{}
+	}
+	s.calls[req.PageToken]++
+	n := s.calls[req.PageToken]
+	s.mu.Unlock()
+
+	if n <= s.stallFirst {
+		<-ctx.Done()
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
+	if req.PageToken == "" {
+		return &billingpb.ListSkusResponse{Skus: []*billingpb.Sku{{Name: "a"}, {Name: "b"}}, NextPageToken: "p2"}, nil
+	}
+	return &billingpb.ListSkusResponse{Skus: []*billingpb.Sku{{Name: "c"}}}, nil
+}
+
+func (s *stallingListSkusServer) totalCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	total := 0
+	for _, n := range s.calls {
+		total += n
+	}
+	return total
+}
+
+func shortenSkuRetryTimings(t *testing.T) {
+	t.Helper()
+	oldTimeout, oldBackoff := skuPageTimeout, skuRetryBackoff
+	skuPageTimeout, skuRetryBackoff = 100*time.Millisecond, time.Millisecond
+	t.Cleanup(func() { skuPageTimeout, skuRetryBackoff = oldTimeout, oldBackoff })
+}
+
+func TestGetPricingRetriesStalledPages(t *testing.T) {
+	shortenSkuRetryTimings(t)
+
+	t.Run("recovers when each page stalls once", func(t *testing.T) {
+		srv := &stallingListSkusServer{stallFirst: 1}
+		b := newBilling(NewTestBillingClient(t, srv), nil, nil)
+
+		skus := b.getPricing(context.Background(), "services/networking")
+
+		assert.Len(t, skus, 3)
+		assert.Equal(t, 4, srv.totalCalls(), "two pages, each fetched twice")
+	})
+
+	t.Run("gives up and returns nil after the last attempt", func(t *testing.T) {
+		srv := &stallingListSkusServer{stallFirst: 100}
+		b := newBilling(NewTestBillingClient(t, srv), nil, nil)
+
+		assert.Nil(t, b.getPricing(context.Background(), "services/networking"))
+		assert.Equal(t, skuPageAttempts, srv.totalCalls())
+	})
+
+	t.Run("does not retry a permanent error", func(t *testing.T) {
+		srv := &countingFailingServer{}
+		b := newBilling(NewTestBillingClient(t, srv), nil, nil)
+
+		assert.Nil(t, b.getPricing(context.Background(), "services/networking"))
+		assert.Equal(t, 1, srv.calls)
+	})
+}
+
+type countingFailingServer struct {
+	billingpb.UnimplementedCloudCatalogServer
+	calls int
+}
+
+func (s *countingFailingServer) ListSkus(_ context.Context, _ *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
+	s.calls++
 	return nil, status.Error(codes.PermissionDenied, "boom")
 }
 
