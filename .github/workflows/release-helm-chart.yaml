@@ -41,7 +41,7 @@ jobs:
 
   release-chart:
     needs: validate-chart
-    uses: grafana/helm-charts/.github/workflows/update-helm-repo.yaml@0cb44b98b41df1bc345376ac40897453fa88df93
+    uses: grafana/helm-charts/.github/workflows/update-helm-repo.yaml@434266a8ba2e1e859b58d82084d976cc411580cc
     permissions:
       contents: write
       id-token: write
