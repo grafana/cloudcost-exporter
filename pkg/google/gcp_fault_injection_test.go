@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	computev1 "google.golang.org/api/compute/v1"
 	"google.golang.org/api/option"
+	"google.golang.org/genproto/googleapis/type/money"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -83,9 +84,16 @@ func (f *flakyCatalog) ListServices(ctx context.Context, _ *billingpb.ListServic
 	if fail {
 		return nil, status.Error(codes.DeadlineExceeded, "stalled")
 	}
+	// Every display name a collector resolves, so each one can be built here rather
+	// than skipping for want of a service entry.
 	return &billingpb.ListServicesResponse{Services: []*billingpb.Service{
 		{DisplayName: "Compute Engine", Name: "services/compute-engine"},
 		{DisplayName: "Networking", Name: "services/networking"},
+		{DisplayName: "Cloud SQL", Name: "services/cloud-sql"},
+		{DisplayName: "Cloud Storage", Name: "services/cloud-storage"},
+		{DisplayName: "Managed Service for Apache Kafka", Name: "services/managed-kafka"},
+		{DisplayName: "Vertex AI", Name: "services/vertex-ai"},
+		{DisplayName: "Vertex AI Search", Name: "services/vertex-ai-search"},
 	}}, nil
 }
 
@@ -98,7 +106,31 @@ func (f *flakyCatalog) ListSkus(ctx context.Context, req *billingpb.ListSkusRequ
 	if fail {
 		return nil, status.Error(codes.DeadlineExceeded, "stalled")
 	}
+	if req.Parent == managedKafkaService {
+		return &billingpb.ListSkusResponse{Skus: []*billingpb.Sku{managedKafkaSku()}}, nil
+	}
 	return f.inner.ListSkus(ctx, req)
+}
+
+const managedKafkaService = "services/managed-kafka"
+
+// managedKafkaSku is the minimum a Managed Kafka SKU needs to parse: a description
+// classifySKU recognises, a region, and a tiered rate. The shared fake catalog has
+// no Kafka SKUs, so without this the collector cannot be built here at all.
+func managedKafkaSku() *billingpb.Sku {
+	return &billingpb.Sku{
+		Description:    "Kafka data compute units in Iowa",
+		ServiceRegions: []string{"us-central1"},
+		Category:       &billingpb.Category{ResourceGroup: "ManagedKafka"},
+		PricingInfo: []*billingpb.PricingInfo{{
+			PricingExpression: &billingpb.PricingExpression{
+				UsageUnitDescription: "hour",
+				TieredRates: []*billingpb.PricingExpression_TierRate{{
+					UnitPrice: &money.Money{CurrencyCode: "USD", Nanos: 1_000_000},
+				}},
+			},
+		}},
+	}
 }
 
 // newFaultInjectedProvider runs the real provider startup, with the real Billing code and the real collector
