@@ -2,9 +2,12 @@ package google
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/grafana/cloudcost-exporter/pkg/collectormetrics"
@@ -85,6 +88,19 @@ type GCP struct {
 	logger           *slog.Logger
 	ctx              context.Context
 	collectorTimeout time.Duration
+	// retryInitial and retryMax bound retryPending's backoff. Set once, before
+	// the retry goroutine starts, and never written again.
+	retryInitial time.Duration
+	retryMax     time.Duration
+
+	// mu guards collectors, registry, and pending, which the background retry
+	// changes after startup.
+	mu sync.RWMutex
+	// registry is set by RegisterCollectors; collectors created later register against it.
+	registry provider.Registry
+	// pending maps a service whose collector failed to create to the name that
+	// collector reports, so Collect can report it under the healthy name.
+	pending map[string]string
 }
 
 type Config struct {
@@ -102,21 +118,83 @@ type Config struct {
 	// VertexFamilyFilter is a regex matched against the Vertex model family label; only matching
 	// families are emitted. Mirrors --aws.bedrock.families. Empty or ".*" emits all families.
 	VertexFamilyFilter string
-	Logger             *slog.Logger
+	// CollectorRetryInitial and CollectorRetryMax bound the backoff between
+	// attempts to create a collector that failed at startup. Zero or negative
+	// values fall back to defaultCollectorRetryInitial and
+	// defaultCollectorRetryMax.
+	CollectorRetryInitial time.Duration
+	CollectorRetryMax     time.Duration
+	Logger                *slog.Logger
 }
+
+// collectorFactory creates the collector for a service. Tests inject failures through it.
+type collectorFactory func(ctx context.Context, service string) (provider.Collector, error)
+
+var errUnknownService = errors.New("service does not exist")
+
+// collectorNames maps a service to the name its collector reports from Name().
+// A collector that could not be created is reported under the same name as a
+// healthy one, so both appear as one series over time rather than two.
+// TestCollectorNamesMatchTheNameEachCollectorReports keeps this in sync.
+var collectorNames = map[string]string{
+	serviceGCS:          "GCS",
+	serviceGKE:          "gcp_gke",
+	serviceCLB:          "ForwardingRule",
+	serviceVPC:          "VPC",
+	serviceSQL:          "cloudsql",
+	serviceManagedKafka: "managedkafka",
+	serviceKafkaAlias:   "managedkafka",
+	serviceVertex:       "gcp_vertex",
+}
+
+// defaultCollectorRetryInitial and defaultCollectorRetryMax bound the backoff
+// between attempts to create a collector that failed at startup. Config can
+// override them, which is how tests shorten the wait. Mirrors the AKS VM price
+// store's adaptive-interval pattern (pkg/azure/aks/aks.go).
+const (
+	defaultCollectorRetryInitial = 30 * time.Second
+	defaultCollectorRetryMax     = 15 * time.Minute
+)
 
 // New is responsible for parsing out a configuration file and setting up the associated services that could be required.
 // We instantiate services to avoid repeating common services that may be shared across many collectors. In the future we can push
 // collector specific services further down.
+//
+// A collector that fails to create is skipped at startup and retried in the
+// background with backoff until it succeeds or ctx is cancelled. Until then,
+// Collect reports it with collector_last_scrape_error set to 1.
 func New(ctx context.Context, config *Config) (*GCP, error) {
-	logger := config.Logger.With("provider", subsystem)
-
 	gcpClient, err := client.NewGCPClient(ctx, client.Config{ProjectId: config.ProjectId, Discount: config.DefaultDiscount})
 	if err != nil {
 		return nil, err
 	}
+	return newWithClient(ctx, config, gcpClient), nil
+}
 
-	var collectors []provider.Collector
+// newWithClient builds the provider around an existing client, so tests can
+// inject faults into the cloud APIs.
+func newWithClient(ctx context.Context, config *Config, gcpClient client.Client) *GCP {
+	logger := config.Logger.With("provider", subsystem)
+
+	create := func(ctx context.Context, service string) (provider.Collector, error) {
+		return createCollector(ctx, config, logger, gcpClient, service)
+	}
+
+	g := &GCP{
+		config:           config,
+		logger:           logger,
+		ctx:              ctx,
+		collectorTimeout: config.CollectorTimeout,
+		retryInitial:     config.CollectorRetryInitial,
+		retryMax:         config.CollectorRetryMax,
+	}
+	if g.retryInitial <= 0 {
+		g.retryInitial = defaultCollectorRetryInitial
+	}
+	if g.retryMax <= 0 {
+		g.retryMax = defaultCollectorRetryMax
+	}
+
 	// Register stable services followed by experimental ones. Experimental collectors are outside
 	// the backward-compatibility contract, so warn when registering them. A service already enabled
 	// as stable is not registered again as experimental; registering it twice would fail collector
@@ -141,109 +219,232 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 		logger.LogAttrs(ctx, slog.LevelInfo, "Creating service",
 			slog.String("service", service))
 
-		var collector provider.Collector
-		switch strings.ToUpper(service) {
-		case serviceGCS:
-			collector, err = gcs.New(ctx, &gcs.Config{
-				ProjectId:      config.ProjectId,
-				Projects:       config.Projects,
-				ScrapeInterval: config.ScrapeInterval,
-			}, logger, gcpClient)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
-		case serviceGKE:
-			collector, err = gke.New(ctx, &gke.Config{
-				Projects:        config.Projects,
-				ScrapeInterval:  config.ScrapeInterval,
-				ZoneConcurrency: config.GKEZoneConcurrency,
-			}, logger, gcpClient)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
-		case serviceCLB:
-			// CLB = Cloud Load Balancer, but we use forwarding rules to calculate price
-			collector, err = networking.New(ctx, &networking.Config{
-				ScrapeInterval: config.ScrapeInterval,
-				Projects:       config.Projects,
-			}, logger, gcpClient)
-			logger.LogAttrs(ctx, slog.LevelInfo, "Creating collector",
-				slog.String("service", service),
-				slog.String("projects", config.Projects))
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
-		case serviceVPC:
-			collector, err = vpc.New(ctx, &vpc.Config{
-				Projects:       config.Projects,
-				ScrapeInterval: config.ScrapeInterval,
-			}, logger, gcpClient)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
-		case serviceSQL:
-			collector, err = cloudsql.New(ctx, &cloudsql.Config{
-				Projects:       config.Projects,
-				ScrapeInterval: config.ScrapeInterval,
-			}, logger, gcpClient)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
-		case serviceKafkaAlias, serviceManagedKafka:
-			collector, err = gcpmanagedkafka.New(ctx, &gcpmanagedkafka.Config{
-				Projects:       config.Projects,
-				ScrapeInterval: config.ScrapeInterval,
-			}, logger, gcpClient)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
-		case serviceVertex:
-			collector, err = vertex.New(ctx, &vertex.Config{
-				ProjectId:    config.ProjectId,
-				FamilyFilter: config.VertexFamilyFilter,
-			}, logger, gcpClient)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
-		default:
+		collector, err := createSafely(ctx, create, service)
+		if errors.Is(err, errUnknownService) {
 			logger.LogAttrs(ctx, slog.LevelError, "Error creating service, does not exist",
 				slog.String("service", service))
 			continue
 		}
-		collectors = append(collectors, collector)
+		if err != nil {
+			logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+				slog.String("service", service),
+				slog.String("message", err.Error()))
+			g.markPending(service)
+			continue
+		}
+		g.collectors = append(g.collectors, collector)
 	}
-	return &GCP{
-		config:           config,
-		collectors:       collectors,
-		logger:           logger,
-		ctx:              ctx,
-		collectorTimeout: config.CollectorTimeout,
-	}, nil
+
+	if len(g.pendingServices()) > 0 {
+		go g.retryPending(ctx, create)
+	}
+	return g
+}
+
+func createCollector(ctx context.Context, config *Config, logger *slog.Logger, gcpClient client.Client, service string) (provider.Collector, error) {
+	switch strings.ToUpper(service) {
+	case serviceGCS:
+		c, err := gcs.New(ctx, &gcs.Config{
+			ProjectId:      config.ProjectId,
+			Projects:       config.Projects,
+			ScrapeInterval: config.ScrapeInterval,
+		}, logger, gcpClient)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	case serviceGKE:
+		c, err := gke.New(ctx, &gke.Config{
+			Projects:        config.Projects,
+			ScrapeInterval:  config.ScrapeInterval,
+			ZoneConcurrency: config.GKEZoneConcurrency,
+		}, logger, gcpClient)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	case serviceCLB:
+		// CLB = Cloud Load Balancer, but we use forwarding rules to calculate price
+		c, err := networking.New(ctx, &networking.Config{
+			ScrapeInterval: config.ScrapeInterval,
+			Projects:       config.Projects,
+		}, logger, gcpClient)
+		logger.LogAttrs(ctx, slog.LevelInfo, "Creating collector",
+			slog.String("service", service),
+			slog.String("projects", config.Projects))
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	case serviceVPC:
+		c, err := vpc.New(ctx, &vpc.Config{
+			Projects:       config.Projects,
+			ScrapeInterval: config.ScrapeInterval,
+		}, logger, gcpClient)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	case serviceSQL:
+		c, err := cloudsql.New(ctx, &cloudsql.Config{
+			Projects:       config.Projects,
+			ScrapeInterval: config.ScrapeInterval,
+		}, logger, gcpClient)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	case serviceKafkaAlias, serviceManagedKafka:
+		c, err := gcpmanagedkafka.New(ctx, &gcpmanagedkafka.Config{
+			Projects:       config.Projects,
+			ScrapeInterval: config.ScrapeInterval,
+		}, logger, gcpClient)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	case serviceVertex:
+		c, err := vertex.New(ctx, &vertex.Config{
+			ProjectId:    config.ProjectId,
+			FamilyFilter: config.VertexFamilyFilter,
+		}, logger, gcpClient)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	default:
+		return nil, errUnknownService
+	}
+}
+
+// markPending records a service whose collector failed to create.
+func (g *GCP) markPending(service string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.pending == nil {
+		g.pending = map[string]string{}
+	}
+	name, ok := collectorNames[strings.ToUpper(service)]
+	if !ok {
+		name = strings.ToLower(service)
+	}
+	g.pending[service] = name
+}
+
+// createSafely turns a panic inside a collector constructor into an error, so
+// one bad collector cannot take down the provider. At startup an unrecovered
+// panic kills the process before it serves; during the background retry it
+// would kill an already-serving pod and every healthy collector with it. A
+// panicking constructor is treated like any other failure: skipped, reported,
+// and retried.
+func createSafely(ctx context.Context, create collectorFactory, service string) (c provider.Collector, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("panic creating collector for %s: %v", service, p)
+		}
+	}()
+	return create(ctx, service)
+}
+
+// retryPending keeps trying to create the collectors that failed at startup,
+// backing off between rounds, until every one exists or ctx is cancelled.
+// Anything still pending is reported by Collect as an error, so a collector
+// that never comes back stays visible rather than merely absent.
+func (g *GCP) retryPending(ctx context.Context, create collectorFactory) {
+	queue := g.pendingServices()
+	delay := g.retryInitial
+	for len(queue) > 0 {
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+
+		var remaining []string
+		for _, service := range queue {
+			collector, err := createSafely(ctx, create, service)
+			if err == nil {
+				err = g.addCollector(collector)
+			}
+			if err != nil {
+				g.logger.LogAttrs(ctx, slog.LevelWarn, "Retrying collector creation failed",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				remaining = append(remaining, service)
+				continue
+			}
+			g.clearPending(service)
+			g.logger.LogAttrs(ctx, slog.LevelInfo, "Collector created after retry",
+				slog.String("service", service))
+		}
+
+		queue = remaining
+		delay = min(delay*2, g.retryMax)
+	}
+}
+
+func (g *GCP) pendingServices() []string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	services := make([]string, 0, len(g.pending))
+	for service := range g.pending {
+		services = append(services, service)
+	}
+	slices.Sort(services)
+	return services
+}
+
+func (g *GCP) clearPending(service string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.pending, service)
+}
+
+// addCollector adds a collector created after startup. Once RegisterCollectors
+// has run it also registers the collector's metrics. A panic during
+// registration is returned as an error so a background goroutine cannot crash
+// the exporter.
+func (g *GCP) addCollector(c provider.Collector) (err error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.registry != nil {
+		defer func() {
+			if p := recover(); p != nil {
+				err = fmt.Errorf("panic registering collector %s: %v", c.Name(), p)
+			}
+		}()
+		if err := c.Register(g.registry); err != nil {
+			return err
+		}
+	}
+	g.collectors = append(g.collectors, c)
+	return nil
+}
+
+// snapshot returns the collectors, and the names of those that failed to
+// create, both safe to use without holding the lock.
+func (g *GCP) snapshot() ([]provider.Collector, []string) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	names := make([]string, 0, len(g.pending))
+	for _, name := range g.pending {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return slices.Clone(g.collectors), names
 }
 
 // RegisterCollectors will iterate over all the collectors instantiated during New and register their metrics.
+// Collectors created later, by the background retry, register against the same
+// registry as they are added.
 func (g *GCP) RegisterCollectors(registry provider.Registry) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.registry = registry
 	for _, c := range g.collectors {
 		if err := c.Register(registry); err != nil {
 			return err
@@ -257,7 +458,8 @@ func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collectorLastScrapeErrorDesc
 	ch <- collectorDurationDesc
 	ch <- collectorLastScrapeTime
-	for _, c := range g.collectors {
+	collectors, _ := g.snapshot()
+	for _, c := range collectors {
 		if err := c.Describe(ch); err != nil {
 			g.logger.LogAttrs(g.ctx, slog.LevelError, "Error calling describe",
 				slog.String("message", err.Error()),
@@ -267,14 +469,28 @@ func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
 }
 
 // Collect implements the prometheus.Collector interface and will iterate over all the collectors instantiated during New and collect their metrics.
+// A collector that has not been created yet is reported with
+// collector_last_scrape_error set to 1.
 func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 	// Create a context with timeout for this collection cycle
 	collectCtx, cancel := context.WithTimeout(g.ctx, g.collectorTimeout)
 	defer cancel()
 
+	collectors, notCreated := g.snapshot()
+	// A collector that failed to create emits the same three metrics a healthy
+	// one does, so the family keeps a single label set and queries that join
+	// them do not silently drop it. Duration is zero because no scrape ran, and
+	// the timestamp marks this cycle, matching the healthy path, which stamps
+	// time.Now() whether the scrape succeeded or not.
+	for _, name := range notCreated {
+		ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.CounterValue, 1, subsystem, name)
+		ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, 0, subsystem, name)
+		ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, name)
+	}
+
 	eg, collectCtx := errgroup.WithContext(collectCtx)
 	eg.SetLimit(collectConcurrencyLimit)
-	for _, c := range g.collectors {
+	for _, c := range collectors {
 		eg.Go(func() error {
 			duration, hasError := collectormetrics.Collect(collectCtx, c, ch, g.logger, subsystem)
 
