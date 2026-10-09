@@ -210,7 +210,7 @@ func newWithClient(ctx context.Context, config *Config, gcpClient client.Client)
 		logger.LogAttrs(ctx, slog.LevelInfo, "Creating service",
 			slog.String("service", service))
 
-		collector, err := create(ctx, service)
+		collector, err := createSafely(ctx, create, service)
 		if errors.Is(err, errUnknownService) {
 			logger.LogAttrs(ctx, slog.LevelError, "Error creating service, does not exist",
 				slog.String("service", service))
@@ -322,9 +322,10 @@ func (g *GCP) markPending(service string) {
 	g.pending[service] = name
 }
 
-// createSafely turns a panic inside a collector constructor into an error. Startup runs createCollector on
-// the main goroutine, but the retry runs on a background goroutine of an already-serving pod, where an
-// unrecovered panic would kill the process and take every healthy collector with it.
+// createSafely turns a panic inside a collector constructor into an error, so one bad collector cannot take
+// down the provider. At startup an unrecovered panic kills the process before it ever serves; during the
+// background retry it would kill an already-serving pod and every healthy collector with it. A panicking
+// constructor is treated like any other failure, so the collector is retried and reported meanwhile.
 func createSafely(ctx context.Context, create collectorFactory, service string) (c provider.Collector, err error) {
 	defer func() {
 		if p := recover(); p != nil {

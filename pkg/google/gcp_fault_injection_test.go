@@ -178,3 +178,22 @@ func TestFaultInjection_CollectorRecoversAfterALongOutage(t *testing.T) {
 	}, 5*time.Second, 5*time.Millisecond, "the collector must appear once the catalog recovers")
 	assert.Empty(t, g.pendingServices())
 }
+
+// collectorNames is hand-maintained, and a stale entry would be silent: the error metric would report a
+// missing collector under one label while the healthy collector reports under another, so the two would
+// never line up as one series and a recovery would never look like it cleared. Build each collector for
+// real and assert the map matches the name it actually reports.
+func TestCollectorNamesMatchTheNameEachCollectorReports(t *testing.T) {
+	for _, svc := range Services() {
+		t.Run(svc.Name, func(t *testing.T) {
+			g := newFaultInjectedProvider(t, newFlakyCatalog(), svc.Name)
+			collectors, notCreated := g.snapshot()
+			if len(collectors) == 0 {
+				t.Skipf("%s could not be constructed in this harness (pending: %v)", svc.Name, notCreated)
+			}
+			require.Len(t, collectors, 1)
+			assert.Equal(t, collectorNames[svc.Name], collectors[0].Name(),
+				"collectorNames[%q] is stale: the collector reports %q", svc.Name, collectors[0].Name())
+		})
+	}
+}
