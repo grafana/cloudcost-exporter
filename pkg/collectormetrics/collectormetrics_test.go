@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
+	"strings"
 	"testing"
 
 	mock_provider "github.com/grafana/cloudcost-exporter/pkg/provider/mocks"
@@ -174,4 +176,53 @@ func TestCollect_MultipleCollectors(t *testing.T) {
 			close(ch)
 		})
 	}
+}
+
+// A collector that panics must not take down the scrape. Providers run collectors in errgroup
+// goroutines, which do not recover, so an unrecovered panic would kill the process and with it every
+// other collector for that provider.
+func TestCollectRecoversPanicAndReportsItAsAnError(t *testing.T) {
+	ch := make(chan prometheus.Metric, 10)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mock_provider.NewMockCollector(ctrl)
+	c.EXPECT().Name().Return("panicky").AnyTimes()
+	c.EXPECT().Collect(gomock.Any(), ch).DoAndReturn(
+		func(context.Context, chan<- prometheus.Metric) error { panic("boom") }).AnyTimes()
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+
+	require.NotPanics(t, func() {
+		_, hasError := Collect(context.Background(), c, ch, logger, "test_provider")
+		assert.True(t, hasError, "a panicking collector must be reported as a failed scrape")
+	})
+	assert.Contains(t, logs.String(), "collector panicked")
+}
+
+// Metrics a collector already emitted before panicking must survive, so a partial result is kept.
+func TestCollectKeepsMetricsEmittedBeforeAPanic(t *testing.T) {
+	ch := make(chan prometheus.Metric, 10)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	desc := prometheus.NewDesc("before_panic", "help", nil, nil)
+	c := mock_provider.NewMockCollector(ctrl)
+	c.EXPECT().Name().Return("partial").AnyTimes()
+	c.EXPECT().Collect(gomock.Any(), ch).DoAndReturn(
+		func(_ context.Context, out chan<- prometheus.Metric) error {
+			out <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, 1)
+			panic("boom after emitting")
+		}).AnyTimes()
+
+	_, hasError := Collect(context.Background(), c, ch, slog.New(slog.NewTextHandler(io.Discard, nil)), "test_provider")
+	close(ch)
+
+	assert.True(t, hasError)
+	var names []string
+	for m := range ch {
+		names = append(names, m.Desc().String())
+	}
+	assert.Contains(t, strings.Join(names, " "), "before_panic")
 }
