@@ -50,10 +50,11 @@ func emitOperationalMetrics(ch chan<- prometheus.Metric, collectorName string, p
 	ch <- counter
 }
 
-// collectOnce runs one collector and turns a panic into an error. Providers scrape their collectors in
-// errgroup goroutines, which do not recover, so without this a single collector panicking takes down the
-// whole process and with it every other collector for that provider. Metrics the collector already sent
-// stay on the channel, so a partial result survives.
+// collectOnce runs one collector and turns a panic into an error. Providers
+// scrape their collectors in errgroup goroutines, which do not recover, so
+// without this one panicking collector takes down the whole process and every
+// other collector for that provider with it. Metrics the collector already
+// sent stay on the channel, so a partial result survives.
 func collectOnce(ctx context.Context, c provider.Collector, ch chan<- prometheus.Metric, logger *slog.Logger) (err error) {
 	defer func() {
 		if p := recover(); p != nil {

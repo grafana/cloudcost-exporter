@@ -180,8 +180,9 @@ func regionFromConfig(cfg *config.Config) string {
 	}
 }
 
-// promLogger routes promhttp's Gather errors into the exporter's logger. ContinueOnError would otherwise
-// drop them, leaving only the promhttp_metric_handler_errors_total counter.
+// promLogger routes promhttp's Gather errors into the exporter's logger.
+// ContinueOnError would otherwise drop them, leaving only the
+// promhttp_metric_handler_errors_total counter.
 type promLogger struct{ logger *slog.Logger }
 
 func (l promLogger) Println(v ...interface{}) {
@@ -227,13 +228,14 @@ func createPromRegistryHandler(csp provider.Provider, region string, logger *slo
 
 	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
-		// Serve whatever gathered successfully instead of failing the whole scrape. The default,
-		// HTTPErrorOnError, answers 500 when any single collector errors during Gather, which loses
-		// every other collector's metrics too and shows up as up=0. A duplicate metric family from one
-		// collector is a documented cause of this; see the Scrape Availability runbook.
+		// Serve whatever gathered rather than failing the whole scrape. The
+		// default, HTTPErrorOnError, answers 500 when any single collector
+		// errors during Gather, losing every other collector's metrics and
+		// showing up as up=0. A duplicate metric family from one collector is
+		// a documented cause; see the Scrape Availability runbook.
 		ErrorHandling: promhttp.ContinueOnError,
-		// Registry exposes promhttp_metric_handler_errors_total, so a partial scrape is still visible
-		// rather than silently succeeding.
+		// Registry exposes promhttp_metric_handler_errors_total, so a partial
+		// scrape stays visible rather than silently succeeding.
 		Registry: registry,
 		ErrorLog: promLogger{logger: logger},
 	})
