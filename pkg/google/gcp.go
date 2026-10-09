@@ -88,16 +88,18 @@ type GCP struct {
 	logger           *slog.Logger
 	ctx              context.Context
 	collectorTimeout time.Duration
-	// retryInitial and retryMax bound the backoff in retryPending. They are set once, before the retry
-	// goroutine starts, and never written again.
+	// retryInitial and retryMax bound retryPending's backoff. Set once, before
+	// the retry goroutine starts, and never written again.
 	retryInitial time.Duration
 	retryMax     time.Duration
 
-	// mu guards collectors, registry, and pending, which the background retry changes after startup.
+	// mu guards collectors, registry, and pending, which the background retry
+	// changes after startup.
 	mu sync.RWMutex
 	// registry is set by RegisterCollectors; collectors created later register against it.
 	registry provider.Registry
-	// pending maps a service whose collector failed to create to the name that collector reports.
+	// pending maps a service whose collector failed to create to the name that
+	// collector reports, so Collect can report it under the healthy name.
 	pending map[string]string
 }
 
@@ -116,9 +118,10 @@ type Config struct {
 	// VertexFamilyFilter is a regex matched against the Vertex model family label; only matching
 	// families are emitted. Mirrors --aws.bedrock.families. Empty or ".*" emits all families.
 	VertexFamilyFilter string
-	// CollectorRetryInitial and CollectorRetryMax bound the backoff between attempts to create a
-	// collector that failed at startup. Zero or negative values fall back to
-	// defaultCollectorRetryInitial and defaultCollectorRetryMax.
+	// CollectorRetryInitial and CollectorRetryMax bound the backoff between
+	// attempts to create a collector that failed at startup. Zero or negative
+	// values fall back to defaultCollectorRetryInitial and
+	// defaultCollectorRetryMax.
 	CollectorRetryInitial time.Duration
 	CollectorRetryMax     time.Duration
 	Logger                *slog.Logger
@@ -129,8 +132,10 @@ type collectorFactory func(ctx context.Context, service string) (provider.Collec
 
 var errUnknownService = errors.New("service does not exist")
 
-// collectorNames maps a service to the name its collector reports from Name(). A collector that could not be
-// created is reported under the same name as a healthy one, so both appear as one series over time.
+// collectorNames maps a service to the name its collector reports from Name().
+// A collector that could not be created is reported under the same name as a
+// healthy one, so both appear as one series over time rather than two.
+// TestCollectorNamesMatchTheNameEachCollectorReports keeps this in sync.
 var collectorNames = map[string]string{
 	serviceGCS:          "GCS",
 	serviceGKE:          "gcp_gke",
@@ -142,8 +147,10 @@ var collectorNames = map[string]string{
 	serviceVertex:       "gcp_vertex",
 }
 
-// defaultCollectorRetryInitial and defaultCollectorRetryMax bound the backoff between attempts to create a
-// collector that failed at startup. Config can override them, which is how tests shorten the wait.
+// defaultCollectorRetryInitial and defaultCollectorRetryMax bound the backoff
+// between attempts to create a collector that failed at startup. Config can
+// override them, which is how tests shorten the wait. Mirrors the AKS VM price
+// store's adaptive-interval pattern (pkg/azure/aks/aks.go).
 const (
 	defaultCollectorRetryInitial = 30 * time.Second
 	defaultCollectorRetryMax     = 15 * time.Minute
@@ -153,8 +160,9 @@ const (
 // We instantiate services to avoid repeating common services that may be shared across many collectors. In the future we can push
 // collector specific services further down.
 //
-// A collector that fails to create is skipped at startup and retried in the background with backoff until it succeeds
-// or ctx is cancelled. Until then, Collect reports it with collector_last_scrape_error set to 1.
+// A collector that fails to create is skipped at startup and retried in the
+// background with backoff until it succeeds or ctx is cancelled. Until then,
+// Collect reports it with collector_last_scrape_error set to 1.
 func New(ctx context.Context, config *Config) (*GCP, error) {
 	gcpClient, err := client.NewGCPClient(ctx, client.Config{ProjectId: config.ProjectId, Discount: config.DefaultDiscount})
 	if err != nil {
@@ -163,7 +171,8 @@ func New(ctx context.Context, config *Config) (*GCP, error) {
 	return newWithClient(ctx, config, gcpClient), nil
 }
 
-// newWithClient builds the provider around an existing client, so tests can inject faults into the cloud APIs.
+// newWithClient builds the provider around an existing client, so tests can
+// inject faults into the cloud APIs.
 func newWithClient(ctx context.Context, config *Config, gcpClient client.Client) *GCP {
 	logger := config.Logger.With("provider", subsystem)
 
@@ -322,10 +331,12 @@ func (g *GCP) markPending(service string) {
 	g.pending[service] = name
 }
 
-// createSafely turns a panic inside a collector constructor into an error, so one bad collector cannot take
-// down the provider. At startup an unrecovered panic kills the process before it ever serves; during the
-// background retry it would kill an already-serving pod and every healthy collector with it. A panicking
-// constructor is treated like any other failure, so the collector is retried and reported meanwhile.
+// createSafely turns a panic inside a collector constructor into an error, so
+// one bad collector cannot take down the provider. At startup an unrecovered
+// panic kills the process before it serves; during the background retry it
+// would kill an already-serving pod and every healthy collector with it. A
+// panicking constructor is treated like any other failure: skipped, reported,
+// and retried.
 func createSafely(ctx context.Context, create collectorFactory, service string) (c provider.Collector, err error) {
 	defer func() {
 		if p := recover(); p != nil {
@@ -335,9 +346,10 @@ func createSafely(ctx context.Context, create collectorFactory, service string) 
 	return create(ctx, service)
 }
 
-// retryPending keeps trying to create the collectors that failed at startup, backing off between rounds,
-// until every one exists or ctx is cancelled. Anything still pending is reported by Collect as an error, so
-// a collector that never comes back stays visible rather than just missing.
+// retryPending keeps trying to create the collectors that failed at startup,
+// backing off between rounds, until every one exists or ctx is cancelled.
+// Anything still pending is reported by Collect as an error, so a collector
+// that never comes back stays visible rather than merely absent.
 func (g *GCP) retryPending(ctx context.Context, create collectorFactory) {
 	queue := g.pendingServices()
 	delay := g.retryInitial
@@ -390,9 +402,10 @@ func (g *GCP) clearPending(service string) {
 	delete(g.pending, service)
 }
 
-// addCollector adds a collector created after startup. Once RegisterCollectors has run it also registers the
-// collector's metrics. A panic during registration is returned as an error so a background goroutine cannot
-// crash the exporter.
+// addCollector adds a collector created after startup. Once RegisterCollectors
+// has run it also registers the collector's metrics. A panic during
+// registration is returned as an error so a background goroutine cannot crash
+// the exporter.
 func (g *GCP) addCollector(c provider.Collector) (err error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -410,7 +423,8 @@ func (g *GCP) addCollector(c provider.Collector) (err error) {
 	return nil
 }
 
-// snapshot returns the collectors and the names of collectors that failed to create, safe to use without the lock.
+// snapshot returns the collectors, and the names of those that failed to
+// create, both safe to use without holding the lock.
 func (g *GCP) snapshot() ([]provider.Collector, []string) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
@@ -425,7 +439,8 @@ func (g *GCP) snapshot() ([]provider.Collector, []string) {
 }
 
 // RegisterCollectors will iterate over all the collectors instantiated during New and register their metrics.
-// Collectors created later, by the background retry, register against the same registry as they are added.
+// Collectors created later, by the background retry, register against the same
+// registry as they are added.
 func (g *GCP) RegisterCollectors(registry provider.Registry) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -454,15 +469,23 @@ func (g *GCP) Describe(ch chan<- *prometheus.Desc) {
 }
 
 // Collect implements the prometheus.Collector interface and will iterate over all the collectors instantiated during New and collect their metrics.
-// A collector that has not been created yet is reported with collector_last_scrape_error set to 1.
+// A collector that has not been created yet is reported with
+// collector_last_scrape_error set to 1.
 func (g *GCP) Collect(ch chan<- prometheus.Metric) {
 	// Create a context with timeout for this collection cycle
 	collectCtx, cancel := context.WithTimeout(g.ctx, g.collectorTimeout)
 	defer cancel()
 
 	collectors, notCreated := g.snapshot()
+	// A collector that failed to create emits the same three metrics a healthy
+	// one does, so the family keeps a single label set and queries that join
+	// them do not silently drop it. Duration is zero because no scrape ran, and
+	// the timestamp marks this cycle, matching the healthy path, which stamps
+	// time.Now() whether the scrape succeeded or not.
 	for _, name := range notCreated {
 		ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.CounterValue, 1, subsystem, name)
+		ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, 0, subsystem, name)
+		ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, name)
 	}
 
 	eg, collectCtx := errgroup.WithContext(collectCtx)

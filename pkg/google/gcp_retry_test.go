@@ -106,6 +106,31 @@ func TestGCP_PendingCollectorIsReportedAsError(t *testing.T) {
 	assert.Equal(t, 1.0, value)
 }
 
+// All three collector_* metrics must carry the same label set whether the collector exists or not,
+// so a query joining them cannot silently drop the one that is broken.
+func TestGCP_PendingCollectorEmitsTheWholeMetricFamily(t *testing.T) {
+	_, reg := newRegisteredGCP(t, context.Background(), serviceGKE)
+	mfs := gatherByName(t, reg)
+
+	for _, name := range []string{
+		"cloudcost_exporter_collector_last_scrape_error",
+		"cloudcost_exporter_collector_last_scrape_duration_seconds",
+		"cloudcost_exporter_collector_last_scrape_time",
+	} {
+		mf, ok := mfs[name]
+		require.True(t, ok, "%s is missing entirely", name)
+		var found bool
+		for _, m := range mf.GetMetric() {
+			for _, l := range m.GetLabel() {
+				if l.GetName() == "collector" && l.GetValue() == "gcp_gke" {
+					found = true
+				}
+			}
+		}
+		assert.True(t, found, "%s has no series for the pending collector", name)
+	}
+}
+
 func TestGCP_RetryPendingCreatesAndRegistersCollector(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
