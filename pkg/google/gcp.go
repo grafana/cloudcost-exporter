@@ -366,7 +366,7 @@ func (g *GCP) retryPending(ctx context.Context, create collectorFactory) {
 		for _, service := range queue {
 			collector, err := createSafely(ctx, create, service)
 			if err == nil {
-				err = g.addCollector(collector)
+				err = g.addCollector(service, collector)
 			}
 			if err != nil {
 				g.logger.LogAttrs(ctx, slog.LevelWarn, "Retrying collector creation failed",
@@ -375,7 +375,6 @@ func (g *GCP) retryPending(ctx context.Context, create collectorFactory) {
 				remaining = append(remaining, service)
 				continue
 			}
-			g.clearPending(service)
 			g.logger.LogAttrs(ctx, slog.LevelInfo, "Collector created after retry",
 				slog.String("service", service))
 		}
@@ -396,17 +395,15 @@ func (g *GCP) pendingServices() []string {
 	return services
 }
 
-func (g *GCP) clearPending(service string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	delete(g.pending, service)
-}
-
-// addCollector adds a collector created after startup. Once RegisterCollectors
-// has run it also registers the collector's metrics. A panic during
-// registration is returned as an error so a background goroutine cannot crash
-// the exporter.
-func (g *GCP) addCollector(c provider.Collector) (err error) {
+// addCollector adds a collector created after startup and drops the service
+// from pending. Both happen under one lock: Collect reports every pending
+// service as a missing collector, so a scrape that saw the collector appended
+// while the service was still pending would emit that label set twice and fail
+// the whole scrape on a duplicate metric. Once RegisterCollectors has run this
+// also registers the collector's metrics. A panic during registration is
+// returned as an error so a background goroutine cannot crash the exporter,
+// and leaves the service pending for the next retry.
+func (g *GCP) addCollector(service string, c provider.Collector) (err error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.registry != nil {
@@ -420,6 +417,7 @@ func (g *GCP) addCollector(c provider.Collector) (err error) {
 		}
 	}
 	g.collectors = append(g.collectors, c)
+	delete(g.pending, service)
 	return nil
 }
 

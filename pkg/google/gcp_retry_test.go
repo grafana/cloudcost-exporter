@@ -3,6 +3,7 @@ package google
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -194,7 +195,7 @@ func TestGCP_RetryPendingStopsOnContextCancel(t *testing.T) {
 func TestGCP_AddCollectorRecoversFromRegisterPanic(t *testing.T) {
 	g, _ := newRegisteredGCP(t, context.Background(), serviceGKE)
 
-	err := g.addCollector(&fakeCollector{name: "gcp_gke", registerPanic: true})
+	err := g.addCollector(serviceGKE, &fakeCollector{name: "gcp_gke", registerPanic: true})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "panic registering collector gcp_gke")
@@ -207,8 +208,7 @@ func TestGCP_AddCollectorBeforeRegisterCollectorsIsRegisteredLater(t *testing.T)
 	g := &GCP{logger: logger, ctx: context.Background(), collectorTimeout: time.Second}
 	g.markPending(serviceGKE)
 
-	require.NoError(t, g.addCollector(&fakeCollector{name: "gcp_gke"}))
-	g.clearPending(serviceGKE)
+	require.NoError(t, g.addCollector(serviceGKE, &fakeCollector{name: "gcp_gke"}))
 
 	reg := prometheus.NewRegistry()
 	require.NoError(t, reg.Register(g))
@@ -223,6 +223,7 @@ func TestGCP_ConcurrentCollectAndLateCollectors(t *testing.T) {
 	g, reg := newRegisteredGCP(t, context.Background())
 
 	var wg sync.WaitGroup
+	var gatherErr atomic.Pointer[error]
 	stop := make(chan struct{})
 	for range 4 {
 		wg.Add(1)
@@ -233,18 +234,27 @@ func TestGCP_ConcurrentCollectAndLateCollectors(t *testing.T) {
 				case <-stop:
 					return
 				default:
-					_, _ = reg.Gather()
+					// A scrape must never fail while collectors are being added.
+					// Before addCollector folded the pending delete into the same
+					// lock, a scrape here saw the collector appended and still
+					// pending, and failed on a duplicate metric.
+					if _, err := reg.Gather(); err != nil {
+						gatherErr.Store(&err)
+						return
+					}
 				}
 			}
 		}()
 	}
 	for _, name := range []string{"a", "b", "c", "d", "e"} {
 		g.markPending(name)
-		require.NoError(t, g.addCollector(&fakeCollector{name: name}))
-		g.clearPending(name)
+		require.NoError(t, g.addCollector(name, &fakeCollector{name: name}))
 	}
 	close(stop)
 	wg.Wait()
+	if err := gatherErr.Load(); err != nil {
+		t.Fatalf("a scrape failed while collectors were being added: %v", *err)
+	}
 
 	collectors, notCreated := g.snapshot()
 	assert.Len(t, collectors, 5)
@@ -287,4 +297,26 @@ func TestGCP_RetryPendingSurvivesAPanickingConstructor(t *testing.T) {
 	collectors, _ := g.snapshot()
 	require.Len(t, collectors, 1, "the collector must still be created on the attempt after the panic")
 	assert.Empty(t, g.pendingServices())
+}
+
+func TestGCP_AddCollectorClearsPendingAtomically(t *testing.T) {
+	g, reg := newRegisteredGCP(t, context.Background(), serviceGKE)
+
+	require.NoError(t, g.addCollector(serviceGKE, &fakeCollector{name: "gcp_gke"}))
+
+	_, notCreated := g.snapshot()
+	assert.Empty(t, notCreated, "a created collector must not also be reported as missing")
+	assert.Empty(t, g.pendingServices())
+
+	// Collect reports pending services under the collector's own name, so a
+	// collector that is both present and pending emits one label set twice and
+	// Gather rejects the whole scrape.
+	mfs, err := reg.Gather()
+	require.NoError(t, err, "the scrape must not fail on a duplicate metric")
+	for _, mf := range mfs {
+		if !strings.HasPrefix(mf.GetName(), "cloudcost_exporter_collector_last_scrape") {
+			continue
+		}
+		assert.Len(t, mf.GetMetric(), 1, "%s must have exactly one series for the collector", mf.GetName())
+	}
 }
