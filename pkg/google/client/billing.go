@@ -239,33 +239,38 @@ const (
 
 // These are variables so tests can shorten them.
 var (
-	// skuPageTimeout bounds the FIRST attempt at a page. Healthy pages return in under 3s, so a stalled
-	// call is abandoned early and retried on a new iterator. Later attempts get more time: see skuAttemptTimeout.
+	// skuPageTimeout bounds the first attempt at a page. Healthy pages return
+	// in a few seconds, so a stalled call is abandoned early and retried on a
+	// new iterator. Later attempts get more time; see skuAttemptTimeout.
 	skuPageTimeout = 20 * time.Second
 	// skuRetryBackoff separates attempts at the same page.
 	skuRetryBackoff = time.Second
-	// skuFetchBudget bounds the whole catalog fetch for one service, so a pathological service cannot stall
-	// startup indefinitely once every page is being retried. Startup makes ~8 of these calls serially and the
-	// Deployment allows 600s of rollout progress, so the budget has to stay well under that.
+	// skuFetchBudget bounds the whole catalog fetch for one service, so a
+	// pathological service cannot stall startup once every page is retrying.
+	// Startup makes several of these calls serially and the Deployment allows
+	// 600s of rollout progress, so the budget stays well under that.
 	skuFetchBudget = 90 * time.Second
 )
 
-// skuAttemptTimeout escalates the deadline per attempt: 20s, then 40s, then 60s. A flat 20s cap would lose a
-// page that consistently took longer than that, which the client's 60s default fetches today, so later
-// attempts get more time rather than the same short budget again.
+// skuAttemptTimeout escalates the deadline per attempt: 20s, then 40s, then
+// 60s. A flat 20s cap would lose a page that consistently took longer than
+// that, which the client's 60s default fetches today, so later attempts get
+// more time rather than the same short budget again.
 //
-// skuFetchBudget bounds the whole service fetch and wins over this, so the full sequence is not always
-// available: one page using every attempt would need 20+1+40+1+60 = 122s against a 90s budget, which leaves
-// the third attempt about 28s. That is deliberate. Two full attempts plus a shortened third still covers any
-// page completing inside 40s, which is well past the few seconds a healthy page takes, and bounding startup
-// matters more than exhausting retries on one pathological page. Anything slower than that is left to the
-// collector-level retry, which reattempts the whole fetch within 30s.
+// skuFetchBudget bounds the whole service fetch and wins over this, so the
+// full sequence is not always available: one page using every attempt needs
+// 122s against a 90s budget, leaving the third attempt about 28s. That is
+// deliberate. Two full attempts plus a shortened third still cover any page
+// completing inside 40s, well past the few seconds a healthy page takes, and
+// bounding startup matters more than exhausting retries on one page. Anything
+// slower is left to the collector-level retry.
 func skuAttemptTimeout(attempt int) time.Duration {
 	return skuPageTimeout * time.Duration(attempt)
 }
 
-// getPricing will collect all the pricing information for a given service and return a list of skus.
-// It returns nil on any error so callers never build a pricing map from a partial catalog.
+// getPricing will collect all the pricing information for a given service and
+// return a list of skus. It returns nil on any error so callers never build a
+// pricing map from a partial catalog.
 func (b *Billing) getPricing(ctx context.Context, serviceName string) []*billingpb.Sku {
 	ctx, cancel := context.WithTimeout(ctx, skuFetchBudget)
 	defer cancel()
@@ -286,7 +291,8 @@ func (b *Billing) getPricing(ctx context.Context, serviceName string) []*billing
 	}
 }
 
-// fetchSkuPage fetches one page, resuming from token, and retries attempts that stall or fail transiently.
+// fetchSkuPage fetches one page, resuming from token, and retries attempts
+// that stall or fail transiently.
 func (b *Billing) fetchSkuPage(ctx context.Context, serviceName, token string) ([]*billingpb.Sku, string, error) {
 	var err error
 	for attempt := 1; attempt <= skuPageAttempts; attempt++ {
@@ -308,8 +314,9 @@ func (b *Billing) fetchSkuPage(ctx context.Context, serviceName, token string) (
 	return nil, "", err
 }
 
-// trySkuPage fetches one page with its own iterator and deadline. A fresh iterator per attempt is required
-// because an iterator keeps returning its first error and holds one context for every page it fetches.
+// trySkuPage fetches one page with its own iterator and deadline. A fresh
+// iterator per attempt is required because an iterator keeps returning its
+// first error and holds one context for every page it fetches.
 func (b *Billing) trySkuPage(ctx context.Context, serviceName, token string, timeout time.Duration) ([]*billingpb.Sku, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
