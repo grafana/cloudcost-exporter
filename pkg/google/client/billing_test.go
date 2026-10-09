@@ -350,11 +350,11 @@ func TestGetPricingFetchesASlowButNotStalledPage(t *testing.T) {
 	assert.Equal(t, 3, srv.callCount(), "the first two attempts time out, the third has enough time")
 }
 
-func TestSkuAttemptTimeoutEscalatesToTheClientDefault(t *testing.T) {
+func TestSkuAttemptTimeoutEscalates(t *testing.T) {
 	assert.Equal(t, 20*time.Second, skuAttemptTimeout(1))
 	assert.Equal(t, 40*time.Second, skuAttemptTimeout(2))
 	assert.Equal(t, 60*time.Second, skuAttemptTimeout(skuPageAttempts),
-		"the last attempt must get the 60s the Google client allows by default, so we never lose a page it would fetch")
+		"the third deadline must reach the 60s the Google client allows by default; whether the budget leaves room for it is pinned by TestSkuFetchBudgetTruncatesTheLastAttempt")
 }
 
 func TestGetPricingRetriesStalledPages(t *testing.T) {
@@ -437,4 +437,33 @@ func TestRegionNameSameAsStackdriver(t *testing.T) {
 			assert.Equalf(t, tt.want, regionNameSameAsStackdriver(tt.region), "RegionNameSameAsStackdriver(%v)", tt.region)
 		})
 	}
+}
+
+// The budget deliberately wins over the escalation, so pin the arithmetic. If someone widens the budget or
+// adds an attempt, this fails and they can confirm the trade is intended rather than discover it in prod.
+func TestSkuFetchBudgetTruncatesTheLastAttempt(t *testing.T) {
+	fullSequence := skuAttemptTimeout(1) + skuRetryBackoff + skuAttemptTimeout(2) + skuRetryBackoff + skuAttemptTimeout(3)
+	require.Greater(t, fullSequence, skuFetchBudget,
+		"the budget now covers a full escalation; update the comment on skuAttemptTimeout")
+
+	// Two full attempts must still fit, so any page completing inside the second deadline survives.
+	twoAttempts := skuAttemptTimeout(1) + skuRetryBackoff + skuAttemptTimeout(2)
+	assert.Less(t, twoAttempts, skuFetchBudget,
+		"the budget no longer covers two full attempts, so a page slower than %v would be lost", skuAttemptTimeout(1))
+}
+
+// A catalog that stalls every attempt must give up inside the budget rather than hanging startup.
+func TestGetPricingIsBoundedByTheFetchBudget(t *testing.T) {
+	oldTimeout, oldBackoff, oldBudget := skuPageTimeout, skuRetryBackoff, skuFetchBudget
+	skuPageTimeout, skuRetryBackoff, skuFetchBudget = 100*time.Millisecond, 10*time.Millisecond, 250*time.Millisecond
+	t.Cleanup(func() { skuPageTimeout, skuRetryBackoff, skuFetchBudget = oldTimeout, oldBackoff, oldBudget })
+
+	b := newBilling(NewTestBillingClient(t, &stallingListSkusServer{stallFirst: 1 << 30}), nil, nil)
+
+	start := time.Now()
+	skus := b.getPricing(context.Background(), "services/networking")
+	elapsed := time.Since(start)
+
+	assert.Nil(t, skus, "an exhausted fetch must not return a partial catalog")
+	assert.Less(t, elapsed, 3*skuFetchBudget, "getPricing ran for %v, the budget is %v", elapsed, skuFetchBudget)
 }

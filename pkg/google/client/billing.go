@@ -250,9 +250,16 @@ var (
 	skuFetchBudget = 90 * time.Second
 )
 
-// skuAttemptTimeout escalates the deadline per attempt: 20s, 40s, then 60s. The first attempt fails fast on a
-// stalled call, and the last gets the client's default 60s so a page that is merely slow still succeeds. A flat
-// 20s cap would fail a page that consistently took longer than that, which the 60s default fetches today.
+// skuAttemptTimeout escalates the deadline per attempt: 20s, then 40s, then 60s. A flat 20s cap would lose a
+// page that consistently took longer than that, which the client's 60s default fetches today, so later
+// attempts get more time rather than the same short budget again.
+//
+// skuFetchBudget bounds the whole service fetch and wins over this, so the full sequence is not always
+// available: one page using every attempt would need 20+1+40+1+60 = 122s against a 90s budget, which leaves
+// the third attempt about 28s. That is deliberate. Two full attempts plus a shortened third still covers any
+// page completing inside 40s, which is well past the few seconds a healthy page takes, and bounding startup
+// matters more than exhausting retries on one pathological page. Anything slower than that is left to the
+// collector-level retry, which reattempts the whole fetch within 30s.
 func skuAttemptTimeout(attempt int) time.Duration {
 	return skuPageTimeout * time.Duration(attempt)
 }
