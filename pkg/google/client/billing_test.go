@@ -9,6 +9,7 @@ import (
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/type/money"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -308,6 +309,52 @@ func shortenSkuRetryTimings(t *testing.T) {
 	oldTimeout, oldBackoff := skuPageTimeout, skuRetryBackoff
 	skuPageTimeout, skuRetryBackoff = 100*time.Millisecond, time.Millisecond
 	t.Cleanup(func() { skuPageTimeout, skuRetryBackoff = oldTimeout, oldBackoff })
+}
+
+// slowListSkusServer answers every call after a fixed delay, modelling an API that is slow but not stalled.
+type slowListSkusServer struct {
+	billingpb.UnimplementedCloudCatalogServer
+	delay time.Duration
+	mu    sync.Mutex
+	calls int
+}
+
+func (s *slowListSkusServer) ListSkus(ctx context.Context, _ *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
+	s.mu.Lock()
+	s.calls++
+	s.mu.Unlock()
+	select {
+	case <-time.After(s.delay):
+		return &billingpb.ListSkusResponse{Skus: []*billingpb.Sku{{Name: "a"}}}, nil
+	case <-ctx.Done():
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
+}
+
+func (s *slowListSkusServer) callCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls
+}
+
+// A page slower than the first attempt's deadline must still be fetched, because the deadline escalates to the
+// client's 60s default. A flat first-attempt cap would drop a catalog that the old single 60s attempt fetched.
+func TestGetPricingFetchesASlowButNotStalledPage(t *testing.T) {
+	shortenSkuRetryTimings(t) // first attempt 100ms, so attempts are 100ms, 200ms, 300ms
+	srv := &slowListSkusServer{delay: 250 * time.Millisecond}
+	b := newBilling(NewTestBillingClient(t, srv), nil, nil)
+
+	skus := b.getPricing(context.Background(), "services/networking")
+
+	require.Len(t, skus, 1, "a page slower than the first deadline must still be fetched on a later attempt")
+	assert.Equal(t, 3, srv.callCount(), "the first two attempts time out, the third has enough time")
+}
+
+func TestSkuAttemptTimeoutEscalatesToTheClientDefault(t *testing.T) {
+	assert.Equal(t, 20*time.Second, skuAttemptTimeout(1))
+	assert.Equal(t, 40*time.Second, skuAttemptTimeout(2))
+	assert.Equal(t, 60*time.Second, skuAttemptTimeout(skuPageAttempts),
+		"the last attempt must get the 60s the Google client allows by default, so we never lose a page it would fetch")
 }
 
 func TestGetPricingRetriesStalledPages(t *testing.T) {

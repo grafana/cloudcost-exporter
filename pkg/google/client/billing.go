@@ -237,17 +237,32 @@ const (
 	skuPageAttempts = 3
 )
 
-// skuPageTimeout and skuRetryBackoff are variables so tests can shorten them.
+// These are variables so tests can shorten them.
 var (
-	// skuPageTimeout bounds one attempt at one catalog page. A healthy page returns in a few seconds,
-	// so a stalled call is abandoned well before the client's default 60s call timeout.
-	skuPageTimeout  = 20 * time.Second
+	// skuPageTimeout bounds the FIRST attempt at a page. Healthy pages return in under 3s, so a stalled
+	// call is abandoned early and retried on a new iterator. Later attempts get more time: see skuAttemptTimeout.
+	skuPageTimeout = 20 * time.Second
+	// skuRetryBackoff separates attempts at the same page.
 	skuRetryBackoff = time.Second
+	// skuFetchBudget bounds the whole catalog fetch for one service, so a pathological service cannot stall
+	// startup indefinitely once every page is being retried. Startup makes ~8 of these calls serially and the
+	// Deployment allows 600s of rollout progress, so the budget has to stay well under that.
+	skuFetchBudget = 90 * time.Second
 )
+
+// skuAttemptTimeout escalates the deadline per attempt: 20s, 40s, then 60s. The first attempt fails fast on a
+// stalled call, and the last gets the client's default 60s so a page that is merely slow still succeeds. A flat
+// 20s cap would fail a page that consistently took longer than that, which the 60s default fetches today.
+func skuAttemptTimeout(attempt int) time.Duration {
+	return skuPageTimeout * time.Duration(attempt)
+}
 
 // getPricing will collect all the pricing information for a given service and return a list of skus.
 // It returns nil on any error so callers never build a pricing map from a partial catalog.
 func (b *Billing) getPricing(ctx context.Context, serviceName string) []*billingpb.Sku {
+	ctx, cancel := context.WithTimeout(ctx, skuFetchBudget)
+	defer cancel()
+
 	var skus []*billingpb.Sku
 	token := ""
 	for {
@@ -270,7 +285,7 @@ func (b *Billing) fetchSkuPage(ctx context.Context, serviceName, token string) (
 	for attempt := 1; attempt <= skuPageAttempts; attempt++ {
 		var page []*billingpb.Sku
 		var next string
-		page, next, err = b.trySkuPage(ctx, serviceName, token)
+		page, next, err = b.trySkuPage(ctx, serviceName, token, skuAttemptTimeout(attempt))
 		if err == nil {
 			return page, next, nil
 		}
@@ -286,10 +301,10 @@ func (b *Billing) fetchSkuPage(ctx context.Context, serviceName, token string) (
 	return nil, "", err
 }
 
-// trySkuPage makes exactly one ListSkus RPC. It uses a fresh iterator and deadline per attempt because an
-// iterator keeps returning its first error and holds one context for every page it fetches.
-func (b *Billing) trySkuPage(ctx context.Context, serviceName, token string) ([]*billingpb.Sku, string, error) {
-	ctx, cancel := context.WithTimeout(ctx, skuPageTimeout)
+// trySkuPage fetches one page with its own iterator and deadline. A fresh iterator per attempt is required
+// because an iterator keeps returning its first error and holds one context for every page it fetches.
+func (b *Billing) trySkuPage(ctx context.Context, serviceName, token string, timeout time.Duration) ([]*billingpb.Sku, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	skuIterator := b.billingService.ListSkus(ctx, &billingpb.ListSkusRequest{Parent: serviceName})
