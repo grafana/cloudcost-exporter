@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/cloudcost-exporter/cmd/exporter/config"
 	"github.com/grafana/cloudcost-exporter/pkg/aws"
@@ -282,7 +286,7 @@ func Test_createPromRegistryHandler(t *testing.T) {
 			mockProv := mock_provider.NewMockProvider(ctrl)
 			tc.setupMock(mockProv)
 
-			handler, err := createPromRegistryHandler(mockProv, "us-east-1")
+			handler, err := createPromRegistryHandler(mockProv, "us-east-1", slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 			if tc.wantErr {
 				if err == nil {
@@ -347,5 +351,40 @@ func TestPrintAvailableServices(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// One collector producing a bad metric must not blank the scrape for every other collector. The
+// promhttp default, HTTPErrorOnError, answers 500 and discards the whole gather, which reads as up=0
+// even though the other collectors were fine. A duplicate metric family is a documented cause of this.
+func Test_createPromRegistryHandler_OneBadCollectorDoesNotFailTheWholeScrape(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	badDesc := prometheus.NewDesc("deliberately_broken", "help", nil, nil)
+	mockProv := mock_provider.NewMockProvider(ctrl)
+	mockProv.EXPECT().Describe(gomock.Any()).AnyTimes()
+	mockProv.EXPECT().RegisterCollectors(gomock.Any()).Return(nil)
+	mockProv.EXPECT().Collect(gomock.Any()).Do(func(ch chan<- prometheus.Metric) {
+		ch <- prometheus.NewInvalidMetric(badDesc, errors.New("this collector is broken"))
+	}).AnyTimes()
+
+	handler, err := createPromRegistryHandler(mockProv, "us-east-1", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("one broken collector failed the whole scrape: got status %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "go_goroutines") {
+		t.Error("healthy collectors' metrics were lost alongside the broken one")
+	}
+	if !strings.Contains(body, "promhttp_metric_handler_errors_total") {
+		t.Error("the gather error must stay visible via promhttp_metric_handler_errors_total")
 	}
 }

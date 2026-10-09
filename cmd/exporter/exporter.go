@@ -133,7 +133,7 @@ func runServer(ctx context.Context, cfg *config.Config, csp provider.Provider, l
 
 	mux.HandleFunc("/", web.HomePageHandler(cfg.Server.Path)) // landing page
 
-	registryHandler, err := createPromRegistryHandler(csp, regionFromConfig(cfg)) // prom metrics handler
+	registryHandler, err := createPromRegistryHandler(csp, regionFromConfig(cfg), log) // prom metrics handler
 	if err != nil {
 		return err
 	}
@@ -180,7 +180,16 @@ func regionFromConfig(cfg *config.Config) string {
 	}
 }
 
-func createPromRegistryHandler(csp provider.Provider, region string) (http.Handler, error) {
+// promLogger routes promhttp's Gather errors into the exporter's logger.
+// ContinueOnError would otherwise drop them, leaving only the
+// promhttp_metric_handler_errors_total counter.
+type promLogger struct{ logger *slog.Logger }
+
+func (l promLogger) Println(v ...interface{}) {
+	l.logger.Error("error gathering metrics for the scrape", slog.String("message", fmt.Sprint(v...)))
+}
+
+func createPromRegistryHandler(csp provider.Provider, region string, logger *slog.Logger) (http.Handler, error) {
 	var subsystem = "metrics_handler"
 	requestDuration := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -219,6 +228,16 @@ func createPromRegistryHandler(csp provider.Provider, region string) (http.Handl
 
 	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
+		// Serve whatever gathered rather than failing the whole scrape. The
+		// default, HTTPErrorOnError, answers 500 when any single collector
+		// errors during Gather, losing every other collector's metrics and
+		// showing up as up=0. A duplicate metric family from one collector is
+		// a documented cause; see the Scrape Availability runbook.
+		ErrorHandling: promhttp.ContinueOnError,
+		// Registry exposes promhttp_metric_handler_errors_total, so a partial
+		// scrape stays visible rather than silently succeeding.
+		Registry: registry,
+		ErrorLog: promLogger{logger: logger},
 	})
 
 	return promhttp.InstrumentHandlerDuration(
