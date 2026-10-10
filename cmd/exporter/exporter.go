@@ -98,6 +98,7 @@ func providerFlags(fs *flag.FlagSet, cfg *config.Config) {
 	flag.StringVar(&cfg.Providers.Azure.SubscriptionID, "azure.subscription-id", "", "Azure subscription ID to pull data from.")
 	flag.IntVar(&cfg.Providers.GCP.DefaultGCSDiscount, "gcp.default-discount", 19, "GCP default discount")
 	flag.IntVar(&cfg.Providers.GCP.GKEZoneConcurrency, "gcp.gke.zone-concurrency", 10, "Cap on concurrent API calls per background store populate (node and disk store).")
+	flag.IntVar(&cfg.Providers.GCP.GCEZoneConcurrency, "gcp.gce.zone-concurrency", 10, "Cap on concurrent API calls per background store populate (node store and machine-type lookups).")
 }
 
 // operationalFlags is a helper method that is responsible for setting up the flags that are used to configure the operational aspects of the application.
@@ -291,6 +292,7 @@ func selectProviderWith(
 			ExperimentalServices: strings.Split(cfg.Providers.GCP.ExperimentalServices.String(), ","),
 			CollectorTimeout:     collectorTimeout,
 			GKEZoneConcurrency:   cfg.Providers.GCP.GKEZoneConcurrency,
+			GCEZoneConcurrency:   cfg.Providers.GCP.GCEZoneConcurrency,
 			VertexFamilyFilter:   cfg.Providers.GCP.VertexFamilyFilter,
 		})
 
