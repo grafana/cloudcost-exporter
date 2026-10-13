@@ -220,10 +220,9 @@ func TestCollectorNamesMatchTheNameEachCollectorReports(t *testing.T) {
 		t.Run(svc.Name, func(t *testing.T) {
 			g := newFaultInjectedProvider(t, newFlakyCatalog(), svc.Name)
 			collectors, notCreated := g.snapshot()
-			if len(collectors) == 0 {
-				t.Skipf("%s could not be constructed in this harness (pending: %v)", svc.Name, notCreated)
-			}
-			require.Len(t, collectors, 1)
+			// Deliberately not a skip. The provider recovers a constructor panic, so a
+			// skip here would turn any future crash in a constructor into a quiet pass.
+			require.Len(t, collectors, 1, "%s must be constructible in this harness (pending: %v)", svc.Name, notCreated)
 			assert.Equal(t, collectorNames[svc.Name], collectors[0].Name(),
 				"collectorNames[%q] is stale: the collector reports %q", svc.Name, collectors[0].Name())
 		})
