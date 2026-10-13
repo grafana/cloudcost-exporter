@@ -278,6 +278,77 @@ func TestCollector_Collect(t *testing.T) {
 	}
 }
 
+// newTestCollector spins up a collector against handler and waits for its
+// background stores' initial populate, same convention as TestCollector_Collect.
+func newTestCollector(t *testing.T, config *Config, handler http.HandlerFunc) *Collector {
+	t.Helper()
+
+	testServer := httptest.NewServer(handler)
+	t.Cleanup(testServer.Close)
+
+	computeService, err := computev1.NewService(t.Context(), option.WithoutAuthentication(), option.WithEndpoint(testServer.URL))
+	require.NoError(t, err)
+
+	l, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	gsrv := grpc.NewServer()
+	t.Cleanup(gsrv.Stop)
+	billingpb.RegisterCloudCatalogServer(gsrv, &client.FakeCloudCatalogServer{})
+	go func() {
+		_ = gsrv.Serve(l)
+	}()
+
+	cloudCatalogClient, err := billingv1.NewCloudCatalogClient(t.Context(),
+		option.WithEndpoint(l.Addr().String()),
+		option.WithoutAuthentication(),
+		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
+	)
+	require.NoError(t, err)
+
+	gcpClient := client.NewMock("testing", 0, nil, nil, cloudCatalogClient, computeService, nil, nil)
+	collector, err := New(t.Context(), config, logger, gcpClient)
+	require.NoError(t, err)
+	require.NotNil(t, collector)
+
+	<-collector.nodeStore.Done()
+	<-collector.machineTypes.Done()
+	return collector
+}
+
+// TestCollector_Collect_ErrorClearsWithoutNewPopulateErrors covers the
+// deliberate choice (commit f34bf1f) to have Collect return an error only
+// for the scrape where the node store's populate-error count grew, then nil
+// again once it stops growing, rather than latching the error permanently.
+func TestCollector_Collect_ErrorClearsWithoutNewPopulateErrors(t *testing.T) {
+	collector := newTestCollector(t, &Config{Projects: "testing"}, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	firstErr := collector.Collect(t.Context(), make(chan prometheus.Metric, 1))
+	assert.Error(t, firstErr, "expected an error on the scrape where populate errors first grew")
+
+	secondErr := collector.Collect(t.Context(), make(chan prometheus.Metric, 1))
+	assert.NoError(t, secondErr, "expected no error once the populate-error count stopped growing")
+}
+
+// TestCollector_Collect_MachineTypeErrorsDontTripNodeErrorCheck covers that
+// sumPopulateErrorsByStore is scoped to the "nodes" store: machine-type
+// lookup failures are an expected, per-instance data gap and must not make
+// Collect return an error.
+func TestCollector_Collect_MachineTypeErrorsDontTripNodeErrorCheck(t *testing.T) {
+	collector := newTestCollector(t, &Config{Projects: "testing"}, computeHandler(false))
+
+	for i := 0; i < 2; i++ {
+		ch := make(chan prometheus.Metric)
+		go func() {
+			defer close(ch)
+			assert.NoError(t, collector.Collect(t.Context(), ch))
+		}()
+		for range ch {
+		}
+	}
+}
+
 func TestCollector_Name(t *testing.T) {
 	c := &Collector{}
 	assert.Equal(t, "gcp_gce", c.Name())
