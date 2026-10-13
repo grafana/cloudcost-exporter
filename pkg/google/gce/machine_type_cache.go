@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
@@ -12,6 +13,12 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
 )
+
+// machineTypeRetryAfter bounds how often a machine type that previously
+// failed to resolve gets re-fetched. Without it, a persistently failing key
+// (e.g. one the API never returns a spec for) would be retried, and logged,
+// on every warm tick.
+const machineTypeRetryAfter = time.Hour
 
 // machineTypeSpec is the subset of a GCE machine type's spec needed to turn
 // per-core/per-GiB rates into a total hourly cost.
@@ -23,15 +30,17 @@ type machineTypeSpec struct {
 // machineTypeCache resolves (project, zone, machine type) tuples to their vCPU/memory
 // spec, warmed in the background so Collect never makes a live GCP call. A machine
 // type's spec is immutable for a given zone, so entries are cached indefinitely; a
-// fetch failure just leaves the key uncached for the next warm to retry.
+// fetch failure leaves the key uncached and is retried no sooner than
+// machineTypeRetryAfter, rather than on every warm.
 type machineTypeCache struct {
 	gcpClient      client.Client
 	populateErrors *prometheus.CounterVec
 	concurrency    int
 	logger         *slog.Logger
 
-	mu    sync.RWMutex
-	specs map[machineTypeKey]machineTypeSpec
+	mu       sync.RWMutex
+	specs    map[machineTypeKey]machineTypeSpec
+	failures map[machineTypeKey]time.Time
 
 	warming atomic.Bool
 
@@ -49,6 +58,7 @@ func newMachineTypeCache(gcpClient client.Client, populateErrors *prometheus.Cou
 		concurrency:    concurrency,
 		logger:         logger.With("store", "machine_types"),
 		specs:          make(map[machineTypeKey]machineTypeSpec),
+		failures:       make(map[machineTypeKey]time.Time),
 		initialWarm:    make(chan struct{}),
 	}
 }
@@ -70,6 +80,15 @@ func (c *machineTypeCache) get(project, zone, machineType string) (machineTypeSp
 	defer c.mu.RUnlock()
 	spec, ok := c.specs[machineTypeKey{project, zone, machineType}]
 	return spec, ok
+}
+
+// retryEligible reports whether a key that previously failed to resolve is
+// due for another attempt.
+func (c *machineTypeCache) retryEligible(k machineTypeKey) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	failedAt, failed := c.failures[k]
+	return !failed || time.Since(failedAt) >= machineTypeRetryAfter
 }
 
 // warm fetches specs for any (project, zone, machine type) tuple present in nodeStore
@@ -95,7 +114,7 @@ func (c *machineTypeCache) warm(ctx context.Context, nodeStore *gke.NodeStore, p
 				continue
 			}
 			seen[k] = struct{}{}
-			if _, cached := c.get(k.project, k.zone, k.machineType); !cached {
+			if _, cached := c.get(k.project, k.zone, k.machineType); !cached && c.retryEligible(k) {
 				missing = append(missing, k)
 			}
 		}
@@ -119,6 +138,9 @@ func (c *machineTypeCache) warm(ctx context.Context, nodeStore *gke.NodeStore, p
 					slog.String("machine_type", k.machineType),
 					slog.String("error", err.Error()))
 				c.populateErrors.WithLabelValues("machine_types", k.project, "get_machine_type").Inc()
+				c.mu.Lock()
+				c.failures[k] = time.Now()
+				c.mu.Unlock()
 				return nil
 			}
 			c.mu.Lock()
@@ -126,6 +148,7 @@ func (c *machineTypeCache) warm(ctx context.Context, nodeStore *gke.NodeStore, p
 				VCPU:      mt.GuestCpus,
 				MemoryGiB: float64(mt.MemoryMb) / 1024,
 			}
+			delete(c.failures, k)
 			c.mu.Unlock()
 			return nil
 		})

@@ -159,8 +159,17 @@ func TestMachineTypeCache_Warm_RetriesPreviouslyFailedKeys(t *testing.T) {
 	assert.False(t, ok, "expected the key to remain uncached after a failed attempt")
 
 	cache.warm(t.Context(), nodeStore, []string{"testing"})
+	_, ok = cache.get("testing", "us-central1-a", "n1-slim")
+	assert.False(t, ok, "expected the key to stay uncached while within the retry backoff")
+
+	// Backdate the failure past the backoff window instead of waiting it out.
+	cache.mu.Lock()
+	cache.failures[key] = time.Now().Add(-machineTypeRetryAfter)
+	cache.mu.Unlock()
+
+	cache.warm(t.Context(), nodeStore, []string{"testing"})
 	spec, ok := cache.get("testing", "us-central1-a", "n1-slim")
-	require.True(t, ok, "expected the retried key to resolve on the next warm")
+	require.True(t, ok, "expected the retried key to resolve once the backoff elapsed")
 	assert.Equal(t, machineTypeSpec{VCPU: 4, MemoryGiB: 8}, spec)
 }
 
