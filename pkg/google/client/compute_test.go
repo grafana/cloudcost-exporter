@@ -14,8 +14,9 @@ import (
 
 func TestCompute_GetMachineType(t *testing.T) {
 	tests := map[string]struct {
-		handler http.HandlerFunc
-		wantErr error
+		handler    http.HandlerFunc
+		wantErr    error
+		wantRawErr bool // a non-sentinel error, asserted without errors.Is
 	}{
 		"valid response": {
 			handler: func(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +28,7 @@ func TestCompute_GetMachineType(t *testing.T) {
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusNotFound)
 			},
-			wantErr: nil, // asserted separately below: a raw, non-sentinel error
+			wantRawErr: true,
 		},
 		"nil body": {
 			handler: func(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +63,7 @@ func TestCompute_GetMachineType(t *testing.T) {
 			c := newCompute(svc)
 			mt, err := c.getMachineType(t.Context(), "project", "zone", "machine-type")
 
-			if name == "transport error passes through unwrapped" {
+			if test.wantRawErr {
 				require.Error(t, err)
 				assert.False(t, errors.Is(err, ErrNilMachineType))
 				assert.False(t, errors.Is(err, ErrIncompleteMachineType))

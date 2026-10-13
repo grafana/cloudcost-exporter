@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
@@ -22,6 +23,17 @@ import (
 
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 )
+
+// waitDone blocks until done closes, failing the test instead of hanging
+// forever if a regression leaves it unclosed.
+func waitDone(t *testing.T, done <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for store to finish its initial populate")
+	}
+}
 
 var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
@@ -230,6 +242,7 @@ func TestCollector_Collect(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(test.testServer.Close)
 			computeService, err := computev1.NewService(t.Context(), option.WithoutAuthentication(), option.WithEndpoint(test.testServer.URL))
 			require.NoError(t, err)
 			l, err := net.Listen("tcp", "localhost:0")
@@ -255,8 +268,8 @@ func TestCollector_Collect(t *testing.T) {
 
 			// Wait for the background stores to complete their initial population
 			// before collecting, same convention as gke's test suite.
-			<-collector.nodeStore.Done()
-			<-collector.machineTypes.Done()
+			waitDone(t, collector.nodeStore.Done())
+			waitDone(t, collector.machineTypes.Done())
 
 			ch := make(chan prometheus.Metric)
 			go func() {
@@ -310,8 +323,8 @@ func newTestCollector(t *testing.T, config *Config, handler http.HandlerFunc) *C
 	require.NoError(t, err)
 	require.NotNil(t, collector)
 
-	<-collector.nodeStore.Done()
-	<-collector.machineTypes.Done()
+	waitDone(t, collector.nodeStore.Done())
+	waitDone(t, collector.machineTypes.Done())
 	return collector
 }
 
