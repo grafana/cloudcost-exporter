@@ -20,7 +20,7 @@ Metrics are gated by the instance's Compute Engine status, per the [instance lif
 | `RUNNING` | emitted | emitted | cpu + memory |
 | everything else (`PENDING`, `PROVISIONING`, `STAGING`, `STOPPING`, `STOPPED`, `SUSPENDING`, `SUSPENDED`, `TERMINATED`, `REPAIRING`, `DEPROVISIONING`) | not emitted | not emitted | not emitted, instance skipped entirely |
 
-`SUSPENDING`/`SUSPENDED` bill the storage cost of the preserved memory snapshot, and `DEPROVISIONING` bills both cpu and memory under its docs name `PENDING_STOP`, but both are treated as unbilled here: there's no snapshot-storage SKU lookup for the former, and the latter is a short lived teardown state. Neither is worth the added complexity for states this rare and transient; revisit if real usage shows up.
+`SUSPENDING`/`SUSPENDED` bill the storage cost of the preserved memory snapshot, but that's treated as unbilled here since there's no snapshot-storage SKU lookup. `DEPROVISIONING` is a short lived teardown state and is also treated as unbilled. Neither is worth the added complexity for states this rare and transient; revisit if real usage shows up.
 
 ## Collection model
 
