@@ -2,7 +2,9 @@ package collectormetrics
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -48,13 +50,32 @@ func emitOperationalMetrics(ch chan<- prometheus.Metric, collectorName string, p
 	ch <- counter
 }
 
+// collectOnce runs one collector and turns a panic into an error. Providers
+// scrape their collectors in errgroup goroutines, which do not recover, so
+// without this one panicking collector takes down the whole process and every
+// other collector for that provider with it. Metrics the collector already
+// sent stay on the channel, so a partial result survives.
+func collectOnce(ctx context.Context, c provider.Collector, ch chan<- prometheus.Metric, logger *slog.Logger) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("collector panicked: %v", p)
+			logger.LogAttrs(ctx, slog.LevelError, "collector panicked",
+				slog.String("collector", c.Name()),
+				slog.Any("panic", p),
+				slog.String("stack", string(debug.Stack())),
+			)
+		}
+	}()
+	return c.Collect(ctx, ch)
+}
+
 // Collect collects metrics from a collector and emits operational metrics to the channel.
 func Collect(ctx context.Context, c provider.Collector, ch chan<- prometheus.Metric, logger *slog.Logger, providerName string) (float64, bool) {
 	start := time.Now()
 	var hasError bool
 	var duration float64
 
-	collectErr := c.Collect(ctx, ch)
+	collectErr := collectOnce(ctx, c, ch, logger)
 	duration = time.Since(start).Seconds()
 
 	regions := []string{utils.RegionUnknown}
