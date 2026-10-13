@@ -49,7 +49,7 @@ var (
 		cloudcostexporter.MetricPrefix,
 		subsystem,
 		utils.InstanceTotalCostSuffix,
-		"The total cost of a standalone GCE Instance in USD/h. Absent for an instance whose machine type spec hasn't been resolved yet.",
+		"The compute cost (cpu and memory) of a standalone GCE Instance in USD/h. Excludes GPUs, disks, local SSD, licences, and sole tenancy. Absent for an instance whose machine type spec hasn't been resolved yet.",
 		[]string{"instance", "region", "family", "machine_type", "project", "price_tier"},
 	)
 )
