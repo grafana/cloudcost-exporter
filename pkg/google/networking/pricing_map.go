@@ -116,6 +116,12 @@ func (pm *pricingMap) populate(ctx context.Context) error {
 func (pm *pricingMap) parseSku(skus []*billingpb.Sku) ([]*ParsedSkuData, error) {
 	var skuData []*ParsedSkuData
 	for _, sku := range skus {
+		// Category and GeoTaxonomy are optional on the wire, so a SKU without them panics this loop
+		// rather than being skipped. billing.go's exportBilling already guards Category for the same
+		// reason ("Check category first as I've had random segfaults locally").
+		if sku.Category == nil || sku.GeoTaxonomy == nil {
+			continue
+		}
 		if sku.Category.ResourceGroup == ResourceGroup {
 			if len(sku.GeoTaxonomy.Regions) == 0 || len(sku.PricingInfo) == 0 || len(sku.PricingInfo[0].PricingExpression.TieredRates) == 0 {
 				continue

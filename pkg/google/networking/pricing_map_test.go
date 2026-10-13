@@ -172,3 +172,58 @@ func TestRegionNotFoundErrors(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrRegionNotFound)
 }
+
+// Category and GeoTaxonomy are optional on the wire. A SKU missing either one used to
+// panic parseSku, which killed the CLB constructor. Nothing else covers the guard:
+// the provider recovers a constructor panic, so a regression here only turns
+// TestCollectorNamesMatchTheNameEachCollectorReports/CLB into a skip.
+func TestParseSkuSkipsSkusMissingCategoryOrGeoTaxonomy(t *testing.T) {
+	priced := []*billingpb.PricingInfo{{
+		PricingExpression: &billingpb.PricingExpression{
+			TieredRates: []*billingpb.PricingExpression_TierRate{{
+				UnitPrice: &money.Money{Nanos: 25000000}, // 0.025
+			}},
+		},
+	}}
+	good := &billingpb.Sku{
+		Category:    &billingpb.Category{ResourceGroup: ResourceGroup},
+		Description: forwardingRuleDescription + " hourly",
+		GeoTaxonomy: &billingpb.GeoTaxonomy{Regions: []string{"us-central1"}},
+		PricingInfo: priced,
+	}
+
+	for _, tc := range []struct {
+		name string
+		sku  *billingpb.Sku
+	}{
+		{"nil Category", &billingpb.Sku{
+			Description: forwardingRuleDescription + " hourly",
+			GeoTaxonomy: &billingpb.GeoTaxonomy{Regions: []string{"us-east1"}},
+			PricingInfo: priced,
+		}},
+		{"nil GeoTaxonomy", &billingpb.Sku{
+			Category:    &billingpb.Category{ResourceGroup: ResourceGroup},
+			Description: forwardingRuleDescription + " hourly",
+			PricingInfo: priced,
+		}},
+		{"both nil", &billingpb.Sku{
+			Description: forwardingRuleDescription + " hourly",
+			PricingInfo: priced,
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pm := &pricingMap{pricing: make(map[string]*pricing), logger: testLogger}
+
+			// The good SKU comes second, so a panic on the first would also prove
+			// the bad SKU stops the whole batch rather than being skipped.
+			skuData, err := pm.parseSku([]*billingpb.Sku{tc.sku, good})
+			require.NoError(t, err)
+			require.Len(t, skuData, 1, "the malformed SKU must be skipped and the valid one kept")
+
+			require.NoError(t, pm.processSkuData(skuData))
+			price, err := pm.GetCostOfForwardingRule("us-central1")
+			require.NoError(t, err)
+			require.Equal(t, 0.025, price)
+		})
+	}
+}
