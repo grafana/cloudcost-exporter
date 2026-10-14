@@ -40,6 +40,9 @@ podAnnotations: {}
 # -- Container arguments, usually to configure the deployment per CSP
 containerArgs: []
 
+# -- Container Environment Variables (eg Proxy Settings)
+containerEnvVars: []
+
 securityContext:
   # -- Filesystem group to associate for each pod
   fsGroup: 10001
