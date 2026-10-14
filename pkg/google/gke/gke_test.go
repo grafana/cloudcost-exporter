@@ -19,6 +19,7 @@ import (
 	billingv1 "cloud.google.com/go/billing/apiv1"
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/client"
+	"github.com/grafana/cloudcost-exporter/pkg/google/storeutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -557,7 +558,7 @@ func (c *concurrentGCPClient) ListDisks(_ context.Context, _ string, _ string) (
 }
 
 func testPopulateErrorsCounter() *prometheus.CounterVec {
-	return newPopulateErrorsCounter()
+	return storeutil.NewPopulateErrorsCounter(subsystem)
 }
 
 // newSeededNodeStore returns a NodeStore without starting a populate goroutine.
@@ -573,7 +574,7 @@ func newSeededNodeStore(t *testing.T, lgr *slog.Logger, gcpClient client.Client,
 		seed = make(map[string]map[string][]*client.MachineSpec)
 	}
 	if counter == nil {
-		counter = newPopulateErrorsCounter()
+		counter = storeutil.NewPopulateErrorsCounter(subsystem)
 	}
 	return &NodeStore{
 		logger:            lgr.With("store", "nodes"),
@@ -595,7 +596,7 @@ func newSeededDiskStore(t *testing.T, lgr *slog.Logger, gcpClient client.Client,
 		seed = make(map[string]map[string][]*Disk)
 	}
 	if counter == nil {
-		counter = newPopulateErrorsCounter()
+		counter = storeutil.NewPopulateErrorsCounter(subsystem)
 	}
 	return &DiskStore{
 		logger:            lgr.With("store", "disks"),

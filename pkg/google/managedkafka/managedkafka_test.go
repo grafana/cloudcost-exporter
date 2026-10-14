@@ -318,6 +318,10 @@ func (s *stubClient) ListInstancesInZone(string, string) ([]*client.MachineSpec,
 	return nil, nil
 }
 
+func (s *stubClient) GetMachineType(context.Context, string, string, string) (*compute.MachineType, error) {
+	return nil, nil
+}
+
 func (s *stubClient) ListDisks(context.Context, string, string) ([]*compute.Disk, error) {
 	return nil, nil
 }

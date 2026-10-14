@@ -19,6 +19,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	cloudcost_exporter "github.com/grafana/cloudcost-exporter"
+	"github.com/grafana/cloudcost-exporter/pkg/google/gce"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gcs"
 	"github.com/grafana/cloudcost-exporter/pkg/google/gke"
 	"github.com/grafana/cloudcost-exporter/pkg/google/vertex"
@@ -38,6 +39,7 @@ const (
 	// GCP service names used by -gcp.services.
 	serviceGCS          = "GCS"
 	serviceGKE          = "GKE"
+	serviceGCE          = "GCE"
 	serviceCLB          = "CLB"
 	serviceVPC          = "VPC"
 	serviceSQL          = "SQL"
@@ -52,6 +54,7 @@ const (
 func Services() []provider.ServiceInfo {
 	return []provider.ServiceInfo{
 		{Name: serviceGKE, DisplayName: "GKE", Description: "Google Kubernetes Engine clusters"},
+		{Name: serviceGCE, DisplayName: "GCE", Description: "Standalone Google Compute Engine VMs (excludes GKE-managed nodes)"},
 		{Name: serviceGCS, DisplayName: "GCS", Description: "Google Cloud Storage buckets"},
 		{Name: serviceSQL, DisplayName: "Cloud SQL", Description: "Managed database instances"},
 		{Name: serviceManagedKafka, DisplayName: "Managed Kafka", Description: "Managed Service for Apache Kafka clusters", Aliases: []string{serviceKafkaAlias}},
@@ -115,6 +118,9 @@ type Config struct {
 	// GKEZoneConcurrency caps zone-level goroutines per project during a GKE scrape.
 	// Zero or negative values fall back to gke.DefaultZoneCollectConcurrency.
 	GKEZoneConcurrency int
+	// GCEZoneConcurrency caps zone-level goroutines per project during a GCE scrape.
+	// Zero or negative values fall back to gke.DefaultZoneCollectConcurrency.
+	GCEZoneConcurrency int
 	// VertexFamilyFilter is a regex matched against the Vertex model family label; only matching
 	// families are emitted. Mirrors --aws.bedrock.families. Empty or ".*" emits all families.
 	VertexFamilyFilter string
@@ -139,6 +145,7 @@ var errUnknownService = errors.New("service does not exist")
 var collectorNames = map[string]string{
 	serviceGCS:          "GCS",
 	serviceGKE:          "gcp_gke",
+	serviceGCE:          "gcp_gce",
 	serviceCLB:          "ForwardingRule",
 	serviceVPC:          "VPC",
 	serviceSQL:          "cloudsql",
@@ -258,6 +265,16 @@ func createCollector(ctx context.Context, config *Config, logger *slog.Logger, g
 			Projects:        config.Projects,
 			ScrapeInterval:  config.ScrapeInterval,
 			ZoneConcurrency: config.GKEZoneConcurrency,
+		}, logger, gcpClient)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	case serviceGCE:
+		c, err := gce.New(ctx, &gce.Config{
+			Projects:        config.Projects,
+			ScrapeInterval:  config.ScrapeInterval,
+			ZoneConcurrency: config.GCEZoneConcurrency,
 		}, logger, gcpClient)
 		if err != nil {
 			return nil, err
