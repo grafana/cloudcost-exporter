@@ -154,7 +154,8 @@ func (s *pricingStore) Populate(ctx context.Context) bool {
 // populateRegion refreshes a single region's pricing, bounded by a
 // per-region timeout so a hung listing call cannot wedge the background loop.
 // It returns false only when the listing call itself failed; a price that
-// fails to parse is counted and skipped but doesn't fail the region.
+// fails to parse is counted and skipped but doesn't fail the region. RDS
+// Custom SKUs are skipped without counting, since skipping them is by design.
 func (s *pricingStore) populateRegion(ctx context.Context, regionName string) bool {
 	timeout := s.regionListTimeout
 	if timeout <= 0 {
@@ -173,9 +174,11 @@ func (s *pricingStore) populateRegion(ctx context.Context, regionName string) bo
 	}
 
 	for _, product := range priceList {
-		key, price, ok := parseRDSPriceProduct(ctx, product)
+		key, price, ok, rdsCustom := parseRDSPriceProduct(ctx, product)
 		if !ok {
-			s.populateErrors.WithLabelValues("pricing", regionName, "parse_pricing").Inc()
+			if !rdsCustom {
+				s.populateErrors.WithLabelValues("pricing", regionName, "parse_pricing").Inc()
+			}
 			continue
 		}
 		s.prices.Set(key, price)

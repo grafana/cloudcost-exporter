@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/cloudcost-exporter/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -205,6 +206,122 @@ func TestPricingKeyFor_AuroraStorageMode(t *testing.T) {
 		assert.Equal(t, createPricingKey("us-east-1", "db.t3.medium", "Aurora MySQL", "", "Single-AZ", "No license required", "AWS Region", auroraStorageModeStandard), standardKey)
 		assert.Equal(t, createPricingKey("us-east-1", "db.t3.medium", "Aurora MySQL", "", "Single-AZ", "No license required", "AWS Region", auroraStorageModeIOOptimized), ioOptimizedKey)
 	})
+}
+
+// TestEngineAttributes_KeysMatchPricing pins every engineAttributes entry to a
+// real AmazonRDS price-list row: the key built from the instance must equal the
+// key built from that row's attributes, or the instance is never priced. The
+// price-list attribute values come verbatim from the us-east-1 AmazonRDS offer
+// file.
+func TestEngineAttributes_KeysMatchPricing(t *testing.T) {
+	type pricingRow struct {
+		instanceType, databaseEngine, databaseEdition, licenseModel, storage string
+	}
+	tests := []struct {
+		name         string
+		engine       string
+		licenseModel string
+		storageType  string
+		row          pricingRow
+	}{
+		{name: "mysql", engine: "mysql", licenseModel: "general-public-license",
+			row: pricingRow{"db.m5.large", "MySQL", "", "No license required", "EBS Only"}},
+		{name: "mariadb", engine: "mariadb", licenseModel: "general-public-license",
+			row: pricingRow{"db.m5.large", "MariaDB", "", "No license required", "EBS Only"}},
+		{name: "postgres", engine: "postgres", licenseModel: "postgresql-license",
+			row: pricingRow{"db.m5.large", "PostgreSQL", "", "No license required", "EBS Only"}},
+		{name: "aurora-mysql standard", engine: "aurora-mysql", licenseModel: "general-public-license", storageType: "aurora",
+			row: pricingRow{"db.r5.large", "Aurora MySQL", "", "No license required", "EBS Only"}},
+		{name: "aurora-mysql I/O-optimized", engine: "aurora-mysql", licenseModel: "general-public-license", storageType: "aurora-iopt1",
+			row: pricingRow{"db.r5.large", "Aurora MySQL", "", "No license required", "Aurora IO Optimization Mode"}},
+		{name: "aurora-postgresql standard", engine: "aurora-postgresql", licenseModel: "postgresql-license", storageType: "aurora",
+			row: pricingRow{"db.r5.large", "Aurora PostgreSQL", "", "No license required", "EBS Only"}},
+		{name: "aurora-postgresql I/O-optimized", engine: "aurora-postgresql", licenseModel: "postgresql-license", storageType: "aurora-iopt1",
+			row: pricingRow{"db.r5.large", "Aurora PostgreSQL", "", "No license required", "Aurora IO Optimization Mode"}},
+		{name: "aurora-postgresql optimized reads standard", engine: "aurora-postgresql", licenseModel: "postgresql-license", storageType: "aurora",
+			row: pricingRow{"db.r6gd.xlarge", "Aurora PostgreSQL", "", "No license required", "1 x 237 NVMe SSD"}},
+		{name: "oracle-ee bring your own license", engine: "oracle-ee", licenseModel: "bring-your-own-license",
+			row: pricingRow{"db.m5.large", "Oracle", "Enterprise", "Bring your own license", "EBS Only"}},
+		{name: "oracle-ee-cdb bring your own license", engine: "oracle-ee-cdb", licenseModel: "bring-your-own-license",
+			row: pricingRow{"db.m5.large", "Oracle", "Enterprise", "Bring your own license", "EBS Only"}},
+		{name: "oracle-se2 license included", engine: "oracle-se2", licenseModel: "license-included",
+			row: pricingRow{"db.m5.large", "Oracle", "Standard Two", "License included", "EBS Only"}},
+		{name: "oracle-se2 bring your own license", engine: "oracle-se2", licenseModel: "bring-your-own-license",
+			row: pricingRow{"db.m5.large", "Oracle", "Standard Two", "Bring your own license", "EBS Only"}},
+		{name: "oracle-se2-cdb license included", engine: "oracle-se2-cdb", licenseModel: "license-included",
+			row: pricingRow{"db.m5.large", "Oracle", "Standard Two", "License included", "EBS Only"}},
+		{name: "sqlserver-ee license included", engine: "sqlserver-ee", licenseModel: "license-included",
+			row: pricingRow{"db.m4.10xlarge", "SQL Server", "Enterprise", "License included", "EBS Only"}},
+		{name: "sqlserver-se license included", engine: "sqlserver-se", licenseModel: "license-included",
+			row: pricingRow{"db.m5.large", "SQL Server", "Standard", "License included", "EBS Only"}},
+		{name: "sqlserver-web license included", engine: "sqlserver-web", licenseModel: "license-included",
+			row: pricingRow{"db.m5.large", "SQL Server", "Web", "License included", "EBS Only"}},
+		{name: "sqlserver-ex license included", engine: "sqlserver-ex", licenseModel: "license-included",
+			row: pricingRow{"db.t3.micro", "SQL Server", "Express", "License included", "EBS Only"}},
+	}
+
+	covered := map[string]bool{}
+	for _, tt := range tests {
+		covered[tt.engine] = true
+		t.Run(tt.name, func(t *testing.T) {
+			inst := instanceFor("us-east-1", "db-1")
+			inst.Engine = aws.String(tt.engine)
+			inst.DBInstanceClass = aws.String(tt.row.instanceType)
+			inst.LicenseModel = aws.String(tt.licenseModel)
+			if tt.storageType != "" {
+				inst.StorageType = aws.String(tt.storageType)
+			}
+
+			instanceKey, _, ok := pricingKeyFor(inst)
+			require.True(t, ok, "instance side failed to build a key")
+
+			pricingKey, ok := priceKeyFromAttributes(&AWSProduct{Attributes: &AWSProductAttributes{
+				InstanceType:     tt.row.instanceType,
+				RegionCode:       "us-east-1",
+				DatabaseEngine:   tt.row.databaseEngine,
+				DatabaseEdition:  tt.row.databaseEdition,
+				DeploymentOption: "Single-AZ",
+				LicenseModel:     tt.row.licenseModel,
+				LocationType:     "AWS Region",
+				Storage:          tt.row.storage,
+			}})
+			require.True(t, ok, "pricing side failed to build a key")
+
+			assert.Equal(t, pricingKey, instanceKey)
+		})
+	}
+
+	for engine := range engineAttributes {
+		assert.True(t, covered[engine], "engineAttributes entry %q has no price-list case", engine)
+	}
+}
+
+// TestAuroraStorageModeFromPricing covers every Aurora "storage" attribute
+// shape in the AmazonRDS price list, including the instance-store values of
+// Optimized Reads classes, and that anything else is rejected.
+func TestAuroraStorageModeFromPricing(t *testing.T) {
+	tests := []struct {
+		storage  string
+		wantMode string
+		wantOK   bool
+	}{
+		{storage: "EBS Only", wantMode: auroraStorageModeStandard, wantOK: true},
+		{storage: "Aurora IO Optimization Mode", wantMode: auroraStorageModeIOOptimized, wantOK: true},
+		{storage: "1 x 237 NVMe SSD", wantMode: auroraStorageModeStandard, wantOK: true},
+		{storage: "3 X 1900 NVMe SSD", wantMode: auroraStorageModeStandard, wantOK: true},
+		{storage: "2 x 320 SSD", wantMode: auroraStorageModeStandard, wantOK: true},
+		{storage: "", wantOK: false},
+		{storage: "Some New Storage Mode", wantOK: false},
+		{storage: "1 x 237 NVMe SSD (preview)", wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.storage, func(t *testing.T) {
+			mode, ok := auroraStorageModeFromPricing(tt.storage)
+			assert.Equal(t, tt.wantOK, ok)
+			assert.Equal(t, tt.wantMode, mode)
+		})
+	}
 }
 
 // collectRegions drains ch and returns the set of region labels seen.

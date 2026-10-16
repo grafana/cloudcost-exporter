@@ -33,7 +33,18 @@ type AWSProductAttributes struct {
 	// Storage only disambiguates Aurora SKUs (Standard vs I/O-Optimized, which
 	// carry different instance-hour prices); see auroraStorageModeFromPricing.
 	Storage string `json:"storage"`
+	// DeploymentModel is "Custom" on RDS Custom SKUs and absent on standard RDS
+	// SKUs; see rdsCustomDeploymentModel.
+	DeploymentModel string `json:"deploymentModel"`
 }
+
+// rdsCustomDeploymentModel marks RDS Custom SKUs. RDS Custom instances report
+// their own engines ("custom-oracle-ee", "custom-sqlserver-ee", ...), which
+// engineAttributes does not map, so no priced instance needs these SKUs. They
+// must be skipped: RDS Custom for Oracle SKUs share every key attribute with the
+// standard RDS Oracle BYOL SKU but carry a different price (Oracle EE BYOL
+// db.m5.large in us-east-1: $0.205 vs $0.171), and would overwrite it.
+const rdsCustomDeploymentModel = "Custom"
 
 type AWSTerms struct {
 	OnDemand map[string]*AWSTerm `json:"OnDemand"`
@@ -122,23 +133,29 @@ func priceFromTerms(ctx context.Context, terms *AWSTerms) (float64, error) {
 // parseRDSPriceProduct turns a single Pricing API product into its pricing key
 // and on-demand USD price. ok is false when the product lacks the attributes or
 // on-demand price needed to key it, so the caller can count and skip it.
-func parseRDSPriceProduct(ctx context.Context, priceList string) (key string, price float64, ok bool) {
+// rdsCustom is true, with ok false, for RDS Custom SKUs, which are skipped by
+// design rather than failing to parse; see rdsCustomDeploymentModel.
+func parseRDSPriceProduct(ctx context.Context, priceList string) (key string, price float64, ok, rdsCustom bool) {
 	var priceData AWSPriceData
 	if err := json.Unmarshal([]byte(priceList), &priceData); err != nil {
 		slog.ErrorContext(ctx, "error unmarshaling RDS price JSON", "error", err)
-		return "", 0, false
+		return "", 0, false, false
+	}
+
+	if priceData.Product != nil && priceData.Product.Attributes != nil && priceData.Product.Attributes.DeploymentModel == rdsCustomDeploymentModel {
+		return "", 0, false, true
 	}
 
 	key, ok = priceKeyFromAttributes(priceData.Product)
 	if !ok {
-		return "", 0, false
+		return "", 0, false, false
 	}
 
 	price, err := priceFromTerms(ctx, priceData.Terms)
 	if err != nil {
-		return "", 0, false
+		return "", 0, false, false
 	}
-	return key, price, true
+	return key, price, true, false
 }
 
 // priceKeyFromAttributes builds the pricing key from a product's attributes. It

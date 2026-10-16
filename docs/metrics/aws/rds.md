@@ -50,8 +50,10 @@ The default is `0`, which applies an internal safety ceiling so a hung AWS call 
 ## Notes
 
 - Pricing is listed in bulk per region from the AWS Pricing API and keyed by instance type, engine, deployment option, and license so `Collect` matches each instance to its price
-- Aurora MySQL and Aurora PostgreSQL additionally key on storage mode (Standard vs I/O-Optimized), since I/O-Optimized carries a different instance-hour price; an Aurora instance with an unrecognized or missing storage mode is skipped rather than priced against the wrong SKU
+- Aurora MySQL and Aurora PostgreSQL additionally key on storage mode (Standard vs I/O-Optimized), since I/O-Optimized carries a different instance-hour price. Classes with local instance storage (Aurora PostgreSQL `db.r6gd`, `db.r6id`, `db.r8gd`; Aurora MySQL `db.r3`) list their disk size as the storage of their Standard SKU, and key as Standard. An Aurora instance with an unrecognized or missing storage mode is skipped rather than priced against the wrong SKU
 - Instances whose engine is not recognized are skipped; recognized engines are MySQL, MariaDB, PostgreSQL, Aurora MySQL, Aurora PostgreSQL, Oracle, and SQL Server
+- RDS Custom SKUs are ignored, and not counted as parse errors: RDS Custom instances use their own engines (`custom-oracle-ee`, ...), and RDS Custom for Oracle SKUs would otherwise overwrite the standard RDS Oracle price for the same instance type and license
+- Aurora Serverless v2 (`db.serverless`) instances are not priced: AWS bills them per ACU-hour under a separate `ServerlessV2` product family, not per instance-hour
 - Instance inventory and pricing refresh independently in the background, each in its own store: inventory refreshes on `--scrape-interval` (default `1h`); pricing refreshes on a fixed 24-hour interval, since it's a stable bulk-per-region fetch that doesn't need frequent refresh
 - Scrapes read both warm stores and make no AWS calls
 - No metrics emit until both the instance and pricing background stores complete their first refresh after startup
