@@ -185,24 +185,24 @@ func TestParseRDSPriceProduct(t *testing.T) {
 	}`
 
 	t.Run("valid product yields key and price", func(t *testing.T) {
-		key, price, ok := parseRDSPriceProduct(ctx, product)
+		key, price, ok, _ := parseRDSPriceProduct(ctx, product)
 		assert.True(t, ok)
 		assert.Equal(t, 0.456, price)
 		assert.Equal(t, createPricingKey("us-east-1", "db.t3.medium", "PostgreSQL", "", "Single-AZ", "No license required", "AWS Region", auroraStorageModeNA), key)
 	})
 
 	t.Run("missing product attributes is skipped", func(t *testing.T) {
-		_, _, ok := parseRDSPriceProduct(ctx, `{"terms":{"OnDemand":{"t":{"priceDimensions":{"d":{"pricePerUnit":{"USD":"0.1"}}}}}}}`)
+		_, _, ok, _ := parseRDSPriceProduct(ctx, `{"terms":{"OnDemand":{"t":{"priceDimensions":{"d":{"pricePerUnit":{"USD":"0.1"}}}}}}}`)
 		assert.False(t, ok)
 	})
 
 	t.Run("missing price is skipped", func(t *testing.T) {
-		_, _, ok := parseRDSPriceProduct(ctx, `{"product":{"attributes":{"instanceType":"db.t3.medium","regionCode":"us-east-1","databaseEngine":"PostgreSQL","deploymentOption":"Single-AZ","locationType":"AWS Region"}}}`)
+		_, _, ok, _ := parseRDSPriceProduct(ctx, `{"product":{"attributes":{"instanceType":"db.t3.medium","regionCode":"us-east-1","databaseEngine":"PostgreSQL","deploymentOption":"Single-AZ","locationType":"AWS Region"}}}`)
 		assert.False(t, ok)
 	})
 
 	t.Run("invalid JSON is skipped", func(t *testing.T) {
-		_, _, ok := parseRDSPriceProduct(ctx, `{invalid`)
+		_, _, ok, _ := parseRDSPriceProduct(ctx, `{invalid`)
 		assert.False(t, ok)
 	})
 
@@ -223,10 +223,10 @@ func TestParseRDSPriceProduct(t *testing.T) {
 	}
 
 	t.Run("aurora standard and I/O-optimized storage yield distinct keys", func(t *testing.T) {
-		standardKey, _, ok := parseRDSPriceProduct(ctx, auroraProduct("EBS Only"))
+		standardKey, _, ok, _ := parseRDSPriceProduct(ctx, auroraProduct("EBS Only"))
 		assert.True(t, ok)
 
-		ioOptimizedKey, _, ok := parseRDSPriceProduct(ctx, auroraProduct("Aurora IO Optimization Mode"))
+		ioOptimizedKey, _, ok, _ := parseRDSPriceProduct(ctx, auroraProduct("Aurora IO Optimization Mode"))
 		assert.True(t, ok)
 
 		assert.NotEqual(t, standardKey, ioOptimizedKey)
@@ -235,12 +235,12 @@ func TestParseRDSPriceProduct(t *testing.T) {
 	})
 
 	t.Run("aurora with unrecognized storage is skipped", func(t *testing.T) {
-		_, _, ok := parseRDSPriceProduct(ctx, auroraProduct("Some New Storage Mode"))
+		_, _, ok, _ := parseRDSPriceProduct(ctx, auroraProduct("Some New Storage Mode"))
 		assert.False(t, ok)
 	})
 
 	t.Run("aurora with missing storage is skipped", func(t *testing.T) {
-		_, _, ok := parseRDSPriceProduct(ctx, `{
+		_, _, ok, _ := parseRDSPriceProduct(ctx, `{
 			"product": {
 				"attributes": {
 					"instanceType": "db.r6g.large",
@@ -253,6 +253,39 @@ func TestParseRDSPriceProduct(t *testing.T) {
 			"terms": {"OnDemand": {"t": {"priceDimensions": {"d": {"pricePerUnit": {"USD": "0.5"}}}}}}
 		}`)
 		assert.False(t, ok)
+	})
+
+	// Both rows are real us-east-1 SKUs that share every key attribute; only
+	// deploymentModel tells the RDS Custom one apart.
+	oracleBYOLProduct := func(deploymentModel, usd string) string {
+		return fmt.Sprintf(`{
+			"product": {
+				"attributes": {
+					"instanceType": "db.m5.large",
+					"regionCode": "us-east-1",
+					"databaseEngine": "Oracle",
+					"databaseEdition": "Enterprise",
+					"licenseModel": "Bring your own license",
+					"deploymentOption": "Single-AZ",
+					"locationType": "AWS Region",
+					"storage": "EBS Only"%s
+				}
+			},
+			"terms": {"OnDemand": {"t": {"priceDimensions": {"d": {"pricePerUnit": {"USD": %q}}}}}}
+		}`, deploymentModel, usd)
+	}
+
+	t.Run("standard RDS SKU is keyed", func(t *testing.T) {
+		key, price, ok, _ := parseRDSPriceProduct(ctx, oracleBYOLProduct("", "0.171"))
+		assert.True(t, ok)
+		assert.Equal(t, 0.171, price)
+		assert.Equal(t, createPricingKey("us-east-1", "db.m5.large", "Oracle", "Enterprise", "Single-AZ", "Bring your own license", "AWS Region", auroraStorageModeNA), key)
+	})
+
+	t.Run("RDS Custom SKU is skipped so it cannot overwrite the standard price", func(t *testing.T) {
+		_, _, ok, rdsCustom := parseRDSPriceProduct(ctx, oracleBYOLProduct(`, "deploymentModel": "Custom"`, "0.205"))
+		assert.False(t, ok)
+		assert.True(t, rdsCustom)
 	})
 }
 
