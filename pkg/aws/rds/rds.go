@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -183,13 +184,9 @@ func isOutpostsInstance(instance rdsTypes.DBInstance) string {
 // translate explicitly. Engines absent from this map cannot be priced and are
 // skipped by pricingKeyFor.
 //
-// VERIFY: the open-source rows (MySQL/MariaDB/PostgreSQL/Aurora) are confirmed,
-// but the Oracle and SQL Server databaseEdition strings are best-effort and
-// should be checked against a real GetProducts response before relying on their
-// prices.
-//
-// TODO: harden Oracle and SQL Server databaseEdition/license matching against
-// a real GetProducts response; tracked as a follow-up issue (#1131).
+// The databaseEngine and databaseEdition values match the AmazonRDS price list
+// verbatim; TestEngineAttributes_KeysMatchPricing pins each entry to a real
+// price-list row.
 var engineAttributes = map[string]struct {
 	databaseEngine  string
 	databaseEdition string
@@ -216,10 +213,8 @@ const openSourceLicense = "No license required"
 
 // licenseModelAttributes maps an RDS instance LicenseModel to the pricing
 // licenseModel attribute value. Only the licensed engines (Oracle, SQL Server)
-// consult this map; see pricingKeyFor.
-//
-// VERIFY: the "License included" / "Bring your own license" strings are
-// best-effort and should be checked against a real GetProducts response.
+// consult this map; see pricingKeyFor. Both values match the AmazonRDS price
+// list verbatim.
 var licenseModelAttributes = map[string]string{
 	"license-included":       "License included",
 	"bring-your-own-license": "Bring your own license",
@@ -242,15 +237,23 @@ func isAuroraEngine(databaseEngine string) bool {
 	return databaseEngine == "Aurora MySQL" || databaseEngine == "Aurora PostgreSQL"
 }
 
+// auroraInstanceStoreStorage matches the "storage" attribute of Aurora
+// instance classes with local instance storage, such as "1 x 237 NVMe SSD" or
+// "2 x 320 SSD": the Aurora PostgreSQL Optimized Reads classes (db.r6gd,
+// db.r6id, db.r8gd) and the older Aurora MySQL db.r3. The price list uses
+// that value instead of "EBS Only" for their Standard storage SKU; their
+// I/O-Optimized SKU still reads "Aurora IO Optimization Mode".
+var auroraInstanceStoreStorage = regexp.MustCompile(`^\d+ [xX] \d+ (NVMe )?SSD$`)
+
 // auroraStorageModeFromPricing normalizes the Pricing API's "storage"
 // attribute into a mode token for Aurora engines. ok=false when storage is
 // missing or doesn't match a known value, so the caller skips the row instead
 // of silently mis-keying it.
 func auroraStorageModeFromPricing(storage string) (mode string, ok bool) {
-	switch storage {
-	case "EBS Only":
+	switch {
+	case storage == "EBS Only", auroraInstanceStoreStorage.MatchString(storage):
 		return auroraStorageModeStandard, true
-	case "Aurora IO Optimization Mode":
+	case storage == "Aurora IO Optimization Mode":
 		return auroraStorageModeIOOptimized, true
 	default:
 		return "", false
