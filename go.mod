@@ -25,7 +25,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/rds v1.120.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.44.0
 	github.com/google/go-cmp v0.7.0
-	github.com/googleapis/gax-go/v2 v2.23.0
+	github.com/googleapis/gax-go/v2 v2.26.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.69.0
@@ -33,7 +33,7 @@ require (
 	go.uber.org/mock v0.6.0
 	golang.org/x/sync v0.23.0
 	gomodules.xyz/azure-retail-prices-sdk-for-go v0.0.3
-	google.golang.org/api v0.287.1
+	google.golang.org/api v0.288.0
 	google.golang.org/genproto v0.0.0-20260911204522-f61a6ca850bd
 	google.golang.org/grpc v1.83.2
 	gopkg.in/matryer/try.v1 v1.0.0-20150601225556-312d2599e12e
@@ -42,7 +42,7 @@ require (
 require (
 	cel.dev/expr v0.25.3 // indirect
 	cloud.google.com/go v0.123.0 // indirect
-	cloud.google.com/go/auth v0.24.0 // indirect
+	cloud.google.com/go/auth v0.24.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.3.0 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.13.0 // indirect
