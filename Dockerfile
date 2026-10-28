@@ -1,5 +1,5 @@
 # Build Go Binary
-FROM golang:1.27.3@sha256:f20d83a83e18dbd2a4714b8ffd4b30b287b6243962dd75608e86abcc63ba4efc AS build
+FROM golang:1.27.3@sha256:6f1acc898d064a4e9d5773ee574a9af6a9b786306939ac14d7fd806bf62046db AS build
 
 WORKDIR /app
 COPY ["go.mod", "go.sum", "./"]
