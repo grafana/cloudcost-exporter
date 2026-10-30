@@ -3,6 +3,7 @@ package rds
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -259,6 +260,37 @@ func TestPricingStore_Populate_ParseErrorCounts(t *testing.T) {
 	assert.True(t, succeeded, "a price that fails to parse should not fail the region: the listing call itself succeeded")
 
 	assert.Equal(t, 1.0, testutil.ToFloat64(store.populateErrors.WithLabelValues("pricing", "us-east-1", "parse_pricing")))
+}
+
+// TestPricingStore_Populate_RDSCustomSkippedNotCounted verifies an RDS Custom
+// SKU neither overwrites the standard SKU it shares a key with nor counts as a
+// parse error, while a product that genuinely fails to parse still counts.
+func TestPricingStore_Populate_RDSCustomSkippedNotCounted(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	oracleBYOL := func(extra, usd string) string {
+		return fmt.Sprintf(`{"product":{"attributes":{"instanceType":"db.m5.large","regionCode":"us-east-1","databaseEngine":"Oracle","databaseEdition":"Enterprise","licenseModel":"Bring your own license","deploymentOption":"Single-AZ","locationType":"AWS Region"%s}},"terms":{"OnDemand":{"t":{"priceDimensions":{"d":{"pricePerUnit":{"USD":%q}}}}}}}`, extra, usd)
+	}
+
+	pricingClient := mock.NewMockClient(mockCtrl)
+	pricingClient.EXPECT().ListRDSPrices(gomock.Any(), gomock.Any()).
+		Return([]string{
+			oracleBYOL("", "0.171"),
+			oracleBYOL(`,"deploymentModel":"Custom"`, "0.205"),
+			`{invalid`,
+		}, nil).
+		Times(1)
+
+	regions := []types.Region{{RegionName: aws.String("us-east-1")}}
+	store := newTestPricingStore(regions, pricingClient)
+
+	assert.True(t, store.Populate(t.Context()))
+
+	price, ok := store.Get(createPricingKey("us-east-1", "db.m5.large", "Oracle", "Enterprise", "Single-AZ", "Bring your own license", "AWS Region", auroraStorageModeNA))
+	assert.True(t, ok)
+	assert.Equal(t, 0.171, price, "the RDS Custom SKU must not overwrite the standard price")
+	assert.Equal(t, 1.0, testutil.ToFloat64(store.populateErrors.WithLabelValues("pricing", "us-east-1", "parse_pricing")), "only the invalid product counts as a parse error")
 }
 
 // TestPricingStore_Populate_RegionListTimeout verifies the background listing
