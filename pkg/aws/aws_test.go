@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	pricingTypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
+	rdsTypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,6 +47,17 @@ func (m *mockRegionClient) ListStoragePrices(ctx context.Context, region string)
 
 func (m *mockRegionClient) ListEC2ServicePrices(ctx context.Context, region string, filters []pricingTypes.Filter) ([]string, error) {
 	return []string{}, nil
+}
+
+// ListRDSInstances is stubbed because the RDS collector refreshes its store on
+// a goroutine started in New. That call can land after the subtest returns and
+// its gomock controller has finished, where any call counts as unexpected
+// regardless of AnyTimes(). Routing it to a plain stub keeps a late call
+// harmless; against a gomock mock it fails the suite once the run is long
+// enough for the goroutine to be scheduled (reproducible on main with
+// -count=2).
+func (m *mockRegionClient) ListRDSInstances(ctx context.Context) ([]rdsTypes.DBInstance, error) {
+	return nil, nil
 }
 
 // Test_NewWithDependencies tests the newWithDependencies function with mock clients.
@@ -192,7 +204,7 @@ func Test_NewWithDependencies(t *testing.T) {
 				{RegionName: utils.StringPtr("us-east-1")},
 			},
 			setupRegionClients: map[string]client.Client{
-				"us-east-1": nil,
+				"us-east-1": &mockRegionClient{},
 			},
 			expectedCollectors: 1,
 		},
