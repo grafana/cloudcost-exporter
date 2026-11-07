@@ -2,12 +2,14 @@ package client
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/billing/apiv1/billingpb"
 	"github.com/grafana/cloudcost-exporter/pkg/google/metrics"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/type/money"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -264,6 +266,137 @@ func (s *failingListSkusServer) ListSkus(_ context.Context, _ *billingpb.ListSku
 	return nil, status.Error(codes.PermissionDenied, "boom")
 }
 
+// stallingListSkusServer blocks the first stallFirst calls for each page token until the client gives up.
+// It serves two pages: the empty token returns page one and token "p2" returns page two.
+type stallingListSkusServer struct {
+	billingpb.UnimplementedCloudCatalogServer
+	mu         sync.Mutex
+	calls      map[string]int
+	stallFirst int
+}
+
+func (s *stallingListSkusServer) ListSkus(ctx context.Context, req *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
+	s.mu.Lock()
+	if s.calls == nil {
+		s.calls = map[string]int{}
+	}
+	s.calls[req.PageToken]++
+	n := s.calls[req.PageToken]
+	s.mu.Unlock()
+
+	if n <= s.stallFirst {
+		<-ctx.Done()
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
+	if req.PageToken == "" {
+		return &billingpb.ListSkusResponse{Skus: []*billingpb.Sku{{Name: "a"}, {Name: "b"}}, NextPageToken: "p2"}, nil
+	}
+	return &billingpb.ListSkusResponse{Skus: []*billingpb.Sku{{Name: "c"}}}, nil
+}
+
+func (s *stallingListSkusServer) totalCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	total := 0
+	for _, n := range s.calls {
+		total += n
+	}
+	return total
+}
+
+func shortenSkuRetryTimings(t *testing.T) {
+	t.Helper()
+	oldTimeout, oldBackoff := skuPageTimeout, skuRetryBackoff
+	skuPageTimeout, skuRetryBackoff = 100*time.Millisecond, time.Millisecond
+	t.Cleanup(func() { skuPageTimeout, skuRetryBackoff = oldTimeout, oldBackoff })
+}
+
+// slowListSkusServer answers every call after a fixed delay, modelling an API that is slow but not stalled.
+type slowListSkusServer struct {
+	billingpb.UnimplementedCloudCatalogServer
+	delay time.Duration
+	mu    sync.Mutex
+	calls int
+}
+
+func (s *slowListSkusServer) ListSkus(ctx context.Context, _ *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
+	s.mu.Lock()
+	s.calls++
+	s.mu.Unlock()
+	select {
+	case <-time.After(s.delay):
+		return &billingpb.ListSkusResponse{Skus: []*billingpb.Sku{{Name: "a"}}}, nil
+	case <-ctx.Done():
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
+}
+
+func (s *slowListSkusServer) callCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls
+}
+
+// A page slower than the first attempt's deadline must still be fetched, because the deadline escalates to the
+// client's 60s default. A flat first-attempt cap would drop a catalog that the old single 60s attempt fetched.
+func TestGetPricingFetchesASlowButNotStalledPage(t *testing.T) {
+	shortenSkuRetryTimings(t) // first attempt 100ms, so attempts are 100ms, 200ms, 300ms
+	srv := &slowListSkusServer{delay: 250 * time.Millisecond}
+	b := newBilling(NewTestBillingClient(t, srv), nil, nil)
+
+	skus := b.getPricing(context.Background(), "services/networking")
+
+	require.Len(t, skus, 1, "a page slower than the first deadline must still be fetched on a later attempt")
+	assert.Equal(t, 3, srv.callCount(), "the first two attempts time out, the third has enough time")
+}
+
+func TestSkuAttemptTimeoutEscalates(t *testing.T) {
+	assert.Equal(t, 20*time.Second, skuAttemptTimeout(1))
+	assert.Equal(t, 40*time.Second, skuAttemptTimeout(2))
+	assert.Equal(t, 60*time.Second, skuAttemptTimeout(skuPageAttempts),
+		"the third deadline must reach the 60s the Google client allows by default; whether the budget leaves room for it is pinned by TestSkuFetchBudgetTruncatesTheLastAttempt")
+}
+
+func TestGetPricingRetriesStalledPages(t *testing.T) {
+	shortenSkuRetryTimings(t)
+
+	t.Run("recovers when each page stalls once", func(t *testing.T) {
+		srv := &stallingListSkusServer{stallFirst: 1}
+		b := newBilling(NewTestBillingClient(t, srv), nil, nil)
+
+		skus := b.getPricing(context.Background(), "services/networking")
+
+		assert.Len(t, skus, 3)
+		assert.Equal(t, 4, srv.totalCalls(), "two pages, each fetched twice")
+	})
+
+	t.Run("gives up and returns nil after the last attempt", func(t *testing.T) {
+		srv := &stallingListSkusServer{stallFirst: 100}
+		b := newBilling(NewTestBillingClient(t, srv), nil, nil)
+
+		assert.Nil(t, b.getPricing(context.Background(), "services/networking"))
+		assert.Equal(t, skuPageAttempts, srv.totalCalls())
+	})
+
+	t.Run("does not retry a permanent error", func(t *testing.T) {
+		srv := &countingFailingServer{}
+		b := newBilling(NewTestBillingClient(t, srv), nil, nil)
+
+		assert.Nil(t, b.getPricing(context.Background(), "services/networking"))
+		assert.Equal(t, 1, srv.calls)
+	})
+}
+
+type countingFailingServer struct {
+	billingpb.UnimplementedCloudCatalogServer
+	calls int
+}
+
+func (s *countingFailingServer) ListSkus(_ context.Context, _ *billingpb.ListSkusRequest) (*billingpb.ListSkusResponse, error) {
+	s.calls++
+	return nil, status.Error(codes.PermissionDenied, "boom")
+}
+
 func TestGetPricing(t *testing.T) {
 	t.Run("returns all skus when iteration succeeds", func(t *testing.T) {
 		b := newBilling(NewTestBillingClient(t, &FakeCloudCatalogServerSlimResults{}), nil, nil)
@@ -304,4 +437,33 @@ func TestRegionNameSameAsStackdriver(t *testing.T) {
 			assert.Equalf(t, tt.want, regionNameSameAsStackdriver(tt.region), "RegionNameSameAsStackdriver(%v)", tt.region)
 		})
 	}
+}
+
+// The budget deliberately wins over the escalation, so pin the arithmetic. If someone widens the budget or
+// adds an attempt, this fails and they can confirm the trade is intended rather than discover it in prod.
+func TestSkuFetchBudgetTruncatesTheLastAttempt(t *testing.T) {
+	fullSequence := skuAttemptTimeout(1) + skuRetryBackoff + skuAttemptTimeout(2) + skuRetryBackoff + skuAttemptTimeout(3)
+	require.Greater(t, fullSequence, skuFetchBudget,
+		"the budget now covers a full escalation; update the comment on skuAttemptTimeout")
+
+	// Two full attempts must still fit, so any page completing inside the second deadline survives.
+	twoAttempts := skuAttemptTimeout(1) + skuRetryBackoff + skuAttemptTimeout(2)
+	assert.Less(t, twoAttempts, skuFetchBudget,
+		"the budget no longer covers two full attempts, so a page slower than %v would be lost", skuAttemptTimeout(1))
+}
+
+// A catalog that stalls every attempt must give up inside the budget rather than hanging startup.
+func TestGetPricingIsBoundedByTheFetchBudget(t *testing.T) {
+	oldTimeout, oldBackoff, oldBudget := skuPageTimeout, skuRetryBackoff, skuFetchBudget
+	skuPageTimeout, skuRetryBackoff, skuFetchBudget = 100*time.Millisecond, 10*time.Millisecond, 250*time.Millisecond
+	t.Cleanup(func() { skuPageTimeout, skuRetryBackoff, skuFetchBudget = oldTimeout, oldBackoff, oldBudget })
+
+	b := newBilling(NewTestBillingClient(t, &stallingListSkusServer{stallFirst: 1 << 30}), nil, nil)
+
+	start := time.Now()
+	skus := b.getPricing(context.Background(), "services/networking")
+	elapsed := time.Since(start)
+
+	assert.Nil(t, skus, "an exhausted fetch must not return a partial catalog")
+	assert.Less(t, elapsed, 3*skuFetchBudget, "getPricing ran for %v, the budget is %v", elapsed, skuFetchBudget)
 }
