@@ -2,10 +2,13 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -54,6 +57,11 @@ type Config struct {
 	// reservations in the EC2 collector. Off by default: it adds Cost Explorer
 	// calls (ce:GetCostAndUsage) and only applies to accounts that buy them.
 	CapacityBlocksEnabled bool
+	// CollectorRetryInitial and CollectorRetryMax bound the backoff between
+	// attempts to create a collector that failed at startup. Zero uses the
+	// defaults below; tests set them to shorten the wait.
+	CollectorRetryInitial time.Duration
+	CollectorRetryMax     time.Duration
 }
 
 type AWS struct {
@@ -62,6 +70,18 @@ type AWS struct {
 	logger           *slog.Logger
 	ctx              context.Context
 	collectorTimeout time.Duration
+
+	retryInitial time.Duration
+	retryMax     time.Duration
+
+	// mu guards collectors, registry and pending, all of which the retry
+	// goroutine writes while scrapes read them.
+	mu       sync.RWMutex
+	registry provider.Registry
+	// pending maps a service that failed to create to the name its collector
+	// reports, so Collect can report it under the same label the healthy
+	// collector would use.
+	pending map[string]string
 }
 
 var (
@@ -105,6 +125,62 @@ const (
 	serviceMSK     = "MSK"
 	serviceBedrock = "BEDROCK"
 )
+
+// defaultCollectorRetryInitial and defaultCollectorRetryMax bound the backoff
+// between attempts to create a collector that failed at startup.
+//
+// The cap is deliberately longer than the GCP provider's 15m. Every attempt is
+// a full pricing fetch, there is no pricing cache, and the healthy path only
+// refreshes once a day, so a broken collector queries the Pricing API far more
+// often than a working one. AWS runs many more exporters than GCP does and the
+// Pricing API already returns ThrottlingException under load, so retrying hard
+// would push on the API whose slowness caused the failure.
+const (
+	defaultCollectorRetryInitial = 30 * time.Second
+	defaultCollectorRetryMax     = time.Hour
+
+	// retryJitterFraction spreads each wait by +/- this fraction. Exporters are
+	// restarted together by a rollout, so without jitter every pod would retry
+	// in lockstep and hit the Pricing API at the same instant.
+	retryJitterFraction = 5 // one fifth, i.e. +/-20%
+)
+
+// errUnknownService marks a service name that has no collector, so startup can
+// skip it rather than recording it as pending and retrying it forever.
+var errUnknownService = errors.New("unknown service")
+
+// collectorNames maps a service to the name its collector reports. Collect uses
+// it to report a service that failed to create under the same label the healthy
+// collector would use, so the failure and the recovery are one series over time.
+// Hand-maintained; TestCollectorNamesMatchTheNameEachCollectorReports builds
+// every collector and asserts these stay correct.
+var collectorNames = map[string]string{
+	serviceS3:      "S3",
+	serviceEC2:     "aws_ec2",
+	serviceRDS:     "aws_rds",
+	serviceMSK:     "aws_msk",
+	serviceELB:     "aws_elb",
+	serviceNATGW:   "NATGATEWAY",
+	serviceVPC:     "VPC",
+	serviceBedrock: "aws_bedrock",
+}
+
+// collectorDeps carries everything the per-service constructors close over, so
+// the switch can live in a function the retry calls as well as startup.
+type collectorDeps struct {
+	config        *Config
+	logger        *slog.Logger
+	awsClient     client.Client
+	regionClients map[string]client.Client
+	regions       []types.Region
+	awsConfig     aws.Config
+	pricingConfig aws.Config
+	pricingAPI    *awsPricing.Client
+}
+
+// collectorFactory creates the collector for a service. Tests inject failures
+// through it.
+type collectorFactory func(ctx context.Context, service string) (provider.Collector, error)
 
 // Services returns the collectors that can be enabled via -aws.services.
 // The Name field is the canonical flag value; the dispatch switch in
@@ -173,7 +249,7 @@ func New(ctx context.Context, config *Config) (*AWS, error) {
 
 // newWithDependencies creates an AWS provider with all dependencies injected as parameters
 func newWithDependencies(ctx context.Context, config *Config, awsClient client.Client, regionClients map[string]client.Client, regions []types.Region, awsConfig aws.Config, pricingConfig aws.Config) (*AWS, error) {
-	var collectors []provider.Collector
+	var services []string
 	logger := config.Logger.With("provider", subsystem)
 	pricingAPI := awsPricing.NewFromConfig(pricingConfig)
 
@@ -199,163 +275,319 @@ func newWithDependencies(ctx context.Context, config *Config, awsClient client.C
 				slog.String("service", service))
 		}
 		service = strings.ToUpper(service)
-
-		switch service {
-		case serviceS3:
-			collector, err := s3.New(ctx, &s3.Config{
-				ScrapeInterval: config.ScrapeInterval,
-				AccountID:      config.AccountID,
-			}, logger, awsClient)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
-			collectors = append(collectors, collector)
-		case serviceEC2:
-			collector, err := ec2Collector.New(ctx, &ec2Collector.Config{
-				Regions:               regions,
-				ScrapeInterval:        config.ScrapeInterval,
-				RegionMap:             regionClients,
-				AccountID:             config.AccountID,
-				CapacityBlocksEnabled: config.CapacityBlocksEnabled,
-			}, logger)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
-			collectors = append(collectors, collector)
-		case serviceRDS:
-			awsRDSClient := client.NewAWSClient(client.Config{
-				PricingService: pricingAPI,
-				RDSService:     rds.NewFromConfig(awsConfig),
-			})
-			collector, err := rdsCollector.New(ctx, &rdsCollector.Config{
-				ScrapeInterval:    config.ScrapeInterval,
-				Regions:           regions,
-				RegionMap:         regionClients,
-				Client:            awsRDSClient,
-				AccountID:         config.AccountID,
-				RegionListTimeout: config.RDSRegionListTimeout,
-			}, logger)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
-			collectors = append(collectors, collector)
-		case serviceNATGW:
-			collector, err := awsgwnat.New(ctx, &awsgwnat.Config{
-				ScrapeInterval: config.ScrapeInterval,
-				Regions:        regions,
-				RegionMap:      regionClients,
-				AccountID:      config.AccountID,
-			}, logger)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
-			collectors = append(collectors, collector)
-		case serviceELB:
-			awsELBPricingClient := client.NewAWSClient(client.Config{
-				PricingService: pricingAPI,
-			})
-			collector, err := elb.New(ctx, &elb.Config{
-				Regions:        regions,
-				PricingClient:  awsELBPricingClient,
-				RegionMap:      regionClients,
-				ScrapeInterval: config.ScrapeInterval,
-				AccountID:      config.AccountID,
-			}, logger)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
-			collectors = append(collectors, collector)
-		case serviceVPC:
-			awsVPCClient := client.NewAWSClient(client.Config{
-				PricingService: pricingAPI,
-				EC2Service:     ec2.NewFromConfig(pricingConfig),
-			})
-			collector, err := awsvpc.New(ctx, &awsvpc.Config{
-				ScrapeInterval: config.ScrapeInterval,
-				Regions:        regions,
-				Client:         awsVPCClient,
-				AccountID:      config.AccountID,
-			}, logger)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
-			collectors = append(collectors, collector)
-		case serviceMSK:
-			awsMSKClient := client.NewAWSClient(client.Config{
-				PricingService: pricingAPI,
-			})
-			collector, err := mskCollector.New(ctx, &mskCollector.Config{
-				Regions:   regions,
-				RegionMap: regionClients,
-				Client:    awsMSKClient,
-				AccountID: config.AccountID,
-			}, logger)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
-			collectors = append(collectors, collector)
-		case serviceBedrock:
-			// Bedrock pricing lookups succeed regardless of the collector's configured regions.
-			// Note: this pins the *endpoint*, not the queried region — the collector still
-			// fetches prices per configured region via a regionCode filter. See
-			// pkg/aws/bedrock.go newPriceFetcher().
-			awsBedrockClient := client.NewAWSClient(client.Config{
-				PricingService: pricingAPI,
-			})
-			collector, err := bedrock.New(ctx, &bedrock.Config{
-				Regions:       regions,
-				PricingClient: awsBedrockClient,
-				AccountID:     config.AccountID,
-				FamilyFilter:  config.BedrockFamilyFilter,
-			}, logger)
-			if err != nil {
-				logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
-					slog.String("service", service),
-					slog.String("message", err.Error()))
-				continue
-			}
-			collectors = append(collectors, collector)
-		default:
-			logger.LogAttrs(ctx, slog.LevelWarn, "unknown server, skipping",
-				slog.String("service", service),
-			)
-			continue
-		}
+		services = append(services, service)
 	}
-	return &AWS{
+
+	a := &AWS{
 		Config:           config,
-		collectors:       collectors,
 		logger:           logger,
 		ctx:              ctx,
 		collectorTimeout: config.CollectorTimeout,
-	}, nil
+		retryInitial:     config.CollectorRetryInitial,
+		retryMax:         config.CollectorRetryMax,
+	}
+	if a.retryInitial <= 0 {
+		a.retryInitial = defaultCollectorRetryInitial
+	}
+	if a.retryMax <= 0 {
+		a.retryMax = defaultCollectorRetryMax
+	}
+
+	deps := collectorDeps{
+		config:        config,
+		logger:        logger,
+		awsClient:     awsClient,
+		regionClients: regionClients,
+		regions:       regions,
+		awsConfig:     awsConfig,
+		pricingConfig: pricingConfig,
+		pricingAPI:    pricingAPI,
+	}
+	create := func(ctx context.Context, service string) (provider.Collector, error) {
+		return createCollector(ctx, service, deps)
+	}
+
+	for _, service := range services {
+		collector, err := createSafely(ctx, create, service)
+		if errors.Is(err, errUnknownService) {
+			logger.LogAttrs(ctx, slog.LevelWarn, "unknown service, skipping",
+				slog.String("service", service))
+			continue
+		}
+		if err != nil {
+			// Recorded rather than dropped: Collect reports it with
+			// last_scrape_error=1 and the retry below keeps trying, so a
+			// pricing API that is briefly slow no longer costs the collector
+			// for the life of the pod.
+			logger.LogAttrs(ctx, slog.LevelError, "Error creating collector",
+				slog.String("service", service),
+				slog.String("message", err.Error()))
+			a.markPending(service)
+			continue
+		}
+		a.collectors = append(a.collectors, collector)
+	}
+
+	if len(a.pendingServices()) > 0 {
+		go a.retryPending(ctx, create)
+	}
+	return a, nil
+}
+
+func (a *AWS) markPending(service string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.pending == nil {
+		a.pending = map[string]string{}
+	}
+	name, ok := collectorNames[strings.ToUpper(service)]
+	if !ok {
+		name = strings.ToLower(service)
+	}
+	a.pending[service] = name
+}
+
+func (a *AWS) pendingServices() []string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	services := make([]string, 0, len(a.pending))
+	for service := range a.pending {
+		services = append(services, service)
+	}
+	slices.Sort(services)
+	return services
+}
+
+// addCollector adds a collector created after startup and drops the service
+// from pending. Both happen under one lock: Collect reports every pending
+// service under the collector's own name, so a scrape that saw the collector
+// appended while the service was still pending would emit that label set twice
+// and fail the whole scrape on a duplicate metric. Once RegisterCollectors has
+// run this also registers the collector's metrics. A panic during registration
+// is returned as an error so a background goroutine cannot crash the exporter,
+// and leaves the service pending for the next retry.
+func (a *AWS) addCollector(service string, c provider.Collector) (err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.registry != nil {
+		defer func() {
+			if p := recover(); p != nil {
+				err = fmt.Errorf("panic registering collector %s: %v", c.Name(), p)
+			}
+		}()
+		if err := c.Register(a.registry); err != nil {
+			return err
+		}
+	}
+	a.collectors = append(a.collectors, c)
+	delete(a.pending, service)
+	return nil
+}
+
+// snapshot returns the collectors, and the names of those that failed to
+// create, both safe to use without holding the lock.
+func (a *AWS) snapshot() ([]provider.Collector, []string) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	names := make([]string, 0, len(a.pending))
+	for _, name := range a.pending {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return slices.Clone(a.collectors), names
+}
+
+// createSafely turns a panicking constructor into an error so one bad collector
+// is skipped and retried rather than killing the exporter.
+func createSafely(ctx context.Context, create collectorFactory, service string) (c provider.Collector, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("panic creating collector for %s: %v", service, p)
+		}
+	}()
+	return create(ctx, service)
+}
+
+// jittered spreads a wait by +/-20% so pods restarted together by a rollout do
+// not all hit the Pricing API at the same instant.
+func jittered(d time.Duration) time.Duration {
+	if d <= 0 {
+		return d
+	}
+	spread := int64(d) / retryJitterFraction
+	if spread <= 0 {
+		return d
+	}
+	return d + time.Duration(rand.Int64N(2*spread+1)-spread)
+}
+
+// retryPending keeps trying to create the collectors that failed at startup,
+// backing off from retryInitial to retryMax, until each succeeds or ctx ends.
+func (a *AWS) retryPending(ctx context.Context, create collectorFactory) {
+	queue := a.pendingServices()
+	delay := a.retryInitial
+	for len(queue) > 0 {
+		timer := time.NewTimer(jittered(delay))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+
+		var remaining []string
+		for _, service := range queue {
+			collector, err := createSafely(ctx, create, service)
+			if err == nil {
+				err = a.addCollector(service, collector)
+			}
+			if err != nil {
+				a.logger.LogAttrs(ctx, slog.LevelWarn, "Retrying collector creation failed",
+					slog.String("service", service),
+					slog.String("message", err.Error()))
+				remaining = append(remaining, service)
+				continue
+			}
+			a.logger.LogAttrs(ctx, slog.LevelInfo, "Collector created after retry",
+				slog.String("service", service))
+		}
+
+		queue = remaining
+		delay = min(delay*2, a.retryMax)
+	}
+}
+
+// createCollector builds the collector for one service. Lifted out of
+// newWithDependencies unchanged so the background retry can call it too.
+func createCollector(ctx context.Context, service string, d collectorDeps) (provider.Collector, error) {
+	switch service {
+	case serviceS3:
+		collector, err := s3.New(ctx, &s3.Config{
+			ScrapeInterval: d.config.ScrapeInterval,
+			AccountID:      d.config.AccountID,
+		}, d.logger, d.awsClient)
+		if err != nil {
+			return nil, err
+		}
+		return collector, nil
+	case serviceEC2:
+		collector, err := ec2Collector.New(ctx, &ec2Collector.Config{
+			Regions:               d.regions,
+			ScrapeInterval:        d.config.ScrapeInterval,
+			RegionMap:             d.regionClients,
+			AccountID:             d.config.AccountID,
+			CapacityBlocksEnabled: d.config.CapacityBlocksEnabled,
+		}, d.logger)
+		if err != nil {
+			return nil, err
+		}
+		return collector, nil
+	case serviceRDS:
+		awsRDSClient := client.NewAWSClient(client.Config{
+			PricingService: d.pricingAPI,
+			RDSService:     rds.NewFromConfig(d.awsConfig),
+		})
+		collector, err := rdsCollector.New(ctx, &rdsCollector.Config{
+			ScrapeInterval:    d.config.ScrapeInterval,
+			Regions:           d.regions,
+			RegionMap:         d.regionClients,
+			Client:            awsRDSClient,
+			AccountID:         d.config.AccountID,
+			RegionListTimeout: d.config.RDSRegionListTimeout,
+		}, d.logger)
+		if err != nil {
+			return nil, err
+		}
+		return collector, nil
+	case serviceNATGW:
+		collector, err := awsgwnat.New(ctx, &awsgwnat.Config{
+			ScrapeInterval: d.config.ScrapeInterval,
+			Regions:        d.regions,
+			RegionMap:      d.regionClients,
+			AccountID:      d.config.AccountID,
+		}, d.logger)
+		if err != nil {
+			return nil, err
+		}
+		return collector, nil
+	case serviceELB:
+		awsELBPricingClient := client.NewAWSClient(client.Config{
+			PricingService: d.pricingAPI,
+		})
+		collector, err := elb.New(ctx, &elb.Config{
+			Regions:        d.regions,
+			PricingClient:  awsELBPricingClient,
+			RegionMap:      d.regionClients,
+			ScrapeInterval: d.config.ScrapeInterval,
+			AccountID:      d.config.AccountID,
+		}, d.logger)
+		if err != nil {
+			return nil, err
+		}
+		return collector, nil
+	case serviceVPC:
+		awsVPCClient := client.NewAWSClient(client.Config{
+			PricingService: d.pricingAPI,
+			EC2Service:     ec2.NewFromConfig(d.pricingConfig),
+		})
+		collector, err := awsvpc.New(ctx, &awsvpc.Config{
+			ScrapeInterval: d.config.ScrapeInterval,
+			Regions:        d.regions,
+			Client:         awsVPCClient,
+			AccountID:      d.config.AccountID,
+		}, d.logger)
+		if err != nil {
+			return nil, err
+		}
+		return collector, nil
+	case serviceMSK:
+		awsMSKClient := client.NewAWSClient(client.Config{
+			PricingService: d.pricingAPI,
+		})
+		collector, err := mskCollector.New(ctx, &mskCollector.Config{
+			Regions:   d.regions,
+			RegionMap: d.regionClients,
+			Client:    awsMSKClient,
+			AccountID: d.config.AccountID,
+		}, d.logger)
+		if err != nil {
+			return nil, err
+		}
+		return collector, nil
+	case serviceBedrock:
+		// Bedrock pricing lookups succeed regardless of the collector's configured regions.
+		// Note: this pins the *endpoint*, not the queried region — the collector still
+		// fetches prices per configured region via a regionCode filter. See
+		// pkg/aws/bedrock.go newPriceFetcher().
+		awsBedrockClient := client.NewAWSClient(client.Config{
+			PricingService: d.pricingAPI,
+		})
+		collector, err := bedrock.New(ctx, &bedrock.Config{
+			Regions:       d.regions,
+			PricingClient: awsBedrockClient,
+			AccountID:     d.config.AccountID,
+			FamilyFilter:  d.config.BedrockFamilyFilter,
+		}, d.logger)
+		if err != nil {
+			return nil, err
+		}
+		return collector, nil
+	default:
+		return nil, fmt.Errorf("%w: %s", errUnknownService, service)
+	}
 }
 
 func (a *AWS) RegisterCollectors(registry provider.Registry) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.logger.LogAttrs(a.ctx, slog.LevelInfo, "registering collectors",
 		slog.Int("count", len(a.collectors)),
 	)
+	// Remembered so addCollector can register a collector created later, once
+	// the registry is already serving scrapes.
+	a.registry = registry
 	for _, c := range a.collectors {
 		if err := c.Register(registry); err != nil {
 			return err
@@ -368,7 +600,8 @@ func (a *AWS) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collectorLastScrapeErrorDesc
 	ch <- collectorDurationDesc
 	ch <- collectorLastScrapeTime
-	for _, c := range a.collectors {
+	collectors, _ := a.snapshot()
+	for _, c := range collectors {
 		if err := c.Describe(ch); err != nil {
 			a.logger.LogAttrs(a.ctx, slog.LevelError, "failed to describe collector",
 				slog.String("message", err.Error()),
@@ -383,9 +616,19 @@ func (a *AWS) Collect(ch chan<- prometheus.Metric) {
 	collectCtx, cancel := context.WithTimeout(a.ctx, a.collectorTimeout)
 	defer cancel()
 
+	collectors, notCreated := a.snapshot()
+	// A collector that failed to create emits the same three metrics a healthy
+	// one does, so the family keeps a single label set and a recovery reads as
+	// the same series clearing rather than a new one appearing.
+	for _, name := range notCreated {
+		ch <- prometheus.MustNewConstMetric(collectorLastScrapeErrorDesc, prometheus.CounterValue, 1, subsystem, name)
+		ch <- prometheus.MustNewConstMetric(collectorDurationDesc, prometheus.GaugeValue, 0, subsystem, name)
+		ch <- prometheus.MustNewConstMetric(collectorLastScrapeTime, prometheus.GaugeValue, float64(time.Now().Unix()), subsystem, name)
+	}
+
 	g, collectCtx := errgroup.WithContext(collectCtx)
 	g.SetLimit(collectConcurrencyLimit)
-	for _, c := range a.collectors {
+	for _, c := range collectors {
 		g.Go(func() error {
 			duration, hasError := collectormetrics.Collect(collectCtx, c, ch, a.logger, subsystem)
 
