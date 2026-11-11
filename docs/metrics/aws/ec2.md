@@ -71,3 +71,11 @@ Required permissions for EC2 and EBS metrics collection:
 ```
 
 When `-aws.ec2.capacity-blocks` is enabled, the EC2 role additionally requires `ec2:DescribeCapacityReservations` and `ce:GetCostAndUsage`.
+
+## Collection timeouts
+
+EC2 instance and EBS volume listings run concurrently across regions. Each listing
+has a 30-second timeout covering all pages and retries. A shorter collector context
+deadline takes precedence. Failed listings are logged and omitted from that scrape;
+metrics from successful listings are still emitted. Listings are retried on the next
+scrape. This timeout does not apply to background pricing refreshes.
