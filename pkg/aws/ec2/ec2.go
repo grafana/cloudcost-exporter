@@ -24,6 +24,9 @@ const (
 
 	errGroupLimit        = 5
 	maxConcurrentWorkers = 5
+
+	// Bound regional listings below the scrape timeout, including pagination and retries.
+	regionTimeout = 30 * time.Second
 )
 
 var (
@@ -215,6 +218,9 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 }
 
 func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.Client, region string, instanceCh chan []ec2Types.Reservation) {
+	ctx, cancel := context.WithTimeout(ctx, regionTimeout)
+	defer cancel()
+
 	now := time.Now()
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching instances", slog.String("region", region))
 
@@ -236,6 +242,9 @@ func (c *Collector) fetchInstancesData(ctx context.Context, regionClient client.
 }
 
 func (c *Collector) fetchVolumesData(ctx context.Context, regionClient client.Client, region string, volumeCh chan []ec2Types.Volume) {
+	ctx, cancel := context.WithTimeout(ctx, regionTimeout)
+	defer cancel()
+
 	now := time.Now()
 	c.logger.LogAttrs(ctx, slog.LevelInfo, "Fetching volumes", slog.String("region", region))
 
