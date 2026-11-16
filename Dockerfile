@@ -1,5 +1,5 @@
 # Build Go Binary
-FROM golang:1.27.3@sha256:e519d3b0a5b285e5aa53ab9eef02bc6bbb9cb04608389b743a136a9ce75f0d1e AS build
+FROM golang:1.27.4@sha256:fe517acaa580cc7915457080f850c37e618b3c1e750f98b58fc6429b605147a1 AS build
 
 WORKDIR /app
 COPY ["go.mod", "go.sum", "./"]
@@ -11,7 +11,7 @@ ENV GOCACHE=/go/pkg/mod/
 RUN  --mount=type=cache,target="/go/pkg/mod/" make build-binary
 
 # Refresh the trust store. The scratch image copies this file.
-FROM alpine:3.24@sha256:3f4d6b32e26703c6082839234f43769d5046b3ac7c910033911d1e71d8cd630a AS certs
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS certs
 RUN apk add --no-cache 'ca-certificates>=20261020-r0' \
     && update-ca-certificates
 
