@@ -1,9 +1,11 @@
 # NAT Gateway Metrics
 
-| Metric name                                        | Metric type | Description                                                                                  | Labels                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-|----------------------------------------------------|-------------|----------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| cloudcost_aws_natgateway_hourly_rate_usd_per_hour   | Gauge       | The hourly cost of a NAT Gateway in USD/hour | `account_id`=&lt;AWS account ID&gt; <br/> `region`=&lt;AWS region code&gt; |
-| cloudcost_aws_natgateway_data_processing_usd_per_gb | Gauge       | The data processing cost of a NAT Gateway in USD/GB       | `account_id`=&lt;AWS account ID&gt; <br/> `region`=&lt;AWS region code&gt; |
+| Metric name | Metric type | Description | Labels |
+|---|---|---|---|
+| cloudcost_aws_natgateway_hourly_rate_usd_per_hour | Gauge | Standard NAT Gateway price in USD/hour | `account_id`, `region` |
+| cloudcost_aws_natgateway_data_processing_usd_per_gb | Gauge | Standard NAT Gateway data processing price in USD/GB | `account_id`, `region` |
+| cloudcost_aws_natgateway_regional_hourly_rate_usd_per_hour | Gauge | Regional NAT Gateway price per availability zone in USD/hour | `account_id`, `region` |
+| cloudcost_aws_natgateway_regional_data_processing_usd_per_gb | Gauge | Regional NAT Gateway data processing price in USD/GB | `account_id`, `region` |
 
 ## Overview
 
@@ -30,6 +32,12 @@ The NAT Gateway module collects pricing information for [AWS NAT Gateways](https
 - **Labels**: `region` - The AWS region where the NAT Gateway is deployed
 - **Usage**: This metric helps estimate costs based on data transfer volume through NAT Gateways
 
+### Regional NAT Gateways
+
+The `regional_*` metrics report Regional NAT Gateway prices separately from standard NAT Gateway prices. The hourly rate applies to each availability zone where the Regional NAT Gateway is configured. Multiply that rate by the number of active availability zones to estimate its hourly charge.
+
+Standard and Regional prices are alternatives. Do not add them together for the same traffic or gateway.
+
 ## Pricing Source
 
 The pricing data is sourced from the [AWS Pricing API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_pricing_GetProducts.html) and is updated every 24 hours.
@@ -38,7 +46,11 @@ The pricing filters used are:
 - **Product Family**: `NAT Gateway`
 - **Usage Types**:
   - `NatGateway-Hours` - for hourly rates
-  - `NatGateway-Bytes` - for data processing costs
+  - `NatGateway-Bytes` - for standard data processing costs
+  - `RegionalNatGateway-Hours` - for Regional hourly rates per availability zone
+  - `RegionalNatGateway-Bytes` - for Regional data processing costs
+
+Usage types match exactly, with or without an AWS region prefix such as `USE1-`. Prices from different gateway types are never combined. If the catalog includes both prefixed and unprefixed aliases for the same gateway type and cost component, the exporter uses their maximum rate instead of summing them. A metric is emitted only when its price is positive.
 
 ## IAM Permissions
 

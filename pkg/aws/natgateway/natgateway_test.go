@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -124,10 +123,12 @@ func TestCollector_Describe(t *testing.T) {
 		expectedDescs     []string
 	}{
 		"expect correct descriptions": {
-			expectedDescCount: 2, // HourlyGaugeDesc and DataProcessingGaugeDesc
+			expectedDescCount: 4,
 			expectedDescs: []string{
 				natgateway.HourlyGaugeDesc.String(),
 				natgateway.DataProcessingGaugeDesc.String(),
+				natgateway.RegionalHourlyGaugeDesc.String(),
+				natgateway.RegionalDataProcessingGaugeDesc.String(),
 			},
 		},
 	}
@@ -211,78 +212,92 @@ func TestCollector_Collect(t *testing.T) {
 	}
 }
 
-func TestCollector_CollectAggregatesMultipleUsageTypesPerRegion(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	region := "us-east-1"
-
-	// Mock client returns multiple usage types for the same region that should be aggregated
-	regionClient := func() *mock_client.MockClient {
-		m := mock_client.NewMockClient(ctrl)
-		m.EXPECT().
-			ListEC2ServicePrices(gomock.Any(), region, testNATGatewayFilters).
-			Return([]string{
-				// Two hourly usage types that both map to NATGatewayHours
-				`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test1":{"priceDimensions":{"dim1":{"pricePerUnit":{"USD":"0.040"}}}}}}}`,
-				`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Hours-Additional","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test2":{"priceDimensions":{"dim2":{"pricePerUnit":{"USD":"0.010"}}}}}}}`,
-				// Two data processing usage types that both map to NATGatewayBytes
-				`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Bytes","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test3":{"priceDimensions":{"dim3":{"pricePerUnit":{"USD":"0.050"}}}}}}}`,
-				`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Bytes-Additional","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test4":{"priceDimensions":{"dim4":{"pricePerUnit":{"USD":"0.005"}}}}}}}`,
-			}, nil).
-			Times(1)
-		return m
-	}()
-
-	collector, err := natgateway.New(t.Context(), &natgateway.Config{
-		ScrapeInterval: 1 * time.Hour,
-		Regions:        []ec2Types.Region{{RegionName: aws.String(region)}},
-		RegionMap: map[string]awsclient.Client{
-			region: regionClient,
+func TestCollector_CollectSeparatesGatewayTypes(t *testing.T) {
+	const accountID = "123456789012"
+	tests := []struct {
+		name     string
+		region   string
+		prices   map[string]string
+		expected map[string]float64
+	}{
+		{
+			name:   "standard and regional prices with unprefixed aliases",
+			region: "us-east-1",
+			prices: map[string]string{
+				"NatGateway-Hours":              "0.045",
+				"NatGateway-Bytes":              "0.045",
+				"RegionalNatGateway-Hours":      "0.050",
+				"USE1-RegionalNatGateway-Hours": "0.050",
+				"USE1-RegionalNatGateway-Bytes": "0.060",
+				"NatGateway-Hours-Additional":   "0.010",
+				"NatGateway-Bytes-Additional":   "0.010",
+			},
+			expected: map[string]float64{
+				"cloudcost_aws_natgateway_hourly_rate_usd_per_hour":            0.045,
+				"cloudcost_aws_natgateway_data_processing_usd_per_gb":          0.045,
+				"cloudcost_aws_natgateway_regional_hourly_rate_usd_per_hour":   0.050,
+				"cloudcost_aws_natgateway_regional_data_processing_usd_per_gb": 0.060,
+			},
 		},
-		AccountID: "123456789012",
-	}, testLogger)
-	require.NoError(t, err)
-
-	ch := make(chan prometheus.Metric, 10)
-	err = collector.Collect(t.Context(), ch)
-	close(ch)
-
-	assert.NoError(t, err)
-
-	var results []*utils.MetricResult
-	for metric := range ch {
-		mr := utils.ReadMetrics(metric)
-		if mr != nil {
-			results = append(results, mr)
-		}
+		{
+			name:   "region-prefixed standard and regional prices",
+			region: "mx-central-1",
+			prices: map[string]string{
+				"MXC1-NatGateway-Hours":         "0.04725",
+				"MXC1-NatGateway-Bytes":         "0.04725",
+				"MXC1-RegionalNatGateway-Hours": "0.04725",
+				"MXC1-RegionalNatGateway-Bytes": "0.04725",
+			},
+			expected: map[string]float64{
+				"cloudcost_aws_natgateway_hourly_rate_usd_per_hour":            0.04725,
+				"cloudcost_aws_natgateway_data_processing_usd_per_gb":          0.04725,
+				"cloudcost_aws_natgateway_regional_hourly_rate_usd_per_hour":   0.04725,
+				"cloudcost_aws_natgateway_regional_data_processing_usd_per_gb": 0.04725,
+			},
+		},
+		{
+			name:   "regional-only catalog does not emit standard prices",
+			region: "us-east-1",
+			prices: map[string]string{
+				"RegionalNatGateway-Hours": "0.050",
+				"RegionalNatGateway-Bytes": "0.060",
+			},
+			expected: map[string]float64{
+				"cloudcost_aws_natgateway_regional_hourly_rate_usd_per_hour":   0.050,
+				"cloudcost_aws_natgateway_regional_data_processing_usd_per_gb": 0.060,
+			},
+		},
 	}
 
-	// We expect exactly one hourly and one data-processing metric for the region
-	assert.Len(t, results, 2)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			client := mock_client.NewMockClient(ctrl)
+			var products []string
+			for usageType, price := range tt.prices {
+				products = append(products, fmt.Sprintf(`{"product":{"attributes":{"usagetype":%q,"regionCode":%q}},"terms":{"OnDemand":{"test":{"priceDimensions":{"test":{"pricePerUnit":{"USD":%q}}}}}}}`, usageType, tt.region, price))
+			}
+			client.EXPECT().ListEC2ServicePrices(gomock.Any(), tt.region, testNATGatewayFilters).Return(products, nil)
+			collector, err := natgateway.New(t.Context(), &natgateway.Config{
+				Regions:   []ec2Types.Region{{RegionName: aws.String(tt.region)}},
+				RegionMap: map[string]awsclient.Client{tt.region: client},
+				AccountID: accountID,
+			}, testLogger)
+			require.NoError(t, err)
 
-	var (
-		hourlyMetric         *utils.MetricResult
-		dataProcessingMetric *utils.MetricResult
-	)
+			ch := make(chan prometheus.Metric, 10)
+			require.NoError(t, collector.Collect(t.Context(), ch))
+			close(ch)
 
-	for _, mr := range results {
-		if strings.Contains(mr.FqName, "hourly_rate_usd_per_hour") {
-			hourlyMetric = mr
-		} else if strings.Contains(mr.FqName, "data_processing_usd_per_gb") {
-			dataProcessingMetric = mr
-		}
-	}
-
-	if assert.NotNil(t, hourlyMetric, "expected hourly metric to be present") {
-		assert.Equal(t, region, hourlyMetric.Labels["region"])
-		// 0.040 + 0.010 = 0.050
-		assert.InDelta(t, 0.050, hourlyMetric.Value, 1e-9)
-	}
-
-	if assert.NotNil(t, dataProcessingMetric, "expected data processing metric to be present") {
-		assert.Equal(t, region, dataProcessingMetric.Labels["region"])
-		// 0.050 + 0.005 = 0.055
-		assert.InDelta(t, 0.055, dataProcessingMetric.Value, 1e-9)
+			values := make(map[string]float64)
+			for metric := range ch {
+				result := utils.ReadMetrics(metric)
+				require.NotNil(t, result)
+				require.NotContains(t, values, result.FqName, "duplicate metric")
+				assert.Equal(t, utils.LabelMap{"account_id": accountID, "region": tt.region}, result.Labels)
+				values[result.FqName] = result.Value
+			}
+			assert.Equal(t, tt.expected, values)
+		})
 	}
 }
