@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -636,4 +637,73 @@ func TestCollector_Collect_GPU(t *testing.T) {
 	// gpu*gpus + cpu*vcpus + ram*gib == total.
 	assert.InDelta(t, 8.0, total.Value, 1e-9)
 	assert.InDelta(t, total.Value, gpu.Value*8+cpu.Value*192+mem.Value*2048, 1e-9)
+}
+
+// A stalled listing must not consume the entire scrape budget or drop healthy regions.
+func TestCollector_Collect_RegionTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		name                        string
+		instances, volumes          bool
+		parentTimeout, wantDuration time.Duration
+	}{
+		{"instances", true, false, time.Minute, 30 * time.Second},
+		{"volumes", false, true, time.Minute, 30 * time.Second},
+		{"both", true, true, time.Minute, 30 * time.Second},
+		{"shorter parent deadline", true, true, 5 * time.Second, 5 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctrl := gomock.NewController(t)
+				healthy, stalled := mock_client.NewMockClient(ctrl), mock_client.NewMockClient(ctrl)
+				healthy.EXPECT().ListComputeInstances(gomock.Any()).Return([]ec2Types.Reservation{{Instances: []ec2Types.Instance{{
+					InstanceId: aws.String("i-healthy"), PrivateDnsName: aws.String("healthy.internal"),
+					InstanceType: ec2Types.InstanceTypeM5Large,
+					Placement:    &ec2Types.Placement{AvailabilityZone: aws.String("us-east-1a")},
+				}}}}, nil)
+				healthy.EXPECT().ListEBSVolumes(gomock.Any()).Return([]ec2Types.Volume{{
+					VolumeId: aws.String("vol-healthy"), AvailabilityZone: aws.String("us-east-1a"),
+					Size: aws.Int32(10), VolumeType: ec2Types.VolumeTypeGp3,
+				}}, nil)
+				stalled.EXPECT().ListComputeInstances(gomock.Any()).DoAndReturn(func(ctx context.Context) ([]ec2Types.Reservation, error) {
+					if tc.instances {
+						<-ctx.Done()
+						return nil, ctx.Err()
+					}
+					return nil, nil
+				})
+				stalled.EXPECT().ListEBSVolumes(gomock.Any()).DoAndReturn(func(ctx context.Context) ([]ec2Types.Volume, error) {
+					if tc.volumes {
+						<-ctx.Done()
+						return nil, ctx.Err()
+					}
+					return nil, nil
+				})
+				collector := &Collector{
+					logger:             logger,
+					regions:            []ec2Types.Region{{RegionName: aws.String("us-east-1")}, {RegionName: aws.String("ap-northeast-1")}},
+					awsRegionClientMap: map[string]client.Client{"us-east-1": healthy, "ap-northeast-1": stalled},
+					computePricingMap: &ComputePricingMap{Regions: map[string]*FamilyPricing{
+						"us-east-1": {Family: map[string]*Prices{"m5.large": {Cpu: 0.03, Ram: 0.004, Total: 0.096}}},
+					}},
+					storagePricingMap: &StoragePricingMap{Regions: map[string]*StoragePricing{
+						"us-east-1": {Storage: map[string]float64{"gp3": 0.08}},
+					}},
+				}
+				ctx, cancel := context.WithTimeout(t.Context(), tc.parentTimeout)
+				defer cancel()
+				ch := make(chan prometheus.Metric, 4)
+				start := time.Now()
+				require.NoError(t, collector.Collect(ctx, ch))
+				assert.Equal(t, tc.wantDuration, time.Since(start))
+				close(ch)
+				var metrics []*utils.MetricResult
+				for metric := range ch {
+					result := utils.ReadMetrics(metric)
+					assert.Equal(t, "us-east-1", result.Labels["region"])
+					metrics = append(metrics, result)
+				}
+				assert.Len(t, metrics, 4, "healthy instance and volume metrics must survive a stalled region")
+			})
+		})
+	}
 }
