@@ -211,24 +211,25 @@ func TestCollector_Collect(t *testing.T) {
 	}
 }
 
-func TestCollector_CollectAggregatesMultipleUsageTypesPerRegion(t *testing.T) {
+func TestCollector_CollectIgnoresRegionalNATGatewayPrices(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	region := "us-east-1"
 
-	// Mock client returns multiple usage types for the same region that should be aggregated
+	// Usage types as they appear in the us-east-1 price list. Standard NAT Gateway usage types have no
+	// region prefix there, and the Regional NAT Gateway usage types share their suffix. Regional prices
+	// differ here so the test fails if they are picked up or added in.
 	regionClient := func() *mock_client.MockClient {
 		m := mock_client.NewMockClient(ctrl)
 		m.EXPECT().
 			ListEC2ServicePrices(gomock.Any(), region, testNATGatewayFilters).
 			Return([]string{
-				// Two hourly usage types that both map to NATGatewayHours
-				`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test1":{"priceDimensions":{"dim1":{"pricePerUnit":{"USD":"0.040"}}}}}}}`,
-				`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Hours-Additional","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test2":{"priceDimensions":{"dim2":{"pricePerUnit":{"USD":"0.010"}}}}}}}`,
-				// Two data processing usage types that both map to NATGatewayBytes
-				`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Bytes","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test3":{"priceDimensions":{"dim3":{"pricePerUnit":{"USD":"0.050"}}}}}}}`,
-				`{"product":{"attributes":{"usagetype":"USE1-NatGateway-Bytes-Additional","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test4":{"priceDimensions":{"dim4":{"pricePerUnit":{"USD":"0.005"}}}}}}}`,
+				`{"product":{"attributes":{"usagetype":"NatGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test1":{"priceDimensions":{"dim1":{"pricePerUnit":{"USD":"0.045"}}}}}}}`,
+				`{"product":{"attributes":{"usagetype":"NatGateway-Bytes","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test2":{"priceDimensions":{"dim2":{"pricePerUnit":{"USD":"0.045"}}}}}}}`,
+				`{"product":{"attributes":{"usagetype":"RegionalNatGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test3":{"priceDimensions":{"dim3":{"pricePerUnit":{"USD":"0.050"}}}}}}}`,
+				`{"product":{"attributes":{"usagetype":"USE1-RegionalNatGateway-Hours","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test4":{"priceDimensions":{"dim4":{"pricePerUnit":{"USD":"0.050"}}}}}}}`,
+				`{"product":{"attributes":{"usagetype":"USE1-RegionalNatGateway-Bytes","regionCode":"us-east-1"}},"terms":{"OnDemand":{"test5":{"priceDimensions":{"dim5":{"pricePerUnit":{"USD":"0.050"}}}}}}}`,
 			}, nil).
 			Times(1)
 		return m
@@ -276,13 +277,11 @@ func TestCollector_CollectAggregatesMultipleUsageTypesPerRegion(t *testing.T) {
 
 	if assert.NotNil(t, hourlyMetric, "expected hourly metric to be present") {
 		assert.Equal(t, region, hourlyMetric.Labels["region"])
-		// 0.040 + 0.010 = 0.050
-		assert.InDelta(t, 0.050, hourlyMetric.Value, 1e-9)
+		assert.InDelta(t, 0.045, hourlyMetric.Value, 1e-9)
 	}
 
 	if assert.NotNil(t, dataProcessingMetric, "expected data processing metric to be present") {
 		assert.Equal(t, region, dataProcessingMetric.Labels["region"])
-		// 0.050 + 0.005 = 0.055
-		assert.InDelta(t, 0.055, dataProcessingMetric.Value, 1e-9)
+		assert.InDelta(t, 0.045, dataProcessingMetric.Value, 1e-9)
 	}
 }

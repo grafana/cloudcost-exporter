@@ -115,15 +115,11 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 		)
 
 		for usageType, price := range pricePerUnit.Entries() {
-			if strings.Contains(usageType, NATGatewayHours) {
-				// Aggregate all hourly NAT Gateway prices for this region into a single value
-				// E.g `USE1-NatGateway-Hours` and `USE1-NatGateway-Hours-Additional`
-				hourlyPrice += price
+			if isUsageType(usageType, NATGatewayHours) {
+				hourlyPrice = price
 			}
-			if strings.Contains(usageType, NATGatewayBytes) {
-				// Aggregate all data processing NAT Gateway prices for this region into a single value
-				// E.g `USE1-NatGateway-Bytes` and `USE1-NatGateway-Bytes-Additional`
-				dataProcessingPrice += price
+			if isUsageType(usageType, NATGatewayBytes) {
+				dataProcessingPrice = price
 			}
 		}
 
@@ -137,6 +133,13 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	}
 
 	return nil
+}
+
+// isUsageType reports whether usageType is the standard NAT Gateway usage type, such as
+// `USE2-NatGateway-Bytes` or `NatGateway-Bytes` in us-east-1, which has no region prefix.
+// Regional NAT Gateway usage types such as `USE2-RegionalNatGateway-Bytes` don't match.
+func isUsageType(usageType, name string) bool {
+	return usageType == name || strings.HasSuffix(usageType, "-"+name)
 }
 
 func (c *Collector) Register(registry provider.Registry) error { return nil }
