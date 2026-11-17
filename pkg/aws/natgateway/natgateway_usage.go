@@ -7,8 +7,10 @@ import (
 
 const (
 	// NAT Gateway usage types
-	NATGatewayHours = "NatGateway-Hours"
-	NATGatewayBytes = "NatGateway-Bytes"
+	NATGatewayHours         = "NatGateway-Hours"
+	NATGatewayBytes         = "NatGateway-Bytes"
+	RegionalNATGatewayHours = "RegionalNatGateway-Hours"
+	RegionalNATGatewayBytes = "RegionalNatGateway-Bytes"
 )
 
 var (

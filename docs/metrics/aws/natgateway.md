@@ -1,9 +1,9 @@
 # NAT Gateway Metrics
 
-| Metric name                                        | Metric type | Description                                                                                  | Labels                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-|----------------------------------------------------|-------------|----------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| cloudcost_aws_natgateway_hourly_rate_usd_per_hour   | Gauge       | The hourly cost of a NAT Gateway in USD/hour | `account_id`=&lt;AWS account ID&gt; <br/> `region`=&lt;AWS region code&gt; |
-| cloudcost_aws_natgateway_data_processing_usd_per_gb | Gauge       | The data processing cost of a NAT Gateway in USD/GB       | `account_id`=&lt;AWS account ID&gt; <br/> `region`=&lt;AWS region code&gt; |
+| Metric name | Metric type | Description | Labels |
+|---|---|---|---|
+| cloudcost_aws_natgateway_hourly_rate_usd_per_hour | Gauge | NAT Gateway price in USD/hour; Regional rates apply per availability zone | `account_id`, `region`, `gateway_type` |
+| cloudcost_aws_natgateway_data_processing_usd_per_gb | Gauge | NAT Gateway data processing price in USD/GB | `account_id`, `region`, `gateway_type` |
 
 ## Overview
 
@@ -19,7 +19,7 @@ The NAT Gateway module collects pricing information for [AWS NAT Gateways](https
 - **Type**: Gauge
 - **Unit**: USD per hour
 - **Description**: The fixed hourly cost for running a NAT Gateway, charged for each hour the NAT Gateway is available
-- **Labels**: `region` - The AWS region where the NAT Gateway is deployed
+- **Labels**: `account_id` - AWS account ID; `region` - AWS region code; `gateway_type` - `standard` or `regional`
 - **Usage**: This metric helps track the baseline cost of NAT Gateway infrastructure
 
 ### Data Processing (`cloudcost_aws_natgateway_data_processing_usd_per_gb`)
@@ -27,8 +27,24 @@ The NAT Gateway module collects pricing information for [AWS NAT Gateways](https
 - **Type**: Gauge
 - **Unit**: USD per GB
 - **Description**: The cost for processing data through the NAT Gateway
-- **Labels**: `region` - The AWS region where the NAT Gateway is deployed
+- **Labels**: `account_id` - AWS account ID; `region` - AWS region code; `gateway_type` - `standard` or `regional`
 - **Usage**: This metric helps estimate costs based on data transfer volume through NAT Gateways
+
+### Regional NAT Gateways
+
+Both metrics use `gateway_type="standard"` for standard NAT Gateways and `gateway_type="regional"` for Regional NAT Gateways. The hourly rate applies to each availability zone where the Regional NAT Gateway is configured. Multiply that rate by the number of active availability zones to estimate its hourly charge.
+
+Standard and Regional prices are alternatives. Do not add them together for the same traffic or gateway.
+
+### Query compatibility
+
+Filter by `gateway_type` before aggregating prices. For standard NAT Gateways, this selector also accepts older series without the label:
+
+```promql
+cloudcost_aws_natgateway_data_processing_usd_per_gb{gateway_type!="regional"}
+```
+
+Use `{gateway_type="regional"}` for Regional NAT Gateways. Apply the same filtering to the hourly metric. Update consumers before deploying the labeled metrics: an unfiltered `sum` adds alternative prices, and an unfiltered `max` can select the other gateway type's price.
 
 ## Pricing Source
 
@@ -38,7 +54,11 @@ The pricing filters used are:
 - **Product Family**: `NAT Gateway`
 - **Usage Types**:
   - `NatGateway-Hours` - for hourly rates
-  - `NatGateway-Bytes` - for data processing costs
+  - `NatGateway-Bytes` - for standard data processing costs
+  - `RegionalNatGateway-Hours` - for Regional hourly rates per availability zone
+  - `RegionalNatGateway-Bytes` - for Regional data processing costs
+
+Usage types match exactly, with or without an AWS region prefix such as `USE1-`. Prices from different gateway types are never combined. If the catalog includes both prefixed and unprefixed aliases for the same gateway type and cost component, the exporter uses their maximum rate instead of summing them. A metric is emitted only when its price is positive.
 
 ## IAM Permissions
 

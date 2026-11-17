@@ -31,14 +31,14 @@ var (
 		subsystem,
 		"hourly_rate_usd_per_hour",
 		"Hourly cost of NAT Gateway by region. Cost represented in USD/hour",
-		[]string{"account_id", "region"},
+		[]string{"account_id", "region", "gateway_type"},
 	)
 	DataProcessingGaugeDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
 		"data_processing_usd_per_gb",
 		"Data processing cost of NAT Gateway by region. Cost represented in USD/GB",
-		[]string{"account_id", "region"},
+		[]string{"account_id", "region", "gateway_type"},
 	)
 )
 
@@ -110,33 +110,49 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 	snapshot := c.PricingStore.Snapshot()
 	for region, pricePerUnit := range snapshot.Regions() {
 		var (
-			hourlyPrice         float64
-			dataProcessingPrice float64
+			hourlyPrice                 float64
+			dataProcessingPrice         float64
+			regionalHourlyPrice         float64
+			regionalDataProcessingPrice float64
 		)
 
 		for usageType, price := range pricePerUnit.Entries() {
-			if strings.Contains(usageType, NATGatewayHours) {
-				// Aggregate all hourly NAT Gateway prices for this region into a single value
-				// E.g `USE1-NatGateway-Hours` and `USE1-NatGateway-Hours-Additional`
-				hourlyPrice += price
-			}
-			if strings.Contains(usageType, NATGatewayBytes) {
-				// Aggregate all data processing NAT Gateway prices for this region into a single value
-				// E.g `USE1-NatGateway-Bytes` and `USE1-NatGateway-Bytes-Additional`
-				dataProcessingPrice += price
+			// A region can list both prefixed and unprefixed aliases. Keep one rate per
+			// gateway type and cost component instead of adding alternative prices.
+			switch {
+			case isUsageType(usageType, NATGatewayHours):
+				hourlyPrice = max(hourlyPrice, price)
+			case isUsageType(usageType, NATGatewayBytes):
+				dataProcessingPrice = max(dataProcessingPrice, price)
+			case isUsageType(usageType, RegionalNATGatewayHours):
+				regionalHourlyPrice = max(regionalHourlyPrice, price)
+			case isUsageType(usageType, RegionalNATGatewayBytes):
+				regionalDataProcessingPrice = max(regionalDataProcessingPrice, price)
 			}
 		}
 
-		// Emit at most one sample per metric/region to satisfy Prometheus uniqueness constraints
+		// Emit one rate per gateway type and cost component in each region.
 		if hourlyPrice > 0 {
-			ch <- prometheus.MustNewConstMetric(HourlyGaugeDesc, prometheus.GaugeValue, hourlyPrice, c.accountID, region)
+			ch <- prometheus.MustNewConstMetric(HourlyGaugeDesc, prometheus.GaugeValue, hourlyPrice, c.accountID, region, "standard")
 		}
 		if dataProcessingPrice > 0 {
-			ch <- prometheus.MustNewConstMetric(DataProcessingGaugeDesc, prometheus.GaugeValue, dataProcessingPrice, c.accountID, region)
+			ch <- prometheus.MustNewConstMetric(DataProcessingGaugeDesc, prometheus.GaugeValue, dataProcessingPrice, c.accountID, region, "standard")
+		}
+		if regionalHourlyPrice > 0 {
+			ch <- prometheus.MustNewConstMetric(HourlyGaugeDesc, prometheus.GaugeValue, regionalHourlyPrice, c.accountID, region, "regional")
+		}
+		if regionalDataProcessingPrice > 0 {
+			ch <- prometheus.MustNewConstMetric(DataProcessingGaugeDesc, prometheus.GaugeValue, regionalDataProcessingPrice, c.accountID, region, "regional")
 		}
 	}
 
 	return nil
+}
+
+// isUsageType matches an exact usage type with an optional region prefix.
+// The separator prevents RegionalNatGateway-Bytes from matching NatGateway-Bytes.
+func isUsageType(usageType, name string) bool {
+	return usageType == name || strings.HasSuffix(usageType, "-"+name)
 }
 
 func (c *Collector) Register(registry provider.Registry) error { return nil }
