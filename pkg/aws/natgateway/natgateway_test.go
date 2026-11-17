@@ -123,12 +123,10 @@ func TestCollector_Describe(t *testing.T) {
 		expectedDescs     []string
 	}{
 		"expect correct descriptions": {
-			expectedDescCount: 4,
+			expectedDescCount: 2,
 			expectedDescs: []string{
 				natgateway.HourlyGaugeDesc.String(),
 				natgateway.DataProcessingGaugeDesc.String(),
-				natgateway.RegionalHourlyGaugeDesc.String(),
-				natgateway.RegionalDataProcessingGaugeDesc.String(),
 			},
 		},
 	}
@@ -177,8 +175,8 @@ func TestCollector_Collect(t *testing.T) {
 				return m
 			}(),
 			expectedMetrics: []prometheus.Metric{
-				prometheus.MustNewConstMetric(natgateway.HourlyGaugeDesc, prometheus.GaugeValue, 0.045, "123456789012", "us-east-1"),
-				prometheus.MustNewConstMetric(natgateway.DataProcessingGaugeDesc, prometheus.GaugeValue, 0.045, "123456789012", "us-east-1"),
+				prometheus.MustNewConstMetric(natgateway.HourlyGaugeDesc, prometheus.GaugeValue, 0.045, "123456789012", "us-east-1", "standard"),
+				prometheus.MustNewConstMetric(natgateway.DataProcessingGaugeDesc, prometheus.GaugeValue, 0.045, "123456789012", "us-east-1", "standard"),
 			},
 		},
 	}
@@ -233,10 +231,10 @@ func TestCollector_CollectSeparatesGatewayTypes(t *testing.T) {
 				"NatGateway-Bytes-Additional":   "0.010",
 			},
 			expected: map[string]float64{
-				"cloudcost_aws_natgateway_hourly_rate_usd_per_hour":            0.045,
-				"cloudcost_aws_natgateway_data_processing_usd_per_gb":          0.045,
-				"cloudcost_aws_natgateway_regional_hourly_rate_usd_per_hour":   0.050,
-				"cloudcost_aws_natgateway_regional_data_processing_usd_per_gb": 0.060,
+				"cloudcost_aws_natgateway_hourly_rate_usd_per_hour/standard":   0.045,
+				"cloudcost_aws_natgateway_data_processing_usd_per_gb/standard": 0.045,
+				"cloudcost_aws_natgateway_hourly_rate_usd_per_hour/regional":   0.050,
+				"cloudcost_aws_natgateway_data_processing_usd_per_gb/regional": 0.060,
 			},
 		},
 		{
@@ -249,10 +247,10 @@ func TestCollector_CollectSeparatesGatewayTypes(t *testing.T) {
 				"MXC1-RegionalNatGateway-Bytes": "0.04725",
 			},
 			expected: map[string]float64{
-				"cloudcost_aws_natgateway_hourly_rate_usd_per_hour":            0.04725,
-				"cloudcost_aws_natgateway_data_processing_usd_per_gb":          0.04725,
-				"cloudcost_aws_natgateway_regional_hourly_rate_usd_per_hour":   0.04725,
-				"cloudcost_aws_natgateway_regional_data_processing_usd_per_gb": 0.04725,
+				"cloudcost_aws_natgateway_hourly_rate_usd_per_hour/standard":   0.04725,
+				"cloudcost_aws_natgateway_data_processing_usd_per_gb/standard": 0.04725,
+				"cloudcost_aws_natgateway_hourly_rate_usd_per_hour/regional":   0.04725,
+				"cloudcost_aws_natgateway_data_processing_usd_per_gb/regional": 0.04725,
 			},
 		},
 		{
@@ -263,8 +261,8 @@ func TestCollector_CollectSeparatesGatewayTypes(t *testing.T) {
 				"RegionalNatGateway-Bytes": "0.060",
 			},
 			expected: map[string]float64{
-				"cloudcost_aws_natgateway_regional_hourly_rate_usd_per_hour":   0.050,
-				"cloudcost_aws_natgateway_regional_data_processing_usd_per_gb": 0.060,
+				"cloudcost_aws_natgateway_hourly_rate_usd_per_hour/regional":   0.050,
+				"cloudcost_aws_natgateway_data_processing_usd_per_gb/regional": 0.060,
 			},
 		},
 	}
@@ -293,9 +291,12 @@ func TestCollector_CollectSeparatesGatewayTypes(t *testing.T) {
 			for metric := range ch {
 				result := utils.ReadMetrics(metric)
 				require.NotNil(t, result)
-				require.NotContains(t, values, result.FqName, "duplicate metric")
-				assert.Equal(t, utils.LabelMap{"account_id": accountID, "region": tt.region}, result.Labels)
-				values[result.FqName] = result.Value
+				gatewayType := result.Labels["gateway_type"]
+				assert.Contains(t, []string{"standard", "regional"}, gatewayType)
+				key := result.FqName + "/" + gatewayType
+				require.NotContains(t, values, key, "duplicate metric for gateway type")
+				assert.Equal(t, utils.LabelMap{"account_id": accountID, "region": tt.region, "gateway_type": gatewayType}, result.Labels)
+				values[key] = result.Value
 			}
 			assert.Equal(t, tt.expected, values)
 		})

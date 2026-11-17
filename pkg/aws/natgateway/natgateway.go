@@ -31,28 +31,14 @@ var (
 		subsystem,
 		"hourly_rate_usd_per_hour",
 		"Hourly cost of NAT Gateway by region. Cost represented in USD/hour",
-		[]string{"account_id", "region"},
+		[]string{"account_id", "region", "gateway_type"},
 	)
 	DataProcessingGaugeDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
 		"data_processing_usd_per_gb",
 		"Data processing cost of NAT Gateway by region. Cost represented in USD/GB",
-		[]string{"account_id", "region"},
-	)
-	RegionalHourlyGaugeDesc = utils.GenerateDesc(
-		cloudcost_exporter.MetricPrefix,
-		subsystem,
-		"regional_hourly_rate_usd_per_hour",
-		"Hourly cost of Regional NAT Gateway per availability zone by region. Cost represented in USD/hour",
-		[]string{"account_id", "region"},
-	)
-	RegionalDataProcessingGaugeDesc = utils.GenerateDesc(
-		cloudcost_exporter.MetricPrefix,
-		subsystem,
-		"regional_data_processing_usd_per_gb",
-		"Data processing cost of Regional NAT Gateway by region. Cost represented in USD/GB",
-		[]string{"account_id", "region"},
+		[]string{"account_id", "region", "gateway_type"},
 	)
 )
 
@@ -114,8 +100,6 @@ func (c *Collector) Regions() []string { return c.regions }
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) error {
 	ch <- HourlyGaugeDesc
 	ch <- DataProcessingGaugeDesc
-	ch <- RegionalHourlyGaugeDesc
-	ch <- RegionalDataProcessingGaugeDesc
 	return nil
 }
 
@@ -147,18 +131,18 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 			}
 		}
 
-		// Emit at most one sample per metric/region to satisfy Prometheus uniqueness constraints
+		// Emit one rate per gateway type and cost component in each region.
 		if hourlyPrice > 0 {
-			ch <- prometheus.MustNewConstMetric(HourlyGaugeDesc, prometheus.GaugeValue, hourlyPrice, c.accountID, region)
+			ch <- prometheus.MustNewConstMetric(HourlyGaugeDesc, prometheus.GaugeValue, hourlyPrice, c.accountID, region, "standard")
 		}
 		if dataProcessingPrice > 0 {
-			ch <- prometheus.MustNewConstMetric(DataProcessingGaugeDesc, prometheus.GaugeValue, dataProcessingPrice, c.accountID, region)
+			ch <- prometheus.MustNewConstMetric(DataProcessingGaugeDesc, prometheus.GaugeValue, dataProcessingPrice, c.accountID, region, "standard")
 		}
 		if regionalHourlyPrice > 0 {
-			ch <- prometheus.MustNewConstMetric(RegionalHourlyGaugeDesc, prometheus.GaugeValue, regionalHourlyPrice, c.accountID, region)
+			ch <- prometheus.MustNewConstMetric(HourlyGaugeDesc, prometheus.GaugeValue, regionalHourlyPrice, c.accountID, region, "regional")
 		}
 		if regionalDataProcessingPrice > 0 {
-			ch <- prometheus.MustNewConstMetric(RegionalDataProcessingGaugeDesc, prometheus.GaugeValue, regionalDataProcessingPrice, c.accountID, region)
+			ch <- prometheus.MustNewConstMetric(DataProcessingGaugeDesc, prometheus.GaugeValue, regionalDataProcessingPrice, c.accountID, region, "regional")
 		}
 	}
 
