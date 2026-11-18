@@ -51,6 +51,10 @@ var cpuToCostRatio = map[string]float64{
 	// which the General purpose default is fine. Listed explicitly so GPU
 	// instances don't log a "no ratio found, defaulting" warn on every refresh.
 	"GPU instance": 0.65,
+	// Accelerator-priced families, same default split as GPU instances.
+	"Machine Learning ASIC Instances": 0.65,
+	"Media Accelerator Instances":     0.65,
+	"FPGA Instances":                  0.65,
 }
 
 // ComputePricingMap collects a map of FamilyPricing structs where the key is the region
