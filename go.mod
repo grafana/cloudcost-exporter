@@ -31,7 +31,7 @@ require (
 	github.com/prometheus/common v0.72.0
 	github.com/stretchr/testify v1.12.1
 	go.uber.org/mock v0.6.0
-	golang.org/x/sync v0.24.0
+	golang.org/x/sync v0.25.0
 	gomodules.xyz/azure-retail-prices-sdk-for-go v0.0.3
 	google.golang.org/api v0.287.1
 	google.golang.org/genproto v0.0.0-20260911204522-f61a6ca850bd
