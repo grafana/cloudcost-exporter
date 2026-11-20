@@ -63,21 +63,21 @@ var (
 		subsystem,
 		utils.InstanceCPUCostSuffix,
 		"The cpu cost a a compute instance in USD/(core*h)",
-		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
+		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system", "subscription_id"},
 	)
 	InstanceMemoryHourlyCostDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
 		utils.InstanceMemoryCostSuffix,
 		"The memory cost of a compute instance in USD/(GiB*h)",
-		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
+		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system", "subscription_id"},
 	)
 	InstanceTotalHourlyCostDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
 		utils.InstanceTotalCostSuffix,
 		"The total cost of a compute instance in USD/h",
-		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system"},
+		[]string{"instance", "region", "machine_type", "family", "cluster_name", "price_tier", "operating_system", "subscription_id"},
 	)
 	// Azure Managed Disk storage metrics for persistent volume cost tracking
 	StorageByLocationHourlyCostDesc = utils.GenerateDesc(
@@ -85,14 +85,14 @@ var (
 		subsystem,
 		utils.PersistentVolumeCostPerGiBSuffix,
 		"The cost of an Azure Managed Disk in USD GiByte per hour",
-		[]string{"persistentvolume", "region", "availability_zone", "disk", "sku", "price_tier", "size_gib", "state", "cluster_name", "namespace"},
+		[]string{"persistentvolume", "region", "availability_zone", "disk", "sku", "price_tier", "size_gib", "state", "cluster_name", "namespace", "subscription_id"},
 	)
 	StorageByLocationTotalHourlyCostDesc = utils.GenerateDesc(
 		cloudcost_exporter.MetricPrefix,
 		subsystem,
 		utils.PersistentVolumeCostSuffix,
 		"The total cost of an Azure Managed Disk in USD per hour",
-		[]string{"persistentvolume", "region", "availability_zone", "disk", "sku", "price_tier", "size_gib", "state", "cluster_name", "namespace"},
+		[]string{"persistentvolume", "region", "availability_zone", "disk", "sku", "price_tier", "size_gib", "state", "cluster_name", "namespace", "subscription_id"},
 	)
 )
 
@@ -226,6 +226,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 				vmInfo.OwningCluster,
 				vmInfo.Priority.String(),
 				vmInfo.OperatingSystem.String(),
+				c.subscriptionID,
 			}
 
 			ch <- prometheus.MustNewConstMetric(InstanceCPUHourlyCostDesc, prometheus.GaugeValue, price.MachinePricesBreakdown.PricePerCore, labelValues...)
@@ -273,6 +274,7 @@ func (c *Collector) Collect(ctx context.Context, ch chan<- prometheus.Metric) er
 			disk.State,
 			disk.ClusterName,
 			disk.Namespace,
+			c.subscriptionID,
 		}
 
 		// Emit dual storage metrics following AWS/GCP patterns:
