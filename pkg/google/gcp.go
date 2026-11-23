@@ -203,23 +203,22 @@ func newWithClient(ctx context.Context, config *Config, gcpClient client.Client)
 	}
 
 	// Register stable services followed by experimental ones. Experimental collectors are outside
-	// the backward-compatibility contract, so warn when registering them. A service already enabled
-	// as stable is not registered again as experimental; registering it twice would fail collector
-	// registration with a duplicate-descriptor error.
-	stableNames := make(map[string]bool, len(config.Services))
-	for _, s := range config.Services {
-		stableNames[strings.ToUpper(strings.TrimSpace(s))] = true
-	}
+	// the backward-compatibility contract, so warn when registering them. A service is registered
+	// at most once, however it is spelled (name or alias) and whichever list repeats it;
+	// registering it twice would fail collector registration with a duplicate-descriptor error.
+	registered := make(map[string]bool)
 	allServices := slices.Concat(config.Services, config.ExperimentalServices)
 	for i, service := range allServices {
 		service = strings.TrimSpace(service)
 		if service == "" {
 			continue
 		}
+		canonical := provider.CanonicalServiceName(Services(), service)
+		if registered[canonical] {
+			continue
+		}
+		registered[canonical] = true
 		if i >= len(config.Services) {
-			if stableNames[strings.ToUpper(service)] {
-				continue
-			}
 			logger.LogAttrs(ctx, slog.LevelWarn, "registering experimental collector; its metrics are not covered by the backward-compatibility contract and may change",
 				slog.String("service", service))
 		}
