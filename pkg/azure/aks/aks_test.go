@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -342,4 +343,67 @@ func TestGetMachinePrices(t *testing.T) {
 			assert.True(t, eq, fmt.Sprintf("prices are not equal: expected %+v, returned %+v", tc.expectedPrices, prices))
 		})
 	}
+}
+
+func TestCollectSubscriptionIDLabel(t *testing.T) {
+	disk := &Disk{Name: "disk1", Location: "centralus", Size: 100, SKU: "Premium_LRS", State: "Attached"}
+	diskStore := &DiskStore{
+		logger:      aksTestLogger,
+		disks:       map[string]*Disk{"disk1": disk},
+		diskPricing: map[string]*DiskPricing{},
+	}
+	diskStore.diskPricing[diskStore.buildDiskPricingKey(disk)] = &DiskPricing{RetailPrice: 10}
+
+	c := &Collector{
+		logger:         aksTestLogger,
+		subscriptionID: "sub-1234",
+		MachineStore: &MachineStore{
+			logger:         aksTestLogger,
+			machineMapLock: &sync.RWMutex{},
+			MachineMap: map[string]*VirtualMachineInfo{
+				"vmId": {
+					Name:            "vmId",
+					Id:              "vmId",
+					Region:          "centralus",
+					MachineTypeSku:  "Standard_D4s_v3",
+					MachineFamily:   "General purpose",
+					OwningCluster:   "cluster",
+					OperatingSystem: Linux,
+					Priority:        OnDemand,
+				},
+			},
+		},
+		VMPriceStore: &VMPriceStore{
+			logger:            aksTestLogger,
+			regionMapLock:     &sync.RWMutex{},
+			initialPopulation: closedChan(),
+			RegionMap: map[string]PriceByPriority{
+				"centralus": {OnDemand: {Linux: {"Standard_D4s_v3": {
+					RetailPrice:            0.1,
+					MachinePricesBreakdown: &MachinePrices{PricePerCore: 0.1, PricePerGiB: 0.1},
+				}}}},
+			},
+		},
+		DiskStore: diskStore,
+	}
+
+	promCh := make(chan prometheus.Metric, 16)
+	assert.NoError(t, c.Collect(t.Context(), promCh))
+	close(promCh)
+
+	count := 0
+	for metric := range promCh {
+		m := &dto.Metric{}
+		assert.NoError(t, metric.Write(m))
+		found := false
+		for _, l := range m.Label {
+			if l.GetName() == "subscription_id" {
+				found = true
+				assert.Equal(t, "sub-1234", l.GetValue())
+			}
+		}
+		assert.True(t, found, "missing subscription_id label on %s", metric.Desc())
+		count++
+	}
+	assert.Equal(t, 5, count, "expected 3 instance and 2 persistent volume metrics")
 }
