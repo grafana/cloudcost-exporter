@@ -275,3 +275,52 @@ func TestServices(t *testing.T) {
 	}
 	assert.Contains(t, eh.Aliases, serviceEventHubsAlias, "EVENTHUBS should carry EVENTHUB as alias")
 }
+
+func Test_newWithFactory_reportsCollectorsThatFailToCreate(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	healthy := mock_provider.NewMockCollector(ctrl)
+	healthy.EXPECT().Name().Return("azure_blob").AnyTimes()
+	healthy.EXPECT().Collect(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	create := func(_ context.Context, service string) (provider.Collector, error) {
+		switch strings.ToUpper(service) {
+		case "BLOB":
+			return healthy, nil
+		case "AKS":
+			return nil, fmt.Errorf("boom")
+		case "EVENTHUBS":
+			panic("constructor panic")
+		}
+		return nil, errUnknownService
+	}
+
+	a := newWithFactory(t.Context(), &Config{
+		Services:         []string{"AKS", "blob", "EVENTHUBS", "bogus"},
+		CollectorTimeout: time.Second,
+	}, testLogger, create)
+
+	assert.Len(t, a.collectors, 1)
+	assert.Equal(t, map[string]string{"AKS": "azure_aks", "EVENTHUBS": "eventhubs"}, a.pending)
+
+	ch := make(chan prometheus.Metric, 32)
+	a.Collect(ch)
+	close(ch)
+
+	type key struct{ metric, collector string }
+	got := map[key]float64{}
+	for m := range ch {
+		result := utils.ReadMetrics(m)
+		if result == nil {
+			continue // histograms from collectormetrics are not readable here
+		}
+		got[key{result.FqName, result.Labels["collector"]}] = result.Value
+	}
+
+	for _, name := range []string{"azure_aks", "eventhubs"} {
+		assert.Equal(t, 1.0, got[key{"cloudcost_exporter_collector_last_scrape_error", name}], name)
+		assert.Equal(t, 0.0, got[key{"cloudcost_exporter_collector_last_scrape_duration_seconds", name}], name)
+		assert.Contains(t, got, key{"cloudcost_exporter_collector_last_scrape_time", name})
+	}
+	assert.Equal(t, 0.0, got[key{"cloudcost_exporter_collector_last_scrape_error", "azure_blob"}])
+	assert.NotContains(t, got, key{"cloudcost_exporter_collector_last_scrape_error", "bogus"})
+}
