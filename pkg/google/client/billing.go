@@ -218,7 +218,7 @@ func (b *Billing) exportBilling(ctx context.Context, serviceName string, m *metr
 			}
 			continue
 		}
-		if strings.HasSuffix(sku.Category.ResourceGroup, "Ops") {
+		if strings.HasSuffix(sku.GetCategory().GetResourceGroup(), "Ops") {
 			if err := parseOpSku(sku, m); err != nil {
 				slog.Error("error parsing op sku", "error", err)
 			}
@@ -288,6 +288,9 @@ func parseStorageSku(sku *billingpb.Sku, m *metrics.Metrics) error {
 		return fmt.Errorf("%w:%s, %s", errUnknownPricingUnit, sku.Description, priceUnit)
 	}
 
+	if len(sku.ServiceRegions) == 0 {
+		return fmt.Errorf("%w:%s, no service regions", errInvalidSKU, sku.Description)
+	}
 	region := regionNameSameAsStackdriver(sku.ServiceRegions[0])
 	storageclass := storageClassFromSkuDescription(sku.Description, region)
 	m.StorageGauge.WithLabelValues(region, storageclass).Set(price)
@@ -304,6 +307,9 @@ func parseOpSku(sku *billingpb.Sku, m *metrics.Metrics) error {
 		return err
 	}
 
+	if len(sku.ServiceRegions) == 0 {
+		return fmt.Errorf("%w:%s, no service regions", errInvalidSKU, sku.Description)
+	}
 	region := regionNameSameAsStackdriver(sku.ServiceRegions[0])
 	storageclass := storageClassFromSkuDescription(sku.Description, region)
 	opclass := opClassFromSkuDescription(sku.Description)
