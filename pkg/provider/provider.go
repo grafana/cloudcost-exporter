@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -40,4 +41,23 @@ type ServiceInfo struct {
 	DisplayName string
 	Description string
 	Aliases     []string
+}
+
+// CanonicalServiceName resolves a -{provider}.services flag value to the
+// canonical Name of the matching ServiceInfo, matching Name and Aliases
+// case-insensitively and ignoring surrounding whitespace. A value that matches
+// no service is returned trimmed and upper-cased.
+func CanonicalServiceName(services []ServiceInfo, value string) string {
+	value = strings.ToUpper(strings.TrimSpace(value))
+	for _, s := range services {
+		if strings.EqualFold(s.Name, value) {
+			return s.Name
+		}
+		for _, alias := range s.Aliases {
+			if strings.EqualFold(alias, value) {
+				return s.Name
+			}
+		}
+	}
+	return value
 }

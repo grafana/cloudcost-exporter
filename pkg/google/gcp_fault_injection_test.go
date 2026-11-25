@@ -137,6 +137,11 @@ func managedKafkaSku() *billingpb.Sku {
 // constructors, against a catalog that fails on demand and a compute API that returns empty responses.
 func newFaultInjectedProvider(t *testing.T, catalog *flakyCatalog, services ...string) *GCP {
 	t.Helper()
+	return newFaultInjectedProviderWith(t, catalog, services, nil)
+}
+
+func newFaultInjectedProviderWith(t *testing.T, catalog *flakyCatalog, services, experimentalServices []string) *GCP {
+	t.Helper()
 
 	computeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(struct{}{})
@@ -153,6 +158,7 @@ func newFaultInjectedProvider(t *testing.T, catalog *flakyCatalog, services ...s
 		ProjectId:             "testing",
 		Projects:              "testing",
 		Services:              services,
+		ExperimentalServices:  experimentalServices,
 		ScrapeInterval:        time.Hour,
 		CollectorTimeout:      time.Minute,
 		GKEZoneConcurrency:    1,
@@ -225,6 +231,20 @@ func TestCollectorNamesMatchTheNameEachCollectorReports(t *testing.T) {
 			require.Len(t, collectors, 1, "%s must be constructible in this harness (pending: %v)", svc.Name, notCreated)
 			assert.Equal(t, collectorNames[svc.Name], collectors[0].Name(),
 				"collectorNames[%q] is stale: the collector reports %q", svc.Name, collectors[0].Name())
+		})
+	}
+}
+
+func TestNew_ServiceAliasRegistersOnce(t *testing.T) {
+	for name, tc := range map[string]struct{ stable, experimental []string }{
+		"alias in stable, name in experimental": {[]string{serviceKafkaAlias}, []string{serviceManagedKafka}},
+		"name in stable, alias in experimental": {[]string{serviceManagedKafka}, []string{"kafka"}},
+		"name and alias in stable":              {[]string{serviceManagedKafka, serviceKafkaAlias}, nil},
+		"name repeated in stable":               {[]string{serviceManagedKafka, "managedkafka"}, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := newFaultInjectedProviderWith(t, newFlakyCatalog(), tc.stable, tc.experimental)
+			assert.Equal(t, []string{"managedkafka"}, collectorNamesOf(g))
 		})
 	}
 }

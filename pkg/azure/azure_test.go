@@ -275,3 +275,23 @@ func TestServices(t *testing.T) {
 	}
 	assert.Contains(t, eh.Aliases, serviceEventHubsAlias, "EVENTHUBS should carry EVENTHUB as alias")
 }
+
+func Test_New_serviceRegistersOnce(t *testing.T) {
+	for name, tc := range map[string]struct{ stable, experimental []string }{
+		"alias in stable, name in experimental": {[]string{"EVENTHUB"}, []string{"EVENTHUBS"}},
+		"name in stable, alias in experimental": {[]string{"eventhubs"}, []string{"EventHub"}},
+		"name and alias in stable":              {[]string{"EVENTHUBS", "EVENTHUB"}, nil},
+		"name repeated in stable":               {[]string{"blob", "BLOB"}, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			a, err := New(t.Context(), &Config{
+				Logger:               testLogger,
+				SubscriptionID:       "asdf-1234",
+				Services:             tc.stable,
+				ExperimentalServices: tc.experimental,
+			})
+			assert.NoError(t, err)
+			assert.Len(t, a.collectors, 1)
+		})
+	}
+}
