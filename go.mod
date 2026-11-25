@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	cloud.google.com/go/billing v1.26.0
-	cloud.google.com/go/compute v1.65.0
+	cloud.google.com/go/compute v1.75.0
 	cloud.google.com/go/managedkafka v1.0.0
 	cloud.google.com/go/storage v1.62.2
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0
