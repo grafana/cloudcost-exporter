@@ -305,3 +305,45 @@ func TestRegionNameSameAsStackdriver(t *testing.T) {
 		})
 	}
 }
+
+func TestExportBillingMalformedSkus(t *testing.T) {
+	pricing := []*billingpb.PricingInfo{{
+		PricingExpression: &billingpb.PricingExpression{
+			UsageUnitDescription: gibMonthly,
+			TieredRates: []*billingpb.PricingExpression_TierRate{
+				{UnitPrice: &money.Money{Nanos: 4000000}},
+			},
+		},
+	}}
+	skus := []*billingpb.Sku{
+		{Description: "no category", ServiceRegions: []string{"us-east1"}, PricingInfo: pricing},
+		{
+			Description:    "storage without regions",
+			Category:       &billingpb.Category{ResourceGroup: "RegionalStorage"},
+			PricingInfo:    pricing,
+			ServiceRegions: nil,
+		},
+		{
+			Description: "ops without regions",
+			Category:    &billingpb.Category{ResourceGroup: "RegionalOps"},
+			PricingInfo: pricing,
+		},
+	}
+	b := newBilling(NewTestBillingClient(t, &FakeCloudCatalogServerWithSKUs{Skus: skus}), nil, nil)
+	assert.NotPanics(t, func() {
+		b.exportBilling(context.Background(), "services/cloud-storage", metrics.NewMetrics())
+	})
+}
+
+func TestParseSkuWithoutServiceRegions(t *testing.T) {
+	sku := &billingpb.Sku{
+		PricingInfo: []*billingpb.PricingInfo{{
+			PricingExpression: &billingpb.PricingExpression{
+				UsageUnitDescription: gibMonthly,
+				TieredRates:          []*billingpb.PricingExpression_TierRate{{UnitPrice: &money.Money{Nanos: 4000000}}},
+			},
+		}},
+	}
+	assert.ErrorIs(t, parseStorageSku(sku, metrics.NewMetrics()), errInvalidSKU)
+	assert.ErrorIs(t, parseOpSku(sku, metrics.NewMetrics()), errInvalidSKU)
+}
