@@ -225,7 +225,7 @@ jobs:
   push-manifest:
     # Always push manifest for all PR merges
     needs: [check-release-label, tag-and-goreleaser, build-and-export-digest]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       id-token: write
@@ -270,7 +270,7 @@ jobs:
   deploy:
     if: needs.tag-and-goreleaser.outputs.should-release == 'true'
     needs: [check-release-label, tag-and-goreleaser, push-manifest]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       id-token: write
