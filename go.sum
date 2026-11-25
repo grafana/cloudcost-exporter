@@ -18,8 +18,8 @@ cloud.google.com/go/logging v1.21.1 h1:fvlcl/l7d4b0f3T5Y7u37GeDEPeDEKXN/y/Xs+Klu
 cloud.google.com/go/logging v1.21.1/go.mod h1:SntfPM/4mHzQEd/LiOO9/IUclKaucFHLemeLBk/mcsA=
 cloud.google.com/go/longrunning v1.5.0 h1:aGonu6LHQl38DyozLs2jxGieI4Ixk+7GTnmHVcHt8zA=
 cloud.google.com/go/longrunning v1.5.0/go.mod h1:vjM1U85ZQuTv8lJoUBSA44HLWvM6BBFeaSJYGFF1Q00=
-cloud.google.com/go/managedkafka v1.0.0 h1:wKZdHCPUr3mQDo/9sbPI2+vhXXw9AgC9EfSsZnxbUvY=
-cloud.google.com/go/managedkafka v1.0.0/go.mod h1:Phh9R6RQhGCNq36Uifsi+HHFIOlRFUE8Z3Xl2fYelBo=
+cloud.google.com/go/managedkafka v1.3.1 h1:MIEUiY/5zpdH+l/tvCRSMt9I9FvqBtAVWh9/Jnb9nBU=
+cloud.google.com/go/managedkafka v1.3.1/go.mod h1:TvRZV+1ZAfQeI/CSpzDRIU+spmAItgDOAdM8QL+tWGE=
 cloud.google.com/go/monitoring v1.30.0 h1:r/d+JUbyKmJ8b07iznuKfzVzrIXTWxHQ3lBRm3x2LlY=
 cloud.google.com/go/monitoring v1.30.0/go.mod h1:htlUR0QWVMrjFzZmN4LGnMAve9xB/eduwjmINxVZ8RM=
 cloud.google.com/go/storage v1.62.2 h1:WgR4U9n7bIzXkkVnwPKKE8bkaKUNsHG+0MAAlh9DGU4=
